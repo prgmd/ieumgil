@@ -254,6 +254,29 @@ body.ro .rsz{display:none}
 .leave-btn{width:100%;margin-top:14px;border:1px solid #e3c0c0;background:#fbeeee;color:#9c3b3b;border-radius:11px;padding:10px;font-weight:800;font-size:12.5px}
 @media(max-width:760px){.group-grid{grid-template-columns:1fr}}
 
+
+/* ===== 추가 기능 스타일 ===== */
+/* 희망 예산 프로그레스 */
+.budbar{height:9px;border-radius:99px;background:rgba(61,43,34,.1);overflow:hidden;margin:12px 0 8px}
+.budbar i{display:block;height:100%;width:0;border-radius:99px;background:var(--acc);transition:width .35s ease}
+.budrow{display:flex;align-items:center;font-size:12px;color:var(--ink2)}
+.budtar{margin-left:auto;display:flex;align-items:center;gap:6px}
+.budtar b{color:var(--ink);font-weight:800;font-variant-numeric:tabular-nums}
+.budtar button{width:22px;height:22px;border:none;border-radius:7px;background:rgba(61,43,34,.07);font-weight:900;color:var(--ink)}
+.budmsg{font-size:11px;color:var(--ink2);margin-top:7px}
+/* 챗봇 모드 토글 */
+.chmode{display:flex;gap:6px;padding:9px 13px 2px}
+.chmode button{flex:1;border:1px solid var(--line);background:#fff;border-radius:9px;padding:7px 0;font-size:11.5px;font-weight:800;color:var(--ink2)}
+.chmode button.on{background:var(--acc);color:#fff;border-color:var(--acc)}
+/* 블록 최근 수정자 */
+.slot .edav{position:absolute;top:-9px;left:-9px;z-index:6;width:24px;height:24px;border-radius:50%;color:#fff;font-size:11px;font-weight:800;display:flex;align-items:center;justify-content:center;border:2.5px solid #fffdf8;box-shadow:0 2px 6px rgba(61,43,34,.3)}
+/* 타임라인 내부 스크롤 (편집 모드) — 후보 목록이 항상 보이도록 */
+.tlscroll{max-height:calc(100vh - 384px);min-height:240px;overflow-y:auto;overflow-x:hidden;padding:10px 4px 0 0;margin-top:2px}
+.tlscroll::-webkit-scrollbar{width:10px}
+.tlscroll::-webkit-scrollbar-thumb{background:rgba(61,43,34,.2);border-radius:99px;border:3px solid transparent;background-clip:padding-box}
+.tlscroll::-webkit-scrollbar-thumb:hover{background:rgba(61,43,34,.32);background-clip:padding-box}
+.tlscroll::-webkit-scrollbar-track{background:transparent}
+
 </style>
 </head>
 <body>
@@ -360,6 +383,11 @@ body.ro .rsz{display:none}
     <div class="panel">
       <h4>예산</h4>
       <div class="bud"><span>총</span><span class="t" id="budTotal">0원</span><span class="p" id="budPer">1인 0원</span><span class="auto">교통비 자동 반영</span></div>
+      <div class="budbar"><i id="budBar"></i></div>
+      <div class="budrow"><span>희망 총 예산</span>
+        <span class="budtar"><button onclick="chgTarget(-100000)">−</button><b id="budTarget">0원</b><button onclick="chgTarget(100000)">＋</button></span>
+      </div>
+      <div class="budmsg" id="budMsg"></div>
     </div>
     <div class="panel">
       <h4>지도 <span style="font-weight:400;letter-spacing:0">— 블록을 클릭하면 위치가 표시돼요</span></h4>
@@ -379,6 +407,7 @@ body.ro .rsz{display:none}
 
 <div class="chatbox" id="chatbox">
   <div class="ch">✈ 챗봇 이음이 <button onclick="toggleChat()">✕</button></div>
+  <div class="chmode"><button id="cmChat" class="on" onclick="setChatMode('chat')">💬 일반 채팅</button><button id="cmMap" onclick="setChatMode('map')">🗺 지도 기반 추천</button></div>
   <div class="clog" id="clog"></div>
   <div class="cin"><input id="cin" placeholder="키워드를 던져보세요 (예: 부산 야경)" onkeydown="if(event.key==='Enter')sendChat()"><button onclick="sendChat()">전송</button></div>
 </div>
@@ -400,6 +429,7 @@ body.ro .rsz{display:none}
     </div>
     <label>비용 (직접 입력 · 원)</label><input id="dCost" type="number" min="0" step="1000">
     <label>비고 — 메모·세부사항</label><textarea id="dMemo" placeholder="예: 오션뷰 룸 / 예약번호 1234 / 웨이팅 김"></textarea>
+    <div id="dEditor" style="font-size:11.5px;color:var(--ink2);margin-top:11px"></div>
     <div class="foot">
       <button class="btn btn-gh" onclick="document.getElementById('dtOv').classList.remove('open')">닫기</button>
       <button class="btn btn-acc edit-only" onclick="saveDetail()">저장</button>
@@ -443,13 +473,19 @@ body.ro .rsz{display:none}
 <div class="ov" id="projOv" onclick="if(event.target===this)this.classList.remove('open')">
   <div class="md">
     <h3>새 여행 프로젝트</h3>
-    <p class="s">만들고 나면 챗봇 이음이가 핵심 키워드를 물어보고 후보 블록을 준비해요.</p>
+    <p class="s">기본 정보를 입력하면 챗봇 이음이가 이를 참고해 후보 블록을 준비해요.</p>
     <label>프로젝트 이름 *</label>
     <input id="pjName" placeholder="예: 가을 전주 미식 여행" maxlength="30">
     <div class="r2">
-      <div><label>시작일</label><input type="date" id="pjStart" value="2026-10-03"></div>
-      <div><label>종료일</label><input type="date" id="pjEnd" value="2026-10-06"></div>
+      <div><label>목적지</label><input id="pjDest" placeholder="예: 부산"></div>
+      <div><label>여행 인원</label><input id="pjHead" type="number" min="1" value="4"></div>
     </div>
+    <div class="r2">
+      <div><label>여행 시작일</label><input type="date" id="pjStart" value="2026-10-03"></div>
+      <div><label>여행 종료일</label><input type="date" id="pjEnd" value="2026-10-06"></div>
+    </div>
+    <label>주요 교통수단</label>
+    <select id="pjTrans"><option>KTX/기차</option><option>버스</option><option>자가용</option><option>비행기</option><option>대중교통</option></select>
     <div class="foot">
       <button class="btn btn-gh" onclick="document.getElementById('projOv').classList.remove('open')">취소</button>
       <button class="btn btn-acc" onclick="createProject()">만들기</button>
@@ -512,6 +548,9 @@ let chains={d1:['b1','b2','b3','b4','b5'],d2:['d21','d22','d23','d24','d25','d26
 let pool=['c1','c2','c3','c4'];
 let dayStart={d1:540,d2:540,d3:570,d4:600};
 let activeDay='d1', ro=false, selId=null, dragId=null, detailId=null;
+const ME='동혁'; let targetBudget=1500000; let chatMode='chat';
+/* 데모용 최근 수정자 시드 */
+Object.entries({b1:'지수',b2:'민준',b3:'동혁',b4:'수민',b5:'지수',d21:'동혁',d23:'수민',d24:'민준',d26:'지수',c1:'이음이',c2:'이음이',c3:'민준'}).forEach(([k,v])=>{if(items[k])items[k].editor=v;});
 const SEARCH_DB=[
   {cat:'food',sub:'향토',name:'돼지국밥 골목',addr:'부산 서면',cost:0,dur:60,mx:46,my:48},
   {cat:'spot',sub:'야경',name:'광안리 해변',addr:'부산 수영구 광안동',cost:0,dur:90,mx:70,my:52},
@@ -523,6 +562,8 @@ const fmt=m=>String(Math.floor(m/60)).padStart(2,'0')+':'+String(m%60).padStart(
 const won=n=>n.toLocaleString('ko-KR')+'원';
 function toast(t){const e=document.getElementById('toast');e.textContent=t;e.classList.add('on');clearTimeout(e._t);e._t=setTimeout(()=>e.classList.remove('on'),2600)}
 function place(it){return it.cat!=='trans'}
+const EDCOL={'동혁':'#9c4a2f','지수':'#3e8e63','민준':'#d97e3c','수민':'#6b7fc7','이음이':'#8a5aa8'};
+function edAv(name){if(!name)return'';const col=EDCOL[name]||'#7a6a5c';const init=(name==='이음이')?'✈':name.charAt(0);return `<span class="edav" style="background:${col}" title="최근 수정 · ${name}">${init}</span>`;}
 function distKm(a,b){if(!a||!b||!place(a)||!place(b))return 0;return Math.hypot(a.mx-b.mx,a.my-b.my)*0.28}
 function calcTimes(k){
   let t=dayStart[k];const rows=[];
@@ -591,6 +632,7 @@ function dayTL(k,edit){
     h+=`<div class="slot" style="height:${hh}px">
       <span class="tlab">${fmt(r.start)}</span>
       <span class="dot" style="--dc:${CAT[it.cat].hex}"></span>
+      ${edAv(it.editor)}
       ${cardHTML(r.id,r.start,r.end,r.warn,edit)}
     </div>`;
   });
@@ -627,7 +669,7 @@ function renderBoard(){
           <button class="btn btn-acc" onclick="openCalc()">🧭 교통편 계산</button>
         </div></div>
       <div class="bd-sub">${rows.length}개 블록 · 총 ${Math.floor(total/60)}시간 ${total%60?total%60+'분':''} · 이동 시간도 교통 블록으로 표시 · <b>드래그로 순서·일자·길이를 바꾸고, 후보 영역으로 끌면 보류돼요</b>${trCost?` · 교통비 ${won(trCost)}`:''}</div>
-      ${dayTL(activeDay,true)}`;
+      <div class="tlscroll">${dayTL(activeDay,true)}</div>`;
     bindEdit();
   }else{
     body.innerHTML=DAYS.map(d=>{
@@ -671,7 +713,7 @@ function bindEdit(){
       if(it.single){toast('단일 시각 블록은 길이가 없어요');return}
       const y0=e.clientY,d0=it.dur;
       const mv=ev=>{it.dur=Math.max(30,Math.round((d0+(ev.clientY-y0)/PX)/30)*30);renderBoard();renderBudget();};
-      const up=()=>{document.removeEventListener('mousemove',mv);document.removeEventListener('mouseup',up);renderAll();toast(`소요 ${it.dur}분으로 조절 — 이후 일정 재계산`)};
+      const up=()=>{document.removeEventListener('mousemove',mv);document.removeEventListener('mouseup',up);it.editor=ME;renderAll();toast(`소요 ${it.dur}분으로 조절 — 이후 일정 재계산`)};
       document.addEventListener('mousemove',mv);document.addEventListener('mouseup',up);
     });
   });
@@ -723,6 +765,15 @@ function renderBudget(){
   let total=0;DAYS.forEach(d=>chains[d.key].forEach(id=>total+=items[id].cost));
   document.getElementById('budTotal').textContent=won(total);
   document.getElementById('budPer').textContent='1인 '+won(Math.round(total/HEADCNT/100)*100);
+  document.getElementById('budTarget').textContent=won(targetBudget);
+  const pct=targetBudget?Math.round(total/targetBudget*100):0;
+  const bar=document.getElementById('budBar');
+  bar.style.width=Math.min(100,pct)+'%';
+  const over=total>targetBudget;
+  bar.style.background=over?'#c0392b':(pct>85?'#e08a1e':'var(--acc)');
+  document.getElementById('budMsg').textContent = targetBudget
+    ? (over?`⚠ 희망 예산 초과 ${won(total-targetBudget)} (${pct}%)`:`희망 예산의 ${pct}% 사용 · 남은 ${won(targetBudget-total)}`)
+    : '＋/− 로 희망 총 예산을 설정해보세요';
 }
 function renderSearch(){
   const s=document.getElementById('sres');s.innerHTML='';
@@ -735,12 +786,12 @@ function renderSearch(){
 
 /* ═══════ 조작 ═══════ */
 function removeEverywhere(id){DAYS.forEach(d=>{chains[d.key]=chains[d.key].filter(x=>x!==id)});pool=pool.filter(x=>x!==id)}
-function chgDur(id,d){const it=items[id];if(it.single){toast('단일 시각 블록이에요');return}it.dur=Math.max(30,it.dur+d);renderAll()}
+function chgDur(id,d){const it=items[id];if(it.single){toast('단일 시각 블록이에요');return}it.dur=Math.max(30,it.dur+d);it.editor=ME;renderAll()}
 function chgStart(d){dayStart[activeDay]=Math.min(23*60,Math.max(5*60,dayStart[activeDay]+d));renderAll()}
 function delPool(id){pool=pool.filter(x=>x!==id);renderAll();toast('후보에서 삭제 (서버 tombstone)')}
 function addSearch(i){
   const r=SEARCH_DB[i];const id='s'+Date.now();
-  items[id]={cat:r.cat,sub:r.sub,name:r.name,addr:r.addr,dur:r.dur,cost:r.cost,memo:'',mx:r.mx,my:r.my};
+  items[id]={cat:r.cat,sub:r.sub,name:r.name,addr:r.addr,dur:r.dur,cost:r.cost,memo:'',mx:r.mx,my:r.my,editor:ME};
   pool.unshift(id);renderAll();toast(`"${r.name}" 후보에 추가 — 카테고리·주소·좌표 자동 입력 (비용만 직접 입력)`);
 }
 
@@ -764,6 +815,7 @@ function openDetail(id){
   document.getElementById('dDur').value=it.dur;
   document.getElementById('dCost').value=it.cost;
   document.getElementById('dMemo').value=it.memo||'';
+  document.getElementById('dEditor').textContent=it.editor?('✎ 마지막 수정 · '+it.editor+(it.editor===ME?' (나)':'')):'✎ 수정 이력 없음';
   ['dCat','dSub2','dName','dAddr','dDur','dCost','dMemo'].forEach(x=>document.getElementById(x).disabled=!editable);
   document.getElementById('dTime').disabled=true;
   document.getElementById('dtOv').classList.add('open');
@@ -777,6 +829,7 @@ function saveDetail(){
   it.dur=Math.max(30,Math.round((parseInt(document.getElementById('dDur').value)||60)/30)*30);
   it.cost=Math.max(0,parseInt(document.getElementById('dCost').value)||0);
   it.memo=document.getElementById('dMemo').value.trim();
+  it.editor=ME;
   document.getElementById('dtOv').classList.remove('open');
   renderAll();toast('저장 — 변경된 필드만 op 전송 (필드 단위 LWW)');
 }
@@ -821,9 +874,9 @@ function addTrans(){
   const id='t'+Date.now();
   if(trCalc.mode==='ktx'){
     const o=trCalc.ktx[trCalc.pick];
-    items[id]={cat:'trans',sub:'KTX',name:o.no,addr:'부산역 → 서울역',dur:o.arr-o.dep,cost:59900*HEADCNT,memo:'시간표 선택 · 예매 전',mx:0,my:0,anchor:{dep:o.dep,arr:o.arr}};
+    items[id]={cat:'trans',sub:'KTX',name:o.no,addr:'부산역 → 서울역',dur:o.arr-o.dep,cost:59900*HEADCNT,memo:'시간표 선택 · 예매 전',mx:0,my:0,anchor:{dep:o.dep,arr:o.arr},editor:ME};
   }else{
-    items[id]={cat:'trans',sub:trCalc.label,name:trCalc.label+' 이동',addr:'앞뒤 블록 자동 상속',dur:trCalc.min,cost:trCalc.fare*HEADCNT,memo:`직선 ${trCalc.d}km 추정`,mx:0,my:0,est:true};
+    items[id]={cat:'trans',sub:trCalc.label,name:trCalc.label+' 이동',addr:'앞뒤 블록 자동 상속',dur:trCalc.min,cost:trCalc.fare*HEADCNT,memo:`직선 ${trCalc.d}km 추정`,mx:0,my:0,est:true,editor:ME};
   }
   chains[activeDay].splice(trCalc.pos,0,id);
   document.getElementById('trOv').classList.remove('open');
@@ -867,7 +920,7 @@ function applyCalc(){
   [...calcState].sort((x,y)=>y.pos-x.pos).forEach(g=>{
     if(g.skip)return;
     const o=g.opts[g.pick];const id='t'+Date.now()+g.pos;
-    items[id]={cat:'trans',sub:o.label,name:o.label+' 이동',addr:`${g.a} → ${g.b}`,dur:o.min,cost:o.fare*HEADCNT,memo:`직선 ${g.d}km 추정`,mx:0,my:0,est:true};
+    items[id]={cat:'trans',sub:o.label,name:o.label+' 이동',addr:`${g.a} → ${g.b}`,dur:o.min,cost:o.fare*HEADCNT,memo:`직선 ${g.d}km 추정`,mx:0,my:0,est:true,editor:ME};
     chains[activeDay].splice(g.pos,0,id);added++;
   });
   document.getElementById('calcOv').classList.remove('open');
@@ -883,18 +936,34 @@ function toggleChat(){
     bub('ai','안녕하세요, 이음이예요! 키워드를 던지면 후보 장소를 추천해서 <b>후보 목록</b>에 담아드려요.');
 }
 function bub(w,t){const l=document.getElementById('clog');l.insertAdjacentHTML('beforeend',`<div class="bub ${w}">${t}</div>`);l.scrollTop=l.scrollHeight}
+function setChatMode(m){
+  chatMode=m;
+  document.getElementById('cmChat').classList.toggle('on',m==='chat');
+  document.getElementById('cmMap').classList.toggle('on',m==='map');
+  document.getElementById('cin').placeholder = m==='map' ? '지도에 보이는 범위에서 추천받기 (예: 근처 카페)' : '키워드를 던져보세요 (예: 부산 야경)';
+  bub('ai', m==='map'
+    ? '🗺 <b>지도 기반 추천</b> 모드예요 — 지금 지도에 보이는 범위의 장소를 우선 추천해드려요.'
+    : '💬 <b>일반 채팅</b> 모드예요 — 키워드로 자유롭게 추천받아 보세요.');
+}
 function sendChat(){
   const i=document.getElementById('cin');const v=i.value.trim();if(!v)return;i.value='';
   bub('usr',v);
   setTimeout(()=>{
-    const picks=[
+    const picks = chatMode==='map' ? [
+      {cat:'food',sub:'카페',name:'전포 카페거리',addr:'부산 부산진구 전포동',dur:60,cost:9000,mx:48,my:46,memo:'지도 중심 근처'},
+      {cat:'spot',sub:'전망',name:'황령산 봉수대',addr:'부산 부산진구',dur:70,cost:0,mx:55,my:60,memo:'지도 범위 내'},
+      {cat:'etc',sub:'쇼핑',name:'서면 지하상가',addr:'부산 부산진구 부전동',dur:60,cost:30000,mx:47,my:47,memo:'지도 범위 내'},
+    ] : [
       {cat:'spot',sub:'야경',name:'황령산 전망대',addr:'부산 부산진구',dur:60,cost:0,mx:55,my:60,memo:'야경 명소'},
       {cat:'food',sub:'해산물',name:'기장 대게거리',addr:'부산 기장군',dur:90,cost:180000,mx:90,my:8,memo:'저녁 추천'},
       {cat:'etc',sub:'체험',name:'해운대 블루라인파크',addr:'해변열차',dur:80,cost:64000,mx:88,my:26,memo:'해변열차'},
     ];
-    picks.forEach(p=>{const id='ai'+Date.now()+Math.random();items[id]={...p};pool.push(id)});
+    picks.forEach(p=>{const id='ai'+Date.now()+Math.random();items[id]={...p,editor:'이음이'};pool.push(id)});
     renderAll();
-    bub('ai',`"${v}" 기준으로 <b>후보 3곳</b>을 담았어요! 타임라인으로 드래그해 편입해보세요. 장소를 다 배치한 뒤 <b>🧭 교통편 계산</b>을 누르면 이동까지 채워드릴게요.`);
+    const head = chatMode==='map'
+      ? `🗺 <b>지도에 보이는 범위</b>에서 "${v}" 관련 <b>후보 3곳</b>을 담았어요!`
+      : `"${v}" 기준으로 <b>후보 3곳</b>을 담았어요!`;
+    bub('ai',`${head} 타임라인으로 드래그해 편입해보세요. 배치 후 <b>🧭 교통편 계산</b>으로 이동까지 채워드릴게요.`);
   },600);
 }
 
@@ -982,7 +1051,7 @@ function renderProjects(){
     const done=(p.status==='done');
     const el=document.createElement('div');el.className='p-card';
     el.innerHTML=`<div class="thumb" style="background-image:${p.img}"></div>
-      <div style="flex:1"><h3>${p.name}</h3><div class="meta">${p.date}</div>
+      <div style="flex:1"><h3>${p.name}</h3><div class="meta">${p.date}${p.dest?' · '+p.dest:''}${p.head?' · '+p.head+'인':''}${p.trans?' · '+p.trans:''}</div>
       <span class="status ${done?'st-done':'st-plan'}">${done?'완료 — 열람 전용':'계획 중 — 대시보드 열기'}</span></div>
       <div class="ops"><button class="op" onclick="event.stopPropagation();toast('이름·기간 수정')">✎</button>
       <button class="op" onclick="event.stopPropagation();delProject('${p.id}')">🗑</button></div>`;
@@ -1006,12 +1075,19 @@ function reissueCode(){
   toast('코드 재발급 — 기존 코드는 즉시 무효화됐어요');
 }
 function openProjModal(){document.getElementById('pjName').value='';document.getElementById('projOv').classList.add('open');}
+function fmtDate(v){if(!v)return'';const p=v.split('-');return (+p[1])+'. '+(+p[2]);}
+function chgTarget(d){targetBudget=Math.max(0,targetBudget+d);renderBudget();}
 function createProject(){
   const name=document.getElementById('pjName').value.trim();
   if(!name){toast('프로젝트 이름을 입력해주세요');return;}
-  projects.unshift({id:'p'+Date.now(),name,date:'새 일정',status:'plan',img:IMG.def});
+  const dest=document.getElementById('pjDest').value.trim();
+  const head=Math.max(1,parseInt(document.getElementById('pjHead').value)||1);
+  const trans=document.getElementById('pjTrans').value;
+  const s=document.getElementById('pjStart').value,e=document.getElementById('pjEnd').value;
+  const date=(s&&e)?fmtDate(s)+' – '+fmtDate(e):'새 일정';
+  projects.unshift({id:'p'+Date.now(),name,date,status:'plan',img:IMG.def,dest,head,trans});
   document.getElementById('projOv').classList.remove('open');
-  renderProjects();toast(`"${name}" 생성 — 대시보드에서 이음이에게 키워드를 알려주세요 🤖`);
+  renderProjects();toast(`"${name}" 생성 — ${dest||'목적지 미정'} · ${head}인 · ${trans}`);
 }
 function leaveGroup(){document.getElementById('leaveOv').classList.remove('open');toast('그룹에서 나갔어요');go('me');}
 
