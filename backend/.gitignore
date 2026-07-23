@@ -26,6 +26,20 @@ out/
 !**/src/main/**/out/
 !**/src/test/**/out/
 
+### Logs ###
+logs/
+*.log
+
+### OS ###
+.DS_Store
+Thumbs.db
+
+### 환경별 설정 ###
+application-local.yaml
+application-prod.yaml
+application-secret.yaml
+.env
+
 ### NetBeans ###
 /nbproject/private/
 /nbbuild/
