@@ -109,7 +109,7 @@
 | **영역** | **사용 기술 및 환경** |
 | --- | --- |
 | **백엔드** | Spring Boot, PostgreSQL, Redis |
-| **프론트엔드** | React, TypeScript |
+| **프론트엔드** | React, JavaScript |
 | **실시간 통신** | WebSocket, STOMP |
 | **음성 통신** | WebRTC (P2P 통신, 최대 6인 동시 지원) |
 | **인프라 환경** | Amazon EC2, Docker |
