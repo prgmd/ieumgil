@@ -108,9 +108,9 @@ body.ro .rsz{display:none}
 .pcard .grip{margin-left:auto;color:#c9b8a5;font-size:13px;letter-spacing:2px}
 .pcard .nm{font-size:14.5px;font-weight:800;margin:8px 0 2px}
 .pcard .sub{font-size:11.5px;color:var(--ink2);min-height:16px}
-.pcard .acts{display:flex;gap:7px;margin-top:10px}
-.pcard .acts .go{flex:1;border:none;background:var(--dc);color:#fff;border-radius:9px;padding:7px 0;font-size:12px;font-weight:800}
-.pcard .acts .x{width:32px;border:none;background:rgba(61,43,34,.07);color:var(--ink2);border-radius:9px}
+.pcard .acts{display:flex;gap:6px;margin-top:10px;justify-content:flex-end}
+.pcard .acts .go{flex:0 0 auto;width:32px;height:32px;border:none;background:var(--dc);color:#fff;border-radius:9px;padding:0;font-size:13.5px;font-weight:800;line-height:1;display:flex;align-items:center;justify-content:center}
+.pcard .acts .x{flex:0 0 auto;width:32px;height:32px;border:none;background:rgba(61,43,34,.07);color:var(--ink2);border-radius:9px;font-size:12.5px;line-height:1;display:flex;align-items:center;justify-content:center}
 .pool .empty{grid-column:1/-1;text-align:center;color:#a3927f;font-size:12.5px;padding:14px 0}
 /* 우측 */
 .side{display:flex;flex-direction:column;gap:14px;position:sticky;top:74px;align-self:start}
@@ -277,6 +277,24 @@ body.ro .rsz{display:none}
 .tlscroll::-webkit-scrollbar-thumb:hover{background:rgba(61,43,34,.32);background-clip:padding-box}
 .tlscroll::-webkit-scrollbar-track{background:transparent}
 
+
+/* ===== 챗봇 추천 카드 ===== */
+.bub.wide{max-width:100%;width:100%;background:transparent;padding:0}
+.recs{display:flex;flex-direction:column;gap:7px}
+.rec{display:flex;align-items:center;gap:9px;background:#fff;border:1px solid rgba(61,43,34,.12);border-radius:12px;padding:9px 10px;box-shadow:0 3px 9px rgba(61,43,34,.07)}
+.rec .rdot{flex:none;width:9px;height:9px;border-radius:50%}
+.rec .ri{flex:1;min-width:0}
+.rec .ri b{display:block;font-size:12.5px;font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.rec .ri span{display:block;font-size:10.5px;color:var(--ink2);margin-top:1px}
+.rec .radd{flex:none;border:none;background:var(--acc);color:#fff;border-radius:9px;padding:6px 10px;font-size:11px;font-weight:800;white-space:nowrap}
+.rec .radd.added{background:#e6ded2;color:#9c8b78}
+.recall{border:1.5px dashed rgba(61,43,34,.25);background:rgba(255,255,255,.6);color:var(--ink2);border-radius:10px;padding:7px 0;font-size:11.5px;font-weight:800;margin-top:2px}
+.recall:hover{border-color:var(--acc);color:var(--acc)}
+/* ===== 커스텀 블록 ===== */
+.pool-head .mk{margin-left:auto;border:none;background:var(--acc);color:#fff;border-radius:10px;padding:8px 14px;font-size:12.5px;font-weight:800;white-space:nowrap}
+.pool-head .mk:hover{filter:brightness(1.07)}
+.pcard .cust{background:rgba(61,43,34,.09);border-radius:5px;padding:1px 6px;font-size:10.5px;font-weight:800;color:#7a6a5c;margin-right:4px}
+
 </style>
 </head>
 <body>
@@ -374,7 +392,7 @@ body.ro .rsz{display:none}
 
     <!-- 후보 목록: 보드와 같은 가로폭 -->
     <div class="pool-sec" id="poolSec">
-      <div class="pool-head"><b>후보 목록</b><span class="n" id="poolN">0</span><span>카드를 타임라인으로 <b>드래그해서</b> 편입하세요 · 블록을 여기로 끌면 보류됩니다 · 편입되면 시간·상세 수정이 가능해져요</span></div>
+      <div class="pool-head"><b>후보 목록</b><span class="n" id="poolN">0</span><span>카드를 타임라인으로 <b>드래그해서</b> 편입하세요 · 여기서도 <b>정보 수정</b>이 가능해요</span><button class="mk" onclick="openCustom()">✎ 커스텀 블록 만들기</button></div>
       <div class="pool" id="pool"></div>
     </div>
   </div>
@@ -465,6 +483,40 @@ body.ro .rsz{display:none}
     <div class="foot">
       <button class="btn btn-gh" onclick="document.getElementById('calcOv').classList.remove('open')">닫기</button>
       <button class="btn btn-acc" onclick="applyCalc()">선택한 이동 추가</button>
+    </div>
+  </div>
+</div>
+
+<!-- 모달: 커스텀 블록 -->
+<div class="ov" id="cbOv" onclick="if(event.target===this)this.classList.remove('open')">
+  <div class="md">
+    <h3>커스텀 블록 만들기</h3>
+    <p class="s">원하는 일정을 직접 만들어 후보 목록에 담아요. 타임라인으로 드래그하면 여정에 편입됩니다.</p>
+    <div class="r2">
+      <div><label>카테고리 — 대분류</label>
+        <select id="cbCat">
+          <option value="spot">명소/활동</option>
+          <option value="food">식당</option>
+          <option value="stay">숙소</option>
+          <option value="trans">교통</option>
+          <option value="etc">기타</option>
+        </select></div>
+      <div><label>소분류</label><input id="cbSub" placeholder="예: 카페 · 전망 · 사찰" maxlength="10"></div>
+    </div>
+    <label>장소명 *</label>
+    <input id="cbName" placeholder="예: 흰여울문화마을" maxlength="24">
+    <label>주소</label>
+    <input id="cbAddr" placeholder="예: 부산 영도구 영선동" maxlength="40">
+    <div class="r2">
+      <div><label>소요 시간 (분) — 30분 단위</label><input type="number" id="cbDur" value="60" min="30" step="30"></div>
+      <div><label>비용 (원)</label><input type="number" id="cbCost" value="0" min="0" step="1000"></div>
+    </div>
+    <label>비고 — 메모·세부사항</label>
+    <textarea id="cbMemo" placeholder="예: 노을 시간대 추천 / 주차 어려움"></textarea>
+    <div class="note">비용은 직접 입력해요. 나머지 정보는 만든 뒤에도 블록 <b>상세</b>에서 언제든 수정할 수 있어요.</div>
+    <div class="foot">
+      <button class="btn btn-gh" onclick="document.getElementById('cbOv').classList.remove('open')">취소</button>
+      <button class="btn btn-acc" onclick="saveCustom()">후보에 추가</button>
     </div>
   </div>
 </div>
@@ -721,15 +773,15 @@ function bindEdit(){
 function renderPool(){
   const p=document.getElementById('pool');
   document.getElementById('poolN').textContent=pool.length;
-  p.innerHTML=pool.length?'':'<div class="empty">후보가 비었어요 — 장소 검색이나 챗봇 이음이로 담아보세요</div>';
+  p.innerHTML=pool.length?'':'<div class="empty">후보가 비었어요 — 장소 검색 · 챗봇 이음이 · 커스텀 블록 만들기로 담아보세요</div>';
   pool.forEach(id=>{
     const it=items[id],c=CAT[it.cat];
     const el=document.createElement('div');el.className='pcard';el.draggable=true;el.dataset.id=id;
     el.style.cssText=`--dc:${c.hex};--cb:${c.bg}`;
     el.innerHTML=`<div class="l"><span class="cat">${c.nm}${it.sub?' · '+it.sub:''}</span><span class="grip">⠿</span></div>
-      <div class="nm">${it.name}</div><div class="sub">${it.memo||it.addr}</div>
-      <div class="acts"><span style="flex:1;font-size:11px;color:#a3927f;align-self:center">타임라인으로 드래그해 편입</span><button class="x" onclick="event.stopPropagation();delPool('${id}')">✕</button></div>`;
-    el.addEventListener('click',()=>toast('타임라인으로 드래그해 편입하면 시간·상세를 수정할 수 있어요'));
+      <div class="nm">${it.name}</div><div class="sub">${it.custom?'<span class="cust">직접 만듦</span>':''}${it.memo||it.addr}</div>
+      <div class="acts"><button class="go" title="정보 수정" onclick="event.stopPropagation();openDetail('${id}')">✎</button><button class="x" onclick="event.stopPropagation();delPool('${id}')">✕</button></div>`;
+    el.addEventListener('click',()=>openDetail(id));
     el.addEventListener('dragstart',()=>{dragId=id});el.addEventListener('dragend',()=>{dragId=null});
     p.appendChild(el);
   });
@@ -799,8 +851,11 @@ function addSearch(i){
 function openDetail(id){
   detailId=id;const it=items[id];
   const inChain=DAYS.some(d=>chains[d.key].includes(id));
-  const editable=!ro&&inChain;
-  document.getElementById('dtSub').textContent=ro?'읽기 모드 — 열람만 가능해요.':'장소명·주소·시간은 자동으로 채워진 뒤 수정할 수 있어요. 비용은 직접 입력합니다.';
+  const editable=!ro;
+  document.getElementById('dtSub').textContent = ro
+    ? '읽기 모드 — 열람만 가능해요.'
+    : (inChain ? '장소명·주소·시간은 자동으로 채워진 뒤 수정할 수 있어요. 비용은 직접 입력합니다.'
+               : '후보 블록도 정보를 수정할 수 있어요. 시간은 타임라인에 편입하면 자동 계산됩니다.');
   const cs=document.getElementById('dCat');
   cs.innerHTML=Object.entries(CAT).map(([k,v])=>`<option value="${k}" ${k===it.cat?'selected':''}>${v.nm}</option>`).join('');
   document.getElementById('dSub2').value=it.sub||'';
@@ -933,9 +988,9 @@ function toggleChat(){
   const c=document.getElementById('chatbox');c.classList.toggle('open');
   document.getElementById('fab').style.display=c.classList.contains('open')?'none':'block';
   if(c.classList.contains('open')&&!document.getElementById('clog').childElementCount)
-    bub('ai','안녕하세요, 이음이예요! 키워드를 던지면 후보 장소를 추천해서 <b>후보 목록</b>에 담아드려요.');
+    bub('ai','안녕하세요, 이음이예요! 키워드를 던지면 여기 대화창에 추천을 보여드릴게요 — 마음에 드는 것만 <b>＋ 추가</b>로 후보 목록에 담으세요.');
 }
-function bub(w,t){const l=document.getElementById('clog');l.insertAdjacentHTML('beforeend',`<div class="bub ${w}">${t}</div>`);l.scrollTop=l.scrollHeight}
+function bub(w,t,extra){const l=document.getElementById('clog');l.insertAdjacentHTML('beforeend',`<div class="bub ${w} ${extra||''}">${t}</div>`);l.scrollTop=l.scrollHeight}
 function setChatMode(m){
   chatMode=m;
   document.getElementById('cmChat').classList.toggle('on',m==='chat');
@@ -944,6 +999,29 @@ function setChatMode(m){
   bub('ai', m==='map'
     ? '🗺 <b>지도 기반 추천</b> 모드예요 — 지금 지도에 보이는 범위의 장소를 우선 추천해드려요.'
     : '💬 <b>일반 채팅</b> 모드예요 — 키워드로 자유롭게 추천받아 보세요.');
+}
+let recSeq=0, aiRecs={};
+function recHTML(rid){
+  const p=aiRecs[rid],c=CAT[p.cat];
+  return `<div class="rec">
+    <span class="rdot" style="background:${c.hex}"></span>
+    <div class="ri"><b>${p.name}</b><span>${c.nm}${p.sub?' · '+p.sub:''} · ${p.dur}분 · ${p.cost?won(p.cost):'무료'}</span></div>
+    <button class="radd" onclick="addRec('${rid}',this)">＋ 추가</button></div>`;
+}
+function addRec(rid,btn){
+  const p=aiRecs[rid];if(!p||p._added)return;
+  p._added=true;
+  const {_added,...data}=p;
+  const id='ai'+Date.now()+Math.random();
+  items[id]={...data,editor:'이음이'};pool.push(id);
+  btn.textContent='담김 ✓';btn.classList.add('added');btn.disabled=true;
+  renderAll();toast(`"${p.name}" — 후보 목록에 담았어요`);
+}
+function addAllRecs(gid){
+  const box=document.getElementById(gid);if(!box)return;
+  const btns=[...box.querySelectorAll('.radd:not(.added)')];
+  if(!btns.length){toast('이미 모두 담았어요');return;}
+  btns.forEach(b=>b.click());
 }
 function sendChat(){
   const i=document.getElementById('cin');const v=i.value.trim();if(!v)return;i.value='';
@@ -958,13 +1036,46 @@ function sendChat(){
       {cat:'food',sub:'해산물',name:'기장 대게거리',addr:'부산 기장군',dur:90,cost:180000,mx:90,my:8,memo:'저녁 추천'},
       {cat:'etc',sub:'체험',name:'해운대 블루라인파크',addr:'해변열차',dur:80,cost:64000,mx:88,my:26,memo:'해변열차'},
     ];
-    picks.forEach(p=>{const id='ai'+Date.now()+Math.random();items[id]={...p,editor:'이음이'};pool.push(id)});
-    renderAll();
+    const gid='rg'+(++recSeq), ids=[];
+    picks.forEach((p,n)=>{const rid=gid+'_'+n;aiRecs[rid]={...p};ids.push(rid)});
     const head = chatMode==='map'
-      ? `🗺 <b>지도에 보이는 범위</b>에서 "${v}" 관련 <b>후보 3곳</b>을 담았어요!`
-      : `"${v}" 기준으로 <b>후보 3곳</b>을 담았어요!`;
-    bub('ai',`${head} 타임라인으로 드래그해 편입해보세요. 배치 후 <b>🧭 교통편 계산</b>으로 이동까지 채워드릴게요.`);
+      ? `🗺 <b>지도에 보이는 범위</b>에서 "${v}" 관련 <b>3곳</b>을 찾았어요.`
+      : `"${v}" 기준으로 <b>3곳</b>을 찾았어요.`;
+    bub('ai',`${head} 마음에 드는 곳만 <b>＋ 추가</b>를 눌러 후보 목록에 담아보세요.`);
+    bub('ai',`<div class="recs" id="${gid}">${ids.map(recHTML).join('')}
+      <button class="recall" onclick="addAllRecs('${gid}')">＋ 3곳 모두 후보에 담기</button></div>`,'wide');
   },600);
+}
+
+/* ═══════ 커스텀 블록 ═══════ */
+function openCustom(){
+  ['cbName','cbAddr','cbSub','cbMemo'].forEach(k=>document.getElementById(k).value='');
+  document.getElementById('cbCat').value='spot';
+  document.getElementById('cbDur').value=60;
+  document.getElementById('cbCost').value=0;
+  document.getElementById('cbOv').classList.add('open');
+  setTimeout(()=>document.getElementById('cbName').focus(),60);
+}
+function saveCustom(){
+  const name=document.getElementById('cbName').value.trim();
+  if(!name){toast('장소명을 입력해주세요');return;}
+  const dur=Math.max(30,Math.round((parseInt(document.getElementById('cbDur').value)||60)/30)*30);
+  const id='cb'+Date.now();
+  items[id]={
+    cat:document.getElementById('cbCat').value,
+    sub:document.getElementById('cbSub').value.trim(),
+    name,
+    addr:document.getElementById('cbAddr').value.trim()||'주소 미입력',
+    dur,
+    cost:Math.max(0,parseInt(document.getElementById('cbCost').value)||0),
+    memo:document.getElementById('cbMemo').value.trim(),
+    mx:Math.round(20+Math.random()*60),my:Math.round(18+Math.random()*58),
+    custom:true,editor:ME
+  };
+  pool.unshift(id);
+  document.getElementById('cbOv').classList.remove('open');
+  renderAll();
+  toast(`커스텀 블록 "${name}" — 후보 목록에 담았어요`);
 }
 
 /* ═══════ 앱 셸: 네비게이션 · 개인/그룹 (병합 추가) ═══════ */
