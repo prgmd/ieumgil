@@ -24,10 +24,10 @@ src/
 │       ├── hooks/
 │       ├── types.ts
 │       └── index.ts        # 외부 공개 항목만 export
-├── shared/                 # 도메인 무관 공용
+├── global/                 # 도메인 무관 공용
 │   ├── ui/                 # Button, Modal, Input …
 │   ├── hooks/              # useDebounce, useMediaQuery …
-│   ├── lib/                # 유틸 함수
+│   ├── util/               # 유틸 함수
 │   └── api/                # axios 인스턴스, 인터셉터
 ├── types/                  # 전역 타입
 └── constants/
@@ -36,16 +36,16 @@ src/
 ### 의존 방향
 
 ```
-pages → features → shared
+pages → features → global
 ```
 
-**역방향 import를 금지한다.** `shared`가 `features`를 참조하는 순간 공용 모듈이 아니다.
+**역방향 import를 금지한다.** `global`이 `features`를 참조하는 순간 공용 모듈이 아니다.
 
-**feature 간 직접 참조도 금지한다.** `features/auth`가 `features/project`의 내부 파일을 가져오면 두 기능이 한 덩어리가 된다. 필요하면 `index.ts`를 통해서만 접근하고, 공유가 잦아지면 `shared`로 올린다.
+**feature 간 직접 참조도 금지한다.** `features/auth`가 `features/project`의 내부 파일을 가져오면 두 기능이 한 덩어리가 된다. 필요하면 `index.ts`를 통해서만 접근하고, 공유가 잦아지면 `global`로 올린다.
 
 ```ts
 // ❌ 내부 경로 직접 참조
-import { parseToken } from '@/features/auth/lib/parseToken';
+import { parseToken } from '@/features/auth/util/parseToken';
 
 // ✅ 공개 인터페이스로만
 import { parseToken } from '@/features/auth';
@@ -394,7 +394,7 @@ export const Z_INDEX = { dropdown: 10, modal: 100, toast: 1000 } as const;
 ```
 
 ```ts
-// shared/api/client.ts — 인스턴스와 인터셉터
+// global/api/client.ts — 인스턴스와 인터셉터
 export const client = axios.create({ baseURL: import.meta.env.VITE_API_URL });
 
 // features/user/api/getUser.ts — 엔드포인트 하나당 함수 하나
