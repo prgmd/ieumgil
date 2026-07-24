@@ -8,6 +8,13 @@ spring:
   jpa:
     hibernate:
       ddl-auto: none
+  ai:
+    anthropic:
+      api-key: ${GMS_API_KEY:}
+      base-url: https://gms.ssafy.io/gmsapi/api.anthropic.com
+      chat:
+        options:
+          model: claude-haiku-4-5-20251001
 
 logging:
   level:
