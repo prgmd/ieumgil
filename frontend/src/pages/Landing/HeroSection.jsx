@@ -74,7 +74,7 @@ export function HeroSection() {
         모든 계획을 한 곳에서 완벽하게 관리하세요.
       </p>
 
-      <Link to="/auth?mode=signup" className="hero__cta">
+      <Link to="/login" className="hero__cta">
         이음길 시작하기
       </Link>
     </section>

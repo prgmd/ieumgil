@@ -27,10 +27,10 @@ export function LandingNav() {
         </nav>
 
         <div className="landing-nav__auth">
-          <Link to="/auth" className="landing-nav__login">
+          <Link to="/login" className="landing-nav__login">
             로그인
           </Link>
-          <Link to="/auth?mode=signup" className="landing-nav__signup">
+          <Link to="/login" className="landing-nav__signup">
             가입하기
           </Link>
         </div>

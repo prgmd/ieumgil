@@ -12,7 +12,7 @@ export const router = createBrowserRouter([
     element: <App />,
     children: [
       { index: true, element: <LandingPage></LandingPage>},
-      { path: 'auth', element: <LoginPage></LoginPage> },
+      { path: 'login', element: <LoginPage></LoginPage> },
       { path: 'dashboard', element: <DashboardPage /> },
       { path: 'group', element: <GroupPage /> },
       { path: 'my', element: <MyPage /> },

@@ -5,13 +5,15 @@ import { GroupPage } from "../pages/Group";
 import { MyPage } from "../pages/My";
 import ProtectedRoute from "../global/components/ProtectedRoute";
 import { LoginPage } from "../pages/Auth/LoginPage";
+import { LandingPage } from "../pages/Landing";
 
 function App() {
   return (
       <Routes>
         {/* ===== 공개 라우트: 토큰 없이 접근 가능 ===== */}
         {/* 로그인 / 랜딩 페이지 */}
-        <Route path="/" element={<LoginPage></LoginPage>} />
+        <Route path="/" element={<LandingPage></LandingPage>} />
+        <Route path="/login" element={<LoginPage></LoginPage>}></Route>
         {/* OAuth 콜백: 로그인 완료 전(토큰 없음)에 거치므로 반드시 공개여야 함 */}
         <Route path="/oauth/kakao/callback" element={<KakaoCallback />} />
 
