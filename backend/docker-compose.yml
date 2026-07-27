@@ -1,0 +1,84 @@
+# 이음길 로컬 개발용 Docker Compose (backend + postgres + redis)
+# 프론트엔드는 컨테이너에 올리지 않고 호스트에서 직접 실행한다.
+#
+# 사용법:
+#   1) 이 파일 옆에 .env 생성 (.env.example 참고 — JWT_SECRET, KAKAO_CLIENT_ID 등 필수)
+#   2) docker compose up -d --build
+#   3) 프론트는 별도 터미널에서:  cd ../frontend && npm install && npm run dev
+#
+# 접속:
+#   백엔드  http://localhost:8080  (Swagger: /swagger-ui.html)
+#   DB      localhost:5432 / Redis localhost:6379
+
+name: ieumgil
+
+services:
+  postgres:
+    build: ./docker/postgres
+    image: ieumgil/postgres:16-alpine
+    container_name: ieumgil-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
+
+  redis:
+    build: ./docker/redis
+    image: ieumgil/redis:7-alpine
+    container_name: ieumgil-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: ieumgil/backend:local
+    container_name: ieumgil-backend
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      # application.yaml의 placeholder(datasource.url: ...)를 컨테이너 환경변수로 덮어쓴다.
+      # 호스트가 아니라 compose 네트워크의 서비스명(postgres/redis)으로 접근한다.
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB}
+      SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER}
+      SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD}
+      SPRING_DATA_REDIS_HOST: redis
+      SPRING_DATA_REDIS_PORT: 6379
+      # 개발 편의용: 엔티티 기준으로 테이블 자동 생성/갱신 (운영에서는 사용 금지)
+      SPRING_JPA_HIBERNATE_DDL_AUTO: update
+      # 프론트는 호스트에서 뜨므로 허용 오리진은 localhost:5173 그대로
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS}
+      JWT_SECRET: ${JWT_SECRET}
+      KAKAO_CLIENT_ID: ${KAKAO_CLIENT_ID}
+      KAKAO_CLIENT_SECRET: ${KAKAO_CLIENT_SECRET}
+      KAKAO_REDIRECT_URI: ${KAKAO_REDIRECT_URI}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+volumes:
+  postgres-data:
+  redis-data:
