@@ -1,4 +1,5 @@
 import { Link } from 'react-router-dom';
+import { useAuth } from '../../global/hooks/useAuth';
 
 const HERO_ICONS = [
   { emoji: '🖼️', label: '여행 기록' },
@@ -8,6 +9,8 @@ const HERO_ICONS = [
 ];
 
 export function HeroSection() {
+  const { isAuthenticated } = useAuth();
+
   return (
     <section className="hero">
       <div className="hero__deco" aria-hidden="true">
@@ -74,7 +77,7 @@ export function HeroSection() {
         모든 계획을 한 곳에서 완벽하게 관리하세요.
       </p>
 
-      <Link to="/login" className="hero__cta">
+      <Link to={isAuthenticated ? '/my' : '/login'} className="hero__cta">
         이음길 시작하기
       </Link>
     </section>

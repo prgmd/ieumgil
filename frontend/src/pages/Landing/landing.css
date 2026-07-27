@@ -106,6 +106,10 @@
   transform: translateY(-1px);
 }
 
+.landing-nav__welcome {
+  color: var(--color-text);
+}
+
 /* ---- hero ---- */
 .hero {
   position: relative;
