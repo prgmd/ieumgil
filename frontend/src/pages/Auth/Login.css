@@ -12,29 +12,21 @@
 
   font-family: "Noto Sans KR", -apple-system, BlinkMacSystemFont, sans-serif;
   color: var(--ink);
-  background: #f1ece1;
 
   min-height: 100vh;
   display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 24px;
 }
 
 .login-frame {
   display: flex;
-  width: min(1120px, 100%);
-  min-height: min(680px, 90vh);
-  background: #fff;
-  border-radius: 28px;
-  overflow: hidden;
-  box-shadow: 0 30px 80px rgba(61, 43, 34, 0.18);
+  width: 100%;
+  min-height: 100vh;
 }
 
 /* ===== 좌측: 브랜드 히어로 ===== */
 .login-hero {
   position: relative;
-  flex: 1.05;
+  flex: 1.27;
   overflow: hidden;
   padding: 56px 52px;
   display: flex;
@@ -64,7 +56,7 @@
 }
 
 .login-hero__icon--plane {
-  top: 20%;
+  top: 26%;
   left: 8%;
   width: 54px;
   height: 54px;
@@ -73,8 +65,8 @@
 }
 
 .login-hero__icon--pin {
-  top: 37%;
-  left: 15%;
+  top: 15%;
+  left: 30%;
   width: 44px;
   height: 44px;
   border-radius: 50%;
@@ -85,8 +77,8 @@
 }
 
 .login-hero__icon--compass {
-  top: 26%;
-  left: 42%;
+  top: 30%;
+  left: 43%;
   width: 66px;
   height: 66px;
   border-radius: 20px;
@@ -94,8 +86,8 @@
 }
 
 .login-hero__icon--calendar {
-  top: 22%;
-  left: 64%;
+  top: 25%;
+  left: 65%;
   width: 50px;
   height: 50px;
   border-radius: 14px;
@@ -104,13 +96,13 @@
   box-shadow: 0 8px 18px rgba(61, 43, 34, 0.08);
 }
 
-.login-hero__icon--camera {
-  top: 35%;
-  left: 74%;
+.login-hero__icon--package {
+  top: 38%;
+  left: 76%;
   width: 58px;
   height: 58px;
   border-radius: 18px;
-  background: #37b24d;
+  background: #fcfcfb;
 }
 
 .login-hero__content {

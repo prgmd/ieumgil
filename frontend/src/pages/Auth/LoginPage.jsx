@@ -28,9 +28,10 @@ export function LoginPage() {
         <aside className="login-hero">
           <ul className="login-hero__icons" aria-hidden="true">
             <li className="login-hero__icon login-hero__icon--plane">✈</li>
+            <li className="login-hero__icon login-hero__icon--pin">📍</li>
             <li className="login-hero__icon login-hero__icon--compass">🧭</li>
             <li className="login-hero__icon login-hero__icon--calendar">📋</li>
-            <li className="login-hero__icon login-hero__icon--camera">📷</li>
+            <li className="login-hero__icon login-hero__icon--package">💼</li>
           </ul>
 
           <div className="login-hero__content">
