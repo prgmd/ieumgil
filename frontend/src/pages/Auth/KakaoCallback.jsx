@@ -23,7 +23,7 @@ function KakaoCallback() {
           tokenStorage.setAccessToken(accessToken);
 
           // 로그인 완료 후 메인 페이지 등으로 이동
-          navigate("/");
+          navigate("/my");
         })
         .catch((error) => {
           console.error("백엔드 로그인 처리 실패:", error);
