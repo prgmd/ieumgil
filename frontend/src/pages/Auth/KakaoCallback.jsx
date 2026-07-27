@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
 import { useSearchParams, useNavigate } from "react-router-dom";
-import axios from "axios"; // 또는 fetch 사용
+import { loginWithKakao } from "../../features/auth/api/authApi";
+import { tokenStorage } from "../../global/util/tokenStorage";
 
 function KakaoCallback() {
   const [searchParams] = useSearchParams();
@@ -15,15 +16,11 @@ function KakaoCallback() {
       isFetched.current = true;
 
       // 백엔드로 인가 코드 전송
-      axios
-        .post("http://localhost:8080/api/v0/auth/login/kakao", { code })
-        .then((response) => {
-          console.log("로그인 성공:", response.data);
-
-          // 백엔드에서 받은 JWT 토큰 저장 (예: accessToken)
-          const { accessToken, refreshToken } = response.data;
-          localStorage.setItem("accessToken", accessToken);
-          // refreshToken도 저장하거나 쿠키로 받아 처리
+      loginWithKakao(code)
+        .then(({ accessToken }) => {
+          // accessToken 만 저장 (refreshToken 은 백엔드가 httpOnly 쿠키로 내려준다)
+          // 이후 요청은 인터셉터가 자동으로 accessToken 을 헤더에 삽입한다.
+          tokenStorage.setAccessToken(accessToken);
 
           // 로그인 완료 후 메인 페이지 등으로 이동
           navigate("/");
