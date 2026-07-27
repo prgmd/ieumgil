@@ -12,3 +12,24 @@ spring:
 logging:
   level:
     root: info
+
+cors:
+  allowed-origins: http://localhost:5173  # 배포 시 프론트 도메인을 콤마로 추가
+
+auth:
+  refresh-cookie:
+    secure: false   # HTTPS 배포 시 true
+    same-site: Lax  # 프론트/백엔드가 다른 도메인이면 None (+ secure: true 필수)
+
+jwt:
+  secret: ${JWT_SECRET}
+  access-token-validity: 1800000      # 30분 (ms)
+  refresh-token-validity: 1209600000  # 14일 (ms)
+
+oauth:
+  kakao:
+    client-id: ${KAKAO_CLIENT_ID}
+    client-secret: ${KAKAO_CLIENT_SECRET:}
+    redirect-uri: ${KAKAO_REDIRECT_URI}
+    token-uri: https://kauth.kakao.com/oauth/token
+    user-info-uri: https://kapi.kakao.com/v2/user/me
