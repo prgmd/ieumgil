@@ -1,7 +1,7 @@
 import React from "react";
-import "./Auth.css"; // 동일 폴더에 생성할 CSS 파일 임포트
+import "./Login.css"; // 동일 폴더에 생성할 CSS 파일 임포트
 
-export function AuthPage() {
+export function LoginPage() {
   console.log("=== 환경변수 로드 테스트 ===");
   console.log("REST API KEY:", import.meta.env.VITE_KAKAO_REST_API_KEY);
   console.log("REDIRECT URI:", import.meta.env.VITE_KAKAO_REDIRECT_URI);

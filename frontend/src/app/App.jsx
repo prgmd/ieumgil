@@ -1,18 +1,17 @@
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
-import { AuthPage } from "../pages/Auth/LoginPage";
 import KakaoCallback from "../pages/Auth/KakaoCallback";
 import { DashboardPage } from "../pages/Dashboard";
 import { GroupPage } from "../pages/Group";
 import { MyPage } from "../pages/My";
 import ProtectedRoute from "../global/components/ProtectedRoute";
+import { LoginPage } from "../pages/Auth/LoginPage";
 
 function App() {
   return (
-    <BrowserRouter>
       <Routes>
         {/* ===== 공개 라우트: 토큰 없이 접근 가능 ===== */}
         {/* 로그인 / 랜딩 페이지 */}
-        <Route path="/" element={<AuthPage />} />
+        <Route path="/" element={<LoginPage></LoginPage>} />
         {/* OAuth 콜백: 로그인 완료 전(토큰 없음)에 거치므로 반드시 공개여야 함 */}
         <Route path="/oauth/kakao/callback" element={<KakaoCallback />} />
 
@@ -27,7 +26,6 @@ function App() {
         {/* 정의되지 않은 모든 경로는 로그인/랜딩으로 (기본 차단) */}
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
-    </BrowserRouter>
   );
 }
 
