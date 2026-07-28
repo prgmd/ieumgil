@@ -1,8 +1,9 @@
 import '../My/shared/styles/index.css';
 import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { useGroupStore } from '../My/shared/stores/groupStore';
-import { useToastStore } from '../My/shared/stores/toastStore';
+import { useGroupDetail } from '../../features/group/hooks/useGroupDetail';
+import { useProjects } from '../../features/group/hooks/useProjects';
+import { useToastStore } from '../../global/stores/toastStore';
 import LeaveGroupModal from './components/LeaveGroupModal';
 import CreateProjectModal from './components/CreateProjectModal';
 import DeleteProjectModal from './components/DeleteProjectModal';
@@ -10,10 +11,17 @@ import DeleteProjectModal from './components/DeleteProjectModal';
 // PROJECT.transport_pref — ERD상 CAR | PUBLIC 두 값만 저장하고 표기만 한글로 한다.
 const TRANSPORT_LABEL = { CAR: '자차', PUBLIC: '대중교통' };
 
+// 서버는 멤버 아바타 색을 주지 않는다(profileImg 만 내려온다) — 이니셜 배경색은
+// memberId 로 고정 배정해 같은 사람이 항상 같은 색으로 보이게 한다.
+const AVATAR_COLORS = ['#8a5aa8', '#c76b6b', '#3e8e63', '#6b7fc7', '#9c4a2f', '#5f9c82'];
+const avatarColor = (memberId) => AVATAR_COLORS[memberId % AVATAR_COLORS.length];
+
 export function GroupPage() {
-  // 라우트 파라미터는 문자열 — 목업/서버의 숫자 ID와 맞추려면 변환이 필요하다.
+  // 라우트 파라미터는 문자열 — 서버의 숫자 ID와 맞추려면 변환이 필요하다.
   const groupId = Number(useParams().groupId);
-  const { currentGroup, projects, loadGroup, loadProjects, reissueInviteCode } = useGroupStore();
+  // groupId만 들고 들어오므로 그룹·프로젝트를 URL 파라미터로 직접 조회한다.
+  const { group, status, reissueInviteCode, leaveGroup } = useGroupDetail(groupId);
+  const { projects, createProject, deleteProject } = useProjects(groupId);
   const showToast = useToastStore((s) => s.show);
   const navigate = useNavigate();
 
@@ -23,7 +31,7 @@ export function GroupPage() {
 
   async function handleCopyCode() {
     try {
-      await navigator.clipboard.writeText(currentGroup.inviteCode);
+      await navigator.clipboard.writeText(group.inviteCode);
       showToast('초대 코드가 복사됐어요 🔗');
     } catch {
       showToast('복사에 실패했어요 — 코드를 직접 선택해 복사해주세요.');
@@ -31,28 +39,26 @@ export function GroupPage() {
   }
 
   async function handleReissue() {
-    await reissueInviteCode(groupId);
+    await reissueInviteCode();
     showToast('코드 재발급 — 기존 코드는 즉시 무효화됐어요');
   }
 
-  // groupId만 들고 들어오므로 그룹·프로젝트를 여기서 직접 조회한다.
-  // 없는 그룹이면 개인 페이지로 되돌린다.
+  // 없는 그룹·권한 없는 그룹·잘못된 URL(/groups/abc)이면 개인 페이지로 되돌린다.
+  // (더미가 붙은 동안은 /groups/1 만 살아 있고 나머지 id 는 여기로 걸린다.)
   useEffect(() => {
-    loadGroup(groupId).catch(() => {
-      showToast('그룹을 찾을 수 없어요.');
-      navigate('/my', { replace: true });
-    });
-    loadProjects(groupId);
-  }, [groupId, loadGroup, loadProjects, navigate, showToast]);
+    if (status !== 'error') return;
+    showToast('그룹을 찾을 수 없어요.');
+    navigate('/my', { replace: true });
+  }, [status, navigate, showToast]);
 
-  if (!currentGroup) return null;
+  if (!group) return null;
 
   return (
     <div className="page">
       <div className="group-grid">
         <div>
           <div className="sec-head">
-            <h2>{currentGroup.name}</h2>
+            <h2>{group.name}</h2>
             <span>프로젝트를 눌러 대시보드로</span>
             <span className="right">
               <button className="btn btn-acc" onClick={() => setCreateProjectOpen(true)}>
@@ -65,9 +71,9 @@ export function GroupPage() {
               const done = p.status === 'DONE';
               return (
                 <div
-                  key={p.id}
+                  key={p.projectId}
                   className="p-card"
-                  onClick={() => navigate(`/groups/${groupId}/projects/${p.id}`)}
+                  onClick={() => navigate(`/groups/${groupId}/projects/${p.projectId}`)}
                 >
                   <div style={{ flex: 1 }}>
                     <h3>{p.name}</h3>
@@ -106,7 +112,7 @@ export function GroupPage() {
               </span>
             </h3>
             <div className="code-chip">
-              <span>{currentGroup.inviteCode}</span>
+              <span>{group.inviteCode}</span>
             </div>
             <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
               <button className="btn btn-gh" style={{ flex: 1 }} onClick={handleCopyCode}>
@@ -117,9 +123,9 @@ export function GroupPage() {
               </button>
             </div>
             <div>
-              {currentGroup.members.map((m) => (
-                <div key={m.userId} className="f-row">
-                  <span className="mini-av" style={{ background: m.avatarColor }}>
+              {group.members.map((m) => (
+                <div key={m.memberId} className="f-row">
+                  <span className="mini-av" style={{ background: avatarColor(m.memberId) }}>
                     {m.nickname[0]}
                   </span>
                   {m.nickname}
@@ -136,17 +142,19 @@ export function GroupPage() {
 
       <LeaveGroupModal
         open={leaveOpen}
-        group={currentGroup}
+        group={group}
+        onLeave={leaveGroup}
         onClose={() => setLeaveOpen(false)}
       />
       <CreateProjectModal
         open={createProjectOpen}
-        groupId={groupId}
+        onCreate={createProject}
         onClose={() => setCreateProjectOpen(false)}
       />
       <DeleteProjectModal
         open={!!deleteProjectTarget}
         project={deleteProjectTarget}
+        onDelete={deleteProject}
         onClose={() => setDeleteProjectTarget(null)}
       />
     </div>

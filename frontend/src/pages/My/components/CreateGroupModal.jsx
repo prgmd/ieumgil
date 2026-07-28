@@ -1,17 +1,15 @@
 import { useState } from 'react';
 import Modal from '../shared/ui/Modal';
-import { useAuthStore } from '../shared/stores/authStore';
-import { useGroupStore } from '../shared/stores/groupStore';
-import { useToastStore } from '../shared/stores/toastStore';
+import { useToastStore } from '../../../global/stores/toastStore';
 
 /**
  * MY-02: 그룹명(2~20자) 입력 → 생성 → 생성 직후 초대코드 공유 모달로 이어짐.
  * 이 두 단계를 하나의 컴포넌트에서 step으로 관리한다 — 사용자 입장에서는
  * "만들었더니 곧바로 코드가 뜨는" 하나의 흐름이라 모달을 분리할 이유가 없다.
+ *
+ * @param onCreate (name) => Promise<group> — 목록을 소유한 페이지가 내려준다.
  */
-export default function CreateGroupModal({ open, onClose }) {
-  const currentUser = useAuthStore((s) => s.currentUser);
-  const createGroup = useGroupStore((s) => s.createGroup);
+export default function CreateGroupModal({ open, onClose, onCreate }) {
   const showToast = useToastStore((s) => s.show);
 
   const [step, setStep] = useState('form'); // 'form' | 'share'
@@ -42,7 +40,7 @@ export default function CreateGroupModal({ open, onClose }) {
     setError('');
     setSubmitting(true);
     try {
-      const group = await createGroup(trimmed, currentUser);
+      const group = await onCreate(trimmed);
       setCreatedGroup(group);
       setStep('share');
     } catch {

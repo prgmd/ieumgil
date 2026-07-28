@@ -1,10 +1,11 @@
 import { useState } from 'react';
 import Modal from '../shared/ui/Modal';
-import { useGroupStore } from '../shared/stores/groupStore';
-import { useToastStore } from '../shared/stores/toastStore';
+import { useToastStore } from '../../../global/stores/toastStore';
 
-export default function DeleteGroupModal({ open, onClose, group }) {
-  const deleteGroupLocal = useGroupStore((s) => s.deleteGroupLocal);
+/**
+ * @param onDelete (groupId, typedName) => Promise<void> — 목록을 소유한 페이지가 내려준다.
+ */
+export default function DeleteGroupModal({ open, onClose, group, onDelete }) {
   const showToast = useToastStore((s) => s.show);
 
   const [typed, setTyped] = useState('');
@@ -22,7 +23,7 @@ export default function DeleteGroupModal({ open, onClose, group }) {
     setError('');
     setSubmitting(true);
     try {
-      await deleteGroupLocal(group.id, typed);
+      await onDelete(group.id, typed);
       showToast('소프트 삭제 — 30일 후 완전 삭제');
       handleClose();
     } catch (e) {

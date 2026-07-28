@@ -1,7 +1,6 @@
 import { useState } from 'react';
 import Modal from '../../My/shared/ui/Modal';
-import { useGroupStore } from '../../My/shared/stores/groupStore';
-import { useToastStore } from '../../My/shared/stores/toastStore';
+import { useToastStore } from '../../../global/stores/toastStore';
 
 // PROJECT.transport_pref는 CAR | PUBLIC 두 값뿐이다 (ERD.md).
 const TRANSPORT_OPTIONS = [
@@ -23,8 +22,11 @@ const initialForm = {
   targetBudget: '',
 };
 
-export default function CreateProjectModal({ open, onClose, groupId }) {
-  const createProject = useGroupStore((s) => s.createProject);
+/**
+ * @param onCreate (form) => Promise<project> — 목록을 소유한 페이지가 내려준다.
+ *        groupId 는 훅에 이미 묶여 있으므로 여기서 알 필요가 없다.
+ */
+export default function CreateProjectModal({ open, onClose, onCreate }) {
   const showToast = useToastStore((s) => s.show);
 
   const [form, setForm] = useState(initialForm);
@@ -71,7 +73,7 @@ export default function CreateProjectModal({ open, onClose, groupId }) {
     setError('');
     setSubmitting(true);
     try {
-      await createProject(groupId, form);
+      await onCreate(form);
       showToast('새 프로젝트가 생성됐어요 ✈');
       handleClose();
     } catch {

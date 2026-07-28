@@ -1,10 +1,11 @@
 import { useState } from 'react';
 import ConfirmModal from '../../My/shared/ui/ConfirmModal';
-import { useGroupStore } from '../../My/shared/stores/groupStore';
-import { useToastStore } from '../../My/shared/stores/toastStore';
+import { useToastStore } from '../../../global/stores/toastStore';
 
-export default function DeleteProjectModal({ open, onClose, project }) {
-  const deleteProject = useGroupStore((s) => s.deleteProject);
+/**
+ * @param onDelete (projectId) => Promise<void> — 목록을 소유한 페이지가 내려준다.
+ */
+export default function DeleteProjectModal({ open, onClose, project, onDelete }) {
   const showToast = useToastStore((s) => s.show);
   const [submitting, setSubmitting] = useState(false);
 
@@ -15,7 +16,7 @@ export default function DeleteProjectModal({ open, onClose, project }) {
   async function handleConfirm() {
     setSubmitting(true);
     try {
-      await deleteProject(project.id);
+      await onDelete(project.projectId);
       showToast('프로젝트를 삭제했어요');
       onClose();
     } catch {
