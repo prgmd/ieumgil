@@ -20,6 +20,6 @@ export async function logout() {
     const { data } = await axiosInstance.post("/auth/logout");
     return data;
   } catch (error) {
-    unwrapError(error);
+    console.log("로그아웃 에러")
   }
 }

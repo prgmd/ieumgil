@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import Modal from '../../My/shared/ui/Modal';
-import { useGroupStore } from '../../My/shared/stores/groupStore';
+import { useGroupStore } from '../../../global/stores/groupStore';
 import { useToastStore } from '../../My/shared/stores/toastStore';
 
 // PROJECT.transport_pref는 CAR | PUBLIC 두 값뿐이다 (ERD.md).

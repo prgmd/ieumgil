@@ -1,8 +1,8 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Modal from '../../My/shared/ui/Modal';
-import { useAuthStore } from '../../My/shared/stores/authStore';
-import { useGroupStore } from '../../My/shared/stores/groupStore';
+import { useAuthStore } from '../../../global/stores/authStore';
+import { useGroupStore } from '../../../global/stores/groupStore';
 import { useToastStore } from '../../My/shared/stores/toastStore';
 
 export default function LeaveGroupModal({ open, onClose, group }) {

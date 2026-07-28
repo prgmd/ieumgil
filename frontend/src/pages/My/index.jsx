@@ -1,8 +1,8 @@
 import './shared/styles/index.css';
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useAuthStore } from './shared/stores/authStore';
-import { useGroupStore } from './shared/stores/groupStore';
+import { useAuthStore } from '../../global/stores/authStore';
+import { useGroupStore } from '../../global/stores/groupStore';
 import { useToastStore } from './shared/stores/toastStore';
 import CreateGroupModal from './components/CreateGroupModal';
 import DeleteGroupModal from './components/DeleteGroupModal';
