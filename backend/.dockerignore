@@ -1,0 +1,32 @@
+# 빌드 컨텍스트에서 제외 (이미지 크기 / 캐시 무효화 방지)
+.git
+.gitignore
+.gitattributes
+.gradle
+build
+out
+bin
+
+.idea
+*.iml
+*.iws
+*.ipr
+.vscode
+.settings
+.classpath
+.project
+
+# 시크릿은 이미지에 굽지 않고 compose 환경변수로 주입한다
+.env
+.env.*
+src/main/resources/application-local.yaml
+src/main/resources/application-prod.yaml
+src/main/resources/application-secret.yaml
+
+docker-compose.yml
+docker/
+Dockerfile
+README.md
+HELP.md
+*.log
+logs

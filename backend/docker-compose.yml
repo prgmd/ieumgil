@@ -1,0 +1,99 @@
+# 이음길 로컬 개발용 Docker Compose (backend + postgres + redis)
+# 프론트엔드는 컨테이너에 올리지 않고 호스트에서 직접 실행한다.
+#
+# 사용법:
+#   1) 이 파일 옆에 .env 생성 (.env.example 참고 — JWT_SECRET, KAKAO_CLIENT_ID 등 필수)
+#   2) docker compose up -d --build
+#   3) 프론트는 별도 터미널에서:  cd ../frontend && npm install && npm run dev
+#
+# 접속:
+#   백엔드  http://localhost:8080  (Swagger: /swagger-ui.html)
+#   DB      localhost:5432 / Redis localhost:6379
+
+name: ieumgil
+
+services:
+  postgres:
+    build: ./docker/postgres
+    image: ieumgil/postgres:16-alpine
+    container_name: ieumgil-postgres
+    restart: unless-stopped
+    mem_limit: 512m
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    ports:
+      # 127.0.0.1 고정 — 외부에 DB를 노출하지 않는다. 절대 0.0.0.0 으로 바꾸지 말 것.
+      # 백엔드는 compose 네트워크(postgres:5432)로 붙으므로 이 매핑은 호스트 툴(DBeaver 등) 접속용일 뿐이다.
+      # 원격에서 봐야 하면 포트를 열지 말고 SSH 터널을 쓸 것:
+      #   ssh -L 5432:127.0.0.1:5432 user@server
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
+
+  redis:
+    build: ./docker/redis
+    image: ieumgil/redis:7-alpine
+    container_name: ieumgil-redis
+    restart: unless-stopped
+    mem_limit: 256m
+    ports:
+      # Redis는 비밀번호가 없으므로 외부 바인딩 금지 (무인증 노출 시 RCE까지 이어짐)
+      - "127.0.0.1:6379:6379"
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: ieumgil/backend:local
+    container_name: ieumgil-backend
+    restart: unless-stopped
+    # 제한이 없으면 JVM(-XX:MaxRAMPercentage=75)이 "호스트 전체"의 75%를 힙 상한으로
+    # 잡는다. Jenkins와 같은 EC2를 쓰는 상황에서는 서로 OOM으로 죽이게 되므로 반드시 건다.
+    mem_limit: 1g
+    ports:
+      # 컨테이너 안은 항상 8080. 호스트 포트만 환경별로 바꾼다.
+      # (개발 서버는 8080을 Jenkins가 쓰므로 .env 에 BACKEND_PORT=8081)
+      - "${BACKEND_PORT:-8080}:8080"
+    environment:
+      # application.yaml의 placeholder(datasource.url: ...)를 컨테이너 환경변수로 덮어쓴다.
+      # 호스트가 아니라 compose 네트워크의 서비스명(postgres/redis)으로 접근한다.
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB}
+      SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER}
+      SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD}
+      SPRING_DATA_REDIS_HOST: redis
+      SPRING_DATA_REDIS_PORT: 6379
+      # 개발 편의용: 엔티티 기준으로 테이블 자동 생성/갱신 (운영에서는 none/validate)
+      SPRING_JPA_HIBERNATE_DDL_AUTO: ${DDL_AUTO:-update}
+      # 프론트가 뜨는 오리진. 서버에서는 http://<서버IP>:5173 등으로 바꿀 것 (콤마 구분)
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS}
+      # refresh 쿠키: HTTPS면 secure=true + same-site=None 이 필요하다
+      AUTH_REFRESH_COOKIE_SECURE: ${AUTH_REFRESH_COOKIE_SECURE:-false}
+      AUTH_REFRESH_COOKIE_SAME_SITE: ${AUTH_REFRESH_COOKIE_SAME_SITE:-Lax}
+      JWT_SECRET: ${JWT_SECRET}
+      KAKAO_CLIENT_ID: ${KAKAO_CLIENT_ID}
+      KAKAO_CLIENT_SECRET: ${KAKAO_CLIENT_SECRET}
+      KAKAO_REDIRECT_URI: ${KAKAO_REDIRECT_URI}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+volumes:
+  postgres-data:
+  redis-data:
