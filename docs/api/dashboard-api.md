@@ -53,8 +53,7 @@
 
 | Method | Path | 설명 | Auth |
 |---|---|---|---|
-| POST | `/api/projects/{projectId}/keywords` | 키워드 저장 + 후보 블록 자동 생성 | Yes |
-| POST | `/api/projects/{projectId}/bot/chat` | 대화형 장소 추천 | Yes |
+| POST | `/api/projects/{projectId}/chatbot/messages` | 대화형 채팅 — 일반/지도기반 추천 통합 | Yes |
 
 ---
 
@@ -452,41 +451,25 @@ ODsay 열차 시간표(KTX·무궁화 등) → 출발 후보 목록(앞 일정 �
 
 ## 상세 명세 — 챗봇
 
-### POST /api/projects/{projectId}/keywords
+### POST /api/projects/{projectId}/chatbot/messages
 
-키워드 저장 + 후보 블록 자동 생성(BOT-02). 재입력 가능 — 재생성 시 기존 후보 블록은 그룹 자산이므로 유지하고 신규 생성분을 추가. Redis 분산 락으로 동시 중복 실행 방지. 생성 결과는 `BLOCK_CREATED` op 다건 브로드캐스트.
+대화형 채팅 엔드포인트 하나로 일반 채팅과 지도 기반 추천을 모두 처리한다(BOT-01~04). 모드는 `mode` 필드로 **명시적으로** 받는다 — `mapContext` 유무로 암묵 추론하지 않는다(지도가 대시보드에 항상 떠 있어 좌표값 자체는 모드와 무관하게 존재할 수 있으므로, 존재 여부를 모드 판단 근거로 쓰면 오판 소지가 있다).
+
+**GENERAL 모드**: 지도 비연동. LLM이 메시지를 분석해 필요한 도구(카카오 키워드 검색·TAGO 시간표 등)를 판단해 호출하고 텍스트로 응답한다. 키워드 기반 후보 생성(BOT-02)도 이 모드 안에서 하나의 도구 호출로 처리되며 별도 엔드포인트가 없다 — 사용자는 그냥 문장으로 입력하고("오름이랑 카페 갈 만한 데 추천해줘"), 백엔드/LLM이 파싱해 프로젝트 `keywords`에 저장한다. 도구를 안 쓰면 `candidates`는 빈 배열.
+
+**MAP 모드**: `mapContext`(현재 지도 뷰포트 좌표, 추후 확장 가능) 필수. 서버가 먼저 카카오 API로 해당 범위 장소를 조회하는 고정 파이프라인(LLM이 검색 여부를 판단하지 않는다) → 조회 결과 + 메시지를 LLM에 넘겨 N개 선별·추천 이유 생성 → `candidates`에 블록화 가능한 구조로 반환.
+
+공통: 후보는 **카카오 로컬 검색으로 실좌표 검증**된 것만 사용(LLM 환각 좌표 차단), 서버가 곧바로 후보 블록으로 생성(BOT-04). 4초 초과 대비 프론트 로딩 표시.
 
 **Request Body:**
-```json
-{ "keywords": ["오름", "카페", "흑돼지"] }
-```
-> 최대 5개.
-
-**Response `200`:**
 ```json
 {
-  "isSuccess": true,
-  "code": "COMMON200",
-  "message": "후보 블록이 생성되었습니다.",
-  "result": { "createdBlockIds": [201, 202, 203] }
+  "message": "비 오는 날 실내에서 갈 만한 곳 추천해줘",
+  "mode": "MAP",
+  "mapContext": { "lat": 33.49, "lng": 126.53 }
 }
 ```
-
-**Errors:**
-
-| code | HTTP | 상황 |
-|---|---|---|
-| `VALIDATION_ERROR` | 400 | keywords 5개 초과 또는 빈 배열 |
-| `AI_SERVER_ERROR` | 500 | LLM 파이프라인 실패 |
-
-### POST /api/projects/{projectId}/bot/chat
-
-대화형 추천(BOT-03). 후보는 서버가 곧바로 후보 블록으로 생성(BOT-04). 4초 초과 대비 프론트 로딩 표시.
-
-**Request Body:**
-```json
-{ "message": "비 오는 날 실내에서 갈 만한 곳 추천해줘", "mapContext": { "lat": 33.49, "lng": 126.53 } }
-```
+> `mode`: `GENERAL` | `MAP`. `mapContext`는 `mode: MAP`일 때만 필수.
 
 **Response `200`:**
 ```json
@@ -502,7 +485,14 @@ ODsay 열차 시간표(KTX·무궁화 등) → 출발 후보 목록(앞 일정 �
   }
 }
 ```
-> LLM 파이프라인: 질의+컨텍스트(키워드·기간·현재 체인 요약) → 장소 후보 명사 추출 → **카카오 로컬 검색으로 실좌표 검증** → 검증 통과 건만 블록 생성(환각 좌표 차단).
+> GENERAL 모드에서 도구 미사용 시 `candidates: []`.
+
+**Errors:**
+
+| code | HTTP | 상황 |
+|---|---|---|
+| `VALIDATION_ERROR` | 400 | `message` 공백/2000자 초과, `mode: MAP`인데 `mapContext` 누락 |
+| `AI_SERVER_ERROR` | 500 | LLM 파이프라인 실패 |
 
 ---
 
