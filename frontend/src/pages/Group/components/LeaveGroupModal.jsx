@@ -16,7 +16,7 @@ export default function LeaveGroupModal({ open, onClose, group, onLeave }) {
   if (!group) return null;
 
   // flat 모델 — 방장/승계가 없고, 마지막 1인이 나가면 그룹이 하드 삭제된다(GRP-09).
-  const isLastMember = group.members.every((m) => m.userId === currentUser.id);
+  const isLastMember = group.members.every((m) => m.memberId === currentUser.id);
 
   async function handleLeave() {
     setSubmitting(true);

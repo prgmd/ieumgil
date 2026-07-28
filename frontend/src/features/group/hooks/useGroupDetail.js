@@ -1,5 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
-import * as api from "../../my/api/groupApi";
+// ⚠️ 임시 — 백엔드 그룹 API 연동 시 아래 두 줄을 원래 import 로 되돌리고
+//    features/group/api/dummyGroupApi.js 를 삭제한다.
+// import * as api from "../../my/api/groupApi";
+import * as api from "../api/dummyGroupApi";
 
 const INVALID_ID_ERROR = { code: "INVALID_GROUP_ID" };
 

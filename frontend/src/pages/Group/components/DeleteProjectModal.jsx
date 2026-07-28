@@ -16,7 +16,7 @@ export default function DeleteProjectModal({ open, onClose, project, onDelete })
   async function handleConfirm() {
     setSubmitting(true);
     try {
-      await onDelete(project.id);
+      await onDelete(project.projectId);
       showToast('프로젝트를 삭제했어요');
       onClose();
     } catch {

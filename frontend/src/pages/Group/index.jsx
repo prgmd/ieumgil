@@ -11,6 +11,11 @@ import DeleteProjectModal from './components/DeleteProjectModal';
 // PROJECT.transport_pref — ERD상 CAR | PUBLIC 두 값만 저장하고 표기만 한글로 한다.
 const TRANSPORT_LABEL = { CAR: '자차', PUBLIC: '대중교통' };
 
+// 서버는 멤버 아바타 색을 주지 않는다(profileImg 만 내려온다) — 이니셜 배경색은
+// memberId 로 고정 배정해 같은 사람이 항상 같은 색으로 보이게 한다.
+const AVATAR_COLORS = ['#8a5aa8', '#c76b6b', '#3e8e63', '#6b7fc7', '#9c4a2f', '#5f9c82'];
+const avatarColor = (memberId) => AVATAR_COLORS[memberId % AVATAR_COLORS.length];
+
 export function GroupPage() {
   // 라우트 파라미터는 문자열 — 서버의 숫자 ID와 맞추려면 변환이 필요하다.
   const groupId = Number(useParams().groupId);
@@ -39,11 +44,12 @@ export function GroupPage() {
   }
 
   // 없는 그룹·권한 없는 그룹·잘못된 URL(/groups/abc)이면 개인 페이지로 되돌린다.
-  // useEffect(() => {
-  //   if (status !== 'error') return;
-  //   showToast('그룹을 찾을 수 없어요.');
-  //   navigate('/my', { replace: true });
-  // }, [status, navigate, showToast]);
+  // (더미가 붙은 동안은 /groups/1 만 살아 있고 나머지 id 는 여기로 걸린다.)
+  useEffect(() => {
+    if (status !== 'error') return;
+    showToast('그룹을 찾을 수 없어요.');
+    navigate('/my', { replace: true });
+  }, [status, navigate, showToast]);
 
   if (!group) return null;
 
@@ -65,9 +71,9 @@ export function GroupPage() {
               const done = p.status === 'DONE';
               return (
                 <div
-                  key={p.id}
+                  key={p.projectId}
                   className="p-card"
-                  onClick={() => navigate(`/groups/${groupId}/projects/${p.id}`)}
+                  onClick={() => navigate(`/groups/${groupId}/projects/${p.projectId}`)}
                 >
                   <div style={{ flex: 1 }}>
                     <h3>{p.name}</h3>
@@ -118,8 +124,8 @@ export function GroupPage() {
             </div>
             <div>
               {group.members.map((m) => (
-                <div key={m.userId} className="f-row">
-                  <span className="mini-av" style={{ background: m.avatarColor }}>
+                <div key={m.memberId} className="f-row">
+                  <span className="mini-av" style={{ background: avatarColor(m.memberId) }}>
                     {m.nickname[0]}
                   </span>
                   {m.nickname}

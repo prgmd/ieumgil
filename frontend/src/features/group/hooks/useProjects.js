@@ -1,5 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
-import * as api from "../../my/api/groupApi";
+// ⚠️ 임시 — 백엔드 그룹 API 연동 시 아래 두 줄을 원래 import 로 되돌리고
+//    features/group/api/dummyGroupApi.js 를 삭제한다.
+// import * as api from "../../my/api/groupApi";
+import * as api from "../api/dummyGroupApi";
 
 const EMPTY = [];
 
@@ -47,7 +50,10 @@ export function useProjects(groupId) {
   // 새 그룹의 목록에 섞이지 않도록 이전 레코드 위에만 반영된다.
   const createProject = useCallback(
     async (input) => {
-      const project = await api.createProject(groupId, input);
+      // POST 응답은 { projectId } 하나뿐이므로(my-group-api.md) 카드에 필요한
+      // 나머지 필드는 방금 보낸 입력값으로 채운다 — 목록 재조회를 아끼기 위함.
+      const created = await api.createProject(groupId, input);
+      const project = { status: "PLANNING", ...input, ...created };
       setResult((prev) => ({ ...prev, projects: [project, ...prev.projects] }));
       return project;
     },
@@ -58,7 +64,7 @@ export function useProjects(groupId) {
     await api.deleteProject(projectId);
     setResult((prev) => ({
       ...prev,
-      projects: prev.projects.filter((p) => p.id !== projectId),
+      projects: prev.projects.filter((p) => p.projectId !== projectId),
     }));
   }, []);
 
