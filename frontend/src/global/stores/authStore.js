@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import { login, loginWithKakao, logout } from "../../features/auth/api/authApi";
+import { loginWithKakao, logout } from "../../features/auth/api/authApi";
 /**
  * 인증 상태. 그룹은 flat 모델(방장 없음)이라 권한 판정 자체가 없고,
  * 그룹/프로젝트 스토어는 소속 여부 확인에만 currentUser.id를 참조한다.

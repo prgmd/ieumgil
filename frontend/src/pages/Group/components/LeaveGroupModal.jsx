@@ -2,12 +2,13 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Modal from '../../My/shared/ui/Modal';
 import { useAuthStore } from '../../../global/stores/authStore';
-import { useGroupStore } from '../../../global/stores/groupStore';
 import { useToastStore } from '../../../global/stores/toastStore';
 
-export default function LeaveGroupModal({ open, onClose, group }) {
+/**
+ * @param onLeave () => Promise<{ groupDeleted }> — 그룹을 소유한 페이지가 내려준다.
+ */
+export default function LeaveGroupModal({ open, onClose, group, onLeave }) {
   const currentUser = useAuthStore((s) => s.currentUser);
-  const leaveGroup = useGroupStore((s) => s.leaveGroup);
   const showToast = useToastStore((s) => s.show);
   const navigate = useNavigate();
   const [submitting, setSubmitting] = useState(false);
@@ -20,7 +21,7 @@ export default function LeaveGroupModal({ open, onClose, group }) {
   async function handleLeave() {
     setSubmitting(true);
     try {
-      const result = await leaveGroup(group.id, currentUser.id);
+      const result = await onLeave();
       showToast(
         result.groupDeleted
           ? '마지막 멤버였어요 — 그룹이 완전히 삭제됐어요'

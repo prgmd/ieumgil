@@ -1,15 +1,17 @@
 import './shared/styles/index.css';
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../../global/stores/authStore';
-import { useGroupStore } from '../../global/stores/groupStore';
+import { useMyGroups } from '../../features/my/hooks/useMyGroups';
 import { useToastStore } from '../../global/stores/toastStore';
 import CreateGroupModal from './components/CreateGroupModal';
 import DeleteGroupModal from './components/DeleteGroupModal';
 
 export function MyPage() {
   const currentUser = useAuthStore((s) => s.currentUser);
-  const { groups, groupsStatus, loadMyGroups, joinByCode, renameGroupLocal } = useGroupStore();
+  // 그룹 목록은 이 페이지가 소유한다 — 훅이 조회·갱신을 함께 담당한다.
+  const { groups, status, createGroup, renameGroup, deleteGroup, joinByCode } =
+    useMyGroups(currentUser?.id);
   const showToast = useToastStore((s) => s.show);
   const navigate = useNavigate();
 
@@ -20,14 +22,10 @@ export function MyPage() {
   const [editingId, setEditingId] = useState(null); // 인라인 이름 수정 중인 그룹 id
   const [editValue, setEditValue] = useState('');
 
-  useEffect(() => {
-    loadMyGroups(currentUser.id);
-  }, [currentUser.id, loadMyGroups]);
-
   async function handleJoin() {
     setCodeErr('');
     try {
-      const group = await joinByCode(code, currentUser);
+      const group = await joinByCode(code);
       setCode('');
       navigate(`/groups/${group.id}`);
     } catch (e) {
@@ -45,7 +43,7 @@ export function MyPage() {
     setEditingId(null);
     if (!trimmed) return; // 빈 값이면 조용히 취소 (원본 이름 유지)
     try {
-      await renameGroupLocal(groupId, trimmed);
+      await renameGroup(groupId, trimmed);
       showToast('이름이 수정됐어요 ✓');
     } catch {
       showToast('그룹명은 2~20자로 입력해주세요.');
@@ -65,7 +63,8 @@ export function MyPage() {
       <div className="group-grid">
         <div>
           <div className="grid-groups">
-            {groupsStatus === 'loading' && <p>불러오는 중…</p>}
+            {status === 'loading' && <p>불러오는 중…</p>}
+            {status === 'error' && <p>그룹 목록을 불러오지 못했어요.</p>}
             {groups.map((g) => {
               const isEditing = editingId === g.id;
               return (
@@ -158,10 +157,15 @@ export function MyPage() {
         </div>
       </div>
 
-      <CreateGroupModal open={createOpen} onClose={() => setCreateOpen(false)} />
+      <CreateGroupModal
+        open={createOpen}
+        onCreate={createGroup}
+        onClose={() => setCreateOpen(false)}
+      />
       <DeleteGroupModal
         open={!!deleteTarget}
         group={deleteTarget}
+        onDelete={deleteGroup}
         onClose={() => setDeleteTarget(null)}
       />
     </div>
