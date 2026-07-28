@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import { login, logout } from "./AuthApi";
+import { login, loginWithKakao, logout } from "../../../../features/auth/api/authApi";
 /**
  * 인증 상태. 그룹은 flat 모델(방장 없음)이라 권한 판정 자체가 없고,
  * 그룹/프로젝트 스토어는 소속 여부 확인에만 currentUser.id를 참조한다.
@@ -12,7 +12,7 @@ export const useAuthStore = create((set) => ({
   login: async (provider) => {
     set({ status: "loading", error: null });
     try {
-      const user = await mockLogin(provider);
+      const user = await loginWithKakao();
       set({ currentUser: user, status: "authenticated" });
       return user;
     } catch (e) {
@@ -22,7 +22,7 @@ export const useAuthStore = create((set) => ({
   },
 
   logout: async () => {
-    await mockLogout();
+    await logout()
     set({ currentUser: null, status: "idle" });
   },
 }));

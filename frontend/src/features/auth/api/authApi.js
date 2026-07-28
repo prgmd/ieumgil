@@ -12,3 +12,14 @@ export const loginWithKakao = async (code) => {
   // 백엔드 CustomResponse( { result: {...} } ) 래핑 대응
   return data?.result ?? data;
 };
+
+
+export async function logout() {
+  // POST /auth/logout 호출
+  try {
+    const { data } = await axiosInstance.post("/auth/logout");
+    return data;
+  } catch (error) {
+    unwrapError(error);
+  }
+}
