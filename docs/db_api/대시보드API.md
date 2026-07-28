@@ -24,9 +24,8 @@
 |---|---|---|---|
 | GET | `/api/projects/{projectId}` | 대시보드 스냅샷 (최초 로딩·재연결 재로딩) | Yes |
 | GET | `/api/projects/{projectId}/ops?afterSeq={n}` | 유실 op 재전송 (재연결·seq 갭) | Yes |
-| PATCH | `/api/projects/{projectId}/day-settings` | Day 시작 시각 조절 | Yes |
 | PATCH | `/api/projects/{projectId}/status` | `PLANNING↔DONE` 양방향 전환 | Yes |
-| PATCH | `/api/projects/{projectId}/budget-headcount` | 정산 기준 인원 지정/동기화 | Yes |
+| PATCH | `/api/projects/{projectId}/budget-headcount` | 정산 인원(1인당 표시용) 지정/동기화 | Yes |
 
 ### 블록
 
@@ -82,7 +81,6 @@
       "budgetHeadcount": 4,
       "targetBudget": 300000,
       "keywords": ["오름", "카페"],
-      "daySettings": { "1": "09:30" },
       "status": "PLANNING",
       "themeColor": "sunset"
     },
@@ -95,8 +93,9 @@
         "subCategory": "관광",
         "name": "성산일출봉",
         "durationMin": 90,
-        "isInstant": false,
-        "fixedTime": null,
+        "startTime": "09:00",
+        "endTime": "10:30",
+        "isTimeFixed": false,
         "budget": 5000,
         "detail": "매표 후 도보 30분",
         "lat": 33.4581,
@@ -112,7 +111,7 @@
       }
     ],
     "members": [
-      { "memberId": 1, "nickname": "동혁", "profileImg": "https://...", "role": "ADMIN", "online": true }
+      { "memberId": 1, "nickname": "동혁", "profileImg": "https://...", "online": true }
     ],
     "lastSeq": 1042
   }
@@ -159,32 +158,6 @@
 
 ---
 
-### PATCH /api/projects/{projectId}/day-settings
-
-Day 시작 시각 조절(DAY-03). `jsonb_set`으로 해당 Day 키만 부분 갱신 → `PROJECT_UPDATED` op에 `daySettings` 전체 포함해 전파(다른 Day 값을 덮어쓰지 않는 원자적 갱신).
-
-**Request Body:**
-```json
-{ "dayNo": 1, "startTime": "09:30" }
-```
-
-| 필드 | 타입 | 필수 | 설명 |
-|---|---|---|---|
-| `dayNo` | int | Y | Day 번호 |
-| `startTime` | string(HH:mm) | N | 시작 시각. **null이면 기본 09:00 복귀**(키 제거) |
-
-**Response `200`:**
-```json
-{
-  "isSuccess": true,
-  "code": "COMMON200",
-  "message": "Day 시작 시각이 변경되었습니다.",
-  "result": { "daySettings": { "1": "09:30" } }
-}
-```
-
----
-
 ### PATCH /api/projects/{projectId}/status
 
 `PLANNING↔DONE` 양방향 전환(GRP-10). `PROJECT_STATUS_CHANGED` op 브로드캐스트.
@@ -215,7 +188,7 @@ Day 시작 시각 조절(DAY-03). `jsonb_set`으로 해당 Day 키만 부분 갱
 
 ### PATCH /api/projects/{projectId}/budget-headcount
 
-정산 기준 인원 지정/동기화(BGT-03). `BUDGET_HEADCOUNT_CHANGED` op 브로드캐스트.
+정산 인원 지정/동기화(BGT-03). **정산은 프로젝트 전체(총액) 기준**이며, 이 인원은 "1인당 = 총액 ÷ 인원" 표시용이다. `BUDGET_HEADCOUNT_CHANGED` op 브로드캐스트.
 
 **Request Body:**
 ```json
@@ -224,7 +197,7 @@ Day 시작 시각 조절(DAY-03). `jsonb_set`으로 해당 Day 키만 부분 갱
 
 | 필드 | 타입 | 필수 | 설명 |
 |---|---|---|---|
-| `headcount` | int | N | 정산 인원. **null이면 그룹 멤버 수 연동 복귀** |
+| `headcount` | int | N | 정산 인원(1인당 표시용). **null이면 그룹 멤버 수 연동 복귀** |
 
 **Response `200`:**
 ```json
@@ -259,8 +232,9 @@ Day 시작 시각 조절(DAY-03). `jsonb_set`으로 해당 Day 키만 부분 갱
   "address": "제주 서귀포시 성산읍",
   "subCategory": "관광",
   "durationMin": 90,
-  "isInstant": false,
-  "fixedTime": null,
+  "startTime": "09:00",
+  "endTime": "10:30",
+  "isTimeFixed": false,
   "budget": 5000,
   "vehicleFlag": null,
   "source": "KAKAO",
@@ -277,9 +251,10 @@ Day 시작 시각 조절(DAY-03). `jsonb_set`으로 해당 Day 키만 부분 갱
 | `lat` / `lng` | decimal | 조건부 | **장소성 카테고리(SPOT·FOOD·STAY)는 필수** |
 | `placeId` / `address` | string | N | 카카오 장소 참조 |
 | `subCategory` | string | N | 자유 텍스트 |
-| `durationMin` | int | N | 기본 60(30분 단위) |
-| `isInstant` / `fixedTime` | bool / time | N | 단일 시각 블록 |
-| `budget` | int | N | 1인 기준 원, 기본 0 |
+| `durationMin` | int | N | 소요시간(분), 기본 60(30분 단위) |
+| `startTime` / `endTime` | string(HH:mm) | N | 일정 시작/종료 시각. 미지정 시 null(느슨한 블록) |
+| `isTimeFixed` | bool | N | 시각 고정(드래그 재계산 제외) 여부, 기본 false |
+| `budget` | int | N | 예산(원) — **프로젝트 전체(총액) 기준**, 기본 0 |
 | `vehicleFlag` | enum | N | `START`\|`END` — **ETC 카테고리에서만 허용** |
 | `source` | enum | Y | `KAKAO`\|`MANUAL`\|`BOT` |
 | `transportMeta` | object | N | 교통(TRANSPORT) 블록 전용 (ERD 참조) |
@@ -327,19 +302,22 @@ Day 시작 시각 조절(DAY-03). `jsonb_set`으로 해당 Day 키만 부분 갱
 }
 ```
 > `applied`가 `false`인 필드는 더 최신 값이 이미 반영돼 있어 이번 변경이 무시됨(스테일).
-> LWW 대상 필드: `name`, `budget`, `durationMin`, `detail`, `fixedTime`, `vehicleFlag`, `transportMeta` 등.
+> LWW 대상 필드: `name`, `budget`, `durationMin`, `detail`, `startTime`, `endTime`, `isTimeFixed`, `vehicleFlag`, `transportMeta` 등.
+> 드래그 재정렬 후 재계산된 시각도 이 엔드포인트로 저장한다(§ position 참조).
 
 ---
 
 ### PATCH /api/blocks/{blockId}/position
 
-블록 이동 — 체인 재정렬 / 후보↔체인 / Day 이동(BLK-07, DAY-02). 이동 시 해당 1행만 UPDATE. `BLOCK_MOVED` op 브로드캐스트.
+블록 이동 — 체인 재정렬 / 후보↔체인 / Day 이동(BLK-07, DAY-02). 이동 자체는 옮긴 블록 1행(`orderKey`·`dayNo`)만 UPDATE. `BLOCK_MOVED` op 브로드캐스트.
 
 **Request Body:**
 ```json
 { "dayNo": 2, "orderKey": "a5" }
 ```
 > 후보로 이동 시 `dayNo: null`.
+>
+> **시각 재계산(공백 보존)**: 이동 후 클라이언트는 영향받은 일반 블록(`isTimeFixed=false`)의 `startTime`/`endTime`을 앞 블록 종료 시각 + 소요시간 기준으로 다시 계산해 `PATCH /api/blocks/{blockId}/fields`로 저장한다. `isTimeFixed=true`(예약·교통 앵커)는 재계산에서 제외한다. 블록별 시각을 정본으로 저장하므로 블록 사이 공백(간격)은 그대로 유지된다.
 
 **Response `200`:**
 ```json
@@ -545,7 +523,7 @@ REST로 변경 요청을 보내면, 서버가 seq를 붙여 STOMP로 전파한�
 | SUB `/user/queue/voice` | S→C | 시그널 개인 수신(`convertAndSendToUser`) |
 
 > **SUBSCRIBE 인가(필수 보안 요건)**: CONNECT의 JWT 검증은 "로그인 사용자"까지만 거른다. `ChannelInterceptor`에서 SUBSCRIBE·`/app` SEND destination의 projectId를 파싱 → 그룹 멤버십 검증 → 실패 시 거부. 통과한 projectId는 세션 어트리뷰트에 캐시(고빈도 프레임 DB 조회 회피).
-> **방출·탈퇴 시 세션 강제 종료**: memberId→WS 세션 레지스트리를 유지하고, 방출/탈퇴 처리 시 해당 세션을 disconnect + 캐시 무효화.
+> **탈퇴 시 세션 강제 종료**: memberId→WS 세션 레지스트리를 유지하고, 탈퇴 처리 시 해당 세션을 disconnect + 캐시 무효화.
 
 ### op 포맷
 
@@ -560,10 +538,10 @@ REST로 변경 요청을 보내면, 서버가 seq를 붙여 STOMP로 전파한�
 ```
 
 **op type 목록:**
-`BLOCK_CREATED` / `BLOCK_FIELD_UPDATED` / `BLOCK_MOVED` / `BLOCK_DELETED` / `PROJECT_UPDATED` / `PROJECT_STATUS_CHANGED` / `PROJECT_DELETED` / `BUDGET_HEADCOUNT_CHANGED` / `MEMBER_JOINED` / `MEMBER_LEFT` / `MEMBER_KICKED`
+`BLOCK_CREATED` / `BLOCK_FIELD_UPDATED` / `BLOCK_MOVED` / `BLOCK_DELETED` / `PROJECT_UPDATED` / `PROJECT_STATUS_CHANGED` / `PROJECT_DELETED` / `BUDGET_HEADCOUNT_CHANGED` / `MEMBER_JOINED` / `MEMBER_LEFT`
 
-- `PROJECT_UPDATED`: 기간 축소 시 `movedToPool: [blockId...]`, Day 시작 시각 변경 시 `daySettings` 포함.
+- `PROJECT_UPDATED`: 기간 축소 시 `movedToPool: [blockId...]` 포함.
 - `PROJECT_DELETED`: 대시보드를 보던 멤버를 그룹 페이지로 리다이렉트.
-- `MEMBER_KICKED`: 방출 대상 본인은 세션 종료, 나머지 멤버는 이 op로 멤버 목록·정산 인원 갱신.
+- `MEMBER_LEFT`: 멤버 탈퇴 시 나머지 멤버는 이 op로 멤버 목록·정산 인원 갱신.
 
 **순서 보장**: 서버는 프로젝트 단위 락으로 채번~전송을 직렬화하고, 클라이언트는 수신 seq에 갭이 생기면 `GET /api/projects/{id}/ops?afterSeq`로 메꾼다(이중 방어).

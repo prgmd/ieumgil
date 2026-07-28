@@ -49,8 +49,7 @@ erDiagram
     GROUP_MEMBER {
         bigint group_id PK_FK
         bigint member_id PK_FK
-        varchar role "ADMIN | MEMBER ─ 방장 정보의 유일한 출처"
-        timestamptz joined_at "방장 승계 기준"
+        timestamptz joined_at "가입 시점, 멤버 목록 표시 순서용"
     }
     PROJECT {
         bigint id PK
@@ -60,10 +59,9 @@ erDiagram
         date start_date
         date end_date
         varchar transport_pref "CAR | PUBLIC"
-        int budget_headcount "정산 기준 인원, null=현재 멤버 수 따름"
-        int target_budget "1인 목표 예산, nullable"
+        int budget_headcount "1인당 표시용 정산 인원, null=현재 멤버 수 따름"
+        int target_budget "프로젝트 전체 목표 예산, nullable"
         jsonb keywords "챗봇 키워드 최대 5개, nullable"
-        jsonb day_settings "Day별 시작 시각, 예: {'1':'09:30'}"
         varchar status "PLANNING | DONE (양방향)"
         timestamptz done_at "되돌리면 null"
         varchar theme_color "카드 썸네일 그라데이션 키"
@@ -78,10 +76,11 @@ erDiagram
         varchar category "SPOT|FOOD|STAY|ETC|TRANSPORT"
         varchar sub_category "자유 텍스트"
         varchar name
-        int duration_min "기본 60, 30분 단위"
-        boolean is_instant "단일 시각 블록 여부"
-        time fixed_time "단일 시각 블록의 시각, nullable"
-        int budget "1인 기준 원, 기본 0"
+        int duration_min "소요시간(분), 시각 재계산·표시용"
+        time start_time "일정 시작 시각, nullable"
+        time end_time "일정 종료 시각, nullable"
+        boolean is_time_fixed "시각 고정(드래그 재계산 제외) 여부"
+        int budget "총액(프로젝트 전체) 원, 기본 0"
         varchar detail "최대 500자"
         decimal lat "장소성 블록 NOT NULL"
         decimal lng "장소성 블록 NOT NULL"
@@ -114,7 +113,7 @@ erDiagram
 |---|---|
 | `MEMBER` | 서비스 회원 (소셜 로그인 기반) |
 | `TRAVEL_GROUP` | 여행 그룹 (`group`은 SQL 예약어라 테이블명 변경) |
-| `GROUP_MEMBER` | 그룹 멤버 (소속 + 방장 여부) |
+| `GROUP_MEMBER` | 그룹 멤버 (그룹-회원 소속) |
 | `PROJECT` | 그룹 내 여행 프로젝트 (대시보드 보드 단위) |
 | `BLOCK` | 일정 블록 / 후보 블록 (보드의 최소 단위) |
 | `ACTIVITY_LOG` | 실시간 동기화 op 저널 (재전송 원본) |
@@ -154,7 +153,7 @@ erDiagram
 | created_at | TIMESTAMPTZ | NOT NULL, DEFAULT NOW | 생성 시점 |
 | deleted_at | TIMESTAMPTZ | NULL | 소프트 삭제 시각 (+30일 후 하드 삭제) |
 
-> **owner_id 컬럼 없음** — 방장 정보는 `GROUP_MEMBER.role='ADMIN'`이 유일한 출처. 같은 사실을 두 곳에 두면 승계 시 한쪽만 갱신되는 버그가 발생.
+> **방장 / owner 개념 없음 (flat 모델)** — 초대 코드로 공유하는 방 컨셉이라 모든 멤버가 동등하다. 소유자 컬럼을 두지 않는다.
 > 초대 코드 재발급 시 값 교체 = 기존 코드 즉시 무효(GRP-06). 스케줄러가 30일 경과분 하드 삭제(MY-04).
 
 ---
@@ -164,16 +163,11 @@ erDiagram
 |---|---|---|---|
 | group_id | BIGINT | PK, FK(TRAVEL_GROUP) | 그룹 식별자 (ON DELETE CASCADE) |
 | member_id | BIGINT | PK, FK(MEMBER) | 회원 식별자 (ON DELETE CASCADE) |
-| role | VARCHAR(10) | NOT NULL | `ADMIN` / `MEMBER` — 방장 정보의 유일한 출처 |
-| joined_at | TIMESTAMPTZ | NOT NULL, DEFAULT NOW | 가입 시점 (방장 승계 기준) |
+| joined_at | TIMESTAMPTZ | NOT NULL, DEFAULT NOW | 가입 시점 (멤버 목록 표시 순서용) |
 
 > **PK: `(group_id, member_id)`** 복합키. 정원(최대 10명) 검증은 서비스 레이어에서 count 후 삽입, 동시 가입 경합은 그룹 행 `SELECT ... FOR UPDATE`로 방지.
 >
-> **ADMIN 1인 불변식을 DB에서 강제** — partial unique index:
-> ```sql
-> CREATE UNIQUE INDEX uk_group_admin ON group_member (group_id) WHERE role = 'ADMIN';
-> ```
-> 승계 로직(GRP-09: 방장 탈퇴 → joined_at 최소 멤버로 위임)에 버그가 있어도 ADMIN 0명/2명 상태를 DB가 차단. 방출/탈퇴 = 행 삭제(블록은 author_id로 유지).
+> **flat 모델 (방장 없음)** — `role` 컬럼이 없다. 모든 멤버가 동등해 그룹명 수정·초대 코드 재발급·그룹/프로젝트 삭제를 누구나 할 수 있고, 방장 승계 로직도 없다. 멤버 강제 방출(kick)은 두지 않고 **본인 탈퇴(self-leave)만** 지원 — 탈퇴 = 행 삭제(블록은 author_id로 유지). **마지막 1인이 나가면 그룹은 하드 삭제**된다(복구할 멤버가 없어 즉시 완전 삭제, 프로젝트·블록 CASCADE). 반면 명시적 그룹 삭제(confirmName)는 소프트 삭제(+30일 후 하드)로 별개.
 
 ---
 
@@ -187,19 +181,20 @@ erDiagram
 | start_date | DATE | NULL | 시작일 |
 | end_date | DATE | NULL | 종료일 |
 | transport_pref | VARCHAR(10) | NULL | 선호 이동수단 `CAR` / `PUBLIC` |
-| budget_headcount | INT | NULL | 정산 기준 인원. null=조회 시점 멤버 수 따름 |
-| target_budget | INT | NULL | 1인 목표 예산 |
+| budget_headcount | INT | NULL | 정산 인원(1인당 표시용). null=조회 시점 멤버 수 따름 |
+| target_budget | INT | NULL | 프로젝트 전체 목표 예산 |
 | keywords | JSONB | NULL | 챗봇 키워드 (최대 5개) |
-| day_settings | JSONB | NULL | Day별 시작 시각. 예: `{"1":"09:30"}` |
 | status | VARCHAR(10) | NOT NULL | `PLANNING` / `DONE` (양방향 전환) |
 | done_at | TIMESTAMPTZ | NULL | 완료 시각 (되돌리면 null) |
 | theme_color | VARCHAR(30) | NULL | 카드 썸네일 그라데이션 키 |
 | created_at | TIMESTAMPTZ | NOT NULL, DEFAULT NOW | 생성 시점 |
 | deleted_at | TIMESTAMPTZ | NULL | 소프트 삭제 시각 |
 
-> **`budget_headcount`**: 생성 폼의 "여행 인원" 입력을 초기값으로 사용. null이면 조회 시점 그룹 멤버 수로 계산, 직접 지정 후에는 멤버 수 변동에 자동 연동하지 않음(BGT-03).
-> **`day_settings`(DAY-03 저장처)**: 키 없는 Day는 기본 `09:00`(희소 저장). `jsonb_set`으로 해당 Day 키만 부분 갱신. 기간 축소 시 사라진 Day 키 제거.
+> **예산은 프로젝트 전체(총액) 기준.** `target_budget`은 프로젝트 전체 목표 예산이고, 지출 합계도 각 블록 `budget`(총액)의 합으로 계산한다.
+> **`budget_headcount`(1인당 표시용)**: 생성 폼의 "여행 인원" 입력을 초기값으로 사용. **정산 자체는 총액 기준**이며, 이 값은 "1인당 = 총액 ÷ 인원" N빵 표시에만 쓴다. null이면 조회 시점 그룹 멤버 수로 계산, 직접 지정 후에는 멤버 수 변동에 자동 연동하지 않음(BGT-03).
 > **`status`**: 양방향 전환. DONE이어도 쓰기 거부 로직을 두지 않음(NFR-05). 인덱스 `(group_id, status)`.
+>
+> **Day 시작 시각(`day_settings`) 컬럼 제거** — 블록이 각자 `start_time`을 저장하므로 별도 Day 기점이 필요 없다. Day 시작 = 그 Day 첫 블록의 `start_time`.
 
 ---
 
@@ -213,10 +208,11 @@ erDiagram
 | category | VARCHAR(20) | NOT NULL | `SPOT` / `FOOD` / `STAY` / `ETC` / `TRANSPORT` |
 | sub_category | VARCHAR(50) | NULL | 자유 텍스트 소분류 |
 | name | VARCHAR(255) | NOT NULL | 블록 이름 |
-| duration_min | INT | NOT NULL, DEFAULT 60 | 소요 시간 (30분 단위) |
-| is_instant | BOOLEAN | NOT NULL, DEFAULT FALSE | 단일 시각 블록 여부 |
-| fixed_time | TIME | NULL | 단일 시각 블록의 시각 |
-| budget | INT | NOT NULL, DEFAULT 0 | 1인 기준 예산(원) |
+| duration_min | INT | NOT NULL, DEFAULT 60 | 소요 시간(분, 30분 단위). 시각 재계산·표시용 |
+| start_time | TIME | NULL | 일정 시작 시각. 시각 없는(느슨한) 블록은 null |
+| end_time | TIME | NULL | 일정 종료 시각. null이면 미지정 |
+| is_time_fixed | BOOLEAN | NOT NULL, DEFAULT FALSE | 시각 고정 여부. TRUE면 드래그 재계산에서 제외(앵커) |
+| budget | INT | NOT NULL, DEFAULT 0 | 예산(원) — **프로젝트 전체(총액) 기준** |
 | detail | VARCHAR(500) | NULL | 세부 내용 (최대 500자) |
 | lat | DECIMAL(10,7) | NULL | 위도. **장소성 블록은 NOT NULL** |
 | lng | DECIMAL(10,7) | NULL | 경도. **장소성 블록은 NOT NULL** |
@@ -235,7 +231,11 @@ erDiagram
 > CREATE INDEX ix_block_chain ON block (project_id, day_no, order_key) WHERE deleted_at IS NULL;
 > ```
 > **정렬은 항상 `ORDER BY order_key, id`** — 동시 삽입으로 order_key가 같을 수 있어 id로 tie-break.
-> **`budget`은 1인 기준 반올림 정수로 통일** — 총액 항목은 FE가 정산 인원으로 나눠 저장(안건 ④).
+> **`budget`은 프로젝트 전체(총액) 기준 정수** — 1인당 금액은 저장하지 않고, 필요 시 `총액 ÷ budget_headcount`로 표시만 한다.
+> **블록 시간 모델(`start_time`/`end_time`/`is_time_fixed`)**:
+> - 각 블록이 자기 시각을 저장한다(정본). 시각 없는 느슨한 블록은 둘 다 null. 블록 사이 간격(공백)은 뒤 블록 `start_time`이 앞 블록 `end_time`보다 늦으면 자연스럽게 표현된다.
+> - **드래그(재정렬) 시**: `is_time_fixed=false`인 일반 블록은 앞 블록 종료 시각 기준으로 시각을 다시 계산해 `start_time`/`end_time`을 **저장**한다(공백 보존). `is_time_fixed=true`(예약·교통 등 앵커)는 재계산에서 제외하고 자기 시각을 고수한다.
+> - `duration_min`은 재계산의 기준 소요시간이자 표시값. 시각이 둘 다 있으면 `end_time − start_time`과 일치.
 > **`vehicle_flag`**: ETC 카테고리에서만 노출. 역할은 "수단 선택의 기본값 제안"까지만 — 판정 결과를 계산에 직접 쓰지 않아 이동·삭제되어도 기존 교통 블록 오염 없음.
 > **`transport_meta` 예시**:
 > ```json
@@ -243,7 +243,6 @@ erDiagram
 >   "mode": "TRAIN",
 >   "trainType": "KTX",
 >   "depName": "서울역", "arrName": "부산역",
->   "depTime": "09:07", "arrTime": "11:52",
 >   "depLat": 37.55, "depLng": 126.97,
 >   "arrLat": 35.11, "arrLng": 129.04,
 >   "routeMode": "SUBWAY",
@@ -252,9 +251,9 @@ erDiagram
 >   "fareConfidence": "CONFIRMED"
 > }
 > ```
-> `estimated`(시간 추정)와 `fareConfidence`(요금 신뢰도 `CONFIRMED`/`ESTIMATE`)는 별개 축.
-> **`field_updated_at` 예시**: `{"budget":"2026-08-01T10:22:31.512Z"}` — LWW 대상 필드는 `jsonb_set`으로 원자적 부분 갱신.
-> **시각 표현 한계(v1 스코프 아웃)**: `fixed_time`·`depTime`/`arrTime`은 날짜 없는 시각이라 익일 도착(심야 이동) 미표현.
+> `estimated`(시간 추정)와 `fareConfidence`(요금 신뢰도 `CONFIRMED`/`ESTIMATE`)는 별개 축. 교통 블록의 출발/도착 시각은 `transport_meta`가 아니라 블록의 `start_time`/`end_time`에 저장하고 `is_time_fixed=true`(앵커)로 둔다.
+> **`field_updated_at` 예시**: `{"budget":"2026-08-01T10:22:31.512Z"}` — `start_time`·`end_time`·`is_time_fixed`도 LWW 대상 필드이며 `jsonb_set`으로 원자적 부분 갱신.
+> **시각 표현 한계(v1 스코프 아웃)**: `start_time`/`end_time`은 날짜 없는 시각이라 익일 도착(심야 이동) 미표현.
 
 ---
 
@@ -285,7 +284,7 @@ MEMBER ──< BLOCK (author_id)
 MEMBER ──< ACTIVITY_LOG (member_id)
 ```
 
-- `MEMBER` ↔ `TRAVEL_GROUP`은 `GROUP_MEMBER`로 다대다. 방장 여부는 `GROUP_MEMBER.role`.
+- `MEMBER` ↔ `TRAVEL_GROUP`은 `GROUP_MEMBER`로 다대다. 멤버 간 권한 차이 없음(flat).
 - `TRAVEL_GROUP` 1 : N `PROJECT`, `PROJECT` 1 : N `BLOCK`.
 - `BLOCK.author_id`, `ACTIVITY_LOG.member_id`는 `MEMBER` 참조 (탈퇴는 소프트 삭제라 FK 유지).
 
@@ -301,4 +300,4 @@ MEMBER ──< ACTIVITY_LOG (member_id)
 | 접속 · 커서 · 편집 중 배지 (presence) | Redis · 메모리 | TTL 기반(PRS) |
 | 세부 내용 텍스트 편집 락 | Redis `SET NX` | TTL 30초(OI-04) |
 | seq 채번 카운터 | Redis `INCR` | 기동 시 `max(seq)` 리시드 |
-| 블록 시작 시각 · Day 종료 시각 · 예산 합계 | 클라이언트 파생 계산 | `day_settings`(기본 09:00) 기점(BLK-08) |
+| 예산 합계 · Day 종료 시각 | 클라이언트 파생 계산 | 각 블록 `budget`(총액) 합산, Day 종료 = 마지막 블록 `end_time` |
