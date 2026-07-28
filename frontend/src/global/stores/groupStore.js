@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import * as api from "../../features/group/api/GroupApi";
+import * as api from "../../features/my/api/groupApi";
 
 /**
  * groups: 개인페이지용 요약 목록
