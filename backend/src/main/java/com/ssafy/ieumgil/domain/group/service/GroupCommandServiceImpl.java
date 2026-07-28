@@ -86,7 +86,7 @@ public class GroupCommandServiceImpl implements GroupCommandService {
         TravelGroup group = travelGroupRepository.findByIdAndDeletedAtIsNull(groupId)
                 .orElseThrow(() -> new CustomException(GroupErrorCode.GROUP_NOT_FOUND));
 
-        if (!groupMemberRepository.existsByTravelGroupIdAndUserId(groupId, userId)) {
+        if (!groupMemberRepository.existsMembership(groupId, userId)) {
             throw new CustomException(GroupErrorCode.NOT_GROUP_MEMBER);
         }
 
