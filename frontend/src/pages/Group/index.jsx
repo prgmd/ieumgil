@@ -39,11 +39,11 @@ export function GroupPage() {
   }
 
   // 없는 그룹·권한 없는 그룹·잘못된 URL(/groups/abc)이면 개인 페이지로 되돌린다.
-  useEffect(() => {
-    if (status !== 'error') return;
-    showToast('그룹을 찾을 수 없어요.');
-    navigate('/my', { replace: true });
-  }, [status, navigate, showToast]);
+  // useEffect(() => {
+  //   if (status !== 'error') return;
+  //   showToast('그룹을 찾을 수 없어요.');
+  //   navigate('/my', { replace: true });
+  // }, [status, navigate, showToast]);
 
   if (!group) return null;
 
