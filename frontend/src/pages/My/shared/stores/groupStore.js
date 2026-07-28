@@ -1,5 +1,5 @@
-import { create } from 'zustand';
-import * as api from './mockGroupApi';
+import { create } from "zustand";
+import * as api from "./GroupApi";
 
 /**
  * groups: 개인페이지용 요약 목록
@@ -11,20 +11,20 @@ import * as api from './mockGroupApi';
  */
 export const useGroupStore = create((set, get) => ({
   groups: [],
-  groupsStatus: 'idle',
+  groupsStatus: "idle",
 
   currentGroup: null,
-  currentGroupStatus: 'idle',
+  currentGroupStatus: "idle",
   currentGroupError: null,
 
   projects: [],
-  projectsStatus: 'idle',
+  projectsStatus: "idle",
 
   // ── 개인 페이지 ──
   loadMyGroups: async (userId) => {
-    set({ groupsStatus: 'loading' });
+    set({ groupsStatus: "loading" });
     const groups = await api.fetchMyGroups(userId);
-    set({ groups, groupsStatus: 'loaded' });
+    set({ groups, groupsStatus: "loaded" });
   },
 
   createGroup: async (name, ownerId, ownerUser) => {
@@ -51,20 +51,23 @@ export const useGroupStore = create((set, get) => ({
 
   // ── 그룹 페이지 ──
   loadGroup: async (groupId) => {
-    set({ currentGroupStatus: 'loading', currentGroupError: null });
+    set({ currentGroupStatus: "loading", currentGroupError: null });
     try {
       const group = await api.fetchGroup(groupId);
-      set({ currentGroup: group, currentGroupStatus: 'loaded' });
+      set({ currentGroup: group, currentGroupStatus: "loaded" });
       return group;
     } catch (e) {
-      set({ currentGroupStatus: 'error', currentGroupError: e });
+      set({ currentGroupStatus: "error", currentGroupError: e });
       throw e;
     }
   },
 
   reissueInviteCode: async (groupId) => {
-    const { inviteCode, inviteExpiresAt } = await api.reissueInviteCode(groupId);
-    set((s) => ({ currentGroup: { ...s.currentGroup, inviteCode, inviteExpiresAt } }));
+    const { inviteCode, inviteExpiresAt } =
+      await api.reissueInviteCode(groupId);
+    set((s) => ({
+      currentGroup: { ...s.currentGroup, inviteCode, inviteExpiresAt },
+    }));
   },
 
   kickMember: async (groupId, targetUserId) => {
@@ -74,15 +77,18 @@ export const useGroupStore = create((set, get) => ({
 
   leaveGroup: async (groupId, userId) => {
     const result = await api.leaveGroup(groupId, userId);
-    set({ currentGroup: null, groups: get().groups.filter((g) => g.id !== groupId) });
+    set({
+      currentGroup: null,
+      groups: get().groups.filter((g) => g.id !== groupId),
+    });
     return result; // { softDeleted, newOwnerId }
   },
 
   // ── 프로젝트 ──
   loadProjects: async (groupId) => {
-    set({ projectsStatus: 'loading' });
+    set({ projectsStatus: "loading" });
     const projects = await api.fetchProjects(groupId);
-    set({ projects, projectsStatus: 'loaded' });
+    set({ projects, projectsStatus: "loaded" });
   },
 
   createProject: async (groupId, input) => {
