@@ -2,13 +2,12 @@ import { create } from 'zustand';
 import { mockLogin, mockLogout } from './mockAuthApi';
 
 /**
- * 인증 상태. 그룹/프로젝트 스토어는 이 스토어의 currentUser.id를 참조해서
- * role(방장/멤버) 판정을 "파생값"으로 계산한다 — role을 여기 저장하지 않는다.
- * 이유: 방장 위임(GRP-09) 같은 이벤트가 일어나도 group.ownerId만 바뀌면
- * 모든 화면이 자동으로 맞게 반영되도록 하기 위함.
+ * 인증 상태. 그룹은 flat 모델(방장 없음)이라 권한 판정 자체가 없고,
+ * 그룹/프로젝트 스토어는 소속 여부 확인에만 currentUser.id를 참조한다.
  */
 export const useAuthStore = create((set) => ({
-  currentUser: {"id" : 1 , nickname : "dd", provider : "kakao", profileImg : "//"}, // { id, nickname, provider, profileImg }
+  // 로그인 붙기 전 목업 세션 — mockAuthApi의 MOCK_USER와 같은 사람(MEMBER.id=1)
+  currentUser: { id: 1, nickname: '동혁', provider: 'kakao', profileImg: null },
   status: 'idle', // idle | loading | authenticated | error
   error: null,
 

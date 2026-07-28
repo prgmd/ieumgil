@@ -1,22 +1,22 @@
 import '../My/shared/styles/index.css';
 import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { useAuthStore } from '../My/shared/stores/authStore';
-import { useGroupStore, selectIsAdmin } from '../My/shared/stores/groupStore';
+import { useGroupStore } from '../My/shared/stores/groupStore';
 import { useToastStore } from '../My/shared/stores/toastStore';
-import KickMemberModal from './components/KickMemberModal';
 import LeaveGroupModal from './components/LeaveGroupModal';
 import CreateProjectModal from './components/CreateProjectModal';
 import DeleteProjectModal from './components/DeleteProjectModal';
 
+// PROJECT.transport_pref — ERD상 CAR | PUBLIC 두 값만 저장하고 표기만 한글로 한다.
+const TRANSPORT_LABEL = { CAR: '자차', PUBLIC: '대중교통' };
+
 export function GroupPage() {
-  const { groupId } = useParams();
-  const currentUser = useAuthStore((s) => s.currentUser);
-  const { currentGroup, projects, loadProjects, reissueInviteCode } = useGroupStore();
+  // 라우트 파라미터는 문자열 — 목업/서버의 숫자 ID와 맞추려면 변환이 필요하다.
+  const groupId = Number(useParams().groupId);
+  const { currentGroup, projects, loadGroup, loadProjects, reissueInviteCode } = useGroupStore();
   const showToast = useToastStore((s) => s.show);
   const navigate = useNavigate();
 
-  const [kickTarget, setKickTarget] = useState(null); // 방출 모달에 넘길 멤버
   const [leaveOpen, setLeaveOpen] = useState(false);
   const [createProjectOpen, setCreateProjectOpen] = useState(false);
   const [deleteProjectTarget, setDeleteProjectTarget] = useState(null);
@@ -35,12 +35,15 @@ export function GroupPage() {
     showToast('코드 재발급 — 기존 코드는 즉시 무효화됐어요');
   }
 
-  // RequireMembership이 이미 currentGroup을 채워둔 상태로 이 컴포넌트에 들어온다.
-  const isAdmin = selectIsAdmin(currentGroup, currentUser.id);
-
+  // groupId만 들고 들어오므로 그룹·프로젝트를 여기서 직접 조회한다.
+  // 없는 그룹이면 개인 페이지로 되돌린다.
   useEffect(() => {
+    loadGroup(groupId).catch(() => {
+      showToast('그룹을 찾을 수 없어요.');
+      navigate('/my', { replace: true });
+    });
     loadProjects(groupId);
-  }, [groupId, loadProjects]);
+  }, [groupId, loadGroup, loadProjects, navigate, showToast]);
 
   if (!currentGroup) return null;
 
@@ -60,7 +63,6 @@ export function GroupPage() {
           <div>
             {projects.map((p) => {
               const done = p.status === 'DONE';
-              const canDelete = !done || isAdmin; // GRP-04: 완료 프로젝트는 관리자만
               return (
                 <div
                   key={p.id}
@@ -70,25 +72,25 @@ export function GroupPage() {
                   <div style={{ flex: 1 }}>
                     <h3>{p.name}</h3>
                     <div className="meta">
-                      {p.startDate} – {p.endDate} · {p.destination} · {p.headcount}인
+                      {p.startDate} – {p.endDate} · {p.destination} · {p.budgetHeadcount}인
+                      {p.transportPref && ` · ${TRANSPORT_LABEL[p.transportPref]}`}
                     </div>
                     <span className={`status ${done ? 'st-done' : 'st-plan'}`}>
                       {done ? '완료 — 편집 가능' : '계획 중'}
                     </span>
                   </div>
-                  {canDelete && (
-                    <div className="ops">
-                      <button
-                        className="op"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setDeleteProjectTarget(p);
-                        }}
-                      >
-                        🗑
-                      </button>
-                    </div>
-                  )}
+                  {/* flat 모델 — 완료 여부와 무관하게 모든 멤버가 삭제할 수 있다 */}
+                  <div className="ops">
+                    <button
+                      className="op"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setDeleteProjectTarget(p);
+                      }}
+                    >
+                      🗑
+                    </button>
+                  </div>
                 </div>
               );
             })}
@@ -100,7 +102,7 @@ export function GroupPage() {
             <h3>
               친구{' '}
               <span style={{ fontWeight: 400, color: 'var(--ink2)', fontSize: 11 }}>
-                방장만 방출/재발급
+                누구나 코드 재발급 가능
               </span>
             </h3>
             <div className="code-chip">
@@ -110,11 +112,9 @@ export function GroupPage() {
               <button className="btn btn-gh" style={{ flex: 1 }} onClick={handleCopyCode}>
                 복사
               </button>
-              {isAdmin && (
-                <button className="btn btn-gh" style={{ flex: 1 }} onClick={handleReissue}>
-                  재발급
-                </button>
-              )}
+              <button className="btn btn-gh" style={{ flex: 1 }} onClick={handleReissue}>
+                재발급
+              </button>
             </div>
             <div>
               {currentGroup.members.map((m) => (
@@ -123,13 +123,7 @@ export function GroupPage() {
                     {m.nickname[0]}
                   </span>
                   {m.nickname}
-                  {m.role === 'ADMIN' && <span className="admin-badge">방장</span>}
                   <span className={m.online ? 'on-dot' : 'off-dot'} />
-                  {isAdmin && m.userId !== currentUser.id && (
-                    <button className="kick" onClick={() => setKickTarget(m)}>
-                      방출
-                    </button>
-                  )}
                 </div>
               ))}
             </div>
@@ -140,12 +134,6 @@ export function GroupPage() {
         </div>
       </div>
 
-      <KickMemberModal
-        open={!!kickTarget}
-        groupId={groupId}
-        member={kickTarget}
-        onClose={() => setKickTarget(null)}
-      />
       <LeaveGroupModal
         open={leaveOpen}
         group={currentGroup}
@@ -159,7 +147,6 @@ export function GroupPage() {
       <DeleteProjectModal
         open={!!deleteProjectTarget}
         project={deleteProjectTarget}
-        isAdmin={isAdmin}
         onClose={() => setDeleteProjectTarget(null)}
       />
     </div>

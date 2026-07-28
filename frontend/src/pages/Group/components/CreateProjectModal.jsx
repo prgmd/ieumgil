@@ -3,7 +3,11 @@ import Modal from '../../My/shared/ui/Modal';
 import { useGroupStore } from '../../My/shared/stores/groupStore';
 import { useToastStore } from '../../My/shared/stores/toastStore';
 
-const TRANSPORT_OPTIONS = ['KTX/SRT', '비행기', '고속버스', '지하철/버스', '자차'];
+// PROJECT.transport_pref는 CAR | PUBLIC 두 값뿐이다 (ERD.md).
+const TRANSPORT_OPTIONS = [
+  { value: 'CAR', label: '자차 (렌트)' },
+  { value: 'PUBLIC', label: '대중교통' },
+];
 
 function todayISO() {
   return new Date().toISOString().slice(0, 10);
@@ -12,10 +16,11 @@ function todayISO() {
 const initialForm = {
   name: '',
   destination: '',
-  headcount: 4,
+  budgetHeadcount: 4,
   startDate: todayISO(),
   endDate: todayISO(),
-  transport: '', // 기본값 없음 — 사용자가 직접 골라야 함
+  transportPref: '', // 기본값 없음 — 사용자가 직접 골라야 함
+  targetBudget: '',
 };
 
 export default function CreateProjectModal({ open, onClose, groupId }) {
@@ -50,7 +55,7 @@ export default function CreateProjectModal({ open, onClose, groupId }) {
       setError('목적지를 입력해주세요.');
       return;
     }
-    if (!form.headcount || Number(form.headcount) < 1) {
+    if (!form.budgetHeadcount || Number(form.budgetHeadcount) < 1) {
       setError('여행 인원은 1명 이상이어야 해요.');
       return;
     }
@@ -103,8 +108,8 @@ export default function CreateProjectModal({ open, onClose, groupId }) {
           <input
             type="number"
             min={1}
-            value={form.headcount}
-            onChange={(e) => update('headcount', e.target.value)}
+            value={form.budgetHeadcount}
+            onChange={(e) => update('budgetHeadcount', e.target.value)}
           />
         </div>
       </div>
@@ -129,15 +134,33 @@ export default function CreateProjectModal({ open, onClose, groupId }) {
         </div>
       </div>
 
-      <label>주요 교통수단</label>
-      <select value={form.transport} onChange={(e) => update('transport', e.target.value)}>
-        <option value="">선택 안 함</option>
-        {TRANSPORT_OPTIONS.map((t) => (
-          <option key={t} value={t}>
-            {t}
-          </option>
-        ))}
-      </select>
+      <div className="r2">
+        <div>
+          <label>주요 이동수단</label>
+          <select
+            value={form.transportPref}
+            onChange={(e) => update('transportPref', e.target.value)}
+          >
+            <option value="">선택 안 함</option>
+            {TRANSPORT_OPTIONS.map((t) => (
+              <option key={t.value} value={t.value}>
+                {t.label}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div>
+          <label>목표 예산 (총액, 원)</label>
+          <input
+            type="number"
+            min={0}
+            step={10000}
+            placeholder="예: 600000"
+            value={form.targetBudget}
+            onChange={(e) => update('targetBudget', e.target.value)}
+          />
+        </div>
+      </div>
 
       {error && <div className="code-err">{error}</div>}
 

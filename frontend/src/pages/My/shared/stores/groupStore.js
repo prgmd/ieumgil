@@ -27,8 +27,8 @@ export const useGroupStore = create((set, get) => ({
     set({ groups, groupsStatus: 'loaded' });
   },
 
-  createGroup: async (name, ownerId, ownerUser) => {
-    const group = await api.createGroup(name, ownerId, ownerUser);
+  createGroup: async (name, creator) => {
+    const group = await api.createGroup(name, creator);
     set({ groups: [group, ...get().groups] });
     return group; // 호출부에서 초대코드 공유 모달을 띄우는 데 사용
   },
@@ -67,15 +67,10 @@ export const useGroupStore = create((set, get) => ({
     set((s) => ({ currentGroup: { ...s.currentGroup, inviteCode, inviteExpiresAt } }));
   },
 
-  kickMember: async (groupId, targetUserId) => {
-    const updated = await api.kickMember(groupId, targetUserId);
-    set({ currentGroup: updated });
-  },
-
   leaveGroup: async (groupId, userId) => {
     const result = await api.leaveGroup(groupId, userId);
     set({ currentGroup: null, groups: get().groups.filter((g) => g.id !== groupId) });
-    return result; // { softDeleted, newOwnerId }
+    return result; // { groupDeleted }
   },
 
   // ── 프로젝트 ──
@@ -91,15 +86,10 @@ export const useGroupStore = create((set, get) => ({
     return project;
   },
 
-  deleteProject: async (projectId, requesterRole) => {
-    await api.deleteProject(projectId, requesterRole);
+  deleteProject: async (projectId) => {
+    await api.deleteProject(projectId);
     set({ projects: get().projects.filter((p) => p.id !== projectId) });
   },
 
   clearCurrentGroup: () => set({ currentGroup: null, projects: [] }),
 }));
-
-// ── 파생 셀렉터: role 판정은 저장하지 않고 항상 계산 ──
-export function selectIsAdmin(currentGroup, userId) {
-  return !!currentGroup && currentGroup.ownerId === userId;
-}

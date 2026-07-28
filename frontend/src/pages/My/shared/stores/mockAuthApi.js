@@ -4,7 +4,7 @@
 const delay = (ms) => new Promise((res) => setTimeout(res, ms));
 
 const MOCK_USER = {
-  id: 'u1',
+  id: 1, // MEMBER.id — ERD상 BIGINT
   nickname: '동혁',
   provider: 'kakao',
   profileImg: null,
