@@ -42,7 +42,7 @@ export default function CreateGroupModal({ open, onClose }) {
     setError('');
     setSubmitting(true);
     try {
-      const group = await createGroup(trimmed, currentUser.id, currentUser);
+      const group = await createGroup(trimmed, currentUser);
       setCreatedGroup(group);
       setStep('share');
     } catch {
@@ -66,7 +66,7 @@ export default function CreateGroupModal({ open, onClose }) {
       {step === 'form' && (
         <>
           <h3>새 그룹 만들기</h3>
-          <p className="s">함께 여행할 사람들의 모임을 만들어요. 생성하면 자동으로 방장이 됩니다.</p>
+          <p className="s">함께 여행할 사람들의 모임을 만들어요. 멤버 모두가 동등한 권한을 가집니다.</p>
           <label>그룹 이름 *</label>
           <input
             placeholder="예: A107 친구들"

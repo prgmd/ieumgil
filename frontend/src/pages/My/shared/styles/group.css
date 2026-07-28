@@ -43,6 +43,4 @@
 .f-row:last-child{border-bottom:none}
 .on-dot{width:8px;height:8px;border-radius:50%;background:#3e8e63;margin-left:4px}
 .off-dot{width:8px;height:8px;border-radius:50%;background:#c9b8a5;margin-left:4px}
-.admin-badge{background:#f3e8dd;color:#7a5b3e;font-size:10px;font-weight:800;border-radius:6px;padding:1px 7px}
-.kick{margin-left:auto;border:none;background:rgba(61,43,34,.07);color:var(--ink2);border-radius:8px;padding:4px 9px;font-size:11px;font-weight:700}
 .leave-btn{width:100%;margin-top:14px;border:1px solid #e3c0c0;background:#fbeeee;color:#9c3b3b;border-radius:11px;padding:10px;font-weight:800;font-size:12.5px}

@@ -3,7 +3,7 @@ import ConfirmModal from '../../My/shared/ui/ConfirmModal';
 import { useGroupStore } from '../../My/shared/stores/groupStore';
 import { useToastStore } from '../../My/shared/stores/toastStore';
 
-export default function DeleteProjectModal({ open, onClose, project, isAdmin }) {
+export default function DeleteProjectModal({ open, onClose, project }) {
   const deleteProject = useGroupStore((s) => s.deleteProject);
   const showToast = useToastStore((s) => s.show);
   const [submitting, setSubmitting] = useState(false);
@@ -15,15 +15,11 @@ export default function DeleteProjectModal({ open, onClose, project, isAdmin }) 
   async function handleConfirm() {
     setSubmitting(true);
     try {
-      await deleteProject(project.id, isAdmin ? 'ADMIN' : 'MEMBER');
+      await deleteProject(project.id);
       showToast('프로젝트를 삭제했어요');
       onClose();
-    } catch (e) {
-      if (e.code === 'ADMIN_ONLY') {
-        showToast('완료된 프로젝트는 방장만 삭제할 수 있어요');
-      } else {
-        showToast('삭제에 실패했어요. 잠시 후 다시 시도해주세요.');
-      }
+    } catch {
+      showToast('삭제에 실패했어요. 잠시 후 다시 시도해주세요.');
     } finally {
       setSubmitting(false);
     }

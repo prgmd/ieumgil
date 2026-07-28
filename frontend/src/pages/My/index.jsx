@@ -2,7 +2,7 @@ import './shared/styles/index.css';
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuthStore } from './shared/stores/authStore';
-import { useGroupStore, selectIsAdmin } from './shared/stores/groupStore';
+import { useGroupStore } from './shared/stores/groupStore';
 import { useToastStore } from './shared/stores/toastStore';
 import CreateGroupModal from './components/CreateGroupModal';
 import DeleteGroupModal from './components/DeleteGroupModal';
@@ -67,7 +67,6 @@ export function MyPage() {
           <div className="grid-groups">
             {groupsStatus === 'loading' && <p>불러오는 중…</p>}
             {groups.map((g) => {
-              const isAdmin = selectIsAdmin(g, currentUser.id);
               const isEditing = editingId === g.id;
               return (
                 <div
@@ -100,7 +99,8 @@ export function MyPage() {
                   <div className="meta">
                     멤버 {g.members.length}명 · 완료 여행 {g.doneTrips}개
                   </div>
-                  {isAdmin && !isEditing && (
+                  {/* flat 모델 — 모든 멤버가 이름 수정·그룹 삭제를 할 수 있다 */}
+                  {!isEditing && (
                     <div className="ops">
                       <button
                         className="op"
@@ -176,7 +176,7 @@ function messageFor(code) {
     case 'CODE_NOT_FOUND':
       return '존재하지 않는 코드예요. 코드를 다시 확인해주세요.';
     case 'CODE_EXPIRED':
-      return '만료된 코드입니다 — 방장에게 재발급을 요청하세요.';
+      return '만료된 코드입니다 — 그룹 멤버에게 재발급을 요청하세요.';
     case 'GROUP_FULL':
       return '정원이 가득 찼어요 (최대 10명).';
     case 'ALREADY_MEMBER':

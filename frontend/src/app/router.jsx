@@ -16,7 +16,8 @@ export const router = createBrowserRouter([
       // ===== 공개 라우트: 토큰 없이 접근 가능 =====
       { index: true, element: <LandingPage /> }, // 랜딩
       { path: 'login', element: <LoginPage /> }, // 로그인
-      { path: 'group/*', element: <GroupPage /> },
+      // 그룹 페이지는 groupId로 스토어에서 다시 조회한다 (새로고침·딥링크 대응)
+      { path: 'groups/:groupId', element: <GroupPage /> },
       { path: 'my', element: <MyPage /> },
       // OAuth 콜백: 로그인 완료 전(토큰 없음)에 거치므로 반드시 공개여야 함
       { path: 'oauth/kakao/callback', element: <KakaoCallback /> },
