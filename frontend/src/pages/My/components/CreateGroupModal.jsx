@@ -2,7 +2,7 @@ import { useState } from 'react';
 import Modal from '../shared/ui/Modal';
 import { useAuthStore } from '../../../global/stores/authStore';
 import { useGroupStore } from '../../../global/stores/groupStore';
-import { useToastStore } from '../shared/stores/toastStore';
+import { useToastStore } from '../../../global/stores/toastStore';
 
 /**
  * MY-02: 그룹명(2~20자) 입력 → 생성 → 생성 직후 초대코드 공유 모달로 이어짐.

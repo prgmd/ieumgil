@@ -2,7 +2,7 @@ import '../My/shared/styles/index.css';
 import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useGroupStore } from '../../global/stores/groupStore';
-import { useToastStore } from '../My/shared/stores/toastStore';
+import { useToastStore } from '../../global/stores/toastStore';
 import LeaveGroupModal from './components/LeaveGroupModal';
 import CreateProjectModal from './components/CreateProjectModal';
 import DeleteProjectModal from './components/DeleteProjectModal';

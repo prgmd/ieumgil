@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import Modal from '../../My/shared/ui/Modal';
 import { useAuthStore } from '../../../global/stores/authStore';
 import { useGroupStore } from '../../../global/stores/groupStore';
-import { useToastStore } from '../../My/shared/stores/toastStore';
+import { useToastStore } from '../../../global/stores/toastStore';
 
 export default function LeaveGroupModal({ open, onClose, group }) {
   const currentUser = useAuthStore((s) => s.currentUser);

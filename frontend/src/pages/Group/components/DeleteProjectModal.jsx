@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import ConfirmModal from '../../My/shared/ui/ConfirmModal';
 import { useGroupStore } from '../../../global/stores/groupStore';
-import { useToastStore } from '../../My/shared/stores/toastStore';
+import { useToastStore } from '../../../global/stores/toastStore';
 
 export default function DeleteProjectModal({ open, onClose, project }) {
   const deleteProject = useGroupStore((s) => s.deleteProject);

@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../../global/stores/authStore';
 import { useGroupStore } from '../../global/stores/groupStore';
-import { useToastStore } from './shared/stores/toastStore';
+import { useToastStore } from '../../global/stores/toastStore';
 import CreateGroupModal from './components/CreateGroupModal';
 import DeleteGroupModal from './components/DeleteGroupModal';
 

@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import Modal from '../shared/ui/Modal';
 import { useGroupStore } from '../../../global/stores/groupStore';
-import { useToastStore } from '../shared/stores/toastStore';
+import { useToastStore } from '../../../global/stores/toastStore';
 
 export default function DeleteGroupModal({ open, onClose, group }) {
   const deleteGroupLocal = useGroupStore((s) => s.deleteGroupLocal);
