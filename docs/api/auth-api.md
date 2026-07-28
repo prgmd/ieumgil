@@ -36,7 +36,7 @@
 
 ### POST /api/v0/auth/login/kakao
 
-카카오 인가 코드로 로그인/회원가입. BE가 카카오 토큰 발급 API·사용자정보 API 직접 호출 → `provider`+`provider_id`로 기존 회원 조회, 없으면 신규 생성 → JWT 발급.
+카카오 인가 코드로 로그인/회원가입. BE가 카카오 토큰 발급 API·사용자정보 API 직접 호출 → `kakao_id`로 기존 회원 조회, 없으면 신규 생성 → JWT 발급.
 
 **Request Body:**
 ```json
