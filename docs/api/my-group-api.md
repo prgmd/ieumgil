@@ -1,16 +1,16 @@
 # 개인 · 그룹 페이지 API
 
-> `/groups`, `/projects` — 개인 페이지(내 그룹) · 그룹 페이지(멤버 · 프로젝트 카드 관리)
+> `/groups`, `/projects`, `/members` — 개인 페이지(내 그룹 · 내 정보) · 그룹 페이지(멤버 · 프로젝트 카드 관리)
 
 ---
 
 ## 공통 규약
 
-- **응답 래퍼 `CustomResponse`**: `{ "isSuccess", "code", "message", "result" }`. (인증API.md 참조)
+- **응답 래퍼 `CustomResponse`**: `{ "isSuccess", "code", "message", "result" }`. ([auth-api.md](auth-api.md) 참조)
 - **인증 헤더**: 모든 엔드포인트 `Authorization: Bearer {accessToken}` 필요.
 - **멤버십 검증**: `{groupId}`·`{projectId}` 경로는 AOP `@GroupMember`로 요청자의 그룹 소속을 검증한다. 비멤버 접근은 `403 FORBIDDEN`.
 - **권한 모델(flat)**: 방장/관리자 개념이 없다. 그룹의 **모든 멤버가 동등**하게 그룹명 수정·초대 코드 재발급·그룹/프로젝트 삭제를 수행할 수 있다. 멤버 강제 방출(kick)은 없고 **본인 탈퇴(self-leave)만** 가능하며, 마지막 1인이 나가면 그룹은 **하드 삭제**(즉시 완전 삭제)된다.
-- **범위 구분**: 이 문서는 개인/그룹 페이지에서 수행하는 **그룹 관리 + 프로젝트 카드 관리**를 다룬다. 프로젝트 보드 내부(스냅샷·블록·실시간·예산)는 [대시보드API.md](대시보드API.md) 참조.
+- **범위 구분**: 이 문서는 개인/그룹 페이지에서 수행하는 **내 정보 + 그룹 관리 + 프로젝트 카드 관리**를 다룬다. 프로젝트 보드 내부(스냅샷·블록·실시간·예산)는 [dashboard-api.md](dashboard-api.md) 참조.
 
 ---
 
@@ -18,6 +18,8 @@
 
 | Method | Path | 설명 | Auth |
 |---|---|---|---|
+| GET | `/api/members/me` | 내 정보 조회 | Yes |
+| DELETE | `/api/members/me` | 회원 탈퇴 | Yes |
 | GET | `/api/groups` | 내 그룹 목록 (개인 페이지) | Yes |
 | POST | `/api/groups/join` | 초대 코드로 그룹 입장 | Yes |
 | POST | `/api/groups` | 그룹 생성 | Yes |
@@ -34,6 +36,46 @@
 ---
 
 ## 상세 명세
+
+### GET /api/members/me
+
+로그인한 회원 본인 정보 조회 (개인 페이지).
+
+**Response `200`:**
+```json
+{
+  "isSuccess": true,
+  "code": "COMMON200",
+  "message": "요청에 성공했습니다.",
+  "result": {
+    "id": 1,
+    "nickname": "동혁",
+    "profileImg": "https://k.kakaocdn.net/..."
+  }
+}
+```
+
+**Errors:**
+
+| code | HTTP | 상황 |
+|---|---|---|
+| `UNAUTHORIZED` | 401 | accessToken 누락/만료 |
+
+---
+
+### DELETE /api/members/me
+
+회원 탈퇴 — ERD `MEMBER` 탈퇴 정책 수행(`provider_id` 센티널 치환, `nickname` "탈퇴한 멤버" 교체, `profile_img` null, `deleted_at` 기록). 행은 유지되어 블록 작성자 표기가 보존된다. 소속 그룹에서는 자동 탈퇴 처리되며, 마지막 1인이던 그룹은 하드 삭제된다(§ `DELETE /api/groups/{groupId}/members/me` 참조).
+
+**Response `204`:** 본문 없음.
+
+**Errors:**
+
+| code | HTTP | 상황 |
+|---|---|---|
+| `UNAUTHORIZED` | 401 | accessToken 누락/만료 |
+
+---
 
 ### GET /api/groups
 

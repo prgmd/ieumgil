@@ -1,6 +1,6 @@
 # 인증 API
 
-> `/auth`, `/members` — 소셜 로그인 · 토큰 재발급 · 회원 정보/탈퇴
+> `/auth` — 소셜 로그인 · 토큰 재발급 · 로그아웃
 
 ---
 
@@ -25,8 +25,8 @@
 | POST | `/api/v0/auth/refresh` | Access 재발급 (RTR — refreshToken 교체) | Cookie |
 | POST | `/api/v0/auth/logout` | Refresh 무효화 + 쿠키 만료 | Yes |
 | POST | `/api/v0/auth/test-token` | **dev 전용** — 시드 멤버 JWT 발급 | No (local) |
-| GET | `/api/members/me` | 내 정보 조회 | Yes |
-| DELETE | `/api/members/me` | 회원 탈퇴 | Yes |
+
+> 내 정보 조회(`GET /api/members/me`)·회원 탈퇴(`DELETE /api/members/me`)는 [my-group-api.md](my-group-api.md)로 이동.
 
 > 카카오/네이버 인가 URL 리다이렉트는 프론트엔드가 처리한다. 콜백에서 받은 인가 코드(`code`)를 로그인 API로 전달하면 백엔드가 소셜 토큰 발급 API·사용자정보 API를 `WebClient`로 직접 호출한다. 소셜 개발자 콘솔의 Redirect URI는 프론트엔드 콜백 주소로 등록한다.
 
@@ -152,43 +152,3 @@ Refresh 무효화(Redis 삭제) + refreshToken 쿠키 만료.
 }
 ```
 > 운영(prod) 프로필에서는 라우팅되지 않음(404).
-
----
-
-### GET /api/members/me
-
-로그인한 회원 본인 정보 조회.
-
-**Response `200`:**
-```json
-{
-  "isSuccess": true,
-  "code": "COMMON200",
-  "message": "요청에 성공했습니다.",
-  "result": {
-    "id": 1,
-    "nickname": "동혁",
-    "profileImg": "https://k.kakaocdn.net/..."
-  }
-}
-```
-
-**Errors:**
-
-| code | HTTP | 상황 |
-|---|---|---|
-| `UNAUTHORIZED` | 401 | accessToken 누락/만료 |
-
----
-
-### DELETE /api/members/me
-
-회원 탈퇴 — ERD `MEMBER` 탈퇴 정책 수행(`provider_id` 센티널 치환, `nickname` "탈퇴한 멤버" 교체, `profile_img` null, `deleted_at` 기록). 행은 유지되어 블록 작성자 표기가 보존된다.
-
-**Response `204`:** 본문 없음.
-
-**Errors:**
-
-| code | HTTP | 상황 |
-|---|---|---|
-| `UNAUTHORIZED` | 401 | accessToken 누락/만료 |
