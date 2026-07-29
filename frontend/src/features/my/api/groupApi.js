@@ -89,7 +89,7 @@ export async function deleteGroup(groupId, typedName) {
 // ── 초대 코드 ─────────────────────────
 export async function joinByCode(code) {
   try {
-    const { data } = await axiosInstance.post("/groups/join", { code });
+    const { data } = await axiosInstance.post("/groups/join", { inviteCode: code });
     return withId(unwrap(data));
   } catch (error) {
     unwrapError(error);

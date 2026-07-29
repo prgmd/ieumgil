@@ -19,6 +19,7 @@ const avatarColor = (memberId) => AVATAR_COLORS[memberId % AVATAR_COLORS.length]
 export function GroupPage() {
   // 라우트 파라미터는 문자열 — 서버의 숫자 ID와 맞추려면 변환이 필요하다.
   const groupId = Number(useParams().groupId);
+  
   // groupId만 들고 들어오므로 그룹·프로젝트를 URL 파라미터로 직접 조회한다.
   const { group, status, reissueInviteCode, leaveGroup } = useGroupDetail(groupId);
   const { projects, createProject, deleteProject } = useProjects(groupId);
@@ -44,7 +45,6 @@ export function GroupPage() {
   }
 
   // 없는 그룹·권한 없는 그룹·잘못된 URL(/groups/abc)이면 개인 페이지로 되돌린다.
-  // (더미가 붙은 동안은 /groups/1 만 살아 있고 나머지 id 는 여기로 걸린다.)
   useEffect(() => {
     if (status !== 'error') return;
     showToast('그룹을 찾을 수 없어요.');
