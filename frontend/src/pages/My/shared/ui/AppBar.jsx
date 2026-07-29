@@ -45,6 +45,10 @@ export function AppBar({ crumbs }) {
           </span>
         )}
         <span>{currentUser?.nickname ?? '게스트'}님</span>
+        {/* TODO(auth): 실제 로그아웃 처리는 다른 팀원이 붙일 예정 — 지금은 UI만 노출 */}
+        <button type="button" className="logout-btn">
+          로그아웃
+        </button>
       </div>
     </header>
   );
