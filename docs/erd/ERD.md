@@ -255,6 +255,7 @@ erDiagram
 > - 각 블록이 자기 시각을 저장한다(정본). 시각 없는 느슨한 블록은 둘 다 null. 블록 사이 간격(공백)은 뒤 블록 `start_time`이 앞 블록 `end_time`보다 늦으면 자연스럽게 표현된다.
 > - **드래그(재정렬) 시**: `is_time_fixed=false`인 일반 블록은 앞 블록 종료 시각 기준으로 시각을 다시 계산해 `start_time`/`end_time`을 **저장**한다(공백 보존). `is_time_fixed=true`(예약·교통 등 앵커)는 재계산에서 제외하고 자기 시각을 고수한다.
 > - `duration_min`은 재계산의 기준 소요시간이자 표시값. 시각이 둘 다 있으면 `end_time − start_time`과 일치.
+> **카카오맵 딥링크**: 별도 컬럼 없이 `place_id`+`source`로 프론트에서 파생한다 — `source=KAKAO`일 때만 `https://place.map.kakao.com/{place_id}`로 "카카오맵에서 보기" 버튼 노출(카카오 로컬 API 응답의 `place_url` 필드와 동일 패턴). `source`가 `KAKAO`가 아니면(TourAPI 등 외부 장소ID) 버튼 자체를 숨긴다 — URL을 저장하지 않고 항상 파생시켜서 링크 깨짐/불일치를 원천 차단.
 > **`vehicle_flag`**: ETC 카테고리에서만 노출. 역할은 "수단 선택의 기본값 제안"까지만 — 판정 결과를 계산에 직접 쓰지 않아 이동·삭제되어도 기존 교통 블록 오염 없음.
 > **`transport_meta` 예시**:
 > ```json
