@@ -17,4 +17,7 @@ public class PlaceResDTO {
 
     public record Address(String address, String roadAddress) {
     }
+
+    public record WalkingRoute(int distance, int duration) {
+    }
 }

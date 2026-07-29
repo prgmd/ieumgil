@@ -3,6 +3,7 @@ package com.ssafy.ieumgil.domain.place.service;
 import com.ssafy.ieumgil.domain.place.client.KakaoLocalClient;
 import com.ssafy.ieumgil.domain.place.dto.KakaoAddressResponse;
 import com.ssafy.ieumgil.domain.place.dto.KakaoPlaceResponse;
+import com.ssafy.ieumgil.domain.place.dto.KakaoWalkingRouteResponse;
 import com.ssafy.ieumgil.domain.place.dto.PlaceResDTO;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -83,5 +84,29 @@ class PlaceQueryServiceImplTest {
 
     private KakaoPlaceResponse.Document doc(String id) {
         return new KakaoPlaceResponse.Document(id, "장소" + id, "카테고리", "주소" + id, null, "127.0", "37.0");
+    }
+
+    @Test
+    void getWalkingRouteMapsDistanceAndTime() {
+        placeQueryService = new PlaceQueryServiceImpl(kakaoLocalClient);
+        KakaoWalkingRouteResponse.Properties properties =
+                new KakaoWalkingRouteResponse.Properties(4025, 3914, "https://map.kakao.com/route/walk/example");
+        when(kakaoLocalClient.getWalkingRoute(33.4581, 126.9425, 33.46, 126.94)).thenReturn(Optional.of(properties));
+
+        Optional<PlaceResDTO.WalkingRoute> result = placeQueryService.getWalkingRoute(33.4581, 126.9425, 33.46, 126.94);
+
+        assertThat(result).isPresent();
+        assertThat(result.get().distance()).isEqualTo(4025);
+        assertThat(result.get().duration()).isEqualTo(3914);
+    }
+
+    @Test
+    void getWalkingRouteWithNoRouteReturnsEmpty() {
+        placeQueryService = new PlaceQueryServiceImpl(kakaoLocalClient);
+        when(kakaoLocalClient.getWalkingRoute(33.4581, 126.9425, 33.46, 126.94)).thenReturn(Optional.empty());
+
+        Optional<PlaceResDTO.WalkingRoute> result = placeQueryService.getWalkingRoute(33.4581, 126.9425, 33.46, 126.94);
+
+        assertThat(result).isEmpty();
     }
 }

@@ -2,6 +2,7 @@ package com.ssafy.ieumgil.domain.place.client;
 
 import com.ssafy.ieumgil.domain.place.dto.KakaoAddressResponse;
 import com.ssafy.ieumgil.domain.place.dto.KakaoPlaceResponse;
+import com.ssafy.ieumgil.domain.place.dto.KakaoWalkingRouteResponse;
 import com.ssafy.ieumgil.domain.place.exception.PlaceException;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -125,5 +126,59 @@ class KakaoLocalClientTest {
         Optional<KakaoAddressResponse.Document> result = kakaoLocalClient.coord2Address(100.0, 200.0);
 
         assertThat(result).isEmpty();
+    }
+
+    @Test
+    void getWalkingRouteParsesRouteProperties() {
+        String routeResponse = """
+                {
+                  "status": "OK",
+                  "route": {
+                    "properties": {
+                      "totalDistance": 4025,
+                      "totalTime": 3914,
+                      "landingUrl": "https://map.kakao.com/route/walk/example"
+                    }
+                  }
+                }
+                """;
+        server.expect(requestTo("https://dapi.kakao.com/v2/routing/walk?start_x=126.9425&start_y=33.4581&end_x=126.94&end_y=33.46"))
+                .andExpect(method(GET))
+                .andExpect(header("Authorization", "KakaoAK test-key"))
+                .andRespond(withSuccess(routeResponse, MediaType.APPLICATION_JSON));
+
+        Optional<KakaoWalkingRouteResponse.Properties> result = kakaoLocalClient.getWalkingRoute(33.4581, 126.9425, 33.46, 126.94);
+
+        assertThat(result).isPresent();
+        assertThat(result.get().totalDistance()).isEqualTo(4025);
+        assertThat(result.get().totalTime()).isEqualTo(3914);
+    }
+
+    @Test
+    void getWalkingRouteWithNonOkStatusReturnsEmpty() {
+        String failedResponse = """
+                {
+                  "status": "START_LINK_NOT_FOUND",
+                  "route": {
+                    "legs": [],
+                    "properties": { "totalDistance": 0, "totalTime": 0 }
+                  }
+                }
+                """;
+        server.expect(requestTo("https://dapi.kakao.com/v2/routing/walk?start_x=126.9425&start_y=33.4581&end_x=126.94&end_y=33.46"))
+                .andRespond(withSuccess(failedResponse, MediaType.APPLICATION_JSON));
+
+        Optional<KakaoWalkingRouteResponse.Properties> result = kakaoLocalClient.getWalkingRoute(33.4581, 126.9425, 33.46, 126.94);
+
+        assertThat(result).isEmpty();
+    }
+
+    @Test
+    void walkingRouteServerErrorThrowsPlaceException() {
+        server.expect(requestTo("https://dapi.kakao.com/v2/routing/walk?start_x=126.9425&start_y=33.4581&end_x=126.94&end_y=33.46"))
+                .andRespond(withServerError());
+
+        assertThatThrownBy(() -> kakaoLocalClient.getWalkingRoute(33.4581, 126.9425, 33.46, 126.94))
+                .isInstanceOf(PlaceException.class);
     }
 }

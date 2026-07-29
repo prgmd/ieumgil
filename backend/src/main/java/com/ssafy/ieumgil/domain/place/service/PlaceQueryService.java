@@ -10,4 +10,6 @@ public interface PlaceQueryService {
     List<PlaceResDTO.Place> searchPlaces(String query, Double lat, Double lng);
 
     Optional<PlaceResDTO.Address> reverseGeocode(double lat, double lng);
+
+    Optional<PlaceResDTO.WalkingRoute> getWalkingRoute(double startLat, double startLng, double endLat, double endLng);
 }

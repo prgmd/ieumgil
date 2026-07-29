@@ -31,6 +31,13 @@ public class PlaceQueryServiceImpl implements PlaceQueryService {
         return kakaoLocalClient.coord2Address(lat, lng).map(this::toAddress);
     }
 
+    @Override
+    public Optional<PlaceResDTO.WalkingRoute> getWalkingRoute(
+            double startLat, double startLng, double endLat, double endLng) {
+        return kakaoLocalClient.getWalkingRoute(startLat, startLng, endLat, endLng)
+                .map(r -> new PlaceResDTO.WalkingRoute(r.totalDistance(), r.totalTime()));
+    }
+
     private PlaceResDTO.Place toPlace(KakaoPlaceResponse.Document d) {
         String address = (d.road_address_name() != null && !d.road_address_name().isBlank())
                 ? d.road_address_name() : d.address_name();
