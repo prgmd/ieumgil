@@ -154,10 +154,6 @@ export function MyPage() {
               </button>
             </div>
             {codeErr && <div className="code-err">{codeErr}</div>}
-            <p style={{ fontSize: 11, color: 'var(--ink2)', marginTop: 8 }}>
-              테스트용 — <code>EXPIRED1</code>(만료), <code>FULL0009</code>(정원초과),{' '}
-              <code>YJ3K7Q2M</code>(이미 가입), <code>ZZZZZZZZ</code>(존재하지 않음)
-            </p>
           </div>
         </div>
       </div>
