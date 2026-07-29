@@ -6,6 +6,7 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 import java.util.List;
+import java.util.Optional;
 
 public interface ProjectRepository extends JpaRepository<Project, Long> {
 
@@ -22,6 +23,12 @@ public interface ProjectRepository extends JpaRepository<Project, Long> {
             GROUP BY p.travelGroup.id
             """)
     List<GroupProjectCount> countByGroupIdIn(@Param("groupIds") List<Long> groupIds);
+
+    /** 삭제되지 않은 프로젝트만 조회 */
+    Optional<Project> findByIdAndDeletedAtIsNull(Long id);
+
+    /** 그룹의 프로젝트 카드 목록. 최근 만든 것이 위로 온다 */
+    List<Project> findByTravelGroupIdAndDeletedAtIsNullOrderByIdDesc(Long travelGroupId);
 
     /** 위 집계 결과를 담는 그릇. 구현체는 Spring이 만들어준다. */
     interface GroupProjectCount {

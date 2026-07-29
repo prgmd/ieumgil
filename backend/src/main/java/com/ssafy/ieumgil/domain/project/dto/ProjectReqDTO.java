@@ -1,0 +1,62 @@
+package com.ssafy.ieumgil.domain.project.dto;
+
+import com.ssafy.ieumgil.domain.project.entity.TransportPref;
+import io.swagger.v3.oas.annotations.media.Schema;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Positive;
+import jakarta.validation.constraints.PositiveOrZero;
+import jakarta.validation.constraints.Size;
+
+import java.time.LocalDate;
+
+public class ProjectReqDTO {
+
+    /** 프로젝트 생성 요청 (POST /api/v0/groups/{groupId}/projects) */
+    public record Create(
+            @Schema(description = "프로젝트 이름", example = "제주 3박 4일")
+            @NotBlank(message = "프로젝트 이름은 필수입니다.")
+            @Size(max = 100, message = "프로젝트 이름은 100자 이하여야 합니다.")
+            String name,
+
+            @Schema(description = "시작일", example = "2026-08-10")
+            @NotNull(message = "시작일은 필수입니다.")
+            LocalDate startDate,
+
+            @Schema(description = "종료일 (시작일 이후)", example = "2026-08-13")
+            @NotNull(message = "종료일은 필수입니다.")
+            LocalDate endDate,
+
+            @Schema(description = "여행지", example = "제주")
+            @Size(max = 100, message = "여행지는 100자 이하여야 합니다.")
+            String destination,
+
+            @Schema(description = "정산 인원", example = "4")
+            @NotNull(message = "정산 인원은 필수입니다.")
+            @Positive(message = "정산 인원은 1명 이상이어야 합니다.")
+            Integer budgetHeadcount,
+
+            @Schema(description = "목표 예산(전체 총액)", example = "300000")
+            @PositiveOrZero(message = "목표 예산은 0 이상이어야 합니다.")
+            Integer targetBudget,
+
+            @Schema(description = "이동수단 선호", example = "CAR")
+            @NotNull(message = "이동수단은 필수입니다.")
+            TransportPref transportPref
+    ) {
+    }
+
+    /** 프로젝트 이름·기간 수정 요청 (PATCH /api/v0/projects/{projectId}). 보낸 필드만 바뀐다 */
+    public record Update(
+            @Schema(description = "프로젝트 이름", example = "제주 4박 5일")
+            @Size(min = 1, max = 100, message = "프로젝트 이름은 1~100자여야 합니다.")
+            String name,
+
+            @Schema(description = "시작일", example = "2026-08-10")
+            LocalDate startDate,
+
+            @Schema(description = "종료일", example = "2026-08-14")
+            LocalDate endDate
+    ) {
+    }
+}
