@@ -44,10 +44,8 @@
   --color-border-strong: #d8cdb8;
 
   /* ---- typography ---- */
-  --font-display: 'Pretendard', -apple-system, BlinkMacSystemFont, 'Apple SD Gothic Neo',
-    'Malgun Gothic', sans-serif;
-  --font-body: 'Pretendard', -apple-system, BlinkMacSystemFont, 'Apple SD Gothic Neo',
-    'Malgun Gothic', sans-serif;
+  --font-display: var(--font-app);
+  --font-body: var(--font-app);
 
   /* ---- spacing scale ---- */
   --space-1: 4px;

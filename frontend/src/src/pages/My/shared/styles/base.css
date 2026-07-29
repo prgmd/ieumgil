@@ -1,33 +1,33 @@
-*{margin:0;padding:0;box-sizing:border-box;font-family:'Noto Sans KR',sans-serif}
+*{margin:0;padding:0;box-sizing:border-box;font-family:var(--font-app)}
 button{cursor:pointer;font-family:inherit}
 body{background:linear-gradient(150deg,#fdf6ea 0%,#f4ecd9 30%,#e2e8d8 65%,#cfe0da 100%) fixed;color:var(--ink);font-size:14px;min-height:100vh}
 
 /* 공통 버튼 */
-.btn{border:none;border-radius:11px;padding:9px 15px;font-size:12.5px;font-weight:800;white-space:nowrap;flex-shrink:0}
+.btn{border:none;border-radius:11px;padding:9px 15px;font-size:12.5px;font-weight:500;white-space:nowrap;flex-shrink:0}
 .btn-acc{background:var(--acc);color:#fff;box-shadow:0 5px 14px rgba(156,74,47,.25)}
 .btn-acc:hover{background:#833d26}
 .btn-gh{background:#fff;border:1.5px solid var(--line);color:var(--ink)}
 
 /* 공통 아바타 */
-.mini-av{width:30px;height:30px;border-radius:50%;color:#fff;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:12.5px}
+.mini-av{width:30px;height:30px;border-radius:50%;color:#fff;display:flex;align-items:center;justify-content:center;font-weight:500;font-size:12.5px}
 
 /* 상단 앱바 (라우트 공통) */
 .appbar{display:flex;align-items:center;gap:18px;height:50px;padding:8px 22px;background:rgba(255,253,248,.87);backdrop-filter:blur(10px);border-bottom:1px solid rgba(156,74,47,.14);position:sticky;top:0;z-index:40}
 .appbar .logo{display:flex;align-items:center;background:none;border:none;padding:0;cursor:pointer;flex-shrink:0}
-.appbar .logo .logo-img{height:60px;width:auto;display:block}
+.appbar .logo .logo-img{height:62px;width:auto;display:block}
 .appbar .crumb{display:flex;align-items:center;gap:8px;font-size:14px;color:var(--ink2);min-width:0}
 .appbar .crumb-item{display:flex;align-items:center;gap:8px;min-width:0}
 .appbar .crumb button{background:none;border:none;color:var(--ink2);font-size:14px;padding:0}
 .appbar .crumb button:hover{color:var(--acc)}
-.appbar .crumb b{color:var(--ink);font-weight:800;font-size:15px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.appbar .crumb b{color:var(--ink);font-weight:500;font-size:15px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .appbar .crumb-sep{color:#cdbfad}
-.appbar .me{margin-left:auto;display:flex;align-items:center;gap:8px;font-size:13px;font-weight:700;flex-shrink:0}
+.appbar .me{margin-left:auto;display:flex;align-items:center;gap:8px;font-size:13px;font-weight:500;flex-shrink:0}
 .appbar .me-avatar,.appbar .me-avatar-fallback{width:28px;height:28px;border-radius:50%;object-fit:cover;flex-shrink:0}
 .appbar .me-avatar-fallback{width:28px;height:28px;font-size:12px}
 
 /* 페이지 공통 컨테이너 / 섹션 헤더 */
 .page{max-width:1080px;margin:0 auto;padding:26px 22px 96px}
 .sec-head{display:flex;align-items:baseline;gap:12px;margin-bottom:16px;flex-wrap:wrap}
-.sec-head h2{font-family:'Noto Serif KR',serif;font-size:24px}
+.sec-head h2{font-family:var(--font-app);font-size:24px}
 .sec-head span{color:var(--ink2);font-size:12.5px}
 .sec-head .right{margin-left:auto}

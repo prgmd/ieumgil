@@ -137,7 +137,7 @@ export function MyPage() {
           <div className="pnl">
             <h3>초대 코드로 입장</h3>
             <p style={{ fontSize: 12.5, color: 'var(--ink2)' }}>
-              친구에게 받은 8자리 코드를 입력하세요.
+              친구에게 받은 8자리 코드를 입력하세요. 코드는 발급 후 7일간 유효합니다.
             </p>
             <div className="code-input">
               <input
