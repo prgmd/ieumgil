@@ -1,6 +1,7 @@
 package com.ssafy.ieumgil.domain.place.client;
 
 import com.ssafy.ieumgil.domain.place.dto.KakaoAddressResponse;
+import com.ssafy.ieumgil.domain.place.dto.KakaoDirectionsResponse;
 import com.ssafy.ieumgil.domain.place.dto.KakaoPlaceResponse;
 import com.ssafy.ieumgil.domain.place.dto.KakaoWalkingRouteResponse;
 import com.ssafy.ieumgil.domain.place.exception.PlaceException;
@@ -179,6 +180,63 @@ class KakaoLocalClientTest {
                 .andRespond(withServerError());
 
         assertThatThrownBy(() -> kakaoLocalClient.getWalkingRoute(33.4581, 126.9425, 33.46, 126.94))
+                .isInstanceOf(PlaceException.class);
+    }
+
+    @Test
+    void getDrivingRouteParsesFareDistanceDuration() {
+        String directionsResponse = """
+                {
+                  "routes": [
+                    {
+                      "result_code": 0,
+                      "summary": {
+                        "fare": { "taxi": 13200, "toll": 0 },
+                        "distance": 8647,
+                        "duration": 1672
+                      }
+                    }
+                  ]
+                }
+                """;
+        server.expect(requestTo("https://apis-navi.kakaomobility.com/v1/directions?origin=127.0246,37.5326&destination=127.0396,37.5013&priority=TIME"))
+                .andExpect(method(GET))
+                .andExpect(header("Authorization", "KakaoAK test-key"))
+                .andRespond(withSuccess(directionsResponse, MediaType.APPLICATION_JSON));
+
+        Optional<KakaoDirectionsResponse.Summary> result =
+                kakaoLocalClient.getDrivingRoute(37.5326, 127.0246, 37.5013, 127.0396);
+
+        assertThat(result).isPresent();
+        assertThat(result.get().fare().taxi()).isEqualTo(13200);
+        assertThat(result.get().distance()).isEqualTo(8647);
+        assertThat(result.get().duration()).isEqualTo(1672);
+    }
+
+    @Test
+    void getDrivingRouteWithNonZeroResultCodeReturnsEmpty() {
+        String failedResponse = """
+                {
+                  "routes": [
+                    { "result_code": 102, "result_msg": "시작 지점 주변의 도로를 탐색할 수 없음" }
+                  ]
+                }
+                """;
+        server.expect(requestTo("https://apis-navi.kakaomobility.com/v1/directions?origin=126.9425,33.4581&destination=126.9349,33.4614&priority=TIME"))
+                .andRespond(withSuccess(failedResponse, MediaType.APPLICATION_JSON));
+
+        Optional<KakaoDirectionsResponse.Summary> result =
+                kakaoLocalClient.getDrivingRoute(33.4581, 126.9425, 33.4614, 126.9349);
+
+        assertThat(result).isEmpty();
+    }
+
+    @Test
+    void drivingRouteServerErrorThrowsPlaceException() {
+        server.expect(requestTo("https://apis-navi.kakaomobility.com/v1/directions?origin=127.0246,37.5326&destination=127.0396,37.5013&priority=TIME"))
+                .andRespond(withServerError());
+
+        assertThatThrownBy(() -> kakaoLocalClient.getDrivingRoute(37.5326, 127.0246, 37.5013, 127.0396))
                 .isInstanceOf(PlaceException.class);
     }
 }

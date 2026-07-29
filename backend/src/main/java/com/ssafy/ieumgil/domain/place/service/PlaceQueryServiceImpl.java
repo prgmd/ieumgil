@@ -38,6 +38,16 @@ public class PlaceQueryServiceImpl implements PlaceQueryService {
                 .map(r -> new PlaceResDTO.WalkingRoute(r.totalDistance(), r.totalTime()));
     }
 
+    @Override
+    public Optional<PlaceResDTO.TaxiRoute> getTaxiRoute(
+            double startLat, double startLng, double endLat, double endLng) {
+        return kakaoLocalClient.getDrivingRoute(startLat, startLng, endLat, endLng)
+                .map(s -> new PlaceResDTO.TaxiRoute(
+                        s.fare() != null ? s.fare().taxi() : 0,
+                        s.distance(),
+                        s.duration()));
+    }
+
     private PlaceResDTO.Place toPlace(KakaoPlaceResponse.Document d) {
         String address = (d.road_address_name() != null && !d.road_address_name().isBlank())
                 ? d.road_address_name() : d.address_name();

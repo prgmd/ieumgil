@@ -2,6 +2,7 @@ package com.ssafy.ieumgil.domain.place.service;
 
 import com.ssafy.ieumgil.domain.place.client.KakaoLocalClient;
 import com.ssafy.ieumgil.domain.place.dto.KakaoAddressResponse;
+import com.ssafy.ieumgil.domain.place.dto.KakaoDirectionsResponse;
 import com.ssafy.ieumgil.domain.place.dto.KakaoPlaceResponse;
 import com.ssafy.ieumgil.domain.place.dto.KakaoWalkingRouteResponse;
 import com.ssafy.ieumgil.domain.place.dto.PlaceResDTO;
@@ -106,6 +107,35 @@ class PlaceQueryServiceImplTest {
         when(kakaoLocalClient.getWalkingRoute(33.4581, 126.9425, 33.46, 126.94)).thenReturn(Optional.empty());
 
         Optional<PlaceResDTO.WalkingRoute> result = placeQueryService.getWalkingRoute(33.4581, 126.9425, 33.46, 126.94);
+
+        assertThat(result).isEmpty();
+    }
+
+    @Test
+    void getTaxiRouteMapsFareDistanceDuration() {
+        placeQueryService = new PlaceQueryServiceImpl(kakaoLocalClient);
+        KakaoDirectionsResponse.Summary summary = new KakaoDirectionsResponse.Summary(
+                new KakaoDirectionsResponse.Fare(13200, 0), 8647, 1672);
+        when(kakaoLocalClient.getDrivingRoute(37.5326, 127.0246, 37.5013, 127.0396))
+                .thenReturn(Optional.of(summary));
+
+        Optional<PlaceResDTO.TaxiRoute> result =
+                placeQueryService.getTaxiRoute(37.5326, 127.0246, 37.5013, 127.0396);
+
+        assertThat(result).isPresent();
+        assertThat(result.get().fare()).isEqualTo(13200);
+        assertThat(result.get().distance()).isEqualTo(8647);
+        assertThat(result.get().duration()).isEqualTo(1672);
+    }
+
+    @Test
+    void getTaxiRouteWithNoRouteReturnsEmpty() {
+        placeQueryService = new PlaceQueryServiceImpl(kakaoLocalClient);
+        when(kakaoLocalClient.getDrivingRoute(37.5326, 127.0246, 37.5013, 127.0396))
+                .thenReturn(Optional.empty());
+
+        Optional<PlaceResDTO.TaxiRoute> result =
+                placeQueryService.getTaxiRoute(37.5326, 127.0246, 37.5013, 127.0396);
 
         assertThat(result).isEmpty();
     }

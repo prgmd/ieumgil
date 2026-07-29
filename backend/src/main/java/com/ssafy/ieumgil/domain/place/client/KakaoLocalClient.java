@@ -1,6 +1,7 @@
 package com.ssafy.ieumgil.domain.place.client;
 
 import com.ssafy.ieumgil.domain.place.dto.KakaoAddressResponse;
+import com.ssafy.ieumgil.domain.place.dto.KakaoDirectionsResponse;
 import com.ssafy.ieumgil.domain.place.dto.KakaoPlaceResponse;
 import com.ssafy.ieumgil.domain.place.dto.KakaoWalkingRouteResponse;
 import com.ssafy.ieumgil.domain.place.exception.PlaceErrorCode;
@@ -20,6 +21,8 @@ import java.util.Optional;
 @Slf4j
 @Component
 public class KakaoLocalClient {
+
+    private static final String DIRECTIONS_BASE_URL = "https://apis-navi.kakaomobility.com";
 
     private final RestClient restClient;
     private final KakaoLocalProperties properties;
@@ -75,6 +78,28 @@ public class KakaoLocalClient {
             return Optional.of(response.route().properties());
         } catch (RestClientException | IllegalArgumentException e) {
             log.warn("카카오 도보 길찾기 실패: {}", e.getMessage());
+            throw new PlaceException(PlaceErrorCode.KAKAO_API_CALL_FAILED);
+        }
+    }
+
+    public Optional<KakaoDirectionsResponse.Summary> getDrivingRoute(
+            double startLat, double startLng, double endLat, double endLng) {
+        try {
+            URI uri = URI.create(DIRECTIONS_BASE_URL + "/v1/directions"
+                    + "?origin=" + startLng + "," + startLat
+                    + "&destination=" + endLng + "," + endLat
+                    + "&priority=TIME");
+            KakaoDirectionsResponse response = callKakao(uri, KakaoDirectionsResponse.class);
+            if (response == null || response.routes() == null || response.routes().isEmpty()) {
+                return Optional.empty();
+            }
+            KakaoDirectionsResponse.Route route = response.routes().get(0);
+            if (route.result_code() != 0 || route.summary() == null) {
+                return Optional.empty();
+            }
+            return Optional.of(route.summary());
+        } catch (RestClientException | IllegalArgumentException e) {
+            log.warn("카카오모빌리티 자동차 길찾기 실패: {}", e.getMessage());
             throw new PlaceException(PlaceErrorCode.KAKAO_API_CALL_FAILED);
         }
     }

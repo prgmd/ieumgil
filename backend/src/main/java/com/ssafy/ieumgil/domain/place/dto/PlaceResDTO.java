@@ -20,4 +20,7 @@ public class PlaceResDTO {
 
     public record WalkingRoute(int distance, int duration) {
     }
+
+    public record TaxiRoute(int fare, int distance, int duration) {
+    }
 }
