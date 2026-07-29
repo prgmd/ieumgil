@@ -7,6 +7,7 @@ import { useToastStore } from '../../global/stores/toastStore';
 import LeaveGroupModal from './components/LeaveGroupModal';
 import CreateProjectModal from './components/CreateProjectModal';
 import DeleteProjectModal from './components/DeleteProjectModal';
+import { AppBar } from '../My/shared/ui/AppBar';
 
 // PROJECT.transport_pref — ERD상 CAR | PUBLIC 두 값만 저장하고 표기만 한글로 한다.
 const TRANSPORT_LABEL = { CAR: '자차', PUBLIC: '대중교통' };
@@ -54,7 +55,9 @@ export function GroupPage() {
   if (!group) return null;
 
   return (
-    <div className="page">
+    <>
+      <AppBar crumbs={[{ label: '개인 페이지', to: '/my' }, { label: group.name }]} />
+      <div className="page">
       <div className="group-grid">
         <div>
           <div className="sec-head">
@@ -157,6 +160,7 @@ export function GroupPage() {
         onDelete={deleteProject}
         onClose={() => setDeleteProjectTarget(null)}
       />
-    </div>
+      </div>
+    </>
   );
 }

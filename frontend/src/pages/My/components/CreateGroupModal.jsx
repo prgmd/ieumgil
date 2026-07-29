@@ -64,7 +64,7 @@ export default function CreateGroupModal({ open, onClose, onCreate }) {
       {step === 'form' && (
         <>
           <h3>새 그룹 만들기</h3>
-          <p className="s">함께 여행할 사람들의 모임을 만들어요. 멤버 모두가 동등한 권한을 가집니다.</p>
+          <p className="s">함께 여행할 사람들의 모임을 만들어요.</p>
           <label>그룹 이름 *</label>
           <input
             placeholder="예: A107 친구들"
@@ -90,7 +90,7 @@ export default function CreateGroupModal({ open, onClose, onCreate }) {
         <>
           <h3>"{createdGroup.name}" 생성 완료</h3>
           <p className="s">
-            아래 초대 코드를 친구에게 공유하세요. 코드는 발급 후 7일간 유효합니다.
+            아래 초대 코드를 친구에게 공유하세요.
           </p>
           <div className="code-chip">
             <span>{createdGroup.inviteCode}</span>

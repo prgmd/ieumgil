@@ -44,6 +44,7 @@
 .landing-nav__brand {
   display: flex;
   align-items: center;
+  height: 30px;
   gap: var(--space-2);
   font-size: 1.2rem;
   font-weight: 800;
@@ -51,17 +52,10 @@
   margin-right: auto;
 }
 
-.landing-nav__mark {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 32px;
-  height: 32px;
-  border-radius: var(--radius-sm);
-  background: var(--color-brand);
-  color: var(--color-text-on-dark);
-  font-size: 0.95rem;
-  transform: rotate(-40deg);
+.landing-nav__logo-img {
+  display: block;
+  height: 90px;
+  width: auto;
 }
 
 .landing-nav__links {
@@ -345,7 +339,7 @@
 .closing-band {
   border-top: 1px solid var(--color-border);
   background: var(--color-bg-accent);
-  padding: var(--space-8) var(--space-5);
+  padding: var(--space-6) var(--space-5);
   text-align: center;
 }
 

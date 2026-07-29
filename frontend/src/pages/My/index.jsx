@@ -6,6 +6,7 @@ import { useMyGroups } from '../../features/my/hooks/useMyGroups';
 import { useToastStore } from '../../global/stores/toastStore';
 import CreateGroupModal from './components/CreateGroupModal';
 import DeleteGroupModal from './components/DeleteGroupModal';
+import { AppBar } from './shared/ui/AppBar';
 
 export function MyPage() {
   const currentUser = useAuthStore((s) => s.currentUser);
@@ -51,7 +52,9 @@ export function MyPage() {
   }
 
   return (
-    <div className="page">
+    <>
+      <AppBar crumbs={[{ label: '개인 페이지' }]} />
+      <div className="page">
       <div className="sec-head">
         <h2>내 그룹</h2>
         <span>카드를 눌러 입장</span>
@@ -134,7 +137,7 @@ export function MyPage() {
           <div className="pnl">
             <h3>초대 코드로 입장</h3>
             <p style={{ fontSize: 12.5, color: 'var(--ink2)' }}>
-              친구에게 받은 8자리 코드를 입력하세요. 코드는 발급 후 7일간 유효합니다.
+              친구에게 받은 8자리 코드를 입력하세요.
             </p>
             <div className="code-input">
               <input
@@ -168,7 +171,8 @@ export function MyPage() {
         onDelete={deleteGroup}
         onClose={() => setDeleteTarget(null)}
       />
-    </div>
+      </div>
+    </>
   );
 }
 

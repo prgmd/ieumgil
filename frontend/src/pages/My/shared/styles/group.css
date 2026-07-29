@@ -13,10 +13,11 @@
 
 /* 초대 코드 패널 (개인/그룹 페이지 공용) */
 .invite-box{max-width:480px}
-.pnl{background:rgba(255,253,248,.82);border:1px solid rgba(61,43,34,.1);border-radius:18px;padding:18px 20px}
+.pnl{background:rgba(255,253,248,.82);border:1px solid rgba(61,43,34,.1);border-radius:18px;padding:18px 20px;overflow:hidden}
 .pnl h3{font-size:15px;font-weight:800;margin-bottom:8px}
-.code-input{display:flex;gap:8px;margin-top:12px}
-.code-input input{flex:1;border:1.5px solid var(--line);border-radius:11px;padding:10px 13px;font-size:14px;letter-spacing:.12em;font-weight:800;background:#fff}
+.code-input{display:flex;gap:8px;margin-top:12px;flex-wrap:wrap}
+.code-input input{flex:1 1 140px;min-width:0;border:1.5px solid var(--line);border-radius:11px;padding:10px 13px;font-size:14px;letter-spacing:.12em;font-weight:800;background:#fff}
+.code-input .btn{flex:0 0 auto}
 .code-err{color:#9c3b3b;font-size:12px;margin-top:8px;min-height:16px}
 .code-chip{background:var(--cream);border:1.5px dashed var(--line);border-radius:11px;padding:9px;text-align:center;font-weight:900;letter-spacing:.14em;margin:6px 0 10px}
 

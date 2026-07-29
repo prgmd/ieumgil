@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { useAuth } from "../../global/hooks/useAuth";
+import logo from "../../assets/img/logo.png";
 
 export function LandingNav() {
   const [isScrolled, setIsScrolled] = useState(false);
@@ -20,10 +21,7 @@ export function LandingNav() {
     <header className={`landing-nav ${isScrolled ? "is-scrolled" : ""}`}>
       <div className="landing-nav__inner">
         <Link to="/" className="landing-nav__brand">
-          <span className="landing-nav__mark" aria-hidden="true">
-            ✈
-          </span>
-          이음길
+          <img src={logo} alt="이음길" className="landing-nav__logo-img" />
         </Link>
 
         {isAuthenticated && (
