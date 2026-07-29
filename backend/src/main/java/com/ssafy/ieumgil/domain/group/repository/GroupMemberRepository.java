@@ -50,4 +50,13 @@ public interface GroupMemberRepository extends JpaRepository<GroupMember, GroupM
     @Modifying(clearAutomatically = true, flushAutomatically = true)
     @Query("DELETE FROM GroupMember gm WHERE gm.travelGroup.id = :groupId AND gm.user.id = :userId")
     void deleteMembership(@Param("groupId") Long groupId, @Param("userId") Long userId);
+
+    /** 회원 탈퇴 시 정리할 대상. 그룹별로 마지막 1인이었는지 판단해야 하므로 id만 먼저 뽑는다. */
+    @Query("SELECT gm.travelGroup.id FROM GroupMember gm WHERE gm.user.id = :userId")
+    List<Long> findGroupIdsByUserId(@Param("userId") Long userId);
+
+    /** 회원 탈퇴 시 모든 소속을 한 번에 삭제한다 */
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query("DELETE FROM GroupMember gm WHERE gm.user.id = :userId")
+    void deleteAllMembershipsOfUser(@Param("userId") Long userId);
 }
