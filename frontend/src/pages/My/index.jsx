@@ -6,6 +6,7 @@ import { useMyGroups } from '../../features/my/hooks/useMyGroups';
 import { useToastStore } from '../../global/stores/toastStore';
 import CreateGroupModal from './components/CreateGroupModal';
 import DeleteGroupModal from './components/DeleteGroupModal';
+import { AppBar } from './shared/ui/AppBar';
 
 export function MyPage() {
   const currentUser = useAuthStore((s) => s.currentUser);
@@ -51,7 +52,9 @@ export function MyPage() {
   }
 
   return (
-    <div className="page">
+    <>
+      <AppBar crumbs={[{ label: '개인 페이지' }]} />
+      <div className="page">
       <div className="sec-head">
         <h2>내 그룹</h2>
         <span>카드를 눌러 입장</span>
@@ -170,7 +173,8 @@ export function MyPage() {
         onDelete={deleteGroup}
         onClose={() => setDeleteTarget(null)}
       />
-    </div>
+      </div>
+    </>
   );
 }
 

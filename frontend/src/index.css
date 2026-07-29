@@ -1,1 +1,28 @@
+@font-face {
+  font-family: 'MemomentKkukKkuk';
+  src: url('./assets/fonts/MemomentKkukkukk.ttf') format('truetype');
+  font-weight: normal;
+  font-style: normal;
+}
 
+@font-face {
+  font-family: 'kyobo2024';
+  src: url('./assets/fonts/KyoboHandwriting2024psw.ttf') format('truetype');
+  font-weight: normal;
+  font-style: normal;
+}
+
+/* 실험용 폰트 스위치 지점.
+   여러 폰트를 테스트할 거면 이 한 줄만 바꾸면 프로젝트 전체(Landing/My/Group/Login)에
+   한 번에 반영된다. 다른 파일들은 전부 var(--font-app)를 참조하도록 되어 있음.
+   ex) 폰트 두 개를 더 추가해서 비교하고 싶으면:
+     1) 위에 @font-face 블록 하나 더 추가 (font-family 이름 다르게)
+     2) 아래 --font-app 값만 그 이름으로 바꿔서 새로고침 */
+:root {
+  --font-app: 'MemomentKkukKkuk', 'Pretendard', 'Noto Sans KR', sans-serif;
+}
+
+html,
+body {
+  font-family: var(--font-app);
+}

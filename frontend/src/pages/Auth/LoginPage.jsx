@@ -1,4 +1,5 @@
 import "./Login.css"; // 동일 폴더에 생성할 CSS 파일 임포트
+import logo from "../../assets/img/logo.png";
 
 export function LoginPage() {
   console.log("=== 환경변수 로드 테스트 ===");
@@ -69,7 +70,7 @@ export function LoginPage() {
         <section className="login-panel">
           <header className="login-panel__nav">
             <div className="login-panel__brand">
-              <span aria-hidden="true">✈</span>이음길
+              <img src={logo} alt="이음길" className="login-panel__logo-img" />
             </div>
           </header>
 
