@@ -11,7 +11,7 @@ export function MyPage() {
   const currentUser = useAuthStore((s) => s.currentUser);
   // 그룹 목록은 이 페이지가 소유한다 — 훅이 조회·갱신을 함께 담당한다.
   const { groups, status, createGroup, renameGroup, deleteGroup, joinByCode } =
-    useMyGroups(currentUser?.id);
+    useMyGroups(currentUser);
   const showToast = useToastStore((s) => s.show);
   const navigate = useNavigate();
 
@@ -95,8 +95,10 @@ export function MyPage() {
                   ) : (
                     <h3>{g.name}</h3>
                   )}
+                  {/* memberCount·tripCount 는 서버가 계산해 내려준다(GroupResDTO.Summary).
+                      tripCount 는 완료 여부와 무관한 전체 프로젝트 수라 "완료"를 붙이지 않는다. */}
                   <div className="meta">
-                    멤버 {g.members.length}명 · 완료 여행 {g.doneTrips}개
+                    멤버 {g.memberCount}명 · 여행 {g.tripCount}개
                   </div>
                   {/* flat 모델 — 모든 멤버가 이름 수정·그룹 삭제를 할 수 있다 */}
                   {!isEditing && (

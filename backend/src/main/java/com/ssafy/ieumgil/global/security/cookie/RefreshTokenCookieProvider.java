@@ -17,7 +17,7 @@ public class RefreshTokenCookieProvider {
 
     public static final String COOKIE_NAME = "refreshToken";
 
-    private static final String COOKIE_PATH = "/api/v0/auth";
+    private static final String COOKIE_PATH = "/api/auth";
 
     private final JwtProperties jwtProperties;
     private final boolean secure;

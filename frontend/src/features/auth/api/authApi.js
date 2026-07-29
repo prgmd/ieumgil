@@ -8,7 +8,6 @@ import axiosInstance from "../../../global/api/axiosInstance";
  */
 export const loginWithKakao = async (code) => {
   const { data } = await axiosInstance.post("/auth/login/kakao", { code });
-
   // 백엔드 CustomResponse( { result: {...} } ) 래핑 대응
   return data?.result ?? data;
 };
@@ -31,7 +30,7 @@ export async function logout() {
  * @returns {Promise<{ id: number, nickname: string, provider: string, profileImg: string }>}
  */
 export const getMe = async () => {
-  const { data } = await axiosInstance.get("/member/me");
+  const { data } = await axiosInstance.get("/members/me");
 
   // 백엔드 CustomResponse( { result: {...} } ) 래핑 대응
   return data?.result ?? data;

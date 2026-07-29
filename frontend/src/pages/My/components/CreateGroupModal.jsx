@@ -40,7 +40,8 @@ export default function CreateGroupModal({ open, onClose, onCreate }) {
     setError('');
     setSubmitting(true);
     try {
-      const group = await onCreate(trimmed);
+      console.log(trimmed)
+      const group = await onCreate(trimmed)
       setCreatedGroup(group);
       setStep('share');
     } catch {
