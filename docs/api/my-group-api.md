@@ -65,7 +65,7 @@
 
 ### DELETE /api/members/me
 
-회원 탈퇴 — ERD `MEMBER` 탈퇴 정책 수행(`provider_id` 센티널 치환, `nickname` "탈퇴한 멤버" 교체, `profile_img` null, `deleted_at` 기록). 행은 유지되어 블록 작성자 표기가 보존된다. 소속 그룹에서는 자동 탈퇴 처리되며, 마지막 1인이던 그룹은 하드 삭제된다(§ `DELETE /api/groups/{groupId}/members/me` 참조).
+회원 탈퇴 — ERD `MEMBER` 탈퇴 정책 수행(`kakao_id` null 처리, `nickname` "탈퇴한 멤버" 교체, `profile_img` null, `deleted_at` 기록). 행은 유지되어 블록 작성자 표기가 보존된다. 소속 그룹에서는 자동 탈퇴 처리되며, 마지막 1인이던 그룹은 하드 삭제된다(§ `DELETE /api/groups/{groupId}/members/me` 참조).
 
 **Response `204`:** 본문 없음.
 
