@@ -12,3 +12,27 @@ export const loginWithKakao = async (code) => {
   // 백엔드 CustomResponse( { result: {...} } ) 래핑 대응
   return data?.result ?? data;
 };
+
+
+export async function logout() {
+  // POST /auth/logout 호출
+  // 실패해도 프론트는 토큰을 지우고 로그아웃 처리해야 하므로 여기서 삼킨다.
+  try {
+    const { data } = await axiosInstance.post("/auth/logout");
+    return data;
+  } catch (error) {
+    console.error("로그아웃 실패:", error);
+  }
+}
+
+/**
+ * 로그인한 사용자의 정보를 조회한다.
+ * 사용자 식별은 서버가 accessToken 으로 하므로 파라미터가 없다.
+ * @returns {Promise<{ id: number, nickname: string, provider: string, profileImg: string }>}
+ */
+export const getMe = async () => {
+  const { data } = await axiosInstance.get("/member/me");
+
+  // 백엔드 CustomResponse( { result: {...} } ) 래핑 대응
+  return data?.result ?? data;
+};
