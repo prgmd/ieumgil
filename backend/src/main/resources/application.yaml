@@ -33,6 +33,10 @@ jwt:
   access-token-validity: 1800000      # 30분 (ms)
   refresh-token-validity: 1209600000  # 14일 (ms)
 
+tourapi:
+  service-key: ${TOUR_API_KEY:}
+  base-url: http://apis.data.go.kr/B551011/KorService2
+
 oauth:
   kakao:
     client-id: ${KAKAO_CLIENT_ID}
