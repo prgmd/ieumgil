@@ -7,14 +7,22 @@ import { DashboardPage } from '../pages/Dashboard';
 import { GroupPage } from '../pages/Group';
 import { MyPage } from '../pages/My';
 import ProtectedRoute from '../global/components/ProtectedRoute';
+import GuestOnlyRoute from '../global/components/GuestOnlyRoute';
 
 export const router = createBrowserRouter([
   {
     path: '/',
     element: <App />, // 공통 레이아웃 (<Outlet /> 렌더)
     children: [
+      // ===== 비로그인 전용: 토큰이 있으면 "/my"로 리다이렉트 =====
+      {
+        element: <GuestOnlyRoute />, // 역가드 (pathless layout route)
+        children: [
+          { index: true, element: <LandingPage /> }, // 랜딩
+        ],
+      },
+
       // ===== 공개 라우트: 토큰 없이 접근 가능 =====
-      { index: true, element: <LandingPage /> }, // 랜딩
       { path: 'login', element: <LoginPage /> }, // 로그인
       // 그룹 페이지는 groupId로 스토어에서 다시 조회한다 (새로고침·딥링크 대응)
       { path: 'oauth/kakao/callback', element: <KakaoCallback /> },

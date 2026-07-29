@@ -26,7 +26,6 @@ export function LandingNav() {
         {isAuthenticated && (
           <nav className="landing-nav__links" aria-label="주요 메뉴">
             <Link to="/my">개인 페이지</Link>
-            <Link to="/group">그룹 페이지</Link>
           </nav>
         )}
 
