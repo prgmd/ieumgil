@@ -57,6 +57,46 @@ public class GroupConverter {
                 .build();
     }
 
+    public static GroupResDTO.Joined toJoined(TravelGroup group) {
+        return GroupResDTO.Joined.builder()
+                .groupId(group.getId())
+                .name(group.getName())
+                .build();
+    }
+
+    public static GroupResDTO.InviteCode toInviteCode(TravelGroup group) {
+        return GroupResDTO.InviteCode.builder()
+                .inviteCode(group.getInviteCode())
+                .inviteExpiresAt(group.getInviteExpiresAt())
+                .build();
+    }
+
+    public static GroupResDTO.Left toLeft(boolean groupDeleted) {
+        return GroupResDTO.Left.builder()
+                .groupDeleted(groupDeleted)
+                .build();
+    }
+
+    /** online은 Redis presence 연동 전까지 false 고정 */
+    public static GroupResDTO.MemberDetail toMemberDetail(User user) {
+        return GroupResDTO.MemberDetail.builder()
+                .memberId(user.getId())
+                .nickname(user.getNickname())
+                .profileImg(user.getProfileImageUrl())
+                .online(false)
+                .build();
+    }
+
+    public static GroupResDTO.MemberList toMemberList(TravelGroup group, List<GroupMember> members) {
+        return GroupResDTO.MemberList.builder()
+                .inviteCode(group.getInviteCode())
+                .inviteExpiresAt(group.getInviteExpiresAt())
+                .members(members.stream()
+                        .map(groupMember -> toMemberDetail(groupMember.getUser()))
+                        .toList())
+                .build();
+    }
+
     /** memberCount는 넘겨받은 멤버 목록 크기로 계산해 별도 count 쿼리를 쓰지 않는다 */
     public static GroupResDTO.Summary toSummary(TravelGroup group, List<GroupMember> members, long tripCount) {
         return GroupResDTO.Summary.builder()

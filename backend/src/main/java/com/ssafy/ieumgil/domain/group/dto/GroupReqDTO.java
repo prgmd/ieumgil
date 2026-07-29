@@ -2,6 +2,7 @@ package com.ssafy.ieumgil.domain.group.dto;
 
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 
 public class GroupReqDTO {
@@ -21,6 +22,15 @@ public class GroupReqDTO {
             @NotBlank(message = "그룹명은 필수입니다.")
             @Size(min = 2, max = 20, message = "그룹명은 2~20자여야 합니다.")
             String name
+    ) {
+    }
+
+    /** 초대 코드로 그룹 입장 요청 (POST /api/v0/groups/join) */
+    public record Join(
+            @Schema(description = "초대 코드 (영대문자·숫자 8자)", example = "ABCD2345")
+            @NotBlank(message = "초대 코드는 필수입니다.")
+            @Pattern(regexp = "^[A-Z0-9]{8}$", message = "초대 코드는 영대문자·숫자 8자여야 합니다.")
+            String inviteCode
     ) {
     }
 

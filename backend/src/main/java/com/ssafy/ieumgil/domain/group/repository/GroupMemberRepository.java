@@ -3,6 +3,7 @@ package com.ssafy.ieumgil.domain.group.repository;
 import com.ssafy.ieumgil.domain.group.entity.GroupMember;
 import com.ssafy.ieumgil.domain.group.entity.GroupMemberId;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -37,4 +38,16 @@ public interface GroupMemberRepository extends JpaRepository<GroupMember, GroupM
             ORDER BY gm.joinedAt ASC
             """)
     List<GroupMember> findAllWithUserByGroupIdIn(@Param("groupIds") List<Long> groupIds);
+
+    /** 정원(10명) 검증용 현재 인원. existsMembership과 같은 이유로 JPQL을 쓴다. */
+    @Query("SELECT COUNT(gm) FROM GroupMember gm WHERE gm.travelGroup.id = :groupId")
+    long countMembers(@Param("groupId") Long groupId);
+
+    /**
+     * 소속 삭제 (자발적 탈퇴). 소프트 삭제가 아니라 행을 지운다 —
+     * 블록은 author_id로 남으므로 기록이 유실되지 않는다.
+     */
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query("DELETE FROM GroupMember gm WHERE gm.travelGroup.id = :groupId AND gm.user.id = :userId")
+    void deleteMembership(@Param("groupId") Long groupId, @Param("userId") Long userId);
 }

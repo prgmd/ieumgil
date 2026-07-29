@@ -52,6 +52,38 @@ public class GroupController {
         return CustomResponse.onSuccess(groupQueryService.getMyGroups(userId));
     }
 
+    @PostMapping("/join")
+    @Operation(summary = "초대 코드로 그룹 입장", description = "초대 코드가 유효하고 정원(10명)이 남아 있으면 그룹에 참여합니다.")
+    public CustomResponse<GroupResDTO.Joined> joinGroup(
+            @Parameter(hidden = true) @AuthenticationPrincipal Long userId,
+            @Valid @RequestBody GroupReqDTO.Join request) {
+        return CustomResponse.onSuccess(groupCommandService.joinGroup(userId, request));
+    }
+
+    @GetMapping("/{groupId}/members")
+    @Operation(summary = "멤버 목록 조회", description = "그룹의 멤버 목록과 초대 코드를 함께 조회합니다. online은 presence 연동 전까지 false입니다.")
+    public CustomResponse<GroupResDTO.MemberList> getMembers(
+            @Parameter(hidden = true) @AuthenticationPrincipal Long userId,
+            @PathVariable Long groupId) {
+        return CustomResponse.onSuccess(groupQueryService.getMembers(userId, groupId));
+    }
+
+    @PostMapping("/{groupId}/invite-code")
+    @Operation(summary = "초대 코드 재발급", description = "새 코드를 발급하고 기존 코드를 즉시 무효화합니다. 모든 멤버가 가능합니다(flat 모델).")
+    public CustomResponse<GroupResDTO.InviteCode> reissueInviteCode(
+            @Parameter(hidden = true) @AuthenticationPrincipal Long userId,
+            @PathVariable Long groupId) {
+        return CustomResponse.onSuccess(groupCommandService.reissueInviteCode(userId, groupId));
+    }
+
+    @DeleteMapping("/{groupId}/members/me")
+    @Operation(summary = "그룹 나가기", description = "본인만 나갈 수 있습니다. 마지막 1인이 나가면 그룹이 하드 삭제됩니다.")
+    public CustomResponse<GroupResDTO.Left> leaveGroup(
+            @Parameter(hidden = true) @AuthenticationPrincipal Long userId,
+            @PathVariable Long groupId) {
+        return CustomResponse.onSuccess(groupCommandService.leaveGroup(userId, groupId));
+    }
+
     @PatchMapping("/{groupId}")
     @Operation(summary = "그룹명 수정", description = "그룹의 모든 멤버가 수정할 수 있습니다(flat 모델).")
     public CustomResponse<GroupResDTO.Updated> updateGroupName(

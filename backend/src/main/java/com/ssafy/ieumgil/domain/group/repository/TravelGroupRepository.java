@@ -17,6 +17,13 @@ public interface TravelGroupRepository extends JpaRepository<TravelGroup, Long> 
     Optional<TravelGroup> findByIdAndDeletedAtIsNull(Long id);
 
     /**
+     * 초대 코드로 그룹 조회 (입장용).
+     * 만료 여부는 여기서 걸러내지 않는다 — 만료된 코드는 404가 아니라 410으로 알려줘야 하므로,
+     * 일단 찾아온 뒤 서비스에서 isInviteExpired()로 판단한다.
+     */
+    Optional<TravelGroup> findByInviteCodeAndDeletedAtIsNull(String inviteCode);
+
+    /**
      * 내가 소속된 그룹 목록. GroupMember를 거쳐 그룹을 찾으므로 JPQL로 직접 작성한다.
      * 삭제된 그룹은 제외하고, 최근 만든 그룹이 위로 오도록 정렬한다.
      */

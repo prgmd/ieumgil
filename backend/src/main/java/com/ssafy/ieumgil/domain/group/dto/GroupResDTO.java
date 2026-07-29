@@ -47,4 +47,49 @@ public class GroupResDTO {
             String profileImg
     ) {
     }
+
+    /** 그룹 입장 응답 (POST /api/v0/groups/join) */
+    @Builder
+    public record Joined(
+            Long groupId,
+            String name
+    ) {
+    }
+
+    /** 멤버 목록 + 초대 코드 응답 (GET /api/v0/groups/{groupId}/members) */
+    @Builder
+    public record MemberList(
+            String inviteCode,
+            LocalDateTime inviteExpiresAt,
+            List<MemberDetail> members
+    ) {
+    }
+
+    /**
+     * 멤버 목록의 한 명. MemberAvatar에 접속 여부가 추가된 형태.
+     * online은 Redis presence 값이나 아직 미구현이라 항상 false다.
+     */
+    @Builder
+    public record MemberDetail(
+            Long memberId,
+            String nickname,
+            String profileImg,
+            boolean online
+    ) {
+    }
+
+    /** 초대 코드 재발급 응답 (POST /api/v0/groups/{groupId}/invite-code) */
+    @Builder
+    public record InviteCode(
+            String inviteCode,
+            LocalDateTime inviteExpiresAt
+    ) {
+    }
+
+    /** 그룹 나가기 응답. groupDeleted=true면 마지막 1인이 나가 그룹이 하드 삭제됨 */
+    @Builder
+    public record Left(
+            boolean groupDeleted
+    ) {
+    }
 }
