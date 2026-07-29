@@ -30,7 +30,7 @@ import java.util.List;
 @RestController
 @Validated
 @RequiredArgsConstructor
-@RequestMapping("/api/v0/groups")
+@RequestMapping("/api/groups")
 @Tag(name = "그룹 Controller")
 public class GroupController {
 

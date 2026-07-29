@@ -8,7 +8,7 @@ import { tokenStorage } from "../util/tokenStorage";
  */
 
 export const BASE_URL =
-  import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8080/api/v0";
+  import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8080/api";
 
 // 백엔드에서 토큰 재발급 처리하는 엔드포인트 (백엔드 스펙 확정 시 이 값만 수정)
 const REISSUE_URL = "/auth/refresh";

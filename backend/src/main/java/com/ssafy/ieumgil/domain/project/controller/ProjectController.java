@@ -35,7 +35,7 @@ import java.util.List;
 @RestController
 @Validated
 @RequiredArgsConstructor
-@RequestMapping("/api/v0")
+@RequestMapping("/api")
 @Tag(name = "프로젝트 Controller")
 public class ProjectController {
 
