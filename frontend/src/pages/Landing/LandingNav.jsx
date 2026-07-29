@@ -4,10 +4,7 @@ import { useAuth } from "../../global/hooks/useAuth";
 
 export function LandingNav() {
   const [isScrolled, setIsScrolled] = useState(false);
-  const { isAuthenticated } = useAuth();
-
-  // TODO: "내 정보 API" 연동 시 실제 닉네임으로 교체
-  const name = "";
+  const { isAuthenticated, currentUser } = useAuth();
 
   useEffect(() => {
     const onScroll = () => setIsScrolled(window.scrollY > 8);
@@ -35,7 +32,14 @@ export function LandingNav() {
 
         <div className="landing-nav__auth">
           {isAuthenticated ? (
-            <span className="landing-nav__welcome">{name}님 환영합니다</span>
+            /* 닉네임은 fetchMe() 응답 후에 채워진다. 도착 전에 렌더하면
+               "님 환영합니다"가 되므로 닉네임이 있을 때만 문구를 띄운다 —
+               토큰이 있는 동안 로그인 버튼으로 되돌아가지는 않게 한다. */
+            currentUser?.nickname && (
+              <span className="landing-nav__welcome">
+                {currentUser.nickname}님 환영합니다
+              </span>
+            )
           ) : (
             <>
               {/* <Link to="/login" className="landing-nav__login">
