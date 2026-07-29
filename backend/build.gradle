@@ -23,7 +23,13 @@ dependencyManagement {
 	}
 }
 
+// GroupMemberAspect가 파라미터 이름(groupId/projectId)으로 인자를 찾으므로 이름을 보존한다
+tasks.withType(JavaCompile).configureEach {
+	options.compilerArgs << '-parameters'
+}
+
 dependencies {
+	implementation 'org.springframework.boot:spring-boot-starter-aop'
 	implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
 	implementation 'org.springframework.boot:spring-boot-starter-data-redis'
 	implementation 'org.springframework.boot:spring-boot-starter-security'

@@ -1,5 +1,6 @@
 package com.ssafy.ieumgil.domain.group.controller;
 
+import com.ssafy.ieumgil.domain.group.annotation.GroupMember;
 import com.ssafy.ieumgil.domain.group.dto.GroupReqDTO;
 import com.ssafy.ieumgil.domain.group.dto.GroupResDTO;
 import com.ssafy.ieumgil.domain.group.service.GroupCommandService;
@@ -60,6 +61,7 @@ public class GroupController {
         return CustomResponse.onSuccess(groupCommandService.joinGroup(userId, request));
     }
 
+    @GroupMember
     @GetMapping("/{groupId}/members")
     @Operation(summary = "멤버 목록 조회", description = "그룹의 멤버 목록과 초대 코드를 함께 조회합니다. online은 presence 연동 전까지 false입니다.")
     public CustomResponse<GroupResDTO.MemberList> getMembers(
@@ -68,6 +70,7 @@ public class GroupController {
         return CustomResponse.onSuccess(groupQueryService.getMembers(userId, groupId));
     }
 
+    @GroupMember
     @PostMapping("/{groupId}/invite-code")
     @Operation(summary = "초대 코드 재발급", description = "새 코드를 발급하고 기존 코드를 즉시 무효화합니다. 모든 멤버가 가능합니다(flat 모델).")
     public CustomResponse<GroupResDTO.InviteCode> reissueInviteCode(
@@ -76,6 +79,7 @@ public class GroupController {
         return CustomResponse.onSuccess(groupCommandService.reissueInviteCode(userId, groupId));
     }
 
+    @GroupMember
     @DeleteMapping("/{groupId}/members/me")
     @Operation(summary = "그룹 나가기", description = "본인만 나갈 수 있습니다. 마지막 1인이 나가면 그룹이 하드 삭제됩니다.")
     public CustomResponse<GroupResDTO.Left> leaveGroup(
@@ -84,6 +88,7 @@ public class GroupController {
         return CustomResponse.onSuccess(groupCommandService.leaveGroup(userId, groupId));
     }
 
+    @GroupMember
     @PatchMapping("/{groupId}")
     @Operation(summary = "그룹명 수정", description = "그룹의 모든 멤버가 수정할 수 있습니다(flat 모델).")
     public CustomResponse<GroupResDTO.Updated> updateGroupName(
@@ -93,6 +98,7 @@ public class GroupController {
         return CustomResponse.onSuccess(groupCommandService.updateGroupName(userId, groupId, request));
     }
 
+    @GroupMember
     @DeleteMapping("/{groupId}")
     @Operation(summary = "그룹 삭제", description = "소프트 삭제합니다. 오조작 방지를 위해 그룹명을 다시 입력받아 검증합니다.")
     public CustomResponse<Void> deleteGroup(

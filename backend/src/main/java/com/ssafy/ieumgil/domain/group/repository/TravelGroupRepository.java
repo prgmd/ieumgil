@@ -16,6 +16,9 @@ public interface TravelGroupRepository extends JpaRepository<TravelGroup, Long> 
     /** 소프트 삭제되지 않은 그룹만 조회. 삭제된 그룹은 없는 것으로 취급한다. */
     Optional<TravelGroup> findByIdAndDeletedAtIsNull(Long id);
 
+    /** GroupMemberAspect의 존재 확인용. 엔티티가 필요 없으니 exists로 가볍게 */
+    boolean existsByIdAndDeletedAtIsNull(Long id);
+
     /**
      * 초대 코드로 그룹 조회 (입장용).
      * 만료 여부는 여기서 걸러내지 않는다 — 만료된 코드는 404가 아니라 410으로 알려줘야 하므로,

@@ -90,7 +90,7 @@ public class GroupCommandServiceImpl implements GroupCommandService {
     /** 초대 코드 재발급 (GRP-06). 값 교체가 곧 기존 코드 무효화 */
     @Override
     public GroupResDTO.InviteCode reissueInviteCode(Long userId, Long groupId) {
-        TravelGroup group = getGroupAsMember(userId, groupId);
+        TravelGroup group = getGroup(groupId);
 
         group.reissueInviteCode(
                 issueUniqueInviteCode(),
@@ -106,8 +106,6 @@ public class GroupCommandServiceImpl implements GroupCommandService {
      */
     @Override
     public GroupResDTO.Left leaveGroup(Long userId, Long groupId) {
-        getGroupAsMember(userId, groupId);
-
         boolean lastMember = groupMemberRepository.countMembers(groupId) <= 1;
 
         groupMemberRepository.deleteMembership(groupId, userId);
@@ -122,7 +120,7 @@ public class GroupCommandServiceImpl implements GroupCommandService {
     /** 그룹명 수정 (GRP-05). flat 모델이라 멤버 누구나 가능 */
     @Override
     public GroupResDTO.Updated updateGroupName(Long userId, Long groupId, GroupReqDTO.UpdateName request) {
-        TravelGroup group = getGroupAsMember(userId, groupId);
+        TravelGroup group = getGroup(groupId);
 
         group.updateName(request.name());   // 변경 감지로 트랜잭션 종료 시 UPDATE
 
@@ -135,7 +133,7 @@ public class GroupCommandServiceImpl implements GroupCommandService {
      */
     @Override
     public void softDeleteGroup(Long userId, Long groupId, GroupReqDTO.Delete request) {
-        TravelGroup group = getGroupAsMember(userId, groupId);
+        TravelGroup group = getGroup(groupId);
 
         if (!group.getName().equals(request.confirmName())) {
             throw new CustomException(GroupErrorCode.GROUP_NAME_MISMATCH);
@@ -145,18 +143,12 @@ public class GroupCommandServiceImpl implements GroupCommandService {
     }
 
     /**
-     * 그룹 조회 + 요청자의 멤버십 검증.
-     * 6단계에서 @GroupMember AOP로 옮길 예정이라 지금은 서비스에서 직접 검사한다.
+     * 그룹 조회. 존재 확인(404)·멤버십(403)은 컨트롤러의 @GroupMember가 이미 끝냈으므로
+     * 여기서는 엔티티만 가져온다. orElseThrow는 그 사이 삭제된 극단적 경우의 방어선이다.
      */
-    private TravelGroup getGroupAsMember(Long userId, Long groupId) {
-        TravelGroup group = travelGroupRepository.findByIdAndDeletedAtIsNull(groupId)
+    private TravelGroup getGroup(Long groupId) {
+        return travelGroupRepository.findByIdAndDeletedAtIsNull(groupId)
                 .orElseThrow(() -> new CustomException(GroupErrorCode.GROUP_NOT_FOUND));
-
-        if (!groupMemberRepository.existsMembership(groupId, userId)) {
-            throw new CustomException(GroupErrorCode.NOT_GROUP_MEMBER);
-        }
-
-        return group;
     }
 
     /** 중복되지 않는 초대 코드를 뽑는다. 재시도 한도를 넘으면 실패로 처리한다 */

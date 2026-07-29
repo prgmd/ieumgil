@@ -71,10 +71,6 @@ public class GroupQueryServiceImpl implements GroupQueryService {
         TravelGroup group = travelGroupRepository.findByIdAndDeletedAtIsNull(groupId)
                 .orElseThrow(() -> new CustomException(GroupErrorCode.GROUP_NOT_FOUND));
 
-        if (!groupMemberRepository.existsMembership(groupId, userId)) {
-            throw new CustomException(GroupErrorCode.NOT_GROUP_MEMBER);
-        }
-
         List<GroupMember> members = groupMemberRepository.findAllWithUserByGroupIdIn(List.of(groupId));
 
         return GroupConverter.toMemberList(group, members);

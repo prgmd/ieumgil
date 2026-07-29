@@ -1,5 +1,6 @@
 package com.ssafy.ieumgil.domain.project.controller;
 
+import com.ssafy.ieumgil.domain.group.annotation.GroupMember;
 import com.ssafy.ieumgil.domain.project.dto.ProjectReqDTO;
 import com.ssafy.ieumgil.domain.project.dto.ProjectResDTO;
 import com.ssafy.ieumgil.domain.project.service.ProjectCommandService;
@@ -41,6 +42,7 @@ public class ProjectController {
     private final ProjectCommandService projectCommandService;
     private final ProjectQueryService projectQueryService;
 
+    @GroupMember
     @GetMapping("/groups/{groupId}/projects")
     @Operation(summary = "프로젝트 카드 목록 조회", description = "그룹의 프로젝트를 최근 생성 순으로 조회합니다.")
     public CustomResponse<List<ProjectResDTO.Card>> getGroupProjects(
@@ -49,6 +51,7 @@ public class ProjectController {
         return CustomResponse.onSuccess(projectQueryService.getGroupProjects(userId, groupId));
     }
 
+    @GroupMember
     @PostMapping("/groups/{groupId}/projects")
     @ResponseStatus(HttpStatus.CREATED)
     @Operation(summary = "프로젝트 생성", description = "그룹에 프로젝트를 만듭니다. 상태는 PLANNING으로 시작합니다.")
@@ -60,6 +63,7 @@ public class ProjectController {
                 projectCommandService.createProject(userId, groupId, request));
     }
 
+    @GroupMember(GroupMember.Source.PROJECT_ID)
     @PatchMapping("/projects/{projectId}")
     @Operation(summary = "프로젝트 이름·기간 수정", description = "보낸 필드만 수정합니다. movedToPool은 블록 기능 구현 전까지 빈 배열입니다.")
     public CustomResponse<ProjectResDTO.Updated> updateProject(
@@ -69,6 +73,7 @@ public class ProjectController {
         return CustomResponse.onSuccess(projectCommandService.updateProject(userId, projectId, request));
     }
 
+    @GroupMember(GroupMember.Source.PROJECT_ID)
     @DeleteMapping("/projects/{projectId}")
     @Operation(summary = "프로젝트 삭제", description = "소프트 삭제합니다. 모든 멤버가 가능합니다(flat 모델).")
     public CustomResponse<Void> deleteProject(

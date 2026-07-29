@@ -2,7 +2,6 @@ package com.ssafy.ieumgil.domain.project.service;
 
 import com.ssafy.ieumgil.domain.group.entity.TravelGroup;
 import com.ssafy.ieumgil.domain.group.exception.GroupErrorCode;
-import com.ssafy.ieumgil.domain.group.repository.GroupMemberRepository;
 import com.ssafy.ieumgil.domain.group.repository.TravelGroupRepository;
 import com.ssafy.ieumgil.domain.project.converter.ProjectConverter;
 import com.ssafy.ieumgil.domain.project.dto.ProjectReqDTO;
@@ -24,12 +23,11 @@ public class ProjectCommandServiceImpl implements ProjectCommandService {
 
     private final ProjectRepository projectRepository;
     private final TravelGroupRepository travelGroupRepository;
-    private final GroupMemberRepository groupMemberRepository;
 
     /** 프로젝트 생성 (PRJ-01) */
     @Override
     public ProjectResDTO.Created createProject(Long userId, Long groupId, ProjectReqDTO.Create request) {
-        TravelGroup group = getGroupAsMember(userId, groupId);
+        TravelGroup group = getGroup(groupId);
 
         validateDateRange(request.startDate(), request.endDate());
 
@@ -41,7 +39,7 @@ public class ProjectCommandServiceImpl implements ProjectCommandService {
     /** 프로젝트 이름·기간 수정 (PRJ-02). null인 필드는 건드리지 않는다 */
     @Override
     public ProjectResDTO.Updated updateProject(Long userId, Long projectId, ProjectReqDTO.Update request) {
-        Project project = getProjectAsMember(userId, projectId);
+        Project project = getProject(projectId);
 
         // 부분 수정이라 안 보낸 필드는 기존 값과 비교해야 한다
         LocalDate startDate = request.startDate() != null ? request.startDate() : project.getStartDate();
@@ -56,35 +54,22 @@ public class ProjectCommandServiceImpl implements ProjectCommandService {
     /** 프로젝트 소프트 삭제 (PRJ-03). 그룹 복구 시 함께 살아나야 하므로 행을 남긴다 */
     @Override
     public void softDeleteProject(Long userId, Long projectId) {
-        Project project = getProjectAsMember(userId, projectId);
+        Project project = getProject(projectId);
 
         project.softDelete();
     }
 
     // ----- 공통 -----
 
-    /** 6단계에서 @GroupMember AOP로 옮길 예정 */
-    private TravelGroup getGroupAsMember(Long userId, Long groupId) {
-        TravelGroup group = travelGroupRepository.findByIdAndDeletedAtIsNull(groupId)
+    /** 존재 확인·멤버십은 컨트롤러의 @GroupMember가 끝냈다. 여기서는 엔티티만 가져온다 */
+    private TravelGroup getGroup(Long groupId) {
+        return travelGroupRepository.findByIdAndDeletedAtIsNull(groupId)
                 .orElseThrow(() -> new CustomException(GroupErrorCode.GROUP_NOT_FOUND));
-
-        if (!groupMemberRepository.existsMembership(groupId, userId)) {
-            throw new CustomException(GroupErrorCode.NOT_GROUP_MEMBER);
-        }
-
-        return group;
     }
 
-    /** 프로젝트가 속한 그룹의 멤버인지 검증한다 */
-    private Project getProjectAsMember(Long userId, Long projectId) {
-        Project project = projectRepository.findByIdAndDeletedAtIsNull(projectId)
+    private Project getProject(Long projectId) {
+        return projectRepository.findByIdAndDeletedAtIsNull(projectId)
                 .orElseThrow(() -> new CustomException(ProjectErrorCode.PROJECT_NOT_FOUND));
-
-        if (!groupMemberRepository.existsMembership(project.getTravelGroup().getId(), userId)) {
-            throw new CustomException(GroupErrorCode.NOT_GROUP_MEMBER);
-        }
-
-        return project;
     }
 
     private void validateDateRange(LocalDate startDate, LocalDate endDate) {
