@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import Modal from '../shared/ui/Modal';
 import { useToastStore } from '../../../global/stores/toastStore';
+import { ERROR_CODE } from '../../../global/api/errorCodes';
 
 /**
  * @param onDelete (groupId, typedName) => Promise<void> — 목록을 소유한 페이지가 내려준다.
@@ -28,10 +29,10 @@ export default function DeleteGroupModal({ open, onClose, group, onDelete }) {
       handleClose();
     } catch (e) {
       setSubmitting(false);
-      if (e.code === 'NAME_MISMATCH') {
+      if (e.code === ERROR_CODE.GROUP_NAME_MISMATCH) {
         setError('입력한 이름이 그룹명과 일치하지 않아요.');
       } else {
-        setError('삭제에 실패했어요. 잠시 후 다시 시도해주세요.');
+        setError(e.message ?? '삭제에 실패했어요. 잠시 후 다시 시도해주세요.');
       }
     }
   }

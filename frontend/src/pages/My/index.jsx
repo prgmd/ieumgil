@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../../global/stores/authStore';
 import { useMyGroups } from '../../features/my/hooks/useMyGroups';
 import { useToastStore } from '../../global/stores/toastStore';
+import { ERROR_CODE } from '../../global/api/errorCodes';
 import CreateGroupModal from './components/CreateGroupModal';
 import DeleteGroupModal from './components/DeleteGroupModal';
 import { AppBar } from './shared/ui/AppBar';
@@ -30,7 +31,7 @@ export function MyPage() {
       setCode('');
       navigate(`/groups/${group.id}`);
     } catch (e) {
-      setCodeErr(messageFor(e.code));
+      setCodeErr(messageFor(e));
     }
   }
 
@@ -174,20 +175,27 @@ export function MyPage() {
   );
 }
 
-// MY-05: 실패 사유 4종을 사용자 문구로 매핑
-function messageFor(code) {
-  switch (code) {
-    case 'INVALID_FORMAT':
+// MY-05: 입장 실패 사유를 사용자 문구로 매핑.
+//
+// 여기서 직접 적는 건 서버 문구보다 부드럽게 쓰고 싶은 다섯 가지뿐이고, 그 밖의
+// 코드는 서버가 준 message 를 그대로 보여준다 — 고정 문구로 뭉개면 "잠시 후 다시
+// 시도"만 반복돼 실제 사유를 알 수 없다.
+//
+// VALIDATION_FAILED 는 공용 코드라 화면마다 의미가 다르지만, 이 폼에서 오는 400 은
+// 초대 코드 형식 위반뿐이다(@Pattern ^[A-Z0-9]{8}$).
+function messageFor(error) {
+  switch (error?.code) {
+    case ERROR_CODE.VALIDATION_FAILED:
       return '코드는 영대문자·숫자 8자리입니다.';
-    case 'CODE_NOT_FOUND':
+    case ERROR_CODE.INVITE_CODE_NOT_FOUND:
       return '존재하지 않는 코드예요. 코드를 다시 확인해주세요.';
-    case 'CODE_EXPIRED':
+    case ERROR_CODE.INVITE_CODE_EXPIRED:
       return '만료된 코드입니다 — 그룹 멤버에게 재발급을 요청하세요.';
-    case 'GROUP_FULL':
+    case ERROR_CODE.GROUP_FULL:
       return '정원이 가득 찼어요 (최대 10명).';
-    case 'ALREADY_MEMBER':
+    case ERROR_CODE.ALREADY_GROUP_MEMBER:
       return '이미 가입된 그룹이에요.';
     default:
-      return '입장에 실패했어요. 잠시 후 다시 시도해주세요.';
+      return error?.message ?? '입장에 실패했어요. 잠시 후 다시 시도해주세요.';
   }
 }

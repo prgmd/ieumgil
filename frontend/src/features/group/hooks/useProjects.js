@@ -1,7 +1,4 @@
 import { useCallback, useEffect, useState } from "react";
-// ⚠️ 임시 — 백엔드 그룹 API 연동 시 아래 두 줄을 원래 import 로 되돌리고
-//    features/group/api/dummyGroupApi.js 를 삭제한다.
-// import * as api from "../../my/api/groupApi";
 import * as api from "../api/groupPageApi";
 
 const EMPTY = [];
@@ -49,11 +46,25 @@ export function useProjects(groupId) {
   // 갱신은 항상 함수형으로 — groupId 가 바뀐 뒤 늦게 끝난 mutation 이
   // 새 그룹의 목록에 섞이지 않도록 이전 레코드 위에만 반영된다.
   const createProject = useCallback(
-    async (input) => {
+    async (form) => {
+      // 폼 값은 전부 문자열이다(number 타입 input 도 e.target.value 는 문자열,
+      // 미입력 선택 항목은 빈 문자열). 서버는 Integer 를 기대하므로 여기서 타입을
+      // 맞춘다 — 빈 문자열을 그대로 보내면 400 이 될 수 있다.
+      const payload = {
+        name: form.name.trim(),
+        destination: form.destination.trim() || null,
+        startDate: form.startDate,
+        endDate: form.endDate,
+        budgetHeadcount: Number(form.budgetHeadcount),
+        targetBudget: form.targetBudget === "" ? null : Number(form.targetBudget),
+        transportPref: form.transportPref,
+      };
+
       // POST 응답은 { projectId } 하나뿐이므로(my-group-api.md) 카드에 필요한
-      // 나머지 필드는 방금 보낸 입력값으로 채운다 — 목록 재조회를 아끼기 위함.
-      const created = await api.createProject(groupId, input);
-      const project = { status: "PLANNING", ...input, ...created };
+      // 나머지 필드는 방금 보낸 값으로 채운다 — 목록 재조회를 아끼기 위함.
+      // 전송값과 카드가 같은 payload 를 쓰도록 정규화를 이 층에 둔다.
+      const created = await api.createProject(groupId, payload);
+      const project = { status: "PLANNING", ...payload, ...created };
       setResult((prev) => ({ ...prev, projects: [project, ...prev.projects] }));
       return project;
     },

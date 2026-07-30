@@ -61,6 +61,12 @@ export default function CreateProjectModal({ open, onClose, onCreate }) {
       setError('여행 인원은 1명 이상이어야 해요.');
       return;
     }
+    // 서버가 필수로 받는다(ProjectReqDTO.Create @NotNull). 빈 값으로 보내면
+    // enum 변환이 실패해 COMMON400_4 로 떨어지므로 여기서 먼저 막는다.
+    if (!form.transportPref) {
+      setError('주요 이동수단을 선택해주세요.');
+      return;
+    }
     if (!form.startDate || !form.endDate) {
       setError('여행 시작일과 종료일을 선택해주세요.');
       return;
@@ -138,12 +144,16 @@ export default function CreateProjectModal({ open, onClose, onCreate }) {
 
       <div className="r2">
         <div>
-          <label>주요 이동수단</label>
+          <label>주요 이동수단 *</label>
           <select
             value={form.transportPref}
             onChange={(e) => update('transportPref', e.target.value)}
           >
-            <option value="">선택 안 함</option>
+            {/* 초기값은 빈 문자열로 두고 되돌아갈 수는 없게 한다 —
+                기본값을 정해주지 않고 사용자가 직접 고르게 하려는 의도. */}
+            <option value="" disabled>
+              선택해주세요
+            </option>
             {TRANSPORT_OPTIONS.map((t) => (
               <option key={t.value} value={t.value}>
                 {t.label}
