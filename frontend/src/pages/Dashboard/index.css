@@ -1,0 +1,343 @@
+/* Dashboard 하위에 적용될 전체 레이아웃 래퍼 */
+.dashboard-page {
+  font-family:
+    -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue",
+    sans-serif;
+  color: var(--ink1, #211c19);
+  padding: 40px;
+  display: flex;
+  gap: 32px;
+  align-items: flex-start;
+  max-width: 1400px;
+  margin: 0 auto;
+}
+
+/* DayTab 영역 */
+.daycol {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 120px;
+  flex-shrink: 0;
+}
+.day-tab {
+  text-align: left;
+  background: var(--bg2, #fdfbf7);
+  border: 1px solid var(--border1, #e3dfd8);
+  padding: 16px;
+  border-radius: 12px;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--ink3, #786d63);
+  cursor: pointer;
+  transition: all 0.2s;
+  display: flex;
+  justify-content: space-between;
+}
+.day-tab:hover {
+  background: #fff;
+  border-color: var(--acc, #9c4a2f);
+}
+.day-tab.on {
+  background: var(--acc, #9c4a2f);
+  color: #fff;
+  border-color: var(--acc, #9c4a2f);
+}
+.day-tab .cnt {
+  font-size: 13px;
+  opacity: 0.6;
+  font-weight: normal;
+}
+
+/* 메인 플래너 보드 */
+.main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+.board {
+  background: var(--bg2, #fdfbf7);
+  border: 1px solid var(--border1, #e3dfd8);
+  border-radius: 20px;
+  padding: 24px;
+}
+.bd-head {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  border-bottom: 1px solid var(--border1, #e3dfd8);
+  padding-bottom: 16px;
+}
+.bd-head h2 {
+  margin: 0;
+  font-size: 24px;
+}
+.bd-head .date {
+  color: var(--ink3, #786d63);
+}
+.bd-head .right {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.start-ctl {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: #fff;
+  border: 1px solid var(--border1, #e3dfd8);
+  padding: 4px 12px;
+  border-radius: 20px;
+  font-size: 14px;
+}
+.start-ctl button {
+  background: none;
+  border: none;
+  font-size: 16px;
+  cursor: pointer;
+  color: var(--acc, #9c4a2f);
+  font-weight: bold;
+  padding: 0 4px;
+}
+.auto-transport-btn {
+  background: #fff;
+  border: 1px solid var(--border1, #e3dfd8);
+  padding: 8px 16px;
+  border-radius: 20px;
+  font-size: 14px;
+  cursor: pointer;
+  color: var(--ink1);
+  transition: all 0.2s;
+}
+.auto-transport-btn:hover:not(:disabled) {
+  background: #f0ece1;
+}
+.auto-transport-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* 타임라인 영역 */
+.tl {
+  border: 1px solid var(--border1, #e3dfd8);
+  border-radius: 12px;
+  background: var(--bg1, #fffdf8);
+  padding: 10px;
+  transition: background 0.2s;
+}
+.tl.dropover {
+  background: rgba(156, 74, 47, 0.02);
+}
+
+/* 후보 및 휴지통 영역 */
+.pool-sec {
+  background: var(--bg2, #fdfbf7);
+  border: 1px solid var(--border1, #e3dfd8);
+  border-radius: 20px;
+  padding: 20px;
+}
+.pool-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+.pool-head b {
+  font-size: 18px;
+}
+.pool-head .n {
+  background: var(--acc, #9c4a2f);
+  color: #fff;
+  border-radius: 10px;
+  padding: 2px 8px;
+  font-size: 13px;
+  font-weight: bold;
+}
+.pool-head span:last-child {
+  color: var(--ink3);
+  font-size: 13px;
+  margin-left: auto;
+}
+.pool {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+.trash-zone {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 2px dashed var(--border1, #e3dfd8);
+  border-radius: 20px;
+  background: var(--bg2, #fdfbf7);
+  color: var(--ink3);
+  font-weight: 600;
+  transition: all 0.2s;
+}
+.trash-zone.dragging {
+  border-color: #d1bfae;
+  background: #fffdf8;
+  color: #a39281;
+}
+.trash-zone.dropover {
+  border-color: #d64a4a;
+  background: #fff5f5;
+  color: #d64a4a;
+  transform: scale(1.02);
+}
+
+/* 블럭(카드) 공통 디자인 */
+.card,
+.pcard {
+  background: var(--cb);
+  border: 1px solid var(--dc);
+  border-radius: 10px;
+  padding: 10px 12px;
+  font-size: 13px;
+  color: var(--ink1);
+  display: flex;
+  flex-direction: column;
+}
+.card:hover,
+.pcard:hover {
+  filter: brightness(0.97);
+}
+.pcard {
+  width: 150px;
+  cursor: grab;
+}
+.pcard .l {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+.pcard .cat {
+  font-weight: 700;
+  color: var(--dc);
+}
+.pcard .grip {
+  color: var(--dc);
+  opacity: 0.5;
+}
+.pcard .nm {
+  font-weight: 600;
+  font-size: 14px;
+  margin-bottom: 4px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.pcard .sub {
+  color: var(--ink2);
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* 타임라인 내 카드 디자인 */
+.card .l1 {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+.card .cat {
+  font-weight: 700;
+  color: var(--dc);
+  background: #fff;
+  padding: 2px 6px;
+  border-radius: 6px;
+  font-size: 12px;
+}
+.card .auto-badge {
+  background: var(--dc);
+  color: #fff;
+  padding: 2px 6px;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: bold;
+}
+.card .nm {
+  font-weight: 700;
+  font-size: 15px;
+}
+.card .nm-sub {
+  font-size: 12px;
+  color: var(--ink3);
+  margin-left: 4px;
+}
+.card .time {
+  margin-left: auto;
+  font-family: monospace;
+  font-size: 14px;
+  color: var(--dc);
+  font-weight: bold;
+}
+.card .cost {
+  font-weight: 600;
+  color: var(--ink2);
+  font-size: 12.5px;
+}
+.card .addr {
+  color: var(--ink2);
+  margin-bottom: 6px;
+  font-size: 12.5px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.card .ctl {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-top: 1px dashed rgba(0, 0, 0, 0.1);
+  font-size: 12px;
+  color: var(--ink3);
+}
+
+/* 사이드 패널 */
+.side {
+  width: 280px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+.panel {
+  background: var(--bg2, #fdfbf7);
+  border: 1px solid var(--border1, #e3dfd8);
+  border-radius: 20px;
+  padding: 24px;
+}
+.panel h4 {
+  margin: 0 0 16px 0;
+  font-size: 18px;
+  border-bottom: 2px solid var(--ink1);
+  padding-bottom: 12px;
+  display: inline-block;
+}
+.bud {
+  display: flex;
+  justify-content: space-between;
+  font-size: 16px;
+  font-weight: 600;
+}
+.bud .t {
+  color: var(--acc, #9c4a2f);
+  font-size: 20px;
+}
+.map {
+  background: #e9e5dc;
+  height: 300px;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.kk {
+  color: #a99f91;
+  font-weight: bold;
+}
