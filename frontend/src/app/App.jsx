@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import { Outlet } from "react-router-dom";
 import { useAuthStore } from "../global/stores/authStore";
+import { Toast } from "../global/components/Toast";
 
 /**
  * 공통 레이아웃 컴포넌트.
@@ -29,7 +30,12 @@ function App() {
     );
   }
 
-  return <Outlet />;
+  return (
+    <>
+      <Outlet />
+      <Toast />
+    </>
+  );
 }
 
 export default App;

@@ -26,6 +26,7 @@ body{background:linear-gradient(150deg,#fdf6ea 0%,#f4ecd9 30%,#e2e8d8 65%,#cfe0d
 .appbar .me-avatar-fallback{width:28px;height:28px;font-size:12px}
 .appbar .logout-btn{margin-left:6px;padding:5px 10px;font-size:12px;font-weight:500;color:var(--ink2);background:none;border:1px solid rgba(61,43,34,.16);border-radius:8px;cursor:pointer}
 .appbar .logout-btn:hover{color:var(--acc);border-color:var(--acc)}
+.appbar .logout-btn:disabled{opacity:.55;cursor:default}
 
 /* 페이지 공통 컨테이너 / 섹션 헤더 */
 .page{max-width:1080px;margin:0 auto;padding:26px 22px 96px}
