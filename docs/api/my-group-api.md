@@ -7,8 +7,13 @@
 ## 공통 규약
 
 - **응답 래퍼 `CustomResponse`**: `{ "isSuccess", "code", "message", "result" }`. ([auth-api.md](auth-api.md) 참조)
-- **인증 헤더**: 모든 엔드포인트 `Authorization: Bearer {accessToken}` 필요.
-- **멤버십 검증**: `{groupId}`·`{projectId}` 경로는 AOP `@GroupMember`로 요청자의 그룹 소속을 검증한다. 비멤버 접근은 `403 FORBIDDEN`.
+  `result`가 없는 응답은 `"result": null`이 아니라 **키 자체가 빠진다**(`@JsonInclude(NON_NULL)`).
+- **`message`는 상황별 문구가 아니다**: `COMMON200` "요청에 성공했습니다." / `COMMON201` "자원이 생성되었습니다."
+  두 고정 문구만 나간다. 사용자에게 보여줄 문구는 프론트가 직접 가진다.
+- **인증 헤더**: 모든 엔드포인트 `Authorization: Bearer {accessToken}` 필요. 누락·만료는 `COMMON401`.
+- **멤버십 검증**: `{groupId}`·`{projectId}` 경로는 AOP `@GroupMember`로 요청자의 그룹 소속을 검증한다.
+  **존재 확인이 먼저다** — 없는 그룹은 `GROUP404`, 있지만 비멤버면 `GROUP403`.
+  (순서를 바꾸면 없는 그룹에 403이 나가 프론트가 권한 문제로 오해한다.)
 - **권한 모델(flat)**: 방장/관리자 개념이 없다. 그룹의 **모든 멤버가 동등**하게 그룹명 수정·초대 코드 재발급·그룹/프로젝트 삭제를 수행할 수 있다. 멤버 강제 방출(kick)은 없고 **본인 탈퇴(self-leave)만** 가능하며, 마지막 1인이 나가면 그룹은 **하드 삭제**(즉시 완전 삭제)된다.
 - **범위 구분**: 이 문서는 개인/그룹 페이지에서 수행하는 **내 정보 + 그룹 관리 + 프로젝트 카드 관리**를 다룬다. 프로젝트 보드 내부(스냅샷·블록·실시간·예산)는 [dashboard-api.md](dashboard-api.md) 참조.
 
@@ -59,13 +64,13 @@
 
 | code | HTTP | 상황 |
 |---|---|---|
-| `UNAUTHORIZED` | 401 | accessToken 누락/만료 |
+| `COMMON401` | 401 | accessToken 누락/만료 |
 
 ---
 
 ### DELETE /api/members/me
 
-회원 탈퇴 — ERD `MEMBER` 탈퇴 정책 수행(`provider_id` 센티널 치환, `nickname` "탈퇴한 멤버" 교체, `profile_img` null, `deleted_at` 기록). 행은 유지되어 블록 작성자 표기가 보존된다. 소속 그룹에서는 자동 탈퇴 처리되며, 마지막 1인이던 그룹은 하드 삭제된다(§ `DELETE /api/groups/{groupId}/members/me` 참조).
+회원 탈퇴 — ERD `MEMBER` 탈퇴 정책 수행(`kakao_id` null 처리, `nickname` "탈퇴한 멤버" 교체, `profile_img` null, `deleted_at` 기록). 행은 유지되어 블록 작성자 표기가 보존된다. 소속 그룹에서는 자동 탈퇴 처리되며, 마지막 1인이던 그룹은 하드 삭제된다(§ `DELETE /api/groups/{groupId}/members/me` 참조).
 
 **Response `204`:** 본문 없음.
 
@@ -73,7 +78,7 @@
 
 | code | HTTP | 상황 |
 |---|---|---|
-| `UNAUTHORIZED` | 401 | accessToken 누락/만료 |
+| `COMMON401` | 401 | accessToken 누락/만료 |
 
 ---
 
@@ -107,7 +112,11 @@
 
 ### POST /api/groups/join
 
-초대 코드로 그룹 입장. 정원(최대 10명) 검증은 그룹 행 `SELECT ... FOR UPDATE`로 동시 가입 경합 방지.
+초대 코드로 그룹 입장. 검증 순서가 곧 응답 코드 순서다 — 없는 코드(404) → 만료(410) → 이미 멤버(409) → 정원(409).
+
+> **알려진 한계**: 정원(최대 10명) 검증에 비관적 락을 걸지 않는다. 9명일 때 두 명이 동시에
+> 들어오면 11명이 될 수 있다. 실질적 피해가 없어 일정을 우선해 감수하기로 결정했다(2026-07-29).
+> 필요해지면 리포지토리 메서드에 `@Lock(PESSIMISTIC_WRITE)`만 추가하면 된다.
 
 **Request Body:**
 ```json
@@ -119,7 +128,7 @@
 {
   "isSuccess": true,
   "code": "COMMON200",
-  "message": "그룹에 입장했습니다.",
+  "message": "요청에 성공했습니다.",
   "result": { "groupId": 5, "name": "동아리 친구들" }
 }
 ```
@@ -128,11 +137,11 @@
 
 | code | HTTP | 상황 |
 |---|---|---|
-| `INVALID_FORMAT` | 400 | 코드 형식 오류(영대문자·숫자 8자리 아님) |
-| `NOT_FOUND` | 404 | 존재하지 않는 코드 |
-| `EXPIRED` | 410 | 만료된 코드 — 멤버에게 재발급 요청 |
-| `GROUP_FULL` | 409 | 정원(10명) 초과 |
-| `ALREADY_MEMBER` | 409 | 이미 소속된 그룹 |
+| `COMMON400_1` | 400 | 코드 형식 오류(영대문자·숫자 8자리 아님) — `@Pattern` 위반 |
+| `GROUP404_1` | 404 | 존재하지 않는 코드 |
+| `GROUP410` | 410 | 만료된 코드 — 멤버에게 재발급 요청 |
+| `GROUP409` | 409 | 이미 소속된 그룹 |
+| `GROUP409_1` | 409 | 정원(10명) 초과 |
 
 ---
 
@@ -154,7 +163,7 @@
 {
   "isSuccess": true,
   "code": "COMMON201",
-  "message": "그룹이 생성되었습니다.",
+  "message": "자원이 생성되었습니다.",
   "result": {
     "groupId": 7,
     "name": "제주 여행팀",
@@ -163,12 +172,15 @@
   }
 }
 ```
+> 이 응답에는 목록(`GET /api/groups`)의 `memberCount`·`tripCount`·`members`가 없다.
+> 생성 직후 값은 "멤버는 생성자 1명, 프로젝트 0개"로 확정돼 있어, 프론트는 목록을
+> 다시 조회하지 않고 이 응답에 그 값을 채워 카드를 만든다.
 
 **Errors:**
 
 | code | HTTP | 상황 |
 |---|---|---|
-| `VALIDATION_ERROR` | 400 | name 누락 또는 2~20자 범위 위반 |
+| `COMMON400_1` | 400 | name 누락 또는 2~20자 범위 위반 |
 
 ---
 
@@ -186,16 +198,18 @@
 {
   "isSuccess": true,
   "code": "COMMON200",
-  "message": "그룹명이 수정되었습니다.",
+  "message": "요청에 성공했습니다.",
   "result": { "groupId": 7, "name": "제주 여행팀 (수정)" }
 }
 ```
+> 응답에 `groupId`·`name`만 담기므로, 프론트는 목록의 기존 항목을 통째로 교체하지 않고
+> `name`만 덮어써야 한다(교체하면 `members`·`tripCount`가 사라진다).
 
 **Errors:**
 
 | code | HTTP | 상황 |
 |---|---|---|
-| `VALIDATION_ERROR` | 400 | name 범위 위반 |
+| `COMMON400_1` | 400 | name 범위 위반 |
 
 ---
 
@@ -210,14 +224,15 @@
 
 **Response `200`:**
 ```json
-{ "isSuccess": true, "code": "COMMON200", "message": "그룹이 삭제되었습니다.", "result": null }
+{ "isSuccess": true, "code": "COMMON200", "message": "요청에 성공했습니다." }
 ```
 
 **Errors:**
 
 | code | HTTP | 상황 |
 |---|---|---|
-| `NAME_MISMATCH` | 400 | confirmName이 그룹명과 불일치 |
+| `COMMON400_1` | 400 | confirmName 누락 또는 공백 |
+| `GROUP400` | 400 | confirmName이 그룹명과 불일치 |
 
 ---
 
@@ -254,7 +269,7 @@
 {
   "isSuccess": true,
   "code": "COMMON200",
-  "message": "초대 코드가 재발급되었습니다.",
+  "message": "요청에 성공했습니다.",
   "result": { "inviteCode": "EFGH6789", "inviteExpiresAt": "2026-08-04T12:00:00+09:00" }
 }
 ```
@@ -270,7 +285,7 @@
 {
   "isSuccess": true,
   "code": "COMMON200",
-  "message": "그룹에서 나갔습니다.",
+  "message": "요청에 성공했습니다.",
   "result": { "groupDeleted": false }
 }
 ```
@@ -339,16 +354,20 @@
 {
   "isSuccess": true,
   "code": "COMMON201",
-  "message": "프로젝트가 생성되었습니다.",
+  "message": "자원이 생성되었습니다.",
   "result": { "projectId": 12 }
 }
 ```
+> 응답에 `projectId`만 담기므로, 프론트는 카드에 필요한 나머지 필드를 방금 보낸 요청값으로
+> 채운다. `status`는 항상 `PLANNING`으로 시작한다.
 
 **Errors:**
 
 | code | HTTP | 상황 |
 |---|---|---|
-| `VALIDATION_ERROR` | 400 | 필수 필드 누락, endDate < startDate 등 |
+| `COMMON400_1` | 400 | 필수 필드 누락, 범위 위반 (`@Valid` 실패) |
+| `COMMON400_4` | 400 | `transportPref`에 `CAR`·`PUBLIC` 외의 값(빈 문자열 포함) — enum 변환 실패 |
+| `PROJECT400` | 400 | endDate < startDate |
 
 ---
 
@@ -372,7 +391,7 @@
 {
   "isSuccess": true,
   "code": "COMMON200",
-  "message": "프로젝트가 수정되었습니다.",
+  "message": "요청에 성공했습니다.",
   "result": {
     "projectId": 12,
     "name": "제주 4박 5일",
@@ -388,8 +407,10 @@
 
 | code | HTTP | 상황 |
 |---|---|---|
-| `VALIDATION_ERROR` | 400 | endDate < startDate 등 |
-| `FORBIDDEN` | 403 | 그룹 멤버가 아님 |
+| `COMMON400_1` | 400 | name 범위 위반 (`@Valid` 실패) |
+| `PROJECT400` | 400 | endDate < startDate |
+| `GROUP403` | 403 | 프로젝트가 속한 그룹의 멤버가 아님 |
+| `PROJECT404` | 404 | 존재하지 않는 프로젝트 |
 
 ---
 
@@ -399,5 +420,5 @@
 
 **Response `200`:**
 ```json
-{ "isSuccess": true, "code": "COMMON200", "message": "프로젝트가 삭제되었습니다.", "result": null }
+{ "isSuccess": true, "code": "COMMON200", "message": "요청에 성공했습니다." }
 ```

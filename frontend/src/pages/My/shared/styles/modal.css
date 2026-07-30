@@ -1,0 +1,11 @@
+.ov{position:fixed;inset:0;background:rgba(61,43,34,.4);backdrop-filter:blur(3px);display:none;align-items:center;justify-content:center;z-index:60;padding:18px}
+.ov.open{display:flex}
+.md{background:var(--cream);border-radius:20px;padding:22px 24px;width:min(560px,100%);max-height:88vh;overflow-y:auto;box-shadow:0 26px 60px rgba(61,43,34,.3)}
+.md h3{font-family:var(--font-app);font-size:19px;margin-bottom:4px}
+.md .s{font-size:12.5px;color:var(--ink2);margin-bottom:14px}
+.md label{display:block;font-size:12px;font-weight:500;color:var(--ink2);margin:12px 0 5px}
+.md input,.md select,.md textarea{width:100%;border:1.5px solid var(--line);border-radius:11px;padding:10px 13px;font-size:13.5px;background:#fff;font-family:inherit}
+.md textarea{min-height:70px;resize:vertical}
+.r2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.md .foot{display:flex;gap:9px;justify-content:flex-end;margin-top:18px}
+.note{background:#fdf3e6;border-left:3px solid #e3b26a;border-radius:0 9px 9px 0;padding:9px 13px;font-size:12px;margin-top:12px}

@@ -46,22 +46,16 @@
   align-items: center;
   gap: var(--space-2);
   font-size: 1.2rem;
-  font-weight: 800;
+  font-weight: 500;
   letter-spacing: -0.01em;
   margin-right: auto;
+  height: 30px; /* 바 높이를 이 값으로 고정 — 로고가 커져도 바는 안 늘어남 */
 }
 
-.landing-nav__mark {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 32px;
-  height: 32px;
-  border-radius: var(--radius-sm);
-  background: var(--color-brand);
-  color: var(--color-text-on-dark);
-  font-size: 0.95rem;
-  transform: rotate(-40deg);
+.landing-nav__logo-img {
+  display: block;
+  height: 80px;
+  width: auto;
 }
 
 .landing-nav__links {
@@ -69,7 +63,7 @@
   align-items: center;
   gap: var(--space-6);
   font-size: 0.94rem;
-  font-weight: 600;
+  font-weight: 500;
   color: var(--color-text-muted);
 }
 
@@ -82,7 +76,7 @@
   align-items: center;
   gap: var(--space-4);
   font-size: 0.94rem;
-  font-weight: 600;
+  font-weight: 500;
 }
 
 .landing-nav__login {
@@ -171,7 +165,7 @@
   align-items: center;
   gap: var(--space-2);
   font-family: var(--font-display);
-  font-weight: 800;
+  font-weight: 500;
   font-size: clamp(2.1rem, 4.4vw, 3.4rem);
   line-height: 1.28;
   letter-spacing: -0.02em;
@@ -207,7 +201,7 @@
   margin-top: var(--space-7);
   background: var(--color-brand);
   color: var(--color-text-on-dark);
-  font-weight: 700;
+  font-weight: 500;
   font-size: 1.02rem;
   padding: var(--space-4) var(--space-7);
   border-radius: var(--radius-pill);
@@ -235,7 +229,7 @@
 .showcase__intro h2 {
   font-family: var(--font-display);
   font-size: clamp(1.5rem, 2.6vw, 2rem);
-  font-weight: 800;
+  font-weight: 500;
   letter-spacing: -0.01em;
 }
 
@@ -345,7 +339,7 @@
 .closing-band {
   border-top: 1px solid var(--color-border);
   background: var(--color-bg-accent);
-  padding: var(--space-8) var(--space-5);
+  padding: var(--space-6) var(--space-5);
   text-align: center;
 }
 
