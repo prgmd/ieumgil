@@ -25,6 +25,7 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 
 import java.math.BigDecimal;
+import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.util.HashMap;
@@ -157,5 +158,40 @@ public class Block extends BaseTimeEntity {
 
     public boolean isDeleted() {
         return deletedAt != null;
+    }
+
+    /** 이동(BLK-07) — 옮긴 블록 1행만 바뀐다. 다른 블록의 시각 재계산은 클라이언트 책임 */
+    public void move(Integer dayNo, String orderKey) {
+        this.dayNo = dayNo;
+        this.orderKey = orderKey;
+    }
+
+    /**
+     * LWW 갱신 대상 필드 하나를 적용한다. 값은 서비스가 타입 검증·변환을 끝낸 상태다.
+     * 여기 나열된 9종이 곧 LWW 대상 필드의 전체 목록이다(dashboard-api.md).
+     */
+    public void applyField(String field, Object value) {
+        switch (field) {
+            case "name" -> this.name = (String) value;
+            case "budget" -> this.budget = (Integer) value;
+            case "durationMin" -> this.durationMin = (Integer) value;
+            case "detail" -> this.detail = (String) value;
+            case "startTime" -> this.startTime = (LocalTime) value;
+            case "endTime" -> this.endTime = (LocalTime) value;
+            case "isTimeFixed" -> this.isTimeFixed = (Boolean) value;
+            case "vehicleFlag" -> this.vehicleFlag = (VehicleFlag) value;
+            case "transportMeta" -> this.transportMeta = castTransportMeta(value);
+            default -> throw new IllegalArgumentException("LWW 대상이 아닌 필드: " + field);
+        }
+    }
+
+    /** 필드의 LWW 타임스탬프(서버 수신 시각)를 기록한다 */
+    public void markFieldUpdated(String field, Instant receivedAt) {
+        this.fieldUpdatedAt.put(field, receivedAt.toString());
+    }
+
+    @SuppressWarnings("unchecked")
+    private static Map<String, Object> castTransportMeta(Object value) {
+        return (Map<String, Object>) value;
     }
 }

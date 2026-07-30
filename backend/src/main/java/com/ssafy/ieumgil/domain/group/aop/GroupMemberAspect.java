@@ -1,5 +1,7 @@
 package com.ssafy.ieumgil.domain.group.aop;
 
+import com.ssafy.ieumgil.domain.block.exception.BlockErrorCode;
+import com.ssafy.ieumgil.domain.block.repository.BlockRepository;
 import com.ssafy.ieumgil.domain.group.annotation.GroupMember;
 import com.ssafy.ieumgil.domain.group.exception.GroupErrorCode;
 import com.ssafy.ieumgil.domain.group.repository.GroupMemberRepository;
@@ -29,10 +31,12 @@ public class GroupMemberAspect {
 
     private static final String GROUP_ID_PARAM = "groupId";
     private static final String PROJECT_ID_PARAM = "projectId";
+    private static final String BLOCK_ID_PARAM = "blockId";
 
     private final TravelGroupRepository travelGroupRepository;
     private final GroupMemberRepository groupMemberRepository;
     private final ProjectRepository projectRepository;
+    private final BlockRepository blockRepository;
 
     @Before("@annotation(groupMember)")
     public void validateMembership(JoinPoint joinPoint, GroupMember groupMember) {
@@ -58,17 +62,27 @@ public class GroupMemberAspect {
     }
 
     private Long resolveGroupId(JoinPoint joinPoint, GroupMember.Source source) {
-        if (source == GroupMember.Source.GROUP_ID) {
-            return findLongArgument(joinPoint, GROUP_ID_PARAM);
-        }
+        return switch (source) {
+            case GROUP_ID -> findLongArgument(joinPoint, GROUP_ID_PARAM);
 
-        Long projectId = findLongArgument(joinPoint, PROJECT_ID_PARAM);
+            case PROJECT_ID -> {
+                Long projectId = findLongArgument(joinPoint, PROJECT_ID_PARAM);
+                yield projectRepository.findByIdAndDeletedAtIsNull(projectId)
+                        .orElseThrow(() -> new CustomException(
+                                com.ssafy.ieumgil.domain.project.exception.ProjectErrorCode.PROJECT_NOT_FOUND))
+                        .getTravelGroup()
+                        .getId();
+            }
 
-        return projectRepository.findByIdAndDeletedAtIsNull(projectId)
-                .orElseThrow(() -> new CustomException(
-                        com.ssafy.ieumgil.domain.project.exception.ProjectErrorCode.PROJECT_NOT_FOUND))
-                .getTravelGroup()
-                .getId();
+            // 블록→프로젝트→그룹 2홉을 한 쿼리로 역추적한다.
+            // tombstone 블록도 여기서는 통과 — 삭제된 블록에 온 지연 op는 404가 아니라
+            // 410이어야 하므로(BLK-09), 살았는지 판정은 서비스(getAliveBlock)가 한다.
+            case BLOCK_ID -> {
+                Long blockId = findLongArgument(joinPoint, BLOCK_ID_PARAM);
+                yield blockRepository.findGroupIdById(blockId)
+                        .orElseThrow(() -> new CustomException(BlockErrorCode.BLOCK_NOT_FOUND));
+            }
+        };
     }
 
     /**
