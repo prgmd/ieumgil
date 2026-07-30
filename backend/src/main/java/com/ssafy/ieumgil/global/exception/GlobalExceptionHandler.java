@@ -4,13 +4,16 @@ import com.ssafy.ieumgil.global.apiPayload.CustomResponse;
 import com.ssafy.ieumgil.global.apiPayload.code.BaseErrorCode;
 import com.ssafy.ieumgil.global.apiPayload.code.GeneralErrorCode;
 import jakarta.servlet.http.HttpServletRequest;
+import jakarta.validation.ConstraintViolationException;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
+import org.springframework.web.bind.MissingServletRequestParameterException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 import java.util.LinkedHashMap;
@@ -37,6 +40,35 @@ public class GlobalExceptionHandler {
                 errors.put(err.getField(), err.getDefaultMessage()));
 
         return toResponse(GeneralErrorCode.VALIDATION_FAILED, errors, e, request);
+    }
+
+    // @Validated + @RequestParam/@PathVariable 단위 검증 실패
+    @ExceptionHandler(ConstraintViolationException.class)
+    public ResponseEntity<CustomResponse<Map<String, String>>> handleConstraintViolation(
+            ConstraintViolationException e, HttpServletRequest request) {
+        Map<String, String> errors = new LinkedHashMap<>();
+
+        e.getConstraintViolations().forEach(violation -> {
+            String path = violation.getPropertyPath().toString();
+            String paramName = path.contains(".") ? path.substring(path.lastIndexOf('.') + 1) : path;
+            errors.put(paramName, violation.getMessage());
+        });
+
+        return toResponse(GeneralErrorCode.VALIDATION_FAILED, errors, e, request);
+    }
+
+    // 필수 @RequestParam 누락
+    @ExceptionHandler(MissingServletRequestParameterException.class)
+    public ResponseEntity<CustomResponse<Void>> handleMissingParameter(
+            MissingServletRequestParameterException e, HttpServletRequest request) {
+        return toResponse(GeneralErrorCode.MISSING_PARAMETER, e, request);
+    }
+
+    // 요청 파라미터 타입 불일치 (예: lat=abc)
+    @ExceptionHandler(MethodArgumentTypeMismatchException.class)
+    public ResponseEntity<CustomResponse<Void>> handleTypeMismatch(
+            MethodArgumentTypeMismatchException e, HttpServletRequest request) {
+        return toResponse(GeneralErrorCode.INVALID_TYPE, e, request);
     }
 
     // JSON 형식 오류
