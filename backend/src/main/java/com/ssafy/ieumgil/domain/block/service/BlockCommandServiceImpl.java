@@ -149,9 +149,13 @@ public class BlockCommandServiceImpl implements BlockCommandService {
     /**
      * 살아있는 블록만 돌려준다. 없으면 404, tombstone이면 410 —
      * "없었다"와 "지워졌다"를 구분해야 프론트가 해당 블록만 조용히 제거할 수 있다(BLK-09).
+     *
+     * 행 잠금(FOR UPDATE)으로 조회한다 — 같은 블록의 동시 수정에서 마지막 커밋이
+     * 다른 필드까지 덮어 유실시키는 것을 실측으로 확인해서다(동시 5필드 중 4필드 유실).
+     * 잠금 범위는 블록 한 행·수 ms라 다른 블록 편집에는 영향이 없다.
      */
     private Block getAliveBlock(Long blockId) {
-        Block block = blockRepository.findById(blockId)
+        Block block = blockRepository.findByIdForUpdate(blockId)
                 .orElseThrow(() -> new CustomException(BlockErrorCode.BLOCK_NOT_FOUND));
         if (block.isDeleted()) {
             throw new CustomException(BlockErrorCode.BLOCK_GONE);
