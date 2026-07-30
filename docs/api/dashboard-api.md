@@ -427,7 +427,7 @@ coord2address 역지오코딩(MAP-04 핀 지정).
 
 ### GET /api/trains
 
-TAGO KTX 시간표 → 출발 후보 목록(앞 일정 종료 + 45분 버퍼 이후).
+ODsay 열차 시간표(KTX·무궁화 등) → 출발 후보 목록(앞 일정 종료 + 45분 버퍼 이후).
 
 **Query Params:** `dep`(출발역), `arr`(도착역), `after`(기준 시각)
 
@@ -442,11 +442,11 @@ TAGO KTX 시간표 → 출발 후보 목록(앞 일정 종료 + 45분 버퍼 이
   ]
 }
 ```
-> 실패 시 수동 입력 안내.
+> 실패 시 수동 입력 안내. (`domain.transit`의 `TransitScheduleQueryService.getTrainSchedule`이 이 조회를 이미 제공 — 이 엔드포인트 자체는 아직 컨트롤러 미구현, 위 시각/버퍼 계산 로직만 남음.)
 
 ### GET /api/stations
 
-역명 정적 목록 자동완성. **Query Params:** `query`. **Response:** `result: ["서울역", "서대구역", ...]`(서버 내장 데이터).
+역/터미널 이름검색 — ODsay 라이브 프록시(정적 목록 아님). **Query Params:** `type`(`TRAIN`\|`EXPRESS_BUS`\|`INTERCITY_BUS`), `query`(역/터미널 이름 일부, 부분일치). **Response:** `result: { stationId, stationName, lat, lng, destinations: [{stationId, stationName, lat, lng}, ...] }`(검색된 역 자체 정보 + 그 역에서 갈 수 있는 목적지 목록). `domain.transit`의 `TransitScheduleQueryService.searchTrainStation`/`searchExpressBusTerminal`/`searchIntercityBusTerminal`이 이미 제공 — 이 엔드포인트 자체는 아직 컨트롤러 미구현.
 
 ---
 
