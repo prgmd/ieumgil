@@ -45,3 +45,7 @@ kakao:
   local:
     rest-api-key: ${KAKAO_REST_API_KEY:}
     base-url: https://dapi.kakao.com
+
+odsay:
+  api-key: ${ODSAY_API_KEY:}
+  base-url: https://api.odsay.com/v1/api
