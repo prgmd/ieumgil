@@ -1,5 +1,9 @@
 package com.ssafy.ieumgil.domain.project.converter;
 
+import com.ssafy.ieumgil.domain.block.converter.BlockConverter;
+import com.ssafy.ieumgil.domain.block.entity.Block;
+import com.ssafy.ieumgil.domain.group.converter.GroupConverter;
+import com.ssafy.ieumgil.domain.group.entity.GroupMember;
 import com.ssafy.ieumgil.domain.group.entity.TravelGroup;
 import com.ssafy.ieumgil.domain.project.dto.ProjectReqDTO;
 import com.ssafy.ieumgil.domain.project.dto.ProjectResDTO;
@@ -54,6 +58,35 @@ public class ProjectConverter {
                 .transportPref(project.getTransportPref())
                 .status(project.getStatus())
                 .themeColor(project.getThemeColor())
+                .build();
+    }
+
+    /** keywords는 챗봇이 아직 안 채운 프로젝트에서 null일 수 있다 — 프론트가 배열을 전제하므로 빈 배열로 */
+    public static ProjectResDTO.Board toBoard(Project project) {
+        return ProjectResDTO.Board.builder()
+                .projectId(project.getId())
+                .name(project.getName())
+                .destination(project.getDestination())
+                .startDate(project.getStartDate())
+                .endDate(project.getEndDate())
+                .transportPref(project.getTransportPref())
+                .budgetHeadcount(project.getBudgetHeadcount())
+                .targetBudget(project.getTargetBudget())
+                .keywords(project.getKeywords() != null ? project.getKeywords() : List.of())
+                .status(project.getStatus())
+                .themeColor(project.getThemeColor())
+                .build();
+    }
+
+    public static ProjectResDTO.Snapshot toSnapshot(
+            Project project, List<Block> blocks, List<GroupMember> members, long lastSeq) {
+        return ProjectResDTO.Snapshot.builder()
+                .project(toBoard(project))
+                .blocks(blocks.stream().map(BlockConverter::toItem).toList())
+                .members(members.stream()
+                        .map(groupMember -> GroupConverter.toMemberDetail(groupMember.getUser()))
+                        .toList())
+                .lastSeq(lastSeq)
                 .build();
     }
 }

@@ -51,6 +51,17 @@ public class ProjectController {
         return CustomResponse.onSuccess(projectQueryService.getGroupProjects(userId, groupId));
     }
 
+    @GroupMember(GroupMember.Source.PROJECT_ID)
+    @GetMapping("/projects/{projectId}")
+    @Operation(summary = "대시보드 스냅샷 조회",
+            description = "프로젝트 상세 + 블록 전체 + 멤버 + lastSeq를 한 번에 반환합니다. "
+                    + "최초 로딩과 재연결 복구가 같은 응답을 씁니다. online은 presence 연동 전까지 false입니다.")
+    public CustomResponse<ProjectResDTO.Snapshot> getSnapshot(
+            @Parameter(hidden = true) @AuthenticationPrincipal Long userId,
+            @PathVariable Long projectId) {
+        return CustomResponse.onSuccess(projectQueryService.getSnapshot(userId, projectId));
+    }
+
     @GroupMember
     @PostMapping("/groups/{groupId}/projects")
     @ResponseStatus(HttpStatus.CREATED)
