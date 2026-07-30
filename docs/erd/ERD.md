@@ -31,8 +31,7 @@ erDiagram
 
     MEMBER {
         bigint id PK
-        varchar provider "KAKAO | NAVER"
-        varchar provider_id "소셜 고유 ID, 탈퇴 시 센티널 치환"
+        bigint kakao_id "카카오 고유 ID, UK, 탈퇴 시 null"
         varchar nickname "탈퇴 시 '탈퇴한 멤버'로 값 교체"
         varchar profile_img "nullable, 탈퇴 시 null"
         timestamptz created_at
@@ -143,20 +142,23 @@ erDiagram
 | 컬럼 | 타입 | 제약 | 설명 |
 |---|---|---|---|
 | id | BIGINT | PK, IDENTITY | DB 내 회원 식별자 |
-| provider | VARCHAR(10) | NOT NULL | 소셜 제공자 `KAKAO` / `NAVER` |
-| provider_id | VARCHAR(64) | NOT NULL | 소셜 고유 ID. 탈퇴 시 센티널 치환 |
+| kakao_id | BIGINT | UNIQUE, NULL | 카카오 고유 ID. 탈퇴 시 null |
 | nickname | VARCHAR(30) | NOT NULL | 표시 이름. 탈퇴 시 `"탈퇴한 멤버"`로 값 교체 |
 | profile_img | VARCHAR(512) | NULL | 프로필 이미지 URL. 탈퇴 시 null |
 | created_at | TIMESTAMPTZ | NOT NULL, DEFAULT NOW | 가입 시점 |
 | deleted_at | TIMESTAMPTZ | NULL | 소프트 삭제(탈퇴) 시각 |
 
-> **UNIQUE KEY: `(provider, provider_id)`** — 카카오/네이버는 별도 계정으로 취급(AUTH-03).
+> **소셜 제공자는 카카오 단일** — `provider` / `provider_id` 2컬럼 대신 `kakao_id` 단일 컬럼을 쓴다. 네이버 로그인은 v1 범위에서 제외하며, 추가 시 스키마 변경이 필요하다.
+>
+> **UNIQUE KEY: `kakao_id`** — PostgreSQL은 UNIQUE 컬럼에 NULL을 여러 개 허용하므로, 탈퇴자가 늘어도 유니크 충돌이 없다.
 >
 > **탈퇴 정책(AUTH-05) — "재가입 = 신규 계정".** 계정 통합·부활은 v1 범위 외.
-> - `provider_id` → `WITHDRAWN:{memberId}` 센티널로 치환 (원본 소셜 ID 즉시 파기, 유니크 보장)
+> - `kakao_id` → **null** (원본 소셜 ID 즉시 파기)
 > - `nickname` → `"탈퇴한 멤버"`로 값 교체 (NOT NULL 충돌 없음, 블록 작성자 표기 자동 해결)
 > - `profile_img` → null, `deleted_at` 기록. 행은 유지(BLOCK.author_id FK 보존)
-> - 같은 소셜로 재가입하면 provider_id가 겹치지 않아 새 행 생성 — 충돌·부활 없음
+> - 같은 카카오 계정으로 재가입하면 기존 행은 `kakao_id`가 null이라 조회되지 않아 새 행이 생성된다 — 충돌·부활 없음
+>
+> **구현 매핑**: 코드상 엔티티는 `User`(테이블 `users`), 필드는 `kakaoId` / `profileImageUrl`. API 경로·응답 필드는 `members` / `memberId` 용어를 쓴다.
 
 ---
 

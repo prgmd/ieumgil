@@ -10,7 +10,7 @@
   --acc: #9c4a2f;
   --brand: #3d2b22;
 
-  font-family: "Noto Sans KR", -apple-system, BlinkMacSystemFont, sans-serif;
+  font-family: var(--font-app), "Noto Sans KR", -apple-system, BlinkMacSystemFont, sans-serif;
   color: var(--ink);
 
   min-height: 100vh;
@@ -118,13 +118,13 @@
   background: rgba(61, 43, 34, 0.07);
   color: var(--ink2);
   font-size: 0.78rem;
-  font-weight: 600;
+  font-weight: 500;
   margin-bottom: 20px;
 }
 
 .login-hero__title {
   margin: 0;
-  font-weight: 800;
+  font-weight: 500;
   font-size: clamp(1.9rem, 3.2vw, 2.9rem);
   line-height: 1.32;
   letter-spacing: -0.02em;
@@ -158,7 +158,7 @@
   position: relative;
   display: flex;
   flex-direction: column;
-  padding: 30px 40px 40px;
+  padding: 0% 35px 40px;
   background: #fbf8f1;
 }
 
@@ -172,8 +172,14 @@
   align-items: center;
   gap: 8px;
   font-size: 1.28rem;
-  font-weight: 800;
+  font-weight: 500;
   color: var(--ink);
+}
+
+.login-panel__logo-img {
+  display: block;
+  height: 60px;
+  width: auto;
 }
 
 .login-panel__body {
@@ -196,7 +202,7 @@
 .login-card__title {
   margin: 0;
   font-size: 1.6rem;
-  font-weight: 800;
+  font-weight: 500;
   color: var(--ink);
 }
 
@@ -213,7 +219,7 @@
   border-radius: 12px;
   padding: 14px;
   font-size: 0.98rem;
-  font-weight: 700;
+  font-weight: 500;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -233,7 +239,7 @@
   align-items: center;
   justify-content: center;
   font-size: 0.95rem;
-  font-weight: 900;
+  font-weight: 500;
 }
 
 .login-btn.kakao {

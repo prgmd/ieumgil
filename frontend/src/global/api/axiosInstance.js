@@ -8,7 +8,7 @@ import { tokenStorage } from "../util/tokenStorage";
  */
 
 export const BASE_URL =
-  import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8080/api/v0";
+  import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8080/api";
 
 // 백엔드에서 토큰 재발급 처리하는 엔드포인트 (백엔드 스펙 확정 시 이 값만 수정)
 const REISSUE_URL = "/auth/refresh";
@@ -100,12 +100,19 @@ axiosInstance.interceptors.response.use(
 
     const isUnauthorized = error.response.status === 401;
     const isRetryable = !originalRequest._retry;
-    const isReissueCall = originalRequest.url?.includes(REISSUE_URL);
 
-    // 401 이 아니거나, 이미 재시도했거나, 재발급 요청 자체가 401 이면 그대로 실패 처리
+    // /auth/* 는 재발급 대상이 아니다.
+    // - /auth/refresh: 재발급 자체가 401 이면 더 시도할 게 없다
+    // - /auth/login/*: 인가코드 만료가 401 로 오는데(AUTH401_4) 여기서 재발급을 시도하면
+    //   아직 없는 refreshToken 으로 요청이 한 번 더 나가고, 그 실패가 토큰 정리 +
+    //   "/" 하드 리다이렉트로 이어져 호출부의 catch 가 진짜 사유를 못 받는다
+    // - /auth/logout: 이미 로그아웃 흐름이라 재발급할 이유가 없다
+    const isAuthCall = originalRequest.url?.includes("/auth/");
+
+    // 401 이 아니거나, 이미 재시도했거나, 인증 엔드포인트면 그대로 실패 처리
     // (refreshToken 은 httpOnly 쿠키라 JS 로 존재 여부를 확인할 수 없으므로,
     //  일단 재발급을 시도하고 쿠키가 없거나 만료됐으면 그때 401 로 실패 처리한다.)
-    if (!isUnauthorized || !isRetryable || isReissueCall) {
+    if (!isUnauthorized || !isRetryable || isAuthCall) {
       return Promise.reject(error);
     }
 

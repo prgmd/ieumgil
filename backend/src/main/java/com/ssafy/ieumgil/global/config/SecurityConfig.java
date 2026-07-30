@@ -29,7 +29,7 @@ public class SecurityConfig {
     };
 
     private static final String[] AUTH_WHITELIST = {
-            "/api/v0/auth/login/**", "/api/v0/auth/refresh"
+            "/api/auth/login/**", "/api/auth/refresh"
     };
 
     private final JwtAuthenticationFilter jwtAuthenticationFilter;
