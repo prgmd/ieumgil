@@ -10,6 +10,7 @@ import jakarta.persistence.FetchType;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
+import jakarta.persistence.Index;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
@@ -36,7 +37,11 @@ import java.util.List;
 @Builder
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 @AllArgsConstructor(access = AccessLevel.PRIVATE)
-@Table(name = "project")
+// 카드 목록·그룹별 개수 집계가 전부 (group_id, deleted_at) 조건이다.
+// PostgreSQL은 FK에 인덱스를 자동 생성하지 않으므로 직접 선언한다.
+// (배포 DB는 ddl-auto=none — docker/postgres/migration/001-indexes.sql 수동 반영 필요)
+@Table(name = "project",
+        indexes = @Index(name = "ix_project_group", columnList = "group_id, deleted_at"))
 public class Project extends BaseTimeEntity {
 
     @Id
