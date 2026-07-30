@@ -8,6 +8,10 @@ spring:
   jpa:
     hibernate:
       ddl-auto: none
+  http:
+    client:
+      connect-timeout: 5s
+      read-timeout: 15s
   ai:
     anthropic:
       api-key: ${GMS_API_KEY:}
@@ -15,6 +19,7 @@ spring:
       chat:
         options:
           model: claude-haiku-4-5-20251001
+          max-tokens: 1024
 
 logging:
   level:
