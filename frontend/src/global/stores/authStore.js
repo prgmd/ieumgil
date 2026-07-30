@@ -18,6 +18,16 @@ import { tokenStorage } from "../util/tokenStorage";
 //             (목업이 남아 있는 동안은 비로그인 상태에서도 이 사용자로 동작한다.)
 const MOCK_USER = { id: 1, nickname: "dd", provider: "kakao", profileImg: "//" };
 
+/**
+ * 진행 중인 fetchMe 요청.
+ *
+ * 중복 요청을 막는 것 외에, 나중에 호출한 쪽도 **같은 요청의 완료를 기다리게** 하는 게
+ * 목적이다. 예전처럼 즉시 null 을 돌려주면 호출부가 부트스트랩이 끝난 줄로 오해한다 —
+ * App 이 이 promise 로 첫 렌더를 게이트하므로, StrictMode 의 effect 2회 실행에서
+ * 두 번째 호출이 즉시 resolve 되면 currentUser 가 비어 있는 채로 자식이 마운트된다.
+ */
+let inFlightFetchMe = null;
+
 export const useAuthStore = create((set, get) => ({
   currentUser: MOCK_USER,
   status: "idle", // idle | loading | authenticated | error
@@ -36,22 +46,30 @@ export const useAuthStore = create((set, get) => ({
       return null;
     }
 
-    // StrictMode 의 effect 2회 실행이나 동시 호출로 요청이 중복되지 않게 한다.
-    if (get().status === "loading") return null;
+    // StrictMode 의 effect 2회 실행이나 동시 호출은 요청을 중복 보내지 않고
+    // 진행 중인 요청의 완료를 함께 기다린다.
+    if (inFlightFetchMe) return inFlightFetchMe;
 
     set({ status: "loading", error: null });
-    try {
-      const user = await getMe();
-      set({ currentUser: user, status: "authenticated" });
-      return user;
-    } catch (e) {
-      // 진짜 인증 실패(401 → 재발급까지 실패)는 axiosInstance 인터셉터가
-      // 토큰 정리와 "/" 리다이렉트까지 처리한다. 여기로 오는 건 대개
-      // 네트워크 오류·5xx 이므로 토큰을 지우지 않는다 — 일시적 오류로
-      // 로그아웃시키면 안 되기 때문.
-      set({ status: "error", error: e });
-      return null;
-    }
+
+    inFlightFetchMe = (async () => {
+      try {
+        const user = await getMe();
+        set({ currentUser: user, status: "authenticated" });
+        return user;
+      } catch (e) {
+        // 진짜 인증 실패(401 → 재발급까지 실패)는 axiosInstance 인터셉터가
+        // 토큰 정리와 "/" 리다이렉트까지 처리한다. 여기로 오는 건 대개
+        // 네트워크 오류·5xx 이므로 토큰을 지우지 않는다 — 일시적 오류로
+        // 로그아웃시키면 안 되기 때문.
+        set({ status: "error", error: e });
+        return null;
+      } finally {
+        inFlightFetchMe = null;
+      }
+    })();
+
+    return inFlightFetchMe;
   },
 
   /**

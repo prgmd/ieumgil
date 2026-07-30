@@ -1,7 +1,17 @@
-import { useEffect, useRef } from "react";
+import { useEffect } from "react";
 import { useSearchParams, useNavigate } from "react-router-dom";
 import { useAuthStore } from "../../global/stores/authStore";
 import { useToastStore } from "../../global/stores/toastStore";
+
+/**
+ * 이미 처리에 착수한 인가코드. 인가코드는 1회용이라 두 번 보내면 두 번째는 반드시 실패한다.
+ *
+ * 컴포넌트 밖(모듈 스코프)에 두는 이유 — useRef 는 인스턴스가 살아 있는 동안만 유효해서,
+ * 이 컴포넌트가 언마운트·리마운트되면 초기값으로 돌아간다. 그때 URL 의 code 는 아직
+ * 남아 있으므로 두 번째 요청이 나간다. App 의 부트스트랩 게이트를 고쳐 그 리마운트는
+ * 없앴지만, 1회용 자원을 지키는 가드가 마운트 횟수에 의존해서는 안 된다.
+ */
+let handledCode = null;
 
 function KakaoCallback() {
   const [searchParams] = useSearchParams();
@@ -10,13 +20,10 @@ function KakaoCallback() {
   const login = useAuthStore((s) => s.login);
   const showToast = useToastStore((s) => s.show);
 
-  // React 18+ strict mode에서 API가 2번 연속 호출되는 것을 방지하기 위한 flag
-  // (인가 코드는 1회용이라 두 번째 호출은 반드시 실패한다)
-  const isFetched = useRef(false);
-
   useEffect(() => {
-    if (code && !isFetched.current) {
-      isFetched.current = true;
+    // 같은 코드로는 한 번만 요청한다 (StrictMode 의 effect 2회 실행, 리마운트 모두 차단)
+    if (code && handledCode !== code) {
+      handledCode = code;
 
       // 인가 코드 전송 → accessToken 저장 → 내 정보 조회까지 스토어가 처리한다.
       // (refreshToken 은 백엔드가 httpOnly 쿠키로 내려주므로 프론트가 다루지 않는다.)
