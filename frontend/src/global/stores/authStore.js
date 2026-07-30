@@ -28,7 +28,7 @@ const MOCK_USER = { id: 1, nickname: "dd", provider: "kakao", profileImg: "//" }
  */
 let inFlightFetchMe = null;
 
-export const useAuthStore = create((set, get) => ({
+export const useAuthStore = create((set) => ({
   currentUser: MOCK_USER,
   status: "idle", // idle | loading | authenticated | error
   error: null,
@@ -74,14 +74,24 @@ export const useAuthStore = create((set, get) => ({
 
   /**
    * 카카오 인가 코드로 로그인한다.
-   * accessToken 저장 → 내 정보 조회까지 한 흐름으로 처리해서,
+   * accessToken 저장 → currentUser 채우기까지 한 흐름으로 처리해서,
    * 호출부(KakaoCallback)는 성공 후 이동만 담당한다.
+   *
+   * fetchMe() 를 부르지 않는다 — 로그인 응답이 GET /members/me 와 같은 정보를
+   * 이미 담고 있어 왕복이 하나 낭비된다. (authApi.loginWithKakao 가 필드명을
+   * /members/me 와 같은 모양으로 맞춰서 돌려준다.)
+   *
+   * 주의: 나중에 /members/me 에 필드가 추가되면 그 필드는 "로그인 직후"에는 비어
+   * 있고 새로고침 후에만 채워진다. 재현이 까다로운 버그가 되니, 그때는 로그인 응답에도
+   * 같은 필드를 추가하거나 여기서 fetchMe() 를 다시 부르는 편이 낫다.
+   *
    * @param {string} code 카카오 redirect 로 전달받은 인가 코드
    */
   login: async (code) => {
-    const { accessToken } = await loginWithKakao(code);
+    const { accessToken, user } = await loginWithKakao(code);
     tokenStorage.setAccessToken(accessToken);
-    return get().fetchMe();
+    set({ currentUser: user, status: "authenticated", error: null });
+    return user;
   },
 
   logout: async () => {

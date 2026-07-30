@@ -13,14 +13,31 @@ function unwrapError(error) {
 /**
  * 카카오 인가 코드를 백엔드로 전달해 로그인/회원가입을 처리한다.
  * - refreshToken 은 응답 body 가 아니라 httpOnly 쿠키(Set-Cookie)로 내려온다.
+ *
+ * 서버 응답은 { userId, nickname, profileImageUrl, accessToken, isNewUser } 인데,
+ * 같은 사용자 정보를 GET /members/me 는 { id, nickname, profileImg } 로 준다
+ * (같은 값을 다른 이름으로 — auth-api.md 참조). 두 이름이 스토어까지 올라오면
+ * currentUser 의 모양이 "로그인 직후"와 "새로고침 후"에 달라지므로 여기서 하나로 맞춘다.
+ *
  * @param {string} code 카카오에서 redirect 로 전달받은 인가 코드
- * @returns {Promise<{ accessToken: string }>}
+ * @returns {Promise<{ accessToken: string, isNewUser: boolean,
+ *                    user: { id: number, nickname: string, profileImg: string } }>}
  */
 export const loginWithKakao = async (code) => {
   try {
     const { data } = await axiosInstance.post("/auth/login/kakao", { code });
     // 백엔드 CustomResponse( { result: {...} } ) 래핑 대응
-    return data?.result ?? data;
+    const result = data?.result ?? data;
+
+    return {
+      accessToken: result.accessToken,
+      isNewUser: result.isNewUser,
+      user: {
+        id: result.userId,
+        nickname: result.nickname,
+        profileImg: result.profileImageUrl,
+      },
+    };
   } catch (error) {
     unwrapError(error);
   }
@@ -41,7 +58,7 @@ export async function logout() {
 /**
  * 로그인한 사용자의 정보를 조회한다.
  * 사용자 식별은 서버가 accessToken 으로 하므로 파라미터가 없다.
- * @returns {Promise<{ id: number, nickname: string, provider: string, profileImg: string }>}
+ * @returns {Promise<{ id: number, nickname: string, profileImg: string }>}
  */
 export const getMe = async () => {
   try {
