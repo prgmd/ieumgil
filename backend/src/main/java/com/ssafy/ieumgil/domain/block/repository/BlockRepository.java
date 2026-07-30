@@ -4,6 +4,7 @@ import com.ssafy.ieumgil.domain.block.entity.Block;
 import jakarta.persistence.LockModeType;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -53,4 +54,31 @@ public interface BlockRepository extends JpaRepository<Block, Long> {
     /** 체인 말단 키 조회 — 후보(POOL, dayNo IS NULL)용. 파생 쿼리는 null 파라미터를 못 다뤄 분리한다 */
     Optional<Block> findTopByProject_IdAndDayNoIsNullAndDeletedAtIsNullOrderByOrderKeyDescIdDesc(
             Long projectId);
+
+    /**
+     * 기간 축소로 범위를 벗어난 블록 id 목록 (PRJ-02 movedToPool).
+     * 벌크 UPDATE는 개수만 돌려주므로, 응답·op에 실을 id는 UPDATE 전에 먼저 확보해야 한다.
+     */
+    @Query("""
+            SELECT b.id
+            FROM Block b
+            WHERE b.project.id = :projectId
+              AND b.dayNo > :maxDayNo
+              AND b.deletedAt IS NULL
+            """)
+    List<Long> findIdsOutOfRange(@Param("projectId") Long projectId, @Param("maxDayNo") int maxDayNo);
+
+    /**
+     * 범위 밖 블록을 후보(POOL)로 일괄 이동 — dayNo만 비우고 orderKey는 유지한다.
+     * clearAutomatically로 영속성 컨텍스트가 비워지므로 다른 엔티티 변경이 끝난 뒤 마지막에 부른다.
+     */
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query("""
+            UPDATE Block b
+            SET b.dayNo = null
+            WHERE b.project.id = :projectId
+              AND b.dayNo > :maxDayNo
+              AND b.deletedAt IS NULL
+            """)
+    int moveOutOfRangeToPool(@Param("projectId") Long projectId, @Param("maxDayNo") int maxDayNo);
 }

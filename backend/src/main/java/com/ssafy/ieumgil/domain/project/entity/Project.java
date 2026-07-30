@@ -106,6 +106,20 @@ public class Project extends BaseTimeEntity {
 
     // ----- 비즈니스 메서드 -----
 
+    /**
+     * 상태 전환 (GRP-10). PLANNING↔DONE 양방향이며 DONE이어도 쓰기를 막지 않는다(NFR-05).
+     * doneAt은 상태의 파생값이라 여기서 함께 관리한다 — 따로 두면 반드시 어긋난다.
+     */
+    public void changeStatus(ProjectStatus status) {
+        this.status = status;
+        this.doneAt = (status == ProjectStatus.DONE) ? LocalDateTime.now() : null;
+    }
+
+    /** 정산 인원 지정 (BGT-03). null = "그룹 멤버 수 연동으로 복귀"라는 명시적 의도 */
+    public void changeBudgetHeadcount(Integer headcount) {
+        this.budgetHeadcount = headcount;
+    }
+
     /** 이름·기간 부분 수정. null인 인자는 건드리지 않는다(PATCH 시맨틱) */
     public void updateInfo(String name, LocalDate startDate, LocalDate endDate) {
         if (name != null) {
