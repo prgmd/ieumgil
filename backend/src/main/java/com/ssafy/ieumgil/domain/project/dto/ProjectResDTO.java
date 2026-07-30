@@ -47,6 +47,21 @@ public class ProjectResDTO {
     ) {
     }
 
+    /** 상태 전환 응답. PLANNING 복귀 시 doneAt은 null */
+    @Builder
+    public record StatusChanged(
+            ProjectStatus status,
+            java.time.LocalDateTime doneAt
+    ) {
+    }
+
+    /** 정산 인원 변경 응답 */
+    @Builder
+    public record HeadcountChanged(
+            Integer budgetHeadcount
+    ) {
+    }
+
     /** 대시보드 스냅샷의 프로젝트 상세 파트 */
     @Builder
     public record Board(

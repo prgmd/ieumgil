@@ -36,14 +36,14 @@ public class ProjectConverter {
                 .build();
     }
 
-    /** movedToPool은 블록 기능 구현 전까지 빈 배열 */
-    public static ProjectResDTO.Updated toUpdated(Project project) {
+    /** movedToPool: 기간 축소로 후보(POOL)로 밀려난 블록 id 목록 — Step 4에서 실값 연결 */
+    public static ProjectResDTO.Updated toUpdated(Project project, List<Long> movedToPool) {
         return ProjectResDTO.Updated.builder()
                 .projectId(project.getId())
                 .name(project.getName())
                 .startDate(project.getStartDate())
                 .endDate(project.getEndDate())
-                .movedToPool(List.of())
+                .movedToPool(movedToPool)
                 .build();
     }
 
