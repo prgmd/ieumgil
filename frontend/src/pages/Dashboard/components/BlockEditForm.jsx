@@ -1,7 +1,6 @@
 import React, { useState } from "react";
 
 export function BlockEditForm({ initialData, timeString, onSave, onCancel }) {
-  // 백엔드 명세와 기존 프론트 상태에 맞춰 초기값 세팅
   const [formData, setFormData] = useState({
     id: initialData.id,
     category: initialData.cat ? initialData.cat.toUpperCase() : "SPOT",
@@ -15,17 +14,13 @@ export function BlockEditForm({ initialData, timeString, onSave, onCancel }) {
 
   const handleChange = (e) => {
     const { name, value } = e.target;
-    setFormData((prev) => ({
-      ...prev,
-      [name]: value,
-    }));
+    setFormData((prev) => ({ ...prev, [name]: value }));
   };
 
-  // --- 🎨 공통 스타일 정의 ---
   const styles = {
     container: {
       width: "460px",
-      backgroundColor: "#fbf8f1", // 따뜻한 베이지 배경
+      backgroundColor: "#fbf8f1",
       borderRadius: "16px",
       padding: "28px",
       boxShadow: "0 10px 30px rgba(0,0,0,0.15)",
@@ -64,7 +59,7 @@ export function BlockEditForm({ initialData, timeString, onSave, onCancel }) {
       padding: "12px 14px",
       borderRadius: "10px",
       border: "1px solid #e6dec8",
-      backgroundColor: "#f0ebd8", // 비활성화 느낌의 톤다운된 배경
+      backgroundColor: "#f0ebd8",
       fontSize: "15px",
       color: "#555",
       outline: "none",
@@ -102,7 +97,7 @@ export function BlockEditForm({ initialData, timeString, onSave, onCancel }) {
       padding: "10px 24px",
       borderRadius: "10px",
       border: "none",
-      backgroundColor: "#7c5443", // 갈색 포인트 컬러
+      backgroundColor: "#7c5443",
       color: "#fff",
       fontWeight: "bold",
       fontSize: "15px",
@@ -175,7 +170,6 @@ export function BlockEditForm({ initialData, timeString, onSave, onCancel }) {
       <div style={styles.row}>
         <div style={styles.col}>
           <label style={styles.label}>시간 (체인에서 자동 계산)</label>
-          {/* 시간은 타임라인에서 계산되므로 읽기 전용으로 표시합니다 */}
           <input
             style={styles.readOnlyInput}
             value={timeString || "시간 정보 없음"}
@@ -222,7 +216,7 @@ export function BlockEditForm({ initialData, timeString, onSave, onCancel }) {
       </div>
 
       <div style={styles.footer}>
-        <div style={styles.editorInfo}>✏️ 마지막 수정 · 민준 (임시)</div>
+        <div style={styles.editorInfo}>✏️ 마지막 수정 · 민준</div>
         <div style={styles.btnGroup}>
           <button style={styles.btnCancel} onClick={onCancel}>
             닫기

@@ -19,10 +19,7 @@ import {
   rectSortingStrategy,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-
-// 상단 네비게이션 바 (공통 컴포넌트)
 import { AppBar } from "../My/shared/ui/AppBar";
-// 대시보드 전용 스타일
 import "./index.css";
 
 const PX = 2.0;
@@ -50,9 +47,8 @@ const catOf = (item) => CAT_COLORS[item?.cat] || CAT_COLORS.etc;
 
 const restrictTimelineX = ({ transform, active, over }) => {
   if (active?.data?.current?.from === "timeline") {
-    if (over?.id !== "poolArea" && over?.id !== "trashArea") {
+    if (over?.id !== "poolArea" && over?.id !== "trashArea")
       return { ...transform, x: 0 };
-    }
   }
   return transform;
 };
@@ -69,14 +65,11 @@ const resolveOverlaps = (currentItems, dayChain, dayStartMins, fixedId) => {
 
   others.forEach((id) => {
     let start = Math.max(lastEnd, newItems[id].startMins);
-
     if (fixedId) {
       let end = start + newItems[id].dur;
-      if (start < fixedEnd && end > fixedStart) {
+      if (start < fixedEnd && end > fixedStart)
         start = Math.max(start, fixedEnd);
-      }
     }
-
     newItems[id] = { ...newItems[id], startMins: start };
     lastEnd = start + newItems[id].dur;
   });
@@ -176,14 +169,12 @@ function CardBody({
           </span>{" "}
           <span className="nm-sub">{item?.memo}</span>
         </span>
-
         <span className="time">
           {fmtTime(startMins)} – {fmtTime(endMins)}
         </span>
         <span className="cost">{won(item?.cost)}</span>
       </div>
       <div className="addr">📍 {item?.addr || "위치 정보 없음"}</div>
-
       <div className="ctl" style={{ marginTop: "auto", paddingTop: "8px" }}>
         <span
           className="dur"
@@ -225,10 +216,7 @@ function PoolCard({ id, item, onEditBlock }) {
     transform,
     transition,
     isDragging,
-  } = useSortable({
-    id,
-    data: { from: "pool" },
-  });
+  } = useSortable({ id, data: { from: "pool" } });
   const catStyle = catOf(item);
   const style = {
     transform: isDragging ? undefined : CSS.Transform.toString(transform),
@@ -264,10 +252,7 @@ function TimelineCard({
   onEditBlock,
 }) {
   const { attributes, listeners, setNodeRef, transform, isDragging } =
-    useDraggable({
-      id,
-      data: { from: "timeline" },
-    });
+    useDraggable({ id, data: { from: "timeline" } });
   const catStyle = catOf(item);
   const height = (item?.dur || 30) * PX;
   const isThisResizing =
@@ -282,7 +267,6 @@ function TimelineCard({
   };
 
   const topPx = (startMins - dayStartMins) * PX;
-
   const slotStyle = {
     position: "absolute",
     top: `${topPx}px`,
@@ -297,7 +281,6 @@ function TimelineCard({
         : "top 0.25s cubic-bezier(0.2, 0, 0, 1), height 0.25s cubic-bezier(0.2, 0, 0, 1)",
     zIndex: isDragging || isThisResizing ? 100 : 5,
   };
-
   const cardStyle = {
     height: "100%",
     "--dc": catStyle.hex,
@@ -360,10 +343,193 @@ function TimelineCard({
   );
 }
 
+function ReadModeView({ chains, items }) {
+  const days = ["d1", "d2", "d3", "d4"];
+  return (
+    <div
+      style={{
+        padding: "20px 40px",
+        backgroundColor: "#f4f1ea",
+        minHeight: "100vh",
+      }}
+    >
+      {days.map((day, index) => {
+        const chain = chains[day] || [];
+        if (chain.length === 0) return null;
+        return (
+          <div
+            key={day}
+            style={{
+              marginBottom: "32px",
+              backgroundColor: "#fbf8f1",
+              padding: "32px",
+              borderRadius: "16px",
+              boxShadow: "0 4px 12px rgba(0,0,0,0.05)",
+            }}
+          >
+            <div style={{ marginBottom: "24px" }}>
+              <h2
+                style={{
+                  fontSize: "26px",
+                  color: "#3d2b22",
+                  margin: "0 0 8px 0",
+                  fontFamily: "serif",
+                }}
+              >
+                Day {index + 1}{" "}
+                <span
+                  style={{
+                    fontSize: "15px",
+                    color: "#888",
+                    fontWeight: "normal",
+                    fontFamily: "sans-serif",
+                  }}
+                >
+                  2026.10.0{3 + index}
+                </span>
+              </h2>
+            </div>
+            <div
+              style={{
+                position: "relative",
+                display: "flex",
+                flexDirection: "column",
+                gap: "16px",
+              }}
+            >
+              <div
+                style={{
+                  position: "absolute",
+                  left: "55px",
+                  top: "20px",
+                  bottom: "20px",
+                  width: "2px",
+                  backgroundColor: "#e6dec8",
+                  zIndex: 0,
+                }}
+              />
+              {chain.map((id) => {
+                const item = items[id];
+                if (!item) return null;
+                const startMins = item.startMins;
+                const endMins = startMins + item.dur;
+                const catStyle = catOf(item);
+                return (
+                  <div
+                    key={id}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "20px",
+                      zIndex: 1,
+                    }}
+                  >
+                    <div
+                      style={{
+                        width: "60px",
+                        textAlign: "right",
+                        fontWeight: "bold",
+                        fontSize: "15px",
+                        color: catStyle.hex,
+                        backgroundColor: "#fbf8f1",
+                      }}
+                    >
+                      {fmtTime(startMins)}
+                    </div>
+                    <div
+                      style={{
+                        width: "12px",
+                        height: "12px",
+                        borderRadius: "50%",
+                        backgroundColor: catStyle.hex,
+                        border: "2px solid #fbf8f1",
+                        flexShrink: 0,
+                      }}
+                    />
+                    <div
+                      style={{
+                        flex: 1,
+                        backgroundColor: catStyle.bg,
+                        padding: "18px 24px",
+                        borderRadius: "12px",
+                        display: "flex",
+                        justifyContent: "space-between",
+                        alignItems: "center",
+                      }}
+                    >
+                      <div
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: "12px",
+                        }}
+                      >
+                        <span
+                          style={{
+                            backgroundColor: catStyle.hex,
+                            color: "#fff",
+                            fontSize: "12px",
+                            padding: "4px 8px",
+                            borderRadius: "6px",
+                            fontWeight: "bold",
+                          }}
+                        >
+                          {catStyle.nm} {item.sub ? `· ${item.sub}` : ""}
+                        </span>
+                        <div>
+                          <div
+                            style={{
+                              fontWeight: "bold",
+                              fontSize: "17px",
+                              color: "#333",
+                              marginBottom: "4px",
+                            }}
+                          >
+                            {item.name}
+                          </div>
+                          <div style={{ fontSize: "13px", color: "#666" }}>
+                            📍 {item.addr || "위치 정보 없음"}
+                          </div>
+                        </div>
+                      </div>
+                      <div style={{ textAlign: "right" }}>
+                        <div
+                          style={{
+                            fontWeight: "bold",
+                            color: catStyle.hex,
+                            marginBottom: "6px",
+                          }}
+                        >
+                          {fmtTime(startMins)} - {fmtTime(endMins)}
+                        </div>
+                        <div
+                          style={{
+                            fontSize: "15px",
+                            fontWeight: "bold",
+                            color: "#333",
+                          }}
+                        >
+                          {won(item.cost)}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 export function DashboardPage() {
   const { groupId, projectId } = useParams();
 
-  // 데이터 상태 관리
+  // 모드 상태 ('edit' or 'read')
+  const [viewMode, setViewMode] = useState("edit");
+
   const [activeDay, setActiveDay] = useState("d1");
   const [dayStart, setDayStart] = useState({
     d1: 540,
@@ -427,204 +593,25 @@ export function DashboardPage() {
   });
   const [pool, setPool] = useState(["c1", "c2"]);
 
-  // 모달 및 드래그 상태 관리
   const [editingBlockId, setEditingBlockId] = useState(null);
   const [activeId, setActiveId] = useState(null);
   const [resizingState, setResizingState] = useState(null);
   const [dragPreview, setDragPreview] = useState(null);
+  const [isGeneratingTransport, setIsGeneratingTransport] = useState(false);
+
+  // 총 예산 자동 계산
   const totalBudget = Object.values(items).reduce(
     (sum, item) => sum + (item.cost || 0),
     0,
   );
-
-  const timelineDOMRef = useRef(null);
-  const poolDOMRef = useRef(null);
-  const trashDOMRef = useRef(null);
-  const activeDragRef = useRef(null);
-  const dragRegionRef = useRef(null);
-
-  // 모달에서 수정한 데이터를 저장하고 타임라인 재계산하는 함수
-  const handleSaveBlock = (updatedData) => {
-    setItems((prev) => {
-      const existing = prev[editingBlockId];
-      // 백엔드 명세와 기존 프론트 상태명(cat, dur, cost) 매핑
-      const updatedItems = {
-        ...prev,
-        [editingBlockId]: {
-          ...existing,
-          name: updatedData.name,
-          cat: updatedData.category
-            ? updatedData.category.toLowerCase()
-            : existing.cat,
-          dur: updatedData.durationMin
-            ? Number(updatedData.durationMin)
-            : existing.dur,
-          cost: updatedData.budget ? Number(updatedData.budget) : existing.cost,
-        },
-      };
-
-      // 시간이 변경되었을 수 있으므로 충돌/밀어내기 재계산
-      if (chains[activeDay].includes(editingBlockId)) {
-        const { newItems, newChain } = resolveOverlaps(
-          updatedItems,
-          chains[activeDay],
-          dayStart[activeDay],
-          editingBlockId,
-        );
-        setChains((pc) => ({ ...pc, [activeDay]: newChain }));
-        return newItems;
-      }
-
-      return updatedItems;
-    });
-    setEditingBlockId(null);
+  const [targetBudget, setTargetBudget] = useState(1500000);
+  const handleTargetBudgetChange = (amount) => {
+    setTargetBudget((prev) => Math.max(0, prev + amount)); // 0원 밑으로는 안 내려가게 방지
   };
+  const budgetPercent =
+    targetBudget > 0 ? Math.min(100, (totalBudget / targetBudget) * 100) : 0;
+  const remainingBudget = targetBudget - totalBudget;
 
-  useEffect(() => {
-    dragRegionRef.current = dragPreview?.region;
-  }, [dragPreview]);
-
-  useEffect(() => {
-    if (!activeId || !timelineDOMRef.current) return;
-    const handleWheel = (e) => {
-      if (dragRegionRef.current === "timeline") {
-        e.preventDefault();
-        timelineDOMRef.current.scrollTop += e.deltaY;
-      }
-    };
-    window.addEventListener("wheel", handleWheel, { passive: false });
-    return () => window.removeEventListener("wheel", handleWheel);
-  }, [activeId]);
-
-  const { setNodeRef: setTimelineDroppable } = useDroppable({
-    id: "timelineArea",
-  });
-  const setTimelineRefs = useCallback(
-    (node) => {
-      timelineDOMRef.current = node;
-      setTimelineDroppable(node);
-    },
-    [setTimelineDroppable],
-  );
-
-  const { setNodeRef: setPoolDroppable } = useDroppable({ id: "poolArea" });
-  const setPoolRef = useCallback(
-    (node) => {
-      poolDOMRef.current = node;
-      setPoolDroppable(node);
-    },
-    [setPoolDroppable],
-  );
-
-  const { setNodeRef: setTrashDroppable } = useDroppable({ id: "trashArea" });
-  const setTrashRef = useCallback(
-    (node) => {
-      trashDOMRef.current = node;
-      setTrashDroppable(node);
-    },
-    [setTrashDroppable],
-  );
-
-  const handleResizeStart = useCallback(
-    (id, direction, startY, startDur, originalStartMins, boundTop) => {
-      setResizingState({
-        id,
-        direction,
-        startY,
-        startDur,
-        originalStartMins,
-        boundTop,
-        originalItems: items,
-      });
-    },
-    [items],
-  );
-
-  useEffect(() => {
-    if (!resizingState) return;
-
-    const handleMouseMove = (e) => {
-      const deltaY = e.clientY - resizingState.startY;
-      const deltaMins = Math.round(deltaY / PX);
-      let newDur = resizingState.startDur;
-      let newStart = resizingState.originalStartMins;
-
-      if (resizingState.direction === "bottom") {
-        let tentativeEnd =
-          resizingState.originalStartMins + resizingState.startDur + deltaMins;
-        if (tentativeEnd - resizingState.originalStartMins < 10) {
-          tentativeEnd = resizingState.originalStartMins + 10;
-        }
-        newDur = tentativeEnd - resizingState.originalStartMins;
-      } else {
-        let tentativeStart = resizingState.originalStartMins + deltaMins;
-        if (tentativeStart < resizingState.boundTop)
-          tentativeStart = resizingState.boundTop;
-        if (
-          resizingState.originalStartMins +
-            resizingState.startDur -
-            tentativeStart <
-          10
-        ) {
-          tentativeStart =
-            resizingState.originalStartMins + resizingState.startDur - 10;
-        }
-        newStart = tentativeStart;
-        newDur =
-          resizingState.originalStartMins + resizingState.startDur - newStart;
-      }
-
-      setItems(() => {
-        const updatedSnapshot = {
-          ...resizingState.originalItems,
-          [resizingState.id]: {
-            ...resizingState.originalItems[resizingState.id],
-            dur: newDur,
-            ...(resizingState.direction === "top"
-              ? { startMins: newStart }
-              : {}),
-          },
-        };
-        const { newItems } = resolveOverlaps(
-          updatedSnapshot,
-          chains[activeDay],
-          dayStart[activeDay],
-          resizingState.id,
-        );
-        return newItems;
-      });
-    };
-
-    const handleGlobalClick = () => setResizingState(null);
-
-    window.addEventListener("mousemove", handleMouseMove);
-    const timer = setTimeout(
-      () => window.addEventListener("click", handleGlobalClick),
-      50,
-    );
-
-    return () => {
-      clearTimeout(timer);
-      window.removeEventListener("mousemove", handleMouseMove);
-      window.removeEventListener("click", handleGlobalClick);
-    };
-  }, [resizingState, activeDay, chains, dayStart]);
-
-  const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
-    useSensor(KeyboardSensor, {
-      coordinateGetter: sortableKeyboardCoordinates,
-    }),
-  );
-
-  const handleStartChange = (delta) => {
-    setDayStart((prev) => ({
-      ...prev,
-      [activeDay]: Math.max(300, Math.min(1380, prev[activeDay] + delta)),
-    }));
-  };
-
-  const [isGeneratingTransport, setIsGeneratingTransport] = useState(false);
   const fetchTransitInfo = useCallback(async (fromItem, toItem) => {
     await new Promise((resolve) => setTimeout(resolve, 120));
     return { mode: "이동", dur: 20, cost: 0 };
@@ -687,30 +674,204 @@ export function DashboardPage() {
     },
     [chains, items, fetchTransitInfo, dayStart],
   );
-  const handleCreateCustomBlock = () => {
-    // 겹치지 않는 고유 ID 생성 (현재 시간 활용)
-    const newId = `custom-${Date.now()}`;
 
-    // 기본값이 채워진 새 블록 객체
+  const timelineDOMRef = useRef(null);
+  const poolDOMRef = useRef(null);
+  const trashDOMRef = useRef(null);
+  const activeDragRef = useRef(null);
+  const dragRegionRef = useRef(null);
+
+  const handleSaveBlock = (updatedData) => {
+    setItems((prev) => {
+      const existing = prev[editingBlockId];
+      const updatedItems = {
+        ...prev,
+        [editingBlockId]: {
+          ...existing,
+          name: updatedData.name,
+          cat: updatedData.category
+            ? updatedData.category.toLowerCase()
+            : existing.cat,
+          sub: updatedData.subCategory,
+          addr: updatedData.address,
+          memo: updatedData.memo,
+          dur: updatedData.durationMin
+            ? Number(updatedData.durationMin)
+            : existing.dur,
+          cost: updatedData.budget ? Number(updatedData.budget) : existing.cost,
+        },
+      };
+
+      if (chains[activeDay].includes(editingBlockId)) {
+        const { newItems, newChain } = resolveOverlaps(
+          updatedItems,
+          chains[activeDay],
+          dayStart[activeDay],
+          editingBlockId,
+        );
+        setChains((pc) => ({ ...pc, [activeDay]: newChain }));
+        return newItems;
+      }
+      return updatedItems;
+    });
+    setEditingBlockId(null);
+  };
+
+  const handleCreateCustomBlock = () => {
+    const newId = `custom-${Date.now()}`;
     const newBlock = {
       id: newId,
-      cat: "etc", // 기본 카테고리는 '기타'
+      cat: "etc",
       sub: "",
       name: "새 일정",
       addr: "",
       memo: "",
-      dur: 60, // 기본 60분
-      startMins: 540, // 09:00 기본값 (타임라인에 올릴 때 알아서 바뀜)
+      dur: 60,
+      startMins: 540,
       cost: 0,
       auto: false,
     };
-
-    // 1. 전체 아이템(items) 목록에 새 블록 추가
     setItems((prev) => ({ ...prev, [newId]: newBlock }));
-    // 2. 후보 목록(pool)의 제일 앞쪽에 새 블록 ID 추가
     setPool((prev) => [newId, ...prev]);
-    // 3. 생성과 동시에 정보를 수정할 수 있도록 모달 창 띄우기
     setEditingBlockId(newId);
+  };
+
+  useEffect(() => {
+    dragRegionRef.current = dragPreview?.region;
+  }, [dragPreview]);
+  useEffect(() => {
+    if (!activeId || !timelineDOMRef.current) return;
+    const handleWheel = (e) => {
+      if (dragRegionRef.current === "timeline") {
+        e.preventDefault();
+        timelineDOMRef.current.scrollTop += e.deltaY;
+      }
+    };
+    window.addEventListener("wheel", handleWheel, { passive: false });
+    return () => window.removeEventListener("wheel", handleWheel);
+  }, [activeId]);
+
+  const { setNodeRef: setTimelineDroppable } = useDroppable({
+    id: "timelineArea",
+  });
+  const setTimelineRefs = useCallback(
+    (node) => {
+      timelineDOMRef.current = node;
+      setTimelineDroppable(node);
+    },
+    [setTimelineDroppable],
+  );
+
+  const { setNodeRef: setPoolDroppable } = useDroppable({ id: "poolArea" });
+  const setPoolRef = useCallback(
+    (node) => {
+      poolDOMRef.current = node;
+      setPoolDroppable(node);
+    },
+    [setPoolDroppable],
+  );
+
+  const { setNodeRef: setTrashDroppable } = useDroppable({ id: "trashArea" });
+  const setTrashRef = useCallback(
+    (node) => {
+      trashDOMRef.current = node;
+      setTrashDroppable(node);
+    },
+    [setTrashDroppable],
+  );
+
+  const handleResizeStart = useCallback(
+    (id, direction, startY, startDur, originalStartMins, boundTop) => {
+      setResizingState({
+        id,
+        direction,
+        startY,
+        startDur,
+        originalStartMins,
+        boundTop,
+        originalItems: items,
+      });
+    },
+    [items],
+  );
+
+  useEffect(() => {
+    if (!resizingState) return;
+    const handleMouseMove = (e) => {
+      const deltaY = e.clientY - resizingState.startY;
+      const deltaMins = Math.round(deltaY / PX);
+      let newDur = resizingState.startDur;
+      let newStart = resizingState.originalStartMins;
+
+      if (resizingState.direction === "bottom") {
+        let tentativeEnd =
+          resizingState.originalStartMins + resizingState.startDur + deltaMins;
+        if (tentativeEnd - resizingState.originalStartMins < 10)
+          tentativeEnd = resizingState.originalStartMins + 10;
+        newDur = tentativeEnd - resizingState.originalStartMins;
+      } else {
+        let tentativeStart = resizingState.originalStartMins + deltaMins;
+        if (tentativeStart < resizingState.boundTop)
+          tentativeStart = resizingState.boundTop;
+        if (
+          resizingState.originalStartMins +
+            resizingState.startDur -
+            tentativeStart <
+          10
+        )
+          tentativeStart =
+            resizingState.originalStartMins + resizingState.startDur - 10;
+        newStart = tentativeStart;
+        newDur =
+          resizingState.originalStartMins + resizingState.startDur - newStart;
+      }
+
+      setItems(() => {
+        const updatedSnapshot = {
+          ...resizingState.originalItems,
+          [resizingState.id]: {
+            ...resizingState.originalItems[resizingState.id],
+            dur: newDur,
+            ...(resizingState.direction === "top"
+              ? { startMins: newStart }
+              : {}),
+          },
+        };
+        const { newItems } = resolveOverlaps(
+          updatedSnapshot,
+          chains[activeDay],
+          dayStart[activeDay],
+          resizingState.id,
+        );
+        return newItems;
+      });
+    };
+
+    const handleGlobalClick = () => setResizingState(null);
+    window.addEventListener("mousemove", handleMouseMove);
+    const timer = setTimeout(
+      () => window.addEventListener("click", handleGlobalClick),
+      50,
+    );
+    return () => {
+      clearTimeout(timer);
+      window.removeEventListener("mousemove", handleMouseMove);
+      window.removeEventListener("click", handleGlobalClick);
+    };
+  }, [resizingState, activeDay, chains, dayStart]);
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+    }),
+  );
+
+  const handleStartChange = (delta) => {
+    setDayStart((prev) => ({
+      ...prev,
+      [activeDay]: Math.max(300, Math.min(1380, prev[activeDay] + delta)),
+    }));
   };
 
   const computeDropTarget = useCallback(
@@ -789,7 +950,6 @@ export function DashboardPage() {
         }
         return { region: "pool", insertIndex };
       }
-
       if (isOverTimeline) {
         const relativeY =
           topY - tlRect.top + (timelineDOMRef.current?.scrollTop || 0);
@@ -814,12 +974,10 @@ export function DashboardPage() {
     activeDragRef.current = event.active;
     setDragPreview(computeDropTarget(event.active));
   };
-
   const handleDragMove = (event) => {
     activeDragRef.current = event.active;
     setDragPreview(computeDropTarget(event.active));
   };
-
   const handleDragCancel = () => {
     setActiveId(null);
     activeDragRef.current = null;
@@ -896,7 +1054,6 @@ export function DashboardPage() {
         let currentDayList = [...(chains[activeDay] || [])];
         if (!currentDayList.includes(activeIdLocal))
           currentDayList.push(activeIdLocal);
-
         const { newItems, newChain } = resolveOverlaps(
           updatedItems,
           currentDayList,
@@ -913,7 +1070,6 @@ export function DashboardPage() {
           next[activeDay] = newChain;
           return next;
         });
-
         if (isFromPool)
           setPool((prev) => prev.filter((id) => id !== activeIdLocal));
         return newItems;
@@ -944,7 +1100,6 @@ export function DashboardPage() {
     };
     const tempChain = [...displayChain];
     if (!tempChain.includes(activeId)) tempChain.push(activeId);
-
     const { newItems, newChain } = resolveOverlaps(
       tempItems,
       tempChain,
@@ -971,7 +1126,6 @@ export function DashboardPage() {
 
   return (
     <>
-      {/* 상단 네비게이션 */}
       <AppBar
         crumbs={[
           { label: "그룹", to: `/groups/${groupId}` },
@@ -979,383 +1133,709 @@ export function DashboardPage() {
         ]}
       />
 
-      <div className="dashboard-page">
-        <DndContext
-          sensors={sensors}
-          autoScroll={dragPreview?.region === "timeline"}
-          onDragStart={handleDragStart}
-          onDragMove={handleDragMove}
-          onDragEnd={handleDragEnd}
-          onDragCancel={handleDragCancel}
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "flex-end",
+          padding: "12px 30px",
+          backgroundColor: "#f4f1ea",
+        }}
+      >
+        <div
+          style={{
+            display: "flex",
+            gap: "4px",
+            backgroundColor: "#f0ebd8",
+            padding: "6px",
+            borderRadius: "24px",
+          }}
         >
-          <div className="daycol">
-            {["d1", "d2", "d3", "d4"].map((day, i) => (
-              <DayTab
-                key={day}
-                label={`Day ${i + 1}`}
-                count={(chains[day] || []).length}
-                isActive={activeDay === day}
-                onClick={() => setActiveDay(day)}
-              />
-            ))}
-          </div>
+          <button
+            onClick={() => setViewMode("edit")}
+            style={{
+              padding: "8px 16px",
+              borderRadius: "20px",
+              border: "none",
+              cursor: "pointer",
+              fontSize: "14px",
+              transition: "all 0.2s",
+              backgroundColor: viewMode === "edit" ? "#fff" : "transparent",
+              fontWeight: viewMode === "edit" ? "bold" : "normal",
+              color: viewMode === "edit" ? "#7c5443" : "#8c7b70",
+              boxShadow:
+                viewMode === "edit" ? "0 2px 6px rgba(0,0,0,0.1)" : "none",
+            }}
+          >
+            ✏️ 편집
+          </button>
+          <button
+            onClick={() => setViewMode("read")}
+            style={{
+              padding: "8px 16px",
+              borderRadius: "20px",
+              border: "none",
+              cursor: "pointer",
+              fontSize: "14px",
+              transition: "all 0.2s",
+              backgroundColor: viewMode === "read" ? "#fff" : "transparent",
+              fontWeight: viewMode === "read" ? "bold" : "normal",
+              color: viewMode === "read" ? "#7c5443" : "#8c7b70",
+              boxShadow:
+                viewMode === "read" ? "0 2px 6px rgba(0,0,0,0.1)" : "none",
+            }}
+          >
+            ≡ 읽기
+          </button>
+        </div>
+      </div>
 
-          <div className="main">
-            <div
-              className="board"
-              style={{
-                display: "flex",
-                flexDirection: "column",
-                maxHeight: "620px",
-              }}
-            >
-              <div className="bd-head" style={{ flexShrink: 0 }}>
-                <h2>Day {activeDay.replace("d", "")}</h2>
-                <span className="date">
-                  2026.10.0{activeDay.replace("d", "")}
-                </span>
-                <div className="right">
-                  <button
-                    className="auto-transport-btn"
-                    onClick={() => regenerateAutoTransport(activeDay)}
-                    disabled={
-                      isGeneratingTransport ||
-                      (chains[activeDay] || []).filter((id) => !items[id]?.auto)
-                        .length < 2
-                    }
-                  >
-                    {isGeneratingTransport
-                      ? "생성 중..."
-                      : "🚗 이동수단 자동 생성"}
-                  </button>
-                  <div className="start-ctl">
-                    시작
-                    <button onClick={() => handleStartChange(-30)}>−</button>
-                    <b>{fmtTime(dayStart[activeDay])}</b>
-                    <button onClick={() => handleStartChange(30)}>＋</button>
-                  </div>
-                </div>
-              </div>
+      {viewMode === "edit" ? (
+        <div className="dashboard-page">
+          <DndContext
+            sensors={sensors}
+            autoScroll={dragPreview?.region === "timeline"}
+            onDragStart={handleDragStart}
+            onDragMove={handleDragMove}
+            onDragEnd={handleDragEnd}
+            onDragCancel={handleDragCancel}
+          >
+            <div className="daycol">
+              {["d1", "d2", "d3", "d4"].map((day, i) => (
+                <DayTab
+                  key={day}
+                  label={`Day ${i + 1}`}
+                  count={(chains[day] || []).length}
+                  isActive={activeDay === day}
+                  onClick={() => setActiveDay(day)}
+                />
+              ))}
+            </div>
 
+            <div className="main">
               <div
-                className={`tl ${dragPreview?.region === "timeline" ? "dropover" : ""}`}
-                ref={setTimelineRefs}
-                onScroll={() => {
-                  if (activeDragRef.current)
-                    setDragPreview(computeDropTarget(activeDragRef.current));
-                }}
+                className="board"
                 style={{
-                  marginTop: "10px",
-                  position: "relative",
-                  height: `${(timelineEnd - timelineStart) * PX + 120}px`,
-                  minHeight: "300px",
-                  maxHeight: "420px",
-                  overflowY: "auto",
-                  overflowX: "hidden",
+                  display: "flex",
+                  flexDirection: "column",
+                  maxHeight: "620px",
                 }}
               >
+                <div className="bd-head" style={{ flexShrink: 0 }}>
+                  <h2>Day {activeDay.replace("d", "")}</h2>
+                  <span className="date">
+                    2026.10.0{activeDay.replace("d", "")}
+                  </span>
+                  <div className="right">
+                    <button
+                      className="auto-transport-btn"
+                      onClick={() => regenerateAutoTransport(activeDay)}
+                      disabled={
+                        isGeneratingTransport ||
+                        (chains[activeDay] || []).filter(
+                          (id) => !items[id]?.auto,
+                        ).length < 2
+                      }
+                    >
+                      {isGeneratingTransport
+                        ? "생성 중..."
+                        : "🚗 이동수단 자동 생성"}
+                    </button>
+                    <div className="start-ctl">
+                      시작{" "}
+                      <button onClick={() => handleStartChange(-30)}>−</button>
+                      <b>{fmtTime(dayStart[activeDay])}</b>
+                      <button onClick={() => handleStartChange(30)}>＋</button>
+                    </div>
+                  </div>
+                </div>
+
                 <div
-                  className="tl-bg"
+                  className={`tl ${dragPreview?.region === "timeline" ? "dropover" : ""}`}
+                  ref={setTimelineRefs}
+                  onScroll={() => {
+                    if (activeDragRef.current)
+                      setDragPreview(computeDropTarget(activeDragRef.current));
+                  }}
                   style={{
-                    position: "absolute",
-                    top: `${TL_PAD_TOP}px`,
-                    left: `${TL_PAD_LEFT}px`,
-                    right: 0,
-                    bottom: 0,
-                    pointerEvents: "none",
-                    zIndex: 0,
+                    marginTop: "10px",
+                    position: "relative",
+                    height: `${(timelineEnd - timelineStart) * PX + 120}px`,
+                    minHeight: "300px",
+                    maxHeight: "420px",
+                    overflowY: "auto",
+                    overflowX: "hidden",
                   }}
                 >
-                  {timeSlots.map((t) => (
-                    <div
-                      key={t}
-                      style={{
-                        position: "absolute",
-                        top: `${(t - timelineStart) * PX}px`,
-                        left: 0,
-                        width: "100%",
-                        height: "1px",
-                      }}
-                    >
-                      <span
+                  <div
+                    className="tl-bg"
+                    style={{
+                      position: "absolute",
+                      top: `${TL_PAD_TOP}px`,
+                      left: `${TL_PAD_LEFT}px`,
+                      right: 0,
+                      bottom: 0,
+                      pointerEvents: "none",
+                      zIndex: 0,
+                    }}
+                  >
+                    {timeSlots.map((t) => (
+                      <div
+                        key={t}
                         style={{
                           position: "absolute",
-                          left: "-64px",
-                          top: "-10px",
-                          width: "52px",
-                          textAlign: "right",
-                          fontSize: "12px",
-                          fontWeight: "700",
-                          color: "#c9b8a5",
+                          top: `${(t - timelineStart) * PX}px`,
+                          left: 0,
+                          width: "100%",
+                          height: "1px",
                         }}
                       >
-                        {fmtTime(t)}
-                      </span>
+                        <span
+                          style={{
+                            position: "absolute",
+                            left: "-64px",
+                            top: "-10px",
+                            width: "52px",
+                            textAlign: "right",
+                            fontSize: "12px",
+                            fontWeight: "700",
+                            color: "#c9b8a5",
+                          }}
+                        >
+                          {fmtTime(t)}
+                        </span>
+                        <div
+                          style={{
+                            position: "absolute",
+                            left: "-6px",
+                            right: 0,
+                            top: 0,
+                            borderTop: "1px dashed rgba(61, 43, 34, 0.15)",
+                          }}
+                        />
+                      </div>
+                    ))}
+                    {dragPreview?.region === "timeline" && draggedItem && (
                       <div
                         style={{
                           position: "absolute",
                           left: "-6px",
-                          right: 0,
-                          top: 0,
-                          borderTop: "1px dashed rgba(61, 43, 34, 0.15)",
+                          right: "10px",
+                          top: `${(dragPreview.dropMins - timelineStart) * PX}px`,
+                          height: `${(dragPreview.dur || draggedItem.dur || 30) * PX}px`,
+                          border: `2px dashed ${catOf(draggedItem).hex}`,
+                          background: catOf(draggedItem).bg,
+                          opacity: 0.75,
+                          borderRadius: "12px",
+                          zIndex: 8,
+                          display: "flex",
+                          alignItems: "flex-start",
+                          justifyContent: "flex-start",
+                          padding: "6px 10px",
+                          pointerEvents: "none",
                         }}
-                      />
-                    </div>
-                  ))}
+                      >
+                        <span
+                          style={{
+                            fontSize: "12px",
+                            fontWeight: 800,
+                            color: catOf(draggedItem).hex,
+                            background: "#fff",
+                            borderRadius: "8px",
+                            padding: "2px 8px",
+                          }}
+                        >
+                          {fmtTime(dragPreview.dropMins)} 에 놓기
+                        </span>
+                      </div>
+                    )}
+                  </div>
 
-                  {dragPreview?.region === "timeline" && draggedItem && (
-                    <div
-                      style={{
-                        position: "absolute",
-                        left: "-6px",
-                        right: "10px",
-                        top: `${(dragPreview.dropMins - timelineStart) * PX}px`,
-                        height: `${(dragPreview.dur || draggedItem.dur || 30) * PX}px`,
-                        border: `2px dashed ${catOf(draggedItem).hex}`,
-                        background: catOf(draggedItem).bg,
-                        opacity: 0.75,
-                        borderRadius: "12px",
-                        zIndex: 8,
-                        display: "flex",
-                        alignItems: "flex-start",
-                        justifyContent: "flex-start",
-                        padding: "6px 10px",
-                        pointerEvents: "none",
-                      }}
-                    >
+                  <div
+                    style={{
+                      position: "absolute",
+                      top: `${TL_PAD_TOP}px`,
+                      left: `${TL_PAD_LEFT}px`,
+                      right: 0,
+                      bottom: "100px",
+                      zIndex: 5,
+                    }}
+                  >
+                    {activeDayItems.map((data, index) => {
+                      const boundTop =
+                        index > 0
+                          ? activeDayItems[index - 1].endMins
+                          : dayStart[activeDay];
+                      return (
+                        <TimelineCard
+                          key={data.id}
+                          id={data.id}
+                          item={data.item}
+                          startMins={data.startMins}
+                          endMins={data.endMins}
+                          resizingState={resizingState}
+                          onResizeStart={handleResizeStart}
+                          dayStartMins={dayStart[activeDay]}
+                          boundTop={boundTop}
+                          onEditBlock={setEditingBlockId}
+                        />
+                      );
+                    })}
+                    {activeDayItems.length === 0 && (
+                      <div
+                        className="endzone"
+                        style={{
+                          position: "absolute",
+                          top: "40px",
+                          left: "10px",
+                          right: "10px",
+                          pointerEvents: "none",
+                          color: "#888",
+                          textAlign: "center",
+                        }}
+                      >
+                        ＋ 비어있는 타임라인의 원하는 시간 위치로 드래그하여
+                        일정을 추가하세요
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              <div
+                style={{ display: "flex", gap: "16px", alignItems: "stretch" }}
+              >
+                <div
+                  className={`pool-sec ${dragPreview?.region === "pool" ? "dropover" : ""}`}
+                  ref={setPoolRef}
+                  style={{ flex: 1, margin: 0 }}
+                >
+                  <div
+                    className="pool-head"
+                    style={{
+                      display: "flex",
+                      justifyContent: "space-between",
+                      alignItems: "center",
+                    }}
+                  >
+                    <div>
+                      <b>후보 목록</b> <span className="n">{pool.length}</span>
                       <span
                         style={{
                           fontSize: "12px",
-                          fontWeight: 800,
-                          color: catOf(draggedItem).hex,
-                          background: "#fff",
-                          borderRadius: "8px",
-                          padding: "2px 8px",
+                          color: "#888",
+                          marginLeft: "8px",
                         }}
                       >
-                        {fmtTime(dragPreview.dropMins)} 에 놓기
+                        자유롭게 끌어다 놓고 빼세요
                       </span>
                     </div>
-                  )}
+                    <button
+                      onClick={handleCreateCustomBlock}
+                      style={{
+                        backgroundColor: "#7c5443",
+                        color: "#fff",
+                        border: "none",
+                        borderRadius: "8px",
+                        padding: "6px 14px",
+                        fontSize: "13px",
+                        fontWeight: "bold",
+                        cursor: "pointer",
+                        boxShadow: "0 2px 6px rgba(124, 84, 67, 0.2)",
+                      }}
+                    >
+                      + 커스텀 블록 만들기
+                    </button>
+                  </div>
+                  <div
+                    className="pool"
+                    style={{
+                      minHeight: "150px",
+                      paddingBottom: "20px",
+                      position: "relative",
+                    }}
+                  >
+                    <SortableContext
+                      items={pool}
+                      strategy={rectSortingStrategy}
+                    >
+                      {pool.map((id) => (
+                        <PoolCard
+                          key={id}
+                          id={id}
+                          item={items[id]}
+                          onEditBlock={setEditingBlockId}
+                        />
+                      ))}
+                    </SortableContext>
+                    {dragPreview?.region === "pool" && !isDraggingFromPool && (
+                      <div
+                        style={{
+                          position: "absolute",
+                          inset: 0,
+                          border: "2px dashed var(--acc, #9c4a2f)",
+                          borderRadius: "14px",
+                          pointerEvents: "none",
+                          background: "rgba(156, 74, 47, 0.04)",
+                        }}
+                      />
+                    )}
+                  </div>
                 </div>
 
                 <div
+                  ref={setTrashRef}
+                  className={`trash-zone ${activeId ? "dragging" : ""} ${dragPreview?.region === "trash" ? "dropover" : ""}`}
                   style={{
-                    position: "absolute",
-                    top: `${TL_PAD_TOP}px`,
-                    left: `${TL_PAD_LEFT}px`,
-                    right: 0,
-                    bottom: "100px",
-                    zIndex: 5,
+                    margin: 0,
+                    width: "140px",
+                    flexDirection: "column",
+                    justifyContent: "center",
+                    textAlign: "center",
+                    gap: "12px",
+                    padding: "20px",
                   }}
                 >
-                  {activeDayItems.map((data, index) => {
-                    const boundTop =
-                      index > 0
-                        ? activeDayItems[index - 1].endMins
-                        : dayStart[activeDay];
-                    return (
-                      <TimelineCard
-                        key={data.id}
-                        id={data.id}
-                        item={data.item}
-                        startMins={data.startMins}
-                        endMins={data.endMins}
-                        resizingState={resizingState}
-                        onResizeStart={handleResizeStart}
-                        dayStartMins={dayStart[activeDay]}
-                        boundTop={boundTop}
-                        onEditBlock={setEditingBlockId}
-                      />
-                    );
-                  })}
-                  {activeDayItems.length === 0 && (
-                    <div
-                      className="endzone"
-                      style={{
-                        position: "absolute",
-                        top: "40px",
-                        left: "10px",
-                        right: "10px",
-                        pointerEvents: "none",
-                        color: "#888",
-                        textAlign: "center",
-                      }}
-                    >
-                      ＋ 비어있는 타임라인의 원하는 시간 위치로 드래그하여
-                      일정을 추가하세요
-                    </div>
-                  )}
+                  <span style={{ fontSize: "32px", display: "block" }}>🗑️</span>
+                  <span style={{ display: "block", lineHeight: "1.4" }}>
+                    여기로 블럭을
+                    <br />
+                    끌어다 놓으면
+                    <br />
+                    삭제됩니다
+                  </span>
                 </div>
               </div>
             </div>
 
+            <DragOverlay modifiers={[restrictTimelineX]}>
+              {activeId && draggedItem ? (
+                isDraggingFromPool ? (
+                  <div
+                    className="pcard"
+                    style={{
+                      "--dc": catOf(draggedItem).hex,
+                      "--cb": catOf(draggedItem).bg,
+                      cursor: "grabbing",
+                    }}
+                  >
+                    <CardBody
+                      id={draggedItem.id}
+                      item={draggedItem}
+                      mode="pool"
+                    />
+                  </div>
+                ) : (
+                  <div
+                    className="card"
+                    style={{
+                      "--dc": catOf(draggedItem).hex,
+                      "--cb": catOf(draggedItem).bg,
+                      width: "320px",
+                      cursor: "grabbing",
+                      boxShadow: "0 10px 28px rgba(61,43,34,0.22)",
+                    }}
+                  >
+                    <CardBody
+                      id={draggedItem.id}
+                      item={draggedItem}
+                      mode="timeline"
+                      startMins={items[activeId]?.startMins || 0}
+                      endMins={
+                        (items[activeId]?.startMins || 0) +
+                        (draggedItem.dur || 0)
+                      }
+                    />
+                  </div>
+                )
+              ) : null}
+            </DragOverlay>
+          </DndContext>
+
+          <div className="side">
+            {/* 💡 예산 패널 */}
             <div
-              style={{ display: "flex", gap: "16px", alignItems: "stretch" }}
+              className="panel"
+              style={{
+                padding: "24px",
+                backgroundColor: "#fbf8f1",
+                borderRadius: "16px",
+                boxShadow: "0 4px 12px rgba(0,0,0,0.05)",
+                marginBottom: "20px",
+              }}
             >
+              <div style={{ marginBottom: "16px" }}>
+                <span
+                  style={{
+                    fontSize: "15px",
+                    fontWeight: "bold",
+                    color: "#666",
+                  }}
+                >
+                  총{" "}
+                </span>
+                <span
+                  style={{
+                    fontSize: "28px",
+                    fontWeight: "800",
+                    color: "#3d2b22",
+                  }}
+                >
+                  {totalBudget.toLocaleString()}원
+                </span>
+              </div>
+
+              {/* 목표 예산 증감 컨트롤러 */}
               <div
-                className={`pool-sec ${dragPreview?.region === "pool" ? "dropover" : ""}`}
-                ref={setPoolRef}
-                style={{ flex: 1, margin: 0 }}
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  marginBottom: "12px",
+                  fontSize: "13px",
+                  color: "#888",
+                }}
               >
-                {/* 💡 헤더 영역을 Flex로 묶어 양옆으로 배치 */}
+                <span>희망 총 예산</span>
                 <div
-                  className="pool-head"
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "8px",
+                    backgroundColor: "#f4f1ea",
+                    padding: "4px 8px",
+                    borderRadius: "8px",
+                  }}
+                >
+                  <button
+                    onClick={() => handleTargetBudgetChange(-100000)}
+                    style={{
+                      border: "none",
+                      background: "none",
+                      cursor: "pointer",
+                      fontWeight: "bold",
+                      color: "#666",
+                    }}
+                  >
+                    -
+                  </button>
+                  <span style={{ fontWeight: "bold", color: "#333" }}>
+                    {targetBudget.toLocaleString()}원
+                  </span>
+                  <button
+                    onClick={() => handleTargetBudgetChange(100000)}
+                    style={{
+                      border: "none",
+                      background: "none",
+                      cursor: "pointer",
+                      fontWeight: "bold",
+                      color: "#666",
+                    }}
+                  >
+                    +
+                  </button>
+                </div>
+              </div>
+
+              {/* 프로그레스 바 */}
+              <div
+                style={{
+                  width: "100%",
+                  height: "8px",
+                  backgroundColor: "#e6dec8",
+                  borderRadius: "4px",
+                  marginBottom: "10px",
+                  overflow: "hidden",
+                }}
+              >
+                <div
+                  style={{
+                    width: `${budgetPercent}%`,
+                    height: "100%",
+                    backgroundColor:
+                      remainingBudget < 0 ? "#d97e3c" : "#7c5443",
+                    transition: "width 0.3s ease, background-color 0.3s ease",
+                  }}
+                />
+              </div>
+
+              {/* 퍼센트 및 남은 금액 텍스트 */}
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  fontSize: "12px",
+                  color: "#888",
+                }}
+              >
+                <span>희망 예산의 {Math.round(budgetPercent)}% 사용</span>
+                <span
+                  style={{
+                    color: remainingBudget < 0 ? "#d97e3c" : "#666",
+                    fontWeight: remainingBudget < 0 ? "bold" : "normal",
+                  }}
+                >
+                  {remainingBudget < 0
+                    ? `${Math.abs(remainingBudget).toLocaleString()}원 초과`
+                    : `남은 ${remainingBudget.toLocaleString()}원`}
+                </span>
+              </div>
+            </div>
+
+            {/* 지도 패널 */}
+            <div
+              className="panel"
+              style={{
+                padding: "24px",
+                backgroundColor: "#fbf8f1",
+                borderRadius: "16px",
+                boxShadow: "0 4px 12px rgba(0,0,0,0.05)",
+                marginBottom: "20px",
+              }}
+            >
+              <h4
+                style={{
+                  margin: "0 0 16px 0",
+                  color: "#3d2b22",
+                  fontSize: "16px",
+                }}
+              >
+                지도{" "}
+                <span
+                  style={{
+                    fontSize: "12px",
+                    color: "#888",
+                    fontWeight: "normal",
+                  }}
+                >
+                  블록을 클릭하면 위치가 표시돼요
+                </span>
+              </h4>
+              <div
+                className="map"
+                style={{
+                  height: "220px",
+                  backgroundColor: "#C1D3C4",
+                  borderRadius: "12px",
+                  display: "flex",
+                  justifyContent: "center",
+                  alignItems: "center",
+                  color: "#fff",
+                  fontWeight: "bold",
+                }}
+              >
+                <span className="kk">kakao map placeholder</span>
+              </div>
+            </div>
+
+            {/* 💡 장소 검색 패널 추가 */}
+            <div
+              className="panel"
+              style={{
+                padding: "24px",
+                backgroundColor: "#fbf8f1",
+                borderRadius: "16px",
+                boxShadow: "0 4px 12px rgba(0,0,0,0.05)",
+              }}
+            >
+              <h4
+                style={{
+                  margin: "0 0 16px 0",
+                  color: "#3d2b22",
+                  fontSize: "16px",
+                }}
+              >
+                장소 검색
+              </h4>
+              <div
+                style={{
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: "16px",
+                }}
+              >
+                <input
+                  type="text"
+                  placeholder="도시, 명소, 음식..."
+                  style={{
+                    width: "100%",
+                    padding: "14px",
+                    borderRadius: "10px",
+                    border: "1px solid #e6dec8",
+                    backgroundColor: "#fff",
+                    fontSize: "14px",
+                    outline: "none",
+                    boxSizing: "border-box",
+                  }}
+                />
+
+                {/* 검색 결과 더미 데이터 */}
+                <div
                   style={{
                     display: "flex",
                     justifyContent: "space-between",
                     alignItems: "center",
+                    padding: "4px",
                   }}
                 >
-                  <div>
-                    <b>후보 목록</b> <span className="n">{pool.length}</span>
-                    <span
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "flex-start",
+                      gap: "8px",
+                    }}
+                  >
+                    <div
                       style={{
-                        fontSize: "12px",
-                        color: "#888",
-                        marginLeft: "8px",
+                        color: "#d97e3c",
+                        fontSize: "10px",
+                        marginTop: "4px",
                       }}
                     >
-                      자유롭게 끌어다 놓고 빼세요
-                    </span>
+                      ●
+                    </div>
+                    <div>
+                      <div
+                        style={{
+                          fontSize: "14px",
+                          fontWeight: "bold",
+                          color: "#333",
+                          marginBottom: "2px",
+                        }}
+                      >
+                        돼지국밥 골목
+                      </div>
+                      <div style={{ fontSize: "12px", color: "#888" }}>
+                        부산 서면
+                      </div>
+                    </div>
                   </div>
-                  {/* 💡 커스텀 블록 추가 버튼 */}
                   <button
-                    onClick={handleCreateCustomBlock}
                     style={{
                       backgroundColor: "#7c5443",
                       color: "#fff",
                       border: "none",
-                      borderRadius: "8px",
-                      padding: "6px 14px",
-                      fontSize: "13px",
+                      borderRadius: "20px",
+                      padding: "6px 12px",
+                      fontSize: "12px",
                       fontWeight: "bold",
                       cursor: "pointer",
-                      boxShadow: "0 2px 6px rgba(124, 84, 67, 0.2)",
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "4px",
                     }}
                   >
-                    + 커스텀 블록 만들기
+                    + 📍
                   </button>
                 </div>
-                <div
-                  className="pool"
-                  style={{
-                    minHeight: "150px",
-                    paddingBottom: "20px",
-                    position: "relative",
-                  }}
-                >
-                  <SortableContext items={pool} strategy={rectSortingStrategy}>
-                    {pool.map((id) => (
-                      <PoolCard
-                        key={id}
-                        id={id}
-                        item={items[id]}
-                        onEditBlock={setEditingBlockId}
-                      />
-                    ))}
-                  </SortableContext>
-                  {dragPreview?.region === "pool" && !isDraggingFromPool && (
-                    <div
-                      style={{
-                        position: "absolute",
-                        inset: 0,
-                        border: "2px dashed var(--acc, #9c4a2f)",
-                        borderRadius: "14px",
-                        pointerEvents: "none",
-                        background: "rgba(156, 74, 47, 0.04)",
-                      }}
-                    />
-                  )}
-                </div>
               </div>
-
-              <div
-                ref={setTrashRef}
-                className={`trash-zone ${activeId ? "dragging" : ""} ${dragPreview?.region === "trash" ? "dropover" : ""}`}
-                style={{
-                  margin: 0,
-                  width: "140px",
-                  flexDirection: "column",
-                  justifyContent: "center",
-                  textAlign: "center",
-                  gap: "12px",
-                  padding: "20px",
-                }}
-              >
-                <span style={{ fontSize: "32px", display: "block" }}>🗑️</span>
-                <span style={{ display: "block", lineHeight: "1.4" }}>
-                  여기로 블럭을
-                  <br />
-                  끌어다 놓으면
-                  <br />
-                  삭제됩니다
-                </span>
-              </div>
-            </div>
-          </div>
-
-          <DragOverlay modifiers={[restrictTimelineX]}>
-            {activeId && draggedItem ? (
-              isDraggingFromPool ? (
-                <div
-                  className="pcard"
-                  style={{
-                    "--dc": catOf(draggedItem).hex,
-                    "--cb": catOf(draggedItem).bg,
-                    cursor: "grabbing",
-                  }}
-                >
-                  <CardBody
-                    id={draggedItem.id}
-                    item={draggedItem}
-                    mode="pool"
-                  />
-                </div>
-              ) : (
-                <div
-                  className="card"
-                  style={{
-                    "--dc": catOf(draggedItem).hex,
-                    "--cb": catOf(draggedItem).bg,
-                    width: "320px",
-                    cursor: "grabbing",
-                    boxShadow: "0 10px 28px rgba(61,43,34,0.22)",
-                  }}
-                >
-                  <CardBody
-                    id={draggedItem.id}
-                    item={draggedItem}
-                    mode="timeline"
-                    startMins={items[activeId]?.startMins || 0}
-                    endMins={
-                      (items[activeId]?.startMins || 0) + (draggedItem.dur || 0)
-                    }
-                  />
-                </div>
-              )
-            ) : null}
-          </DragOverlay>
-        </DndContext>
-
-        <div className="side">
-          <div className="panel">
-            <h4>예산</h4>
-            <div className="bud">
-              <span>총</span>{" "}
-              <span className="t">{totalBudget.toLocaleString()}원</span>
-            </div>
-          </div>
-          <div className="panel">
-            <h4>지도</h4>
-            <div className="map">
-              <span className="kk">kakao map placeholder</span>
             </div>
           </div>
         </div>
-      </div>
+      ) : (
+        <ReadModeView chains={chains} items={items} />
+      )}
 
-      {/* 화면 전체를 덮는 모달 오버레이 */}
+      {/* 모달 렌더링 영역 */}
       {editingBlockId && items[editingBlockId] && (
         <div
           className="modal-overlay"
@@ -1372,21 +1852,26 @@ export function DashboardPage() {
             alignItems: "center",
           }}
         >
-          <BlockEditForm
-            // 기존 프론트 포맷을 BlockEditForm이 요구하는 백엔드 포맷(명세)으로 치환하여 전달
-            initialData={{
-              id: items[editingBlockId].id,
-              name: items[editingBlockId].name,
-              category: items[editingBlockId].cat.toUpperCase(),
-              durationMin: items[editingBlockId].dur,
-              budget: items[editingBlockId].cost,
-            }}
-            onSave={handleSaveBlock}
-            onCancel={() => setEditingBlockId(null)}
-          />
+          {(() => {
+            const item = items[editingBlockId];
+            const sMins = item.startMins;
+            const eMins = sMins + item.dur;
+            const dayNum = activeDay.replace("d", "");
+            const timeStr = `Day ${dayNum} · ${fmtTime(sMins)} - ${fmtTime(eMins)}`;
+
+            return (
+              <BlockEditForm
+                initialData={item}
+                timeString={timeStr}
+                onSave={handleSaveBlock}
+                onCancel={() => setEditingBlockId(null)}
+              />
+            );
+          })()}
         </div>
       )}
-      <ChatbotWidget />
+
+      {viewMode === "edit" && <ChatbotWidget />}
     </>
   );
 }

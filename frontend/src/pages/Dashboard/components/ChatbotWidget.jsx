@@ -1,16 +1,12 @@
 import React, { useState } from "react";
 
 export function ChatbotWidget() {
-  // 챗봇 창 열림/닫힘 상태 관리
   const [isOpen, setIsOpen] = useState(false);
-  // 선택된 탭 상태 관리 ('general' 또는 'map')
   const [activeTab, setActiveTab] = useState("general");
-  // 입력창 상태 관리
   const [inputValue, setInputValue] = useState("");
 
   return (
     <>
-      {/* 💡 1. 플로팅 버튼 (챗봇 창이 닫혀있을 때만 표시) */}
       {!isOpen && (
         <button
           onClick={() => setIsOpen(true)}
@@ -21,7 +17,7 @@ export function ChatbotWidget() {
             width: "60px",
             height: "60px",
             borderRadius: "50%",
-            backgroundColor: "#6A4C3D", // 프로토타입의 갈색
+            backgroundColor: "#6A4C3D",
             color: "white",
             border: "none",
             boxShadow: "0 4px 12px rgba(0,0,0,0.15)",
@@ -40,7 +36,6 @@ export function ChatbotWidget() {
         </button>
       )}
 
-      {/* 💡 2. 챗봇 모달 창 (isOpen이 true일 때만 표시) */}
       {isOpen && (
         <div
           style={{
@@ -48,7 +43,7 @@ export function ChatbotWidget() {
             bottom: "30px",
             right: "30px",
             width: "340px",
-            backgroundColor: "#fbf8f1", // 배경 베이지 톤
+            backgroundColor: "#fbf8f1",
             borderRadius: "16px",
             boxShadow: "0 8px 24px rgba(0,0,0,0.2)",
             zIndex: 9999,
@@ -58,7 +53,6 @@ export function ChatbotWidget() {
             fontFamily: "sans-serif",
           }}
         >
-          {/* 헤더 영역 */}
           <div
             style={{
               backgroundColor: "#6A4C3D",
@@ -86,7 +80,6 @@ export function ChatbotWidget() {
             </button>
           </div>
 
-          {/* 탭 버튼 영역 */}
           <div style={{ display: "flex", padding: "12px 16px 0", gap: "8px" }}>
             <button
               onClick={() => setActiveTab("general")}
@@ -127,7 +120,6 @@ export function ChatbotWidget() {
             </button>
           </div>
 
-          {/* 채팅 메시지 영역 */}
           <div
             style={{
               padding: "20px 16px",
@@ -138,7 +130,6 @@ export function ChatbotWidget() {
               gap: "12px",
             }}
           >
-            {/* 챗봇의 말풍선 */}
             <div
               style={{
                 backgroundColor: "#fff",
@@ -159,7 +150,6 @@ export function ChatbotWidget() {
             </div>
           </div>
 
-          {/* 하단 입력 영역 */}
           <div
             style={{
               padding: "12px 16px",
@@ -186,7 +176,7 @@ export function ChatbotWidget() {
             />
             <button
               onClick={() => {
-                setInputValue(""); /* API 통신 로직 추가 예정 */
+                setInputValue("");
               }}
               style={{
                 backgroundColor: "#6A4C3D",
