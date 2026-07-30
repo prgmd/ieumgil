@@ -1,6 +1,11 @@
 package com.ssafy.ieumgil.domain.transit.client;
 
+import com.ssafy.ieumgil.domain.transit.dto.OdsayBusScheduleResponse;
+import com.ssafy.ieumgil.domain.transit.dto.OdsayBusTerminalResponse;
+import com.ssafy.ieumgil.domain.transit.dto.OdsayFlightScheduleResponse;
 import com.ssafy.ieumgil.domain.transit.dto.OdsayRouteResponse;
+import com.ssafy.ieumgil.domain.transit.dto.OdsayTrainScheduleResponse;
+import com.ssafy.ieumgil.domain.transit.dto.OdsayTrainTerminalResponse;
 import com.ssafy.ieumgil.domain.transit.exception.TransitException;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -8,6 +13,7 @@ import org.springframework.boot.test.autoconfigure.web.client.RestClientTest;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.client.MockRestServiceServer;
 
+import java.util.List;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -38,6 +44,59 @@ class OdsayClientTest {
                   }
                 ]
               }
+            }
+            """;
+
+    private static final String TRAIN_TERMINAL_RESPONSE = """
+            {
+              "result": [
+                {
+                  "stationID": 3300125,
+                  "stationName": "서경주",
+                  "x": 129.2035,
+                  "y": 35.7642,
+                  "haveDestinationTerminals": true,
+                  "arrivalTerminals": [
+                    {"stationID": 3300108, "stationName": "부산", "x": 129.0422, "y": 35.1152}
+                  ]
+                },
+                {
+                  "stationID": 3300128,
+                  "stationName": "서울",
+                  "x": 126.9706,
+                  "y": 37.5545,
+                  "haveDestinationTerminals": true,
+                  "arrivalTerminals": [
+                    {"stationID": 3300108, "stationName": "부산", "x": 129.0422, "y": 35.1152},
+                    {"stationID": 3300062, "stationName": "대구", "x": 128.5960, "y": 35.8760}
+                  ]
+                }
+              ]
+            }
+            """;
+
+    private static final String BUS_TERMINAL_RESPONSE = """
+            {
+              "result": [
+                {
+                  "stationID": 4000022,
+                  "stationName": "서울남부터미널",
+                  "x": 127.0156,
+                  "y": 37.4845,
+                  "haveDestinationTerminals": false,
+                  "destinationTerminals": []
+                },
+                {
+                  "stationID": 4000057,
+                  "stationName": "서울고속버스터미널",
+                  "x": 127.0058,
+                  "y": 37.5057,
+                  "haveDestinationTerminals": true,
+                  "destinationTerminals": [
+                    {"stationID": 4000156, "stationName": "부산종합버스터미널", "x": 129.0954, "y": 35.2847}
+                  ]
+                }
+              ]
             }
             """;
 
@@ -117,5 +176,235 @@ class OdsayClientTest {
         assertThatThrownBy(() ->
                 odsayClient.searchPublicTransitRoute(37.4979, 127.0276, 37.5665, 127.1054, "BUS"))
                 .isInstanceOf(TransitException.class);
+    }
+
+    @Test
+    void searchTrainTerminalPicksExactNameMatchOverFirstResult() {
+        server.expect(requestTo("https://api.odsay.com/v1/api/trainTerminals?terminalName=%EC%84%9C%EC%9A%B8&apiKey=test-key"))
+                .andExpect(method(GET))
+                .andRespond(withSuccess(TRAIN_TERMINAL_RESPONSE, MediaType.APPLICATION_JSON));
+
+        Optional<OdsayTrainTerminalResponse.Terminal> result = odsayClient.searchTrainTerminal("서울");
+
+        assertThat(result).isPresent();
+        assertThat(result.get().stationID()).isEqualTo(3300128);
+        assertThat(result.get().stationName()).isEqualTo("서울");
+        assertThat(result.get().arrivalTerminals()).hasSize(2);
+    }
+
+    @Test
+    void searchTrainTerminalWithNoMatchReturnsEmpty() {
+        String emptyResponse = """
+                { "result": [] }
+                """;
+        server.expect(requestTo("https://api.odsay.com/v1/api/trainTerminals?terminalName=%EC%A1%B4%EC%9E%AC%EC%95%88%ED%95%A8&apiKey=test-key"))
+                .andRespond(withSuccess(emptyResponse, MediaType.APPLICATION_JSON));
+
+        Optional<OdsayTrainTerminalResponse.Terminal> result = odsayClient.searchTrainTerminal("존재안함");
+
+        assertThat(result).isEmpty();
+    }
+
+    @Test
+    void searchExpressBusTerminalPicksEntryWithDestinationsOverFirstResult() {
+        server.expect(requestTo("https://api.odsay.com/v1/api/expressBusTerminals?terminalName=%EC%84%9C%EC%9A%B8&apiKey=test-key"))
+                .andExpect(method(GET))
+                .andRespond(withSuccess(BUS_TERMINAL_RESPONSE, MediaType.APPLICATION_JSON));
+
+        Optional<OdsayBusTerminalResponse.Terminal> result = odsayClient.searchExpressBusTerminal("서울");
+
+        assertThat(result).isPresent();
+        assertThat(result.get().stationID()).isEqualTo(4000057);
+        assertThat(result.get().stationName()).isEqualTo("서울고속버스터미널");
+        assertThat(result.get().destinationTerminals()).hasSize(1);
+    }
+
+    @Test
+    void searchIntercityBusTerminalPicksEntryWithDestinationsOverFirstResult() {
+        server.expect(requestTo("https://api.odsay.com/v1/api/intercityBusTerminals?terminalName=%EC%84%9C%EC%9A%B8&apiKey=test-key"))
+                .andExpect(method(GET))
+                .andRespond(withSuccess(BUS_TERMINAL_RESPONSE, MediaType.APPLICATION_JSON));
+
+        Optional<OdsayBusTerminalResponse.Terminal> result = odsayClient.searchIntercityBusTerminal("서울");
+
+        assertThat(result).isPresent();
+        assertThat(result.get().stationID()).isEqualTo(4000057);
+    }
+
+    @Test
+    void terminalSearchErrorEnvelopeThrowsTransitException() {
+        String errorResponse = """
+                { "error": [{"code": "500", "message": "[ApiKeyAuthFailed] ApiKey authentication failed."}] }
+                """;
+        server.expect(requestTo("https://api.odsay.com/v1/api/trainTerminals?terminalName=%EC%84%9C%EC%9A%B8&apiKey=test-key"))
+                .andRespond(withSuccess(errorResponse, MediaType.APPLICATION_JSON));
+
+        assertThatThrownBy(() -> odsayClient.searchTrainTerminal("서울"))
+                .isInstanceOf(TransitException.class);
+    }
+
+    private static final String TRAIN_SCHEDULE_RESPONSE = """
+            {
+              "result": {
+                "count": 89,
+                "startStationName": "서울",
+                "endStationName": "부산",
+                "station": [
+                  {
+                    "railName": "KTX경부선",
+                    "trainClass": "KTX",
+                    "trainNo": 1,
+                    "departureTime": "05:13",
+                    "arrivalTime": "07:50",
+                    "wasteTime": "02:37",
+                    "runDay": "매일",
+                    "fare": {"general": "59800", "special": "83700", "standing": "50830"}
+                  }
+                ]
+              }
+            }
+            """;
+
+    @Test
+    void getTrainScheduleParsesFirstDeparture() {
+        server.expect(requestTo("https://api.odsay.com/v1/api/trainServiceTime?startStationID=3300128&endStationID=3300108&apiKey=test-key"))
+                .andExpect(method(GET))
+                .andRespond(withSuccess(TRAIN_SCHEDULE_RESPONSE, MediaType.APPLICATION_JSON));
+
+        List<OdsayTrainScheduleResponse.Train> result = odsayClient.getTrainSchedule(3300128, 3300108);
+
+        assertThat(result).hasSize(1);
+        assertThat(result.get(0).departureTime()).isEqualTo("05:13");
+        assertThat(result.get(0).fare().general()).isEqualTo(59800);
+    }
+
+    @Test
+    void getTrainScheduleWithNoServiceReturnsEmpty() {
+        String emptyResponse = """
+                { "result": { "count": 0, "station": [] } }
+                """;
+        server.expect(requestTo("https://api.odsay.com/v1/api/trainServiceTime?startStationID=1&endStationID=2&apiKey=test-key"))
+                .andRespond(withSuccess(emptyResponse, MediaType.APPLICATION_JSON));
+
+        List<OdsayTrainScheduleResponse.Train> result = odsayClient.getTrainSchedule(1, 2);
+
+        assertThat(result).isEmpty();
+    }
+
+    @Test
+    void getTrainScheduleParsesEmptyFareAndDayFareBreakdown() {
+        String srtResponse = """
+                {
+                  "result": {
+                    "count": 1,
+                    "station": [
+                      {
+                        "railName": "경부선",
+                        "trainClass": "SRT",
+                        "trainNo": 305,
+                        "departureTime": "07:30",
+                        "arrivalTime": "09:47",
+                        "wasteTime": "02:17",
+                        "runDay": "매일",
+                        "fare": {},
+                        "generalFare": {"weekend": "22900", "holiday": "23100"},
+                        "specialFare": {"weekend": "33300", "holiday": "33500"},
+                        "standingFare": {"weekend": "19400", "holiday": "19600"}
+                      }
+                    ]
+                  }
+                }
+                """;
+        server.expect(requestTo("https://api.odsay.com/v1/api/trainServiceTime?startStationID=3300128&endStationID=3300108&apiKey=test-key"))
+                .andRespond(withSuccess(srtResponse, MediaType.APPLICATION_JSON));
+
+        List<OdsayTrainScheduleResponse.Train> result = odsayClient.getTrainSchedule(3300128, 3300108);
+
+        assertThat(result).hasSize(1);
+        assertThat(result.get(0).fare().general()).isNull();
+        assertThat(result.get(0).generalFare().weekend()).isEqualTo(22900);
+        assertThat(result.get(0).generalFare().weekday()).isNull();
+    }
+
+    private static final String BUS_SCHEDULE_RESPONSE = """
+            {
+              "result": {
+                "count": 51,
+                "stationClass": 4,
+                "startStationName": "서울고속버스터미널",
+                "endStationName": "부산종합버스터미널",
+                "firstTime": "06:00",
+                "lastTime": "26:00",
+                "schedule": [
+                  {"busClass": 2, "departureTime": "06:00", "wasteTime": 240, "fare": 39700}
+                ]
+              }
+            }
+            """;
+
+    @Test
+    void getIntercityBusScheduleParsesFirstDeparture() {
+        server.expect(requestTo("https://api.odsay.com/v1/api/searchInterBusSchedule?startStationID=4000057&endStationID=4000156&apiKey=test-key"))
+                .andExpect(method(GET))
+                .andRespond(withSuccess(BUS_SCHEDULE_RESPONSE, MediaType.APPLICATION_JSON));
+
+        List<OdsayBusScheduleResponse.Bus> result = odsayClient.getIntercityBusSchedule(4000057, 4000156);
+
+        assertThat(result).hasSize(1);
+        assertThat(result.get(0).fare()).isEqualTo(39700);
+        assertThat(result.get(0).wasteTime()).isEqualTo(240);
+    }
+
+    @Test
+    void getIntercityBusScheduleWithNoServiceReturnsEmpty() {
+        String emptyResponse = """
+                { "result": { "count": 0, "schedule": [] } }
+                """;
+        server.expect(requestTo("https://api.odsay.com/v1/api/searchInterBusSchedule?startStationID=1&endStationID=2&apiKey=test-key"))
+                .andRespond(withSuccess(emptyResponse, MediaType.APPLICATION_JSON));
+
+        List<OdsayBusScheduleResponse.Bus> result = odsayClient.getIntercityBusSchedule(1, 2);
+
+        assertThat(result).isEmpty();
+    }
+
+    private static final String FLIGHT_SCHEDULE_RESPONSE = """
+            {
+              "result": {
+                "count": 97,
+                "startStationName": "김포국제공항",
+                "endStationName": "제주",
+                "station": [
+                  {"airline": "에어서울", "departureTime": "06:00", "arrivalTime": "07:15", "flight": "RS901", "runDay": "매일"}
+                ]
+              }
+            }
+            """;
+
+    @Test
+    void getFlightScheduleParsesFirstDeparture() {
+        server.expect(requestTo("https://api.odsay.com/v1/api/airServiceTime?startStationID=3500001&endStationID=3500003&apiKey=test-key"))
+                .andExpect(method(GET))
+                .andRespond(withSuccess(FLIGHT_SCHEDULE_RESPONSE, MediaType.APPLICATION_JSON));
+
+        List<OdsayFlightScheduleResponse.Flight> result = odsayClient.getFlightSchedule(
+                DomesticAirport.GIMPO.stationId(), DomesticAirport.JEJU.stationId());
+
+        assertThat(result).hasSize(1);
+        assertThat(result.get(0).airline()).isEqualTo("에어서울");
+        assertThat(result.get(0).flight()).isEqualTo("RS901");
+    }
+
+    @Test
+    void getFlightScheduleWithNoServiceReturnsEmpty() {
+        String emptyResponse = """
+                { "result": { "count": 0, "station": [] } }
+                """;
+        server.expect(requestTo("https://api.odsay.com/v1/api/airServiceTime?startStationID=1&endStationID=2&apiKey=test-key"))
+                .andRespond(withSuccess(emptyResponse, MediaType.APPLICATION_JSON));
+
+        List<OdsayFlightScheduleResponse.Flight> result = odsayClient.getFlightSchedule(1, 2);
+
+        assertThat(result).isEmpty();
     }
 }
