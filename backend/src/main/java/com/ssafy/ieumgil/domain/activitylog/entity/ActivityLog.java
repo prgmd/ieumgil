@@ -13,6 +13,7 @@ import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
 import jakarta.persistence.UniqueConstraint;
+import org.hibernate.annotations.Immutable;
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.annotations.OnDelete;
 import org.hibernate.annotations.OnDeleteAction;
@@ -33,8 +34,14 @@ import java.util.Map;
  * "재전송 = 브로드캐스트했던 것과 동일"이 구조적으로 보장된다(NFR-01).
  *
  * 쓰기 전용 append 테이블이다. UPDATE/DELETE 하지 않는다.
+ *
+ * @Immutable — Hibernate가 이 엔티티의 더티체크를 아예 건너뛰게 한다.
+ * JSON(payload) 컬럼은 스냅샷 딥카피와의 equals 비교가 어긋나 INSERT 직후
+ * 유령 UPDATE가 한 번 더 나가는 문제가 있었다(log_statement 실측으로 발견).
+ * 저널은 불변이 맞으므로 개별 우회 대신 엔티티 차원에서 봉인한다.
  */
 @Entity
+@Immutable
 @Getter
 @Builder
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
