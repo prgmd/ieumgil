@@ -8,6 +8,7 @@ import { ERROR_CODE } from '../../global/api/errorCodes';
 import CreateGroupModal from './components/CreateGroupModal';
 import DeleteGroupModal from './components/DeleteGroupModal';
 import { AppBar } from './shared/ui/AppBar';
+import { Avatar } from './shared/ui/Avatar';
 
 export function MyPage() {
   const currentUser = useAuthStore((s) => s.currentUser);
@@ -104,6 +105,18 @@ export function MyPage() {
                   <div className="meta">
                     멤버 {g.memberCount}명 · 여행 {g.tripCount}개
                   </div>
+                  {g.members?.length > 0 && (
+                    <div className="avs">
+                      {g.members.map((m) => (
+                        <Avatar
+                          key={m.memberId}
+                          memberId={m.memberId}
+                          nickname={m.nickname}
+                          profileImg={m.profileImg}
+                        />
+                      ))}
+                    </div>
+                  )}
                   {/* flat 모델 — 모든 멤버가 이름 수정·그룹 삭제를 할 수 있다 */}
                   {!isEditing && (
                     <div className="ops">

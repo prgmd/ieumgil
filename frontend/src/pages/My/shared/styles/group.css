@@ -6,6 +6,7 @@
 .g-card .meta{font-size:12px;color:var(--ink2);margin-bottom:12px}
 .g-card .avs{display:flex}
 .g-card .avs .mini-av{width:28px;height:28px;border:2px solid #fffdf8;margin-left:-6px;font-size:11px}
+.g-card .avs .mini-av:first-child{margin-left:0}
 .g-card .ops{position:absolute;top:12px;right:12px;display:none;gap:4px}
 .g-card:hover .ops{display:flex}
 .g-card .op{width:26px;height:26px;border:none;border-radius:8px;background:rgba(61,43,34,.07)}
@@ -42,6 +43,4 @@
 /* 멤버 목록 */
 .f-row{display:flex;align-items:center;gap:9px;padding:7px 0;font-size:13px;border-bottom:1px solid rgba(61,43,34,.06)}
 .f-row:last-child{border-bottom:none}
-.on-dot{width:8px;height:8px;border-radius:50%;background:#3e8e63;margin-left:4px}
-.off-dot{width:8px;height:8px;border-radius:50%;background:#c9b8a5;margin-left:4px}
 .leave-btn{width:100%;margin-top:14px;border:1px solid #e3c0c0;background:#fbeeee;color:#9c3b3b;border-radius:11px;padding:10px;font-weight:500;font-size:12.5px}

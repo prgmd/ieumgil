@@ -8,14 +8,10 @@ import LeaveGroupModal from './components/LeaveGroupModal';
 import CreateProjectModal from './components/CreateProjectModal';
 import DeleteProjectModal from './components/DeleteProjectModal';
 import { AppBar } from '../My/shared/ui/AppBar';
+import { Avatar } from '../My/shared/ui/Avatar';
 
 // PROJECT.transport_pref — ERD상 CAR | PUBLIC 두 값만 저장하고 표기만 한글로 한다.
 const TRANSPORT_LABEL = { CAR: '자차', PUBLIC: '대중교통' };
-
-// 서버는 멤버 아바타 색을 주지 않는다(profileImg 만 내려온다) — 이니셜 배경색은
-// memberId 로 고정 배정해 같은 사람이 항상 같은 색으로 보이게 한다.
-const AVATAR_COLORS = ['#8a5aa8', '#c76b6b', '#3e8e63', '#6b7fc7', '#9c4a2f', '#5f9c82'];
-const avatarColor = (memberId) => AVATAR_COLORS[memberId % AVATAR_COLORS.length];
 
 export function GroupPage() {
   // 라우트 파라미터는 문자열 — 서버의 숫자 ID와 맞추려면 변환이 필요하다.
@@ -128,11 +124,8 @@ export function GroupPage() {
             <div>
               {group.members.map((m) => (
                 <div key={m.memberId} className="f-row">
-                  <span className="mini-av" style={{ background: avatarColor(m.memberId) }}>
-                    {m.nickname[0]}
-                  </span>
+                  <Avatar memberId={m.memberId} nickname={m.nickname} profileImg={m.profileImg} />
                   {m.nickname}
-                  <span className={m.online ? 'on-dot' : 'off-dot'} />
                 </div>
               ))}
             </div>
