@@ -5,6 +5,9 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
+import java.util.List;
+import java.util.Map;
+
 public interface ActivityLogRepository extends JpaRepository<ActivityLog, Long> {
 
     /**
@@ -13,4 +16,18 @@ public interface ActivityLogRepository extends JpaRepository<ActivityLog, Long> 
      */
     @Query("SELECT COALESCE(MAX(a.seq), 0) FROM ActivityLog a WHERE a.project.id = :projectId")
     long findLastSeq(@Param("projectId") Long projectId);
+
+    /**
+     * 유실 op 재전송(NFR-01) — 저장된 op 전문(payload)을 가공 없이 그대로 돌려준다.
+     * 브로드캐스트했던 것과 바이트 단위로 같아야 하므로 여기서 어떤 변환도 하지 않는다.
+     * (project_id, seq) UNIQUE 인덱스가 이 조회를 그대로 탄다.
+     */
+    @Query("""
+            SELECT a.payload
+            FROM ActivityLog a
+            WHERE a.project.id = :projectId
+              AND a.seq > :afterSeq
+            ORDER BY a.seq ASC
+            """)
+    List<Map<String, Object>> findOpsAfter(@Param("projectId") Long projectId, @Param("afterSeq") long afterSeq);
 }

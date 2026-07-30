@@ -1,5 +1,6 @@
 package com.ssafy.ieumgil.domain.project.controller;
 
+import com.ssafy.ieumgil.domain.activitylog.service.ActivityLogQueryService;
 import com.ssafy.ieumgil.domain.group.annotation.GroupMember;
 import com.ssafy.ieumgil.domain.project.dto.ProjectReqDTO;
 import com.ssafy.ieumgil.domain.project.dto.ProjectResDTO;
@@ -22,10 +23,12 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
+import java.util.Map;
 
 /**
  * 프로젝트는 경로가 두 갈래다 —
@@ -41,6 +44,7 @@ public class ProjectController {
 
     private final ProjectCommandService projectCommandService;
     private final ProjectQueryService projectQueryService;
+    private final ActivityLogQueryService activityLogQueryService;
 
     @GroupMember
     @GetMapping("/groups/{groupId}/projects")
@@ -60,6 +64,17 @@ public class ProjectController {
             @Parameter(hidden = true) @AuthenticationPrincipal Long userId,
             @PathVariable Long projectId) {
         return CustomResponse.onSuccess(projectQueryService.getSnapshot(userId, projectId));
+    }
+
+    @GroupMember(GroupMember.Source.PROJECT_ID)
+    @GetMapping("/projects/{projectId}/ops")
+    @Operation(summary = "유실 op 재전송",
+            description = "afterSeq 이후의 op를 저장된 전문 그대로 순서대로 반환합니다. 재연결·seq 갭 감지 시 사용합니다.")
+    public CustomResponse<List<Map<String, Object>>> getOps(
+            @Parameter(hidden = true) @AuthenticationPrincipal Long userId,
+            @PathVariable Long projectId,
+            @RequestParam long afterSeq) {
+        return CustomResponse.onSuccess(activityLogQueryService.getOpsAfter(userId, projectId, afterSeq));
     }
 
     @GroupMember
