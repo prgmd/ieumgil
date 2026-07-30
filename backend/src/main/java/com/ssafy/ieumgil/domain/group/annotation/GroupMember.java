@@ -25,6 +25,8 @@ public @interface GroupMember {
         /** 파라미터 이름이 groupId */
         GROUP_ID,
         /** 파라미터 이름이 projectId — 프로젝트가 속한 그룹으로 검증한다 */
-        PROJECT_ID
+        PROJECT_ID,
+        /** 파라미터 이름이 blockId — 블록→프로젝트→그룹 2홉 역추적. tombstone 블록도 통과시킨다(410은 서비스 판정) */
+        BLOCK_ID
     }
 }

@@ -1,12 +1,51 @@
 package com.ssafy.ieumgil.domain.block.converter;
 
+import com.ssafy.ieumgil.domain.block.dto.BlockReqDTO;
 import com.ssafy.ieumgil.domain.block.dto.BlockResDTO;
 import com.ssafy.ieumgil.domain.block.entity.Block;
+import com.ssafy.ieumgil.domain.project.entity.Project;
+import com.ssafy.ieumgil.domain.user.entity.User;
 import lombok.AccessLevel;
 import lombok.NoArgsConstructor;
 
 @NoArgsConstructor(access = AccessLevel.PRIVATE)
 public class BlockConverter {
+
+    /**
+     * 생성 요청 → 엔티티. durationMin·isTimeFixed·budget이 null이면
+     * 엔티티의 @Builder.Default(60/false/0)가 채우도록 조건부로만 넣는다.
+     */
+    public static Block toBlock(Project project, User author, String orderKey, BlockReqDTO.Create request) {
+        Block.BlockBuilder builder = Block.builder()
+                .project(project)
+                .author(author)
+                .dayNo(request.dayNo())
+                .orderKey(orderKey)
+                .category(request.category())
+                .subCategory(request.subCategory())
+                .name(request.name())
+                .startTime(request.startTime())
+                .endTime(request.endTime())
+                .detail(null)
+                .lat(request.lat())
+                .lng(request.lng())
+                .placeId(request.placeId())
+                .address(request.address())
+                .vehicleFlag(request.vehicleFlag())
+                .transportMeta(request.transportMeta())
+                .source(request.source());
+
+        if (request.durationMin() != null) {
+            builder.durationMin(request.durationMin());
+        }
+        if (request.isTimeFixed() != null) {
+            builder.isTimeFixed(request.isTimeFixed());
+        }
+        if (request.budget() != null) {
+            builder.budget(request.budget());
+        }
+        return builder.build();
+    }
 
     public static BlockResDTO.Item toItem(Block block) {
         return BlockResDTO.Item.builder()
