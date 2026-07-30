@@ -102,6 +102,22 @@ erDiagram
         bigint seq "프로젝트 내 단조 증가"
         timestamptz created_at
     }
+    FESTIVAL {
+        bigint id PK
+        varchar content_id "TourAPI contentId, UNIQUE"
+        varchar title
+        varchar category "EV01|EV02|EV03 (축제|공연|행사)"
+        varchar l_dong_regn_cd "법정동 광역코드 — 지역 필터링 기준"
+        varchar l_dong_signgu_cd "법정동 시군구코드"
+        varchar addr
+        double lat
+        double lng
+        date event_start_date
+        date event_end_date
+        varchar first_image "nullable"
+        timestamptz created_at
+        timestamptz updated_at
+    }
 ```
 
 ---
@@ -116,6 +132,7 @@ erDiagram
 | `PROJECT` | 그룹 내 여행 프로젝트 (대시보드 보드 단위) |
 | `BLOCK` | 일정 블록 / 후보 블록 (보드의 최소 단위) |
 | `ACTIVITY_LOG` | 실시간 동기화 op 저널 (재전송 원본) |
+| `FESTIVAL` | 지역 축제/공연/행사 (TourAPI 배치 수집, 카카오맵엔 없는 시간 한정 이벤트) |
 
 ---
 
@@ -218,7 +235,7 @@ erDiagram
 | detail | VARCHAR(500) | NULL | 세부 내용 (최대 500자) |
 | lat | DECIMAL(10,7) | NULL | 위도. **장소성 블록은 NOT NULL** |
 | lng | DECIMAL(10,7) | NULL | 경도. **장소성 블록은 NOT NULL** |
-| place_id | VARCHAR(64) | NULL | 카카오 장소 ID (참조용, UNIQUE 아님) |
+| place_id | VARCHAR(64) | NULL | 외부 장소 참조 ID(참조용, UNIQUE 아님) — `source=KAKAO`면 카카오 장소ID, `source=BOT`이고 TourAPI 출처면 `FESTIVAL.content_id` |
 | address | VARCHAR(255) | NULL | 주소 |
 | vehicle_flag | VARCHAR(10) | NULL | `START` / `END` / null — 차량 구간 표식, ETC 전용 |
 | transport_meta | JSONB | NULL | 교통 블록 전용 메타 |
@@ -238,6 +255,7 @@ erDiagram
 > - 각 블록이 자기 시각을 저장한다(정본). 시각 없는 느슨한 블록은 둘 다 null. 블록 사이 간격(공백)은 뒤 블록 `start_time`이 앞 블록 `end_time`보다 늦으면 자연스럽게 표현된다.
 > - **드래그(재정렬) 시**: `is_time_fixed=false`인 일반 블록은 앞 블록 종료 시각 기준으로 시각을 다시 계산해 `start_time`/`end_time`을 **저장**한다(공백 보존). `is_time_fixed=true`(예약·교통 등 앵커)는 재계산에서 제외하고 자기 시각을 고수한다.
 > - `duration_min`은 재계산의 기준 소요시간이자 표시값. 시각이 둘 다 있으면 `end_time − start_time`과 일치.
+> **카카오맵 딥링크**: 별도 컬럼 없이 `place_id`+`source`로 프론트에서 파생한다 — `source=KAKAO`일 때만 `https://place.map.kakao.com/{place_id}`로 "카카오맵에서 보기" 버튼 노출(카카오 로컬 API 응답의 `place_url` 필드와 동일 패턴). `source`가 `KAKAO`가 아니면(TourAPI 등 외부 장소ID) 버튼 자체를 숨긴다 — URL을 저장하지 않고 항상 파생시켜서 링크 깨짐/불일치를 원천 차단.
 > **`vehicle_flag`**: ETC 카테고리에서만 노출. 역할은 "수단 선택의 기본값 제안"까지만 — 판정 결과를 계산에 직접 쓰지 않아 이동·삭제되어도 기존 교통 블록 오염 없음.
 > **`transport_meta` 예시**:
 > ```json
@@ -273,6 +291,32 @@ erDiagram
 > **UNIQUE KEY: `(project_id, seq)`**.
 > **payload에는 브로드캐스트한 op 전문을 그대로 저장** — "재전송 = 저장된 걸 그대로 쏜다"가 구조적으로 보장. 재연결 시 `WHERE project_id=? AND seq > :lastSeq ORDER BY seq`로 유실분 재전송(NFR-01).
 > **seq 채번**: Redis `INCR project:{id}:seq` + 채번~브로드캐스트 구간을 프로젝트 단위 락으로 직렬화 + 앱 기동 시 `max(seq)` 리시드.
+
+---
+
+### FESTIVAL: 지역 축제/공연/행사
+| 컬럼 | 타입 | 제약 | 설명 |
+|---|---|---|---|
+| id | BIGINT | PK, IDENTITY | 식별자 |
+| content_id | VARCHAR(64) | UNIQUE, NOT NULL | TourAPI `contentid` — 배치 upsert 기준키 |
+| title | VARCHAR(255) | NOT NULL | 축제/행사명 |
+| category | VARCHAR(10) | NOT NULL | `EV01`(축제) / `EV02`(공연) / `EV03`(행사) |
+| l_dong_regn_cd | VARCHAR(10) | NULL | 법정동 광역코드 — **지역 필터링은 이 컬럼 기준**(아래 참고) |
+| l_dong_signgu_cd | VARCHAR(10) | NULL | 법정동 시군구코드 |
+| addr | VARCHAR(255) | NULL | 주소(`addr1`+`addr2`) |
+| lat | DOUBLE PRECISION | NULL | 위도 |
+| lng | DOUBLE PRECISION | NULL | 경도 |
+| event_start_date | DATE | NOT NULL | 행사 시작일 |
+| event_end_date | DATE | NOT NULL | 행사 종료일 |
+| first_image | VARCHAR(512) | NULL | 대표 이미지 URL |
+| created_at | TIMESTAMPTZ | NOT NULL, DEFAULT NOW | 최초 수집 시점 |
+| updated_at | TIMESTAMPTZ | NOT NULL | 마지막 배치 갱신 시점 |
+
+> **별도 도메인(`domain.festival`), 다른 엔티티와 FK 관계 없음.** 한국관광공사 TourAPI(`contentTypeId=15`)에서 매일 새벽 배치로 수집해 upsert. 카카오맵은 상시 장소만 제공하고 "이 장소가 이 기간에만 연다"는 시간 제한 이벤트 개념이 없어서 보강하는 용도 — 그래서 `event_start_date`/`event_end_date`가 정본(카카오 데이터엔 대응 컬럼 자체가 없음).
+>
+> **지역 필터는 `l_dong_regn_cd` 기준, `area_code` 아님** — TourAPI 실제 응답에서 레거시 `areacode` 필드가 대부분 빈 값으로 와서 필터링에 못 씀(라이브 테스트로 확인). 법정동 코드(`lDongRegnCd`/`lDongSignguCd`)가 신뢰 가능한 값으로 채워져 있어 이걸 조회 조건으로 쓴다.
+> **레포츠(`contentTypeId=28`)는 수집 대상 아님** — 상시 영업 시설이라 카카오맵과 장소가 겹칠 가능성이 높아 제외.
+> **PROJECT/BLOCK과 아직 연동 안 됨** — 나중에 챗봇(BOT-03)이 `l_dong_regn_cd`+여행 기간으로 조회한 결과를 후보 BLOCK으로 만들 때는 `BLOCK.place_id`(현재 "카카오 장소 ID 참조용"으로만 문서화됨)에 `FESTIVAL.content_id`를 loosely 재사용할 계획 — 이때 `place_id` 컬럼 설명 문구도 "카카오/TourAPI 등 외부 장소 참조용"으로 정정 필요.
 
 ---
 
