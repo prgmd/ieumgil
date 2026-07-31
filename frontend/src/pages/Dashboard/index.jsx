@@ -537,6 +537,8 @@ export function DashboardPage() {
     d3: 540,
     d4: 540,
   });
+
+  // API 대신 바로 보여줄 더미 데이터 세팅
   const [items, setItems] = useState({
     b1: {
       id: "b1",
@@ -673,6 +675,50 @@ export function DashboardPage() {
       }
     },
     [chains, items, fetchTransitInfo, dayStart],
+  );
+
+  // 💡 특정 블록 2개 사이에만 교통수단 단일 추가하는 로직
+  const handleAddSingleTransport = useCallback(
+    async (dayKey, currentId, nextId) => {
+      if (isGeneratingTransport) return;
+      setIsGeneratingTransport(true);
+      try {
+        const info = await fetchTransitInfo(items[currentId], items[nextId]);
+        const newId = `auto-${dayKey}-${currentId}-${Date.now()}`;
+
+        let newItems = { ...items };
+        newItems[newId] = {
+          cat: "trans",
+          sub: info.mode,
+          name: `${items[currentId]?.name || "이전 장소"} 다음 이동`,
+          addr: "",
+          dur: info.dur,
+          cost: info.cost,
+          auto: true,
+          autoDay: dayKey,
+          startMins: items[currentId].startMins + items[currentId].dur,
+        };
+
+        let currentChain = [...(chains[dayKey] || [])];
+        const insertIdx = currentChain.indexOf(currentId);
+        if (insertIdx !== -1) {
+          currentChain.splice(insertIdx + 1, 0, newId);
+        }
+
+        const { newItems: resolvedItems, newChain } = resolveOverlaps(
+          newItems,
+          currentChain,
+          dayStart[dayKey],
+          null,
+        );
+
+        setItems(resolvedItems);
+        setChains((prev) => ({ ...prev, [dayKey]: newChain }));
+      } finally {
+        setIsGeneratingTransport(false);
+      }
+    },
+    [isGeneratingTransport, items, chains, dayStart, fetchTransitInfo],
   );
 
   const timelineDOMRef = useRef(null);
@@ -1350,6 +1396,7 @@ export function DashboardPage() {
                     )}
                   </div>
 
+                  {/* 💡 중복 렌더링 에러가 있던 부분을 깔끔하게 하나로 정리했습니다. */}
                   <div
                     style={{
                       position: "absolute",
@@ -1365,21 +1412,97 @@ export function DashboardPage() {
                         index > 0
                           ? activeDayItems[index - 1].endMins
                           : dayStart[activeDay];
+
+                      const nextData = activeDayItems[index + 1];
+                      const showGapBtn =
+                        nextData &&
+                        data.item.cat !== "trans" &&
+                        nextData.item.cat !== "trans";
+
                       return (
-                        <TimelineCard
-                          key={data.id}
-                          id={data.id}
-                          item={data.item}
-                          startMins={data.startMins}
-                          endMins={data.endMins}
-                          resizingState={resizingState}
-                          onResizeStart={handleResizeStart}
-                          dayStartMins={dayStart[activeDay]}
-                          boundTop={boundTop}
-                          onEditBlock={setEditingBlockId}
-                        />
+                        <React.Fragment key={data.id}>
+                          <TimelineCard
+                            id={data.id}
+                            item={data.item}
+                            startMins={data.startMins}
+                            endMins={data.endMins}
+                            resizingState={resizingState}
+                            onResizeStart={handleResizeStart}
+                            dayStartMins={dayStart[activeDay]}
+                            boundTop={boundTop}
+                            onEditBlock={setEditingBlockId}
+                          />
+
+                          {/* 💡 프로토타입 스타일의 이동수단 추가 아이콘 */}
+                          {showGapBtn && (
+                            <div
+                              style={{
+                                position: "absolute",
+                                top: `${(data.endMins - dayStart[activeDay]) * PX}px`,
+                                left: "10px",
+                                right: "10px",
+                                zIndex: 30,
+                                display: "flex",
+                                justifyContent: "center",
+                                alignItems: "center",
+                                transform: "translateY(-50%)",
+                                pointerEvents: "none",
+                              }}
+                            >
+                              <div
+                                style={{
+                                  background: "#fbf8f1",
+                                  border: "1px dashed #d97e3c",
+                                  borderRadius: "16px",
+                                  padding: "4px 16px",
+                                  fontSize: "12px",
+                                  color: "#d97e3c",
+                                  pointerEvents: "auto",
+                                  cursor: "pointer",
+                                  display: "flex",
+                                  alignItems: "center",
+                                  gap: "8px",
+                                  boxShadow: "0 2px 6px rgba(0,0,0,0.08)",
+                                }}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleAddSingleTransport(
+                                    activeDay,
+                                    data.id,
+                                    nextData.id,
+                                  );
+                                }}
+                              >
+                                <span>
+                                  △ {data.item.name} ➔ {nextData.item.name}
+                                </span>
+                                <span
+                                  style={{
+                                    color: "#888",
+                                    fontWeight: "normal",
+                                  }}
+                                >
+                                  이동이 비었어요
+                                </span>
+                                <span
+                                  style={{
+                                    background: "#d97e3c",
+                                    color: "#fff",
+                                    padding: "2px 8px",
+                                    borderRadius: "4px",
+                                    fontSize: "11px",
+                                    fontWeight: "bold",
+                                  }}
+                                >
+                                  계산
+                                </span>
+                              </div>
+                            </div>
+                          )}
+                        </React.Fragment>
                       );
                     })}
+
                     {activeDayItems.length === 0 && (
                       <div
                         className="endzone"
