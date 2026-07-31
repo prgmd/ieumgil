@@ -39,6 +39,22 @@ public class BlockResDTO {
     ) {
     }
 
+    /** 편집 락 획득 응답. 실패 시 holder·잔여 TTL로 클라이언트 재시도 주기의 근거를 준다 */
+    @Builder
+    public record LockResult(
+            boolean acquired,
+            Long holder,
+            long ttlRemaining
+    ) {
+    }
+
+    /** 락 하트비트 응답 — TTL이 30초로 재설정됐음을 알린다 */
+    @Builder
+    public record LockHeartbeat(
+            long ttlRemaining
+    ) {
+    }
+
     /**
      * 블록 한 개의 전체 표현 — 스냅샷(blocks[])이 쓴다.
      * 시각은 API 문서 예시("09:00")에 맞춰 HH:mm으로 직렬화한다.

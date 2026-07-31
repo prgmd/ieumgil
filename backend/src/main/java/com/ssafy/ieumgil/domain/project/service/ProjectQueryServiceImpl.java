@@ -11,6 +11,7 @@ import com.ssafy.ieumgil.domain.project.entity.Project;
 import com.ssafy.ieumgil.domain.project.exception.ProjectErrorCode;
 import com.ssafy.ieumgil.domain.project.repository.ProjectRepository;
 import com.ssafy.ieumgil.global.exception.CustomException;
+import com.ssafy.ieumgil.global.websocket.PresenceRegistry;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -26,6 +27,7 @@ public class ProjectQueryServiceImpl implements ProjectQueryService {
     private final BlockRepository blockRepository;
     private final GroupMemberRepository groupMemberRepository;
     private final ActivityLogRepository activityLogRepository;
+    private final PresenceRegistry presenceRegistry;
 
     /** 그룹의 프로젝트 카드 목록 (PRJ-04) */
     @Override
@@ -55,6 +57,8 @@ public class ProjectQueryServiceImpl implements ProjectQueryService {
         List<GroupMember> members = groupMemberRepository.findAllWithUserByGroupIdIn(List.of(groupId));
         long lastSeq = activityLogRepository.findLastSeq(projectId);
 
-        return ProjectConverter.toSnapshot(project, blocks, members, lastSeq);
+        // online: presence 레지스트리(WS 구독 기준) 실값 — Step 5에서 false 고정 해소
+        return ProjectConverter.toSnapshot(project, blocks, members, lastSeq,
+                presenceRegistry.onlineMembers(projectId));
     }
 }
