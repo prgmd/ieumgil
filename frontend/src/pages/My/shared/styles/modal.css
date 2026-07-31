@@ -6,6 +6,8 @@
 .md label{display:block;font-size:12px;font-weight:500;color:var(--ink2);margin:12px 0 5px}
 .md input,.md select,.md textarea{width:100%;border:1.5px solid var(--line);border-radius:11px;padding:10px 13px;font-size:13.5px;background:#fff;font-family:inherit}
 .md textarea{min-height:70px;resize:vertical}
+/* 수정 API가 없는 필드는 값만 보여주고 잠근다 (EditProjectModal) */
+.md input:disabled,.md select:disabled{background:#f6f1e8;color:var(--ink2);cursor:not-allowed}
 .r2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
 .md .foot{display:flex;gap:9px;justify-content:flex-end;margin-top:18px}
 .note{background:#fdf3e6;border-left:3px solid #e3b26a;border-radius:0 9px 9px 0;padding:9px 13px;font-size:12px;margin-top:12px}

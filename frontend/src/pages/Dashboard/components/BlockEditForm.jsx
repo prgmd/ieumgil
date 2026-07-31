@@ -216,7 +216,7 @@ export function BlockEditForm({ initialData, timeString, onSave, onCancel }) {
       </div>
 
       <div style={styles.footer}>
-        <div style={styles.editorInfo}>✏️ 마지막 수정 · 민준</div>
+        <div style={styles.editorInfo}>✎ 마지막 수정 · 민준</div>
         <div style={styles.btnGroup}>
           <button style={styles.btnCancel} onClick={onCancel}>
             닫기
