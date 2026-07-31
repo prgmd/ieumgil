@@ -45,14 +45,6 @@ const fmtTime = (mins) => {
 const won = (n) => (n ? n.toLocaleString("ko-KR") + "원" : "무료");
 const catOf = (item) => CAT_COLORS[item?.cat] || CAT_COLORS.etc;
 
-const restrictTimelineX = ({ transform, active, over }) => {
-  if (active?.data?.current?.from === "timeline") {
-    if (over?.id !== "poolArea" && over?.id !== "trashArea")
-      return { ...transform, x: 0 };
-  }
-  return transform;
-};
-
 const resolveOverlaps = (currentItems, dayChain, dayStartMins, fixedId) => {
   let newItems = { ...currentItems };
   const others = dayChain.filter((id) => id !== fixedId);
@@ -1630,7 +1622,7 @@ export function DashboardPage() {
               </div>
             </div>
 
-            <DragOverlay modifiers={[restrictTimelineX]}>
+            <DragOverlay>
               {activeId && draggedItem ? (
                 isDraggingFromPool ? (
                   <div
