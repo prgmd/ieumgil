@@ -6,10 +6,13 @@ import com.ssafy.ieumgil.domain.chatbot.exception.ChatbotErrorCode;
 import com.ssafy.ieumgil.domain.chatbot.exception.ChatbotException;
 import com.ssafy.ieumgil.domain.chatbot.repository.ChatHistoryStore;
 import com.ssafy.ieumgil.domain.chatbot.repository.ChatTurn;
+import com.ssafy.ieumgil.domain.chatbot.tool.BusScheduleTool;
 import com.ssafy.ieumgil.domain.chatbot.tool.FestivalRecommendationTool;
+import com.ssafy.ieumgil.domain.chatbot.tool.FlightScheduleTool;
 import com.ssafy.ieumgil.domain.chatbot.tool.KakaoPlaceCoordinateResolver;
 import com.ssafy.ieumgil.domain.chatbot.tool.KakaoPlaceSearchTool;
 import com.ssafy.ieumgil.domain.chatbot.tool.TaxiRouteTool;
+import com.ssafy.ieumgil.domain.chatbot.tool.TrainScheduleTool;
 import com.ssafy.ieumgil.domain.chatbot.tool.WalkingRouteTool;
 import com.ssafy.ieumgil.domain.festival.RegionCode;
 import com.ssafy.ieumgil.domain.festival.service.FestivalQueryService;
@@ -45,6 +48,9 @@ public class ChatbotCommandServiceImpl implements ChatbotCommandService {
     private final ProjectRepository projectRepository;
     private final FestivalQueryService festivalQueryService;
     private final PlaceQueryService placeQueryService;
+    private final TrainScheduleTool trainScheduleTool;
+    private final BusScheduleTool busScheduleTool;
+    private final FlightScheduleTool flightScheduleTool;
 
     @Override
     public ChatbotResDTO.MessageResult sendMessage(Long projectId, Long memberId, ChatbotReqDTO.SendMessage request) {
@@ -104,10 +110,11 @@ public class ChatbotCommandServiceImpl implements ChatbotCommandService {
             ChatClient.ChatClientRequestSpec spec = ChatClient.builder(chatModel).build()
                     .prompt(new Prompt(messages));
             List<Object> tools = new ArrayList<>(kakaoTools);
+            tools.add(trainScheduleTool);
+            tools.add(busScheduleTool);
+            tools.add(flightScheduleTool);
             festivalTool.ifPresent(tools::add);
-            if (!tools.isEmpty()) {
-                spec = spec.tools(tools.toArray());
-            }
+            spec = spec.tools(tools.toArray());
             return spec.call().content();
         } catch (RuntimeException e) {
             throw new ChatbotException(ChatbotErrorCode.GMS_CALL_FAILED);
