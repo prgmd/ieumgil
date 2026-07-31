@@ -3,6 +3,7 @@ package com.ssafy.ieumgil.domain.block.controller;
 import com.ssafy.ieumgil.domain.block.dto.BlockReqDTO;
 import com.ssafy.ieumgil.domain.block.dto.BlockResDTO;
 import com.ssafy.ieumgil.domain.block.service.BlockCommandService;
+import com.ssafy.ieumgil.domain.block.service.DetailLockService;
 import com.ssafy.ieumgil.domain.group.annotation.GroupMember;
 import com.ssafy.ieumgil.global.apiPayload.CustomResponse;
 import com.ssafy.ieumgil.global.apiPayload.code.GeneralSuccessCode;
@@ -18,6 +19,7 @@ import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -41,6 +43,7 @@ public class BlockController {
     private static final String CLIENT_ID_HEADER = "X-Client-Id";
 
     private final BlockCommandService blockCommandService;
+    private final DetailLockService detailLockService;
 
     @GroupMember(GroupMember.Source.PROJECT_ID)
     @PostMapping("/projects/{projectId}/blocks")
@@ -87,6 +90,36 @@ public class BlockController {
             @PathVariable Long blockId,
             @RequestHeader(value = CLIENT_ID_HEADER, required = false) String clientId) {
         blockCommandService.softDelete(userId, blockId, clientId);
+        return CustomResponse.onSuccess(GeneralSuccessCode.OK);
+    }
+
+    // ----- detail-lock (BLK-08) — 세부 내용 텍스트 편집 락 -----
+
+    @GroupMember(GroupMember.Source.BLOCK_ID)
+    @PostMapping("/blocks/{blockId}/detail-lock")
+    @Operation(summary = "편집 락 획득", description = "Redis SET NX, TTL 30초. 실패 시 acquired:false와 현재 holder·잔여 TTL을 반환합니다.")
+    public CustomResponse<BlockResDTO.LockResult> acquireLock(
+            @Parameter(hidden = true) @AuthenticationPrincipal Long userId,
+            @PathVariable Long blockId) {
+        return CustomResponse.onSuccess(detailLockService.acquire(userId, blockId));
+    }
+
+    @GroupMember(GroupMember.Source.BLOCK_ID)
+    @PutMapping("/blocks/{blockId}/detail-lock")
+    @Operation(summary = "락 하트비트", description = "TTL을 30초로 연장합니다(클라이언트 10초 주기). 소유자가 아니면 409입니다.")
+    public CustomResponse<BlockResDTO.LockHeartbeat> heartbeatLock(
+            @Parameter(hidden = true) @AuthenticationPrincipal Long userId,
+            @PathVariable Long blockId) {
+        return CustomResponse.onSuccess(detailLockService.heartbeat(userId, blockId));
+    }
+
+    @GroupMember(GroupMember.Source.BLOCK_ID)
+    @DeleteMapping("/blocks/{blockId}/detail-lock")
+    @Operation(summary = "락 해제", description = "소유자의 해제만 유효하며 멱등입니다(만료 후 해제 요청도 200).")
+    public CustomResponse<Void> releaseLock(
+            @Parameter(hidden = true) @AuthenticationPrincipal Long userId,
+            @PathVariable Long blockId) {
+        detailLockService.release(userId, blockId);
         return CustomResponse.onSuccess(GeneralSuccessCode.OK);
     }
 }

@@ -18,6 +18,9 @@ public enum BlockErrorCode implements BaseErrorCode {
     // 404
     BLOCK_NOT_FOUND(HttpStatus.NOT_FOUND, "BLOCK404", "존재하지 않는 블록입니다."),
 
+    // 409 — 하트비트/연장은 락 소유자만 가능
+    LOCK_NOT_HELD(HttpStatus.CONFLICT, "BLOCK409", "이 블록의 편집 락을 보유하고 있지 않습니다."),
+
     /**
      * 410 — tombstone 처리된 블록에 도착한 지연 op (BLK-09).
      * 404("없었다")와 구분해야 프론트가 해당 블록만 조용히 화면에서 제거할 수 있다.

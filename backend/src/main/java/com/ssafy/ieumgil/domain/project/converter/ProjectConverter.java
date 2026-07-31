@@ -12,6 +12,7 @@ import lombok.AccessLevel;
 import lombok.NoArgsConstructor;
 
 import java.util.List;
+import java.util.Set;
 
 @NoArgsConstructor(access = AccessLevel.PRIVATE)
 public class ProjectConverter {
@@ -78,13 +79,17 @@ public class ProjectConverter {
                 .build();
     }
 
+    /** onlineMemberIds: presence 레지스트리 기준 "지금 이 보드를 보고 있는" 멤버 (Step 5) */
     public static ProjectResDTO.Snapshot toSnapshot(
-            Project project, List<Block> blocks, List<GroupMember> members, long lastSeq) {
+            Project project, List<Block> blocks, List<GroupMember> members,
+            long lastSeq, Set<Long> onlineMemberIds) {
         return ProjectResDTO.Snapshot.builder()
                 .project(toBoard(project))
                 .blocks(blocks.stream().map(BlockConverter::toItem).toList())
                 .members(members.stream()
-                        .map(groupMember -> GroupConverter.toMemberDetail(groupMember.getUser()))
+                        .map(groupMember -> GroupConverter.toMemberDetail(
+                                groupMember.getUser(),
+                                onlineMemberIds.contains(groupMember.getUser().getId())))
                         .toList())
                 .lastSeq(lastSeq)
                 .build();

@@ -35,6 +35,10 @@ public interface BlockRepository extends JpaRepository<Block, Long> {
     @Query("SELECT b.project.travelGroup.id FROM Block b WHERE b.id = :blockId")
     Optional<Long> findGroupIdById(@Param("blockId") Long blockId);
 
+    /** detail-lock 배지 전파 대상 토픽을 찾기 위한 projectId 조회 — FK 값만, 조인 없음 */
+    @Query("SELECT b.project.id FROM Block b WHERE b.id = :blockId")
+    Optional<Long> findProjectIdById(@Param("blockId") Long blockId);
+
     /**
      * 블록 변경용 조회 — 행 잠금(SELECT ... FOR UPDATE).
      *
