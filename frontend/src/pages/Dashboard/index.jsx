@@ -1233,11 +1233,25 @@ export function DashboardPage() {
 
   /**
    * 시퀀서가 순서를 맞춰 넘겨준 op 를 화면에 반영한다.
-   * 자기 op 는 여기서 걸러진다 — 시퀀서는 커서 전진을 위해 모든 op 를 넘긴다
-   * (자기 op 도 seq 를 소비하므로 걸러서 받으면 갭으로 오인한다).
+   *
+   * 자기 op 도 원칙적으로 "에코 적용"한다 — 화면은 결국 seq 순서로 op 를 전부
+   * 적용한 결과여야 모든 클라이언트가 같은 상태로 수렴한다. 예전처럼 자기 op 를
+   * 일괄 스킵하면, 같은 블록을 둘이 동시에 잡았을 때 유예 큐 flush(남의 옛 op)가
+   * 내 낙관 반영을 덮고, 그걸 되돌려줄 내 op 는 스킵돼 화면이 서버와 영구히
+   * 어긋났다(실측 재현: A 10시 드롭·B 11시 드롭 → B 만 10시에 갇힘).
+   * 평상시 에코는 낙관 반영과 같은 값이라 시각적 변화가 없다.
+   *
+   * 스킵하는 예외 둘 — 에코가 오히려 해가 되는 경우다:
+   * - BLOCK_CREATED: 낙관 생성은 임시 id 로 진행되고 REST 응답에서 서버 id 로
+   *   교체되므로, 에코를 적용하면 임시·서버 블록이 중복 생성된다
+   * - TARGET_BUDGET_CHANGED: 디바운스 저장 중이라 과거 값의 에코가
+   *   최신 입력 표시를 되돌린다
    */
   const applyOpToBoard = (op) => {
-    if (op.clientId === getClientId()) return; // 이미 낙관 반영된 자기 변경
+    const own = op.clientId === getClientId();
+    if (own && (op.type === "BLOCK_CREATED" || op.type === "TARGET_BUDGET_CHANGED")) {
+      return;
+    }
 
     const payload = op.payload ?? {};
     switch (op.type) {

@@ -53,9 +53,8 @@ export function useProjectOps(projectId, { onOp } = {}) {
         client.subscribe(`/topic/project/${projectId}`, (message) => {
           const op = JSON.parse(message.body);
           const own = op.clientId === getClientId();
-          // 스파이크 검증용 로그 — op 적용 계층이 붙으면 수위를 낮춘다
-          console.log(
-            `[realtime] seq=${op.seq} ${op.type}${own ? " (own → skip)" : ""}`,
+          console.debug(
+            `[realtime] seq=${op.seq} ${op.type}${own ? " (own)" : ""}`,
             op.payload,
           );
           onOpRef.current?.(op, { own });
