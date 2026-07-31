@@ -41,4 +41,24 @@ class TrainScheduleToolTest {
 
         assertThat(tool.getTrainSchedule("서울", "부산")).isEmpty();
     }
+
+    @Test
+    void capsAtTenResultsSortedByDepartureTimeAscending() {
+        List<TransitScheduleResDTO.TrainSchedule> manySchedules = java.util.stream.IntStream.range(0, 15)
+                .mapToObj(i -> TransitScheduleResDTO.TrainSchedule.builder()
+                        .railName("KTX").trainClass("KTX").trainNo(i)
+                        .departureTime(String.format("%02d:00", 23 - i)) // descending, so sort must reorder them
+                        .arrivalTime("23:59").wasteTime("01:00").runDay("매일")
+                        .generalFare(50000).specialFare(null).standingFare(null)
+                        .build())
+                .toList();
+        when(trainScheduleProvider.findSchedule("서울", "부산")).thenReturn(manySchedules);
+
+        TrainScheduleTool tool = new TrainScheduleTool(trainScheduleProvider);
+
+        List<TransitScheduleResDTO.TrainSchedule> result = tool.getTrainSchedule("서울", "부산");
+
+        assertThat(result).hasSize(10);
+        assertThat(result).isSortedAccordingTo(java.util.Comparator.comparing(TransitScheduleResDTO.TrainSchedule::departureTime));
+    }
 }

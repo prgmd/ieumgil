@@ -39,4 +39,23 @@ class FlightScheduleToolTest {
 
         assertThat(tool.getFlightSchedule("김포", "제주")).isEmpty();
     }
+
+    @Test
+    void capsAtTenResultsSortedByDepartureTimeAscending() {
+        List<TransitScheduleResDTO.FlightSchedule> manySchedules = java.util.stream.IntStream.range(0, 15)
+                .mapToObj(i -> TransitScheduleResDTO.FlightSchedule.builder()
+                        .airline("대한항공").flightNo("KE" + (1200 + i))
+                        .departureTime(String.format("%02d:00", 23 - i)) // descending, so sort must reorder them
+                        .arrivalTime("23:59").runDay("매일")
+                        .build())
+                .toList();
+        when(flightScheduleProvider.findSchedule("김포", "제주")).thenReturn(manySchedules);
+
+        FlightScheduleTool tool = new FlightScheduleTool(flightScheduleProvider);
+
+        List<TransitScheduleResDTO.FlightSchedule> result = tool.getFlightSchedule("김포", "제주");
+
+        assertThat(result).hasSize(10);
+        assertThat(result).isSortedAccordingTo(java.util.Comparator.comparing(TransitScheduleResDTO.FlightSchedule::departureTime));
+    }
 }

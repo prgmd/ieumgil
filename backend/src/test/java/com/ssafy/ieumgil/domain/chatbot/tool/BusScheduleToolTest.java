@@ -38,4 +38,23 @@ class BusScheduleToolTest {
 
         assertThat(tool.getBusSchedule("서울", "광주")).isEmpty();
     }
+
+    @Test
+    void capsAtTenResultsSortedByDepartureTimeAscending() {
+        List<TransitScheduleResDTO.BusSchedule> manySchedules = java.util.stream.IntStream.range(0, 15)
+                .mapToObj(i -> TransitScheduleResDTO.BusSchedule.builder()
+                        .busClass(1)
+                        .departureTime(String.format("%02d:00", 23 - i)) // descending, so sort must reorder them
+                        .wasteTimeMin(240).fare(25000)
+                        .build())
+                .toList();
+        when(busScheduleProvider.findSchedule("서울", "광주")).thenReturn(manySchedules);
+
+        BusScheduleTool tool = new BusScheduleTool(busScheduleProvider);
+
+        List<TransitScheduleResDTO.BusSchedule> result = tool.getBusSchedule("서울", "광주");
+
+        assertThat(result).hasSize(10);
+        assertThat(result).isSortedAccordingTo(java.util.Comparator.comparing(TransitScheduleResDTO.BusSchedule::departureTime));
+    }
 }
