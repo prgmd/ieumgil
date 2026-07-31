@@ -817,23 +817,90 @@ export function DashboardPage() {
       return;
     }
 
-    // ── 기존 블록: 서버 반영(PATCH /fields)은 3단계 — 지금은 로컬만 갱신 ──
-    setItems((prev) => {
-      const updatedItems = { ...prev, [targetId]: merged };
+    // ── 기존 블록: 변경 필드만 PATCH /fields 배치로 저장한다 (3단계) ──
+    // 안 바뀐 필드는 보내지 않는다 — 서버가 필드 화이트리스트(BLOCK400_2)와
+    // 필드 단위 LWW 로 판정하므로, diff 가 곧 요청 바디다.
+    const changed = {};
+    for (const [local, server] of [
+      ["name", "name"],
+      ["sub", "subCategory"],
+      ["address", "address"],
+      ["detail", "detail"],
+      ["dur", "durationMin"],
+      ["cost", "budget"],
+    ]) {
+      if (merged[local] !== base[local]) changed[server] = merged[local];
+    }
+    // category 는 보내지 않는다 — 서버 LWW 화이트리스트에 없어 BLOCK400_2 로
+    // 배치 전체가 거부된다(2026-07-31 실측). 기존 블록의 카테고리는 폼에서 잠근다.
 
-      if (chains[activeDay].includes(targetId)) {
+    // 소요시간이 바뀌면 종료 시각도 함께 맞춘다 — ERD 불변식:
+    // 시각이 둘 다 있으면 end_time − start_time == duration_min
+    if (changed.durationMin != null && base.startMins != null) {
+      changed.endTime = blockApi.minsToTime(base.startMins + merged.dur);
+    }
+
+    if (Object.keys(changed).length === 0) {
+      setEditingBlockId(null); // 변경 없음 — 요청을 보내지 않는다
+      return;
+    }
+
+    try {
+      const result = await blockApi.updateBlockFields(targetId, changed);
+      // 1인 모드에서 applied:false(스테일)는 나올 수 없다 — 나오면 그 자체가 조사 대상
+      const stale = Object.entries(result?.applied ?? {})
+        .filter(([, ok]) => !ok)
+        .map(([f]) => f);
+      if (stale.length > 0) {
+        console.warn("[dashboard] LWW 스테일 필드 (1인 모드에서 비정상):", stale);
+      }
+
+      // 로컬 반영. 체인 블록이면 겹침 해소로 밀린 이웃들의 시각도 서버에 저장한다 —
+      // 로컬만 밀면 새로고침 때 이웃들이 옛 시각으로 되돌아간다(명세 320행의
+      // "이동 후 시각 재계산은 클라이언트 몫" 규칙과 같은 경로, 5단계에서 재사용).
+      const updatedItems = { ...items, [targetId]: merged };
+      if (chains[activeDay]?.includes(targetId)) {
         const { newItems, newChain } = resolveOverlaps(
           updatedItems,
           chains[activeDay],
           dayStart[activeDay],
           targetId,
         );
+
+        const isServerBlock = (id) =>
+          !isTempId(id) && !String(id).startsWith("auto-");
+        const shifted = chains[activeDay].filter(
+          (id) =>
+            id !== targetId &&
+            isServerBlock(id) &&
+            newItems[id]?.startMins != null &&
+            newItems[id].startMins !== items[id]?.startMins,
+        );
+        await Promise.all(
+          shifted.map((id) =>
+            blockApi.updateBlockFields(id, {
+              startTime: blockApi.minsToTime(newItems[id].startMins),
+              endTime: blockApi.minsToTime(
+                newItems[id].startMins + newItems[id].dur,
+              ),
+            }),
+          ),
+        );
+
+        setItems(newItems);
         setChains((pc) => ({ ...pc, [activeDay]: newChain }));
-        return newItems;
+      } else {
+        setItems(updatedItems);
       }
-      return updatedItems;
-    });
-    setEditingBlockId(null);
+
+      setEditingBlockId(null);
+      showToast("블록이 저장됐어요 ✓");
+    } catch (e) {
+      // 모달을 열어 둔다 — 재시도하면 같은 diff 가 다시 전송된다(멱등)
+      showToast(
+        e?.message ?? "블록을 저장하지 못했어요. 잠시 후 다시 시도해주세요.",
+      );
+    }
   };
 
   const handleCreateCustomBlock = () => {
@@ -2092,6 +2159,9 @@ export function DashboardPage() {
               <BlockEditForm
                 initialData={item}
                 timeString={timeStr}
+                // 서버가 category 필드 갱신을 지원하지 않는다(BLOCK400_2) —
+                // 카테고리는 생성 시에만 정할 수 있다
+                categoryLocked={!isTempId(editingBlockId)}
                 onSave={handleSaveBlock}
                 onCancel={handleCancelEdit}
               />
