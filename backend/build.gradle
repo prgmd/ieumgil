@@ -23,6 +23,11 @@ dependencyManagement {
 	}
 }
 
+// Spring Boot 3.4 BOM의 Testcontainers 1.20.4는 Docker Engine 29(API 최소 1.44)와
+// 비호환 — npipe 연결이 400으로 죽는다. 도커 29 대응이 들어간 패치 버전으로 올린다
+// (https://github.com/testcontainers/testcontainers-java/issues/11212)
+ext['testcontainers.version'] = '1.21.4'
+
 // GroupMemberAspect가 파라미터 이름(groupId/projectId)으로 인자를 찾으므로 이름을 보존한다
 tasks.withType(JavaCompile).configureEach {
 	options.compilerArgs << '-parameters'
@@ -52,6 +57,11 @@ dependencies {
 
 	testImplementation 'org.springframework.boot:spring-boot-starter-test'
 	testImplementation 'org.springframework.security:spring-security-test'
+
+	// 통합 테스트용 실제 PostgreSQL/Redis — 행 잠금(FOR UPDATE)과 JSONB는 H2로 재현이 안 된다
+	testImplementation 'org.springframework.boot:spring-boot-testcontainers'
+	testImplementation 'org.testcontainers:junit-jupiter'
+	testImplementation 'org.testcontainers:postgresql'
 
 	testCompileOnly 'org.projectlombok:lombok'
 	testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
