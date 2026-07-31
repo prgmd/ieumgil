@@ -680,8 +680,8 @@ export function DashboardPage() {
     // 다른 프로젝트에서 넘어온 경우 이전 프로젝트의 Day 탭이 남지 않게 한다
     if (!serverChains[activeDay]) setActiveDay("d1");
 
-    // 목표 예산은 스냅샷의 project 에 실려 온다. 수정을 저장할 엔드포인트는 아직
-    // 백엔드에 없어(PATCH /projects 는 name·기간만 받는다) 위젯의 조절은 로컬 표시용이다.
+    // 목표 예산은 스냅샷의 project 에 실려 오고, 수정은 PATCH /projects 로 저장된다
+    // (백엔드 합의로 targetBudget 필드 추가 — handleTargetBudgetChange 참조).
     setTargetBudget(project?.targetBudget ?? 0);
   }
 
@@ -691,8 +691,19 @@ export function DashboardPage() {
     showToast(error?.message ?? "프로젝트를 열 수 없어요.");
     navigate(`/groups/${groupId}`, { replace: true });
   }, [status, error, groupId, navigate, showToast]);
+  // 목표 예산 저장은 디바운스한다 — ± 버튼 연타(만원 단위)를 요청 1건으로 모은다.
+  // 타이머가 언마운트 후에 발화해도 요청은 그대로 나간다(마지막 조작 유실 방지).
+  const targetBudgetTimerRef = useRef(null);
   const handleTargetBudgetChange = (amount) => {
-    setTargetBudget((prev) => Math.max(0, prev + amount)); // 0원 밑으로는 안 내려가게 방지
+    const next = Math.max(0, targetBudget + amount); // 0원 밑으로는 안 내려가게 방지
+    setTargetBudget(next);
+
+    clearTimeout(targetBudgetTimerRef.current);
+    targetBudgetTimerRef.current = setTimeout(() => {
+      blockApi
+        .updateProject(projectId, { targetBudget: next })
+        .catch(rollbackToServer);
+    }, 600);
   };
   const budgetPercent =
     targetBudget > 0 ? Math.min(100, (totalBudget / targetBudget) * 100) : 0;
