@@ -28,14 +28,17 @@ function unwrapError(error) {
 // ── 값 변환 ──────────────────────────────────────────
 
 // 서버 category(enum 대문자) ↔ 화면 cat(소문자). 화면은 TRANSPORT 를 trans 로 줄여 쓴다.
-const CAT_FROM_SERVER = {
+// ⚠️ 단순 대소문자 변환(toUpperCase/toLowerCase)으로 대신할 수 없다 —
+//    "trans".toUpperCase() === "TRANS" ≠ "TRANSPORT". 반드시 이 매핑을 쓴다.
+//    (폼 등 화면 쪽에서도 필요해 export 한다.)
+export const CAT_FROM_SERVER = {
   SPOT: "spot",
   FOOD: "food",
   STAY: "stay",
   ETC: "etc",
   TRANSPORT: "trans",
 };
-const CAT_TO_SERVER = {
+export const CAT_TO_SERVER = {
   spot: "SPOT",
   food: "FOOD",
   stay: "STAY",

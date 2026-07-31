@@ -1,16 +1,33 @@
 import { useState } from "react";
+import { CAT_TO_SERVER } from "../../../features/dashboard/api/dashboardApi";
 
 export function BlockEditForm({ initialData, timeString, onSave, onCancel }) {
   const [formData, setFormData] = useState({
     id: initialData.id,
-    category: initialData.cat ? initialData.cat.toUpperCase() : "SPOT",
+    // cat(소문자)↔category(대문자)는 단순 대소문자 변환이 아니다(trans↔TRANSPORT).
+    // 어댑터의 매핑을 재사용한다.
+    category: CAT_TO_SERVER[initialData.cat] ?? "ETC",
     subCategory: initialData.sub || "",
     name: initialData.name || "",
-    address: initialData.addr || "",
+    address: initialData.address || "",
     durationMin: initialData.dur || 60,
     budget: initialData.cost || 0,
-    memo: initialData.memo || "",
+    detail: initialData.detail || "",
   });
+
+  // 저장이 서버 왕복이 되면서(2단계) 중복 제출을 막는다.
+  // 실패 안내·모달 유지는 부모(onSave)가 처리하므로 여기서는 상태만 되돌린다.
+  const [saving, setSaving] = useState(false);
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      await onSave(formData);
+    } catch {
+      /* 부모가 토스트로 안내한다 — 모달은 열린 채 재시도 가능 */
+    } finally {
+      setSaving(false);
+    }
+  };
 
   const handleChange = (e) => {
     const { name, value } = e.target;
@@ -204,12 +221,13 @@ export function BlockEditForm({ initialData, timeString, onSave, onCancel }) {
 
       <div style={styles.row}>
         <div style={styles.col}>
-          <label style={styles.label}>비고 — 메모·세부사항</label>
+          <label style={styles.label}>비고 — 메모·세부사항 (최대 500자)</label>
           <textarea
             style={styles.textarea}
-            name="memo"
-            value={formData.memo}
+            name="detail"
+            value={formData.detail}
             onChange={handleChange}
+            maxLength={500}
             placeholder="상세 내용을 입력하세요"
           />
         </div>
@@ -218,11 +236,11 @@ export function BlockEditForm({ initialData, timeString, onSave, onCancel }) {
       <div style={styles.footer}>
         <div style={styles.editorInfo}>✏️ 마지막 수정 · 민준</div>
         <div style={styles.btnGroup}>
-          <button style={styles.btnCancel} onClick={onCancel}>
+          <button style={styles.btnCancel} onClick={onCancel} disabled={saving}>
             닫기
           </button>
-          <button style={styles.btnSave} onClick={() => onSave(formData)}>
-            저장
+          <button style={styles.btnSave} onClick={handleSave} disabled={saving}>
+            {saving ? "저장 중…" : "저장"}
           </button>
         </div>
       </div>

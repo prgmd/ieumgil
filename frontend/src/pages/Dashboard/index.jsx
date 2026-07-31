@@ -19,8 +19,10 @@ import {
   rectSortingStrategy,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
+import { generateKeyBetween } from "fractional-indexing";
 import { AppBar } from "../My/shared/ui/AppBar";
 import { useDashboard } from "../../features/dashboard/hooks/useDashboard";
+import * as blockApi from "../../features/dashboard/api/dashboardApi";
 import { useToastStore } from "../../global/stores/toastStore";
 import "./index.css";
 
@@ -134,7 +136,7 @@ function CardBody({
         >
           {item?.name} ✏️
         </div>
-        <div className="sub">{item?.memo || item?.addr}</div>
+        <div className="sub">{item?.detail || item?.address}</div>
       </>
     );
   }
@@ -747,33 +749,84 @@ export function DashboardPage() {
   const activeDragRef = useRef(null);
   const dragRegionRef = useRef(null);
 
-  const handleSaveBlock = (updatedData) => {
-    setItems((prev) => {
-      const existing = prev[editingBlockId];
-      const updatedItems = {
-        ...prev,
-        [editingBlockId]: {
-          ...existing,
-          name: updatedData.name,
-          cat: updatedData.category
-            ? updatedData.category.toLowerCase()
-            : existing.cat,
-          sub: updatedData.subCategory,
-          addr: updatedData.address,
-          memo: updatedData.memo,
-          dur: updatedData.durationMin
-            ? Number(updatedData.durationMin)
-            : existing.dur,
-          cost: updatedData.budget ? Number(updatedData.budget) : existing.cost,
-        },
-      };
+  // 서버에 아직 없는 블록(모달 저장 전의 커스텀 블록)을 구분하는 규약
+  const isTempId = (id) => String(id).startsWith("custom-");
 
-      if (chains[activeDay].includes(editingBlockId)) {
+  const handleSaveBlock = async (form) => {
+    const targetId = editingBlockId;
+    const base = items[targetId];
+    if (!base) return;
+
+    // 폼(서버 필드명) → 화면 블록 필드.
+    // cat 은 어댑터 매핑으로 되돌린다 — toLowerCase 는 TRANSPORT→"transport" 가
+    // 되어 화면의 "trans" 와 어긋난다(카테고리 왕복 파괴 버그의 원인이었다).
+    const merged = {
+      ...base,
+      name: form.name,
+      cat: blockApi.CAT_FROM_SERVER[form.category] ?? base.cat,
+      sub: form.subCategory,
+      address: form.address,
+      detail: form.detail,
+      dur: form.durationMin ? Number(form.durationMin) : base.dur,
+      cost: form.budget ? Number(form.budget) : base.cost,
+    };
+
+    // ── 새 블록: 서버에 생성하고 임시 id 를 서버 blockId 로 교체한다 (2단계) ──
+    if (isTempId(targetId)) {
+      // 풀 맨 앞 배치를 서버에도 그대로 남기기 위해 orderKey 를 클라이언트가 만든다.
+      // 미지정으로 보내면 서버가 말단 키를 부여하는데, 응답에 그 키가 없어
+      // 로컬이 순서를 알 수 없게 된다.
+      const firstKey =
+        pool
+          .filter((id) => id !== targetId)
+          .map((id) => items[id]?.orderKey)
+          .find((k) => k != null) ?? null;
+      const orderKey = generateKeyBetween(null, firstKey);
+
+      try {
+        const created = await blockApi.createBlock(projectId, {
+          ...merged,
+          dayNo: null, // 커스텀 블록은 후보(POOL)로 생성된다
+          orderKey,
+        });
+        // 세부 내용(detail)은 생성 바디에 없다(명세) — 생성 직후 필드 갱신으로 저장
+        if (merged.detail) {
+          await blockApi.updateBlockFields(created.blockId, {
+            detail: merged.detail,
+          });
+        }
+
+        const saved = { ...merged, id: created.blockId, dayNo: null, orderKey };
+        setItems((prev) => {
+          const next = { ...prev };
+          delete next[targetId];
+          next[created.blockId] = saved;
+          return next;
+        });
+        setPool((prev) =>
+          prev.map((id) => (id === targetId ? created.blockId : id)),
+        );
+        setEditingBlockId(null);
+        showToast("블록이 저장됐어요 ✓");
+      } catch (e) {
+        // 임시 블록과 모달을 그대로 남겨 재시도할 수 있게 한다
+        showToast(
+          e?.message ?? "블록을 저장하지 못했어요. 잠시 후 다시 시도해주세요.",
+        );
+      }
+      return;
+    }
+
+    // ── 기존 블록: 서버 반영(PATCH /fields)은 3단계 — 지금은 로컬만 갱신 ──
+    setItems((prev) => {
+      const updatedItems = { ...prev, [targetId]: merged };
+
+      if (chains[activeDay].includes(targetId)) {
         const { newItems, newChain } = resolveOverlaps(
           updatedItems,
           chains[activeDay],
           dayStart[activeDay],
-          editingBlockId,
+          targetId,
         );
         setChains((pc) => ({ ...pc, [activeDay]: newChain }));
         return newItems;
@@ -790,16 +843,34 @@ export function DashboardPage() {
       cat: "etc",
       sub: "",
       name: "새 일정",
-      addr: "",
-      memo: "",
+      address: "",
+      detail: "",
       dur: 60,
-      startMins: 540,
+      // 후보(POOL) 블록은 시각 없는 느슨한 블록 — 시각은 체인에 놓일 때 계산된다
+      startMins: null,
+      endMins: null,
+      lat: null,
+      lng: null,
       cost: 0,
       auto: false,
     };
     setItems((prev) => ({ ...prev, [newId]: newBlock }));
     setPool((prev) => [newId, ...prev]);
     setEditingBlockId(newId);
+  };
+
+  // 저장 전에 모달을 닫으면 임시 블록을 남기지 않는다 (서버에도 아직 없다)
+  const handleCancelEdit = () => {
+    if (isTempId(editingBlockId)) {
+      const tempId = editingBlockId;
+      setItems((prev) => {
+        const next = { ...prev };
+        delete next[tempId];
+        return next;
+      });
+      setPool((prev) => prev.filter((id) => id !== tempId));
+    }
+    setEditingBlockId(null);
   };
 
   useEffect(() => {
@@ -2011,14 +2082,18 @@ export function DashboardPage() {
             const sMins = item.startMins;
             const eMins = sMins + item.dur;
             const dayNum = activeDay.replace("d", "");
-            const timeStr = `Day ${dayNum} · ${fmtTime(sMins)} - ${fmtTime(eMins)}`;
+            // 후보(POOL) 블록은 시각이 없다(느슨한 블록) — 폼이 "시간 정보 없음"을 띄운다
+            const timeStr =
+              sMins == null
+                ? ""
+                : `Day ${dayNum} · ${fmtTime(sMins)} - ${fmtTime(eMins)}`;
 
             return (
               <BlockEditForm
                 initialData={item}
                 timeString={timeStr}
                 onSave={handleSaveBlock}
-                onCancel={() => setEditingBlockId(null)}
+                onCancel={handleCancelEdit}
               />
             );
           })()}
