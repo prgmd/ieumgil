@@ -178,7 +178,7 @@ class ChatbotCommandServiceImplTest {
         ToolCallingChatOptions options = (ToolCallingChatOptions) promptCaptor.getValue().getOptions();
         assertThat(options.getToolCallbacks())
                 .extracting(tc -> tc.getToolDefinition().name())
-                .contains("findFestivalsForCurrentTrip");
+                .containsExactlyInAnyOrder("searchPlaces", "getWalkingRoute", "getTaxiRoute", "findFestivalsForCurrentTrip");
     }
 
     @Test
