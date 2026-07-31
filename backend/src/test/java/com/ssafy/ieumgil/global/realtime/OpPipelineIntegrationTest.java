@@ -17,6 +17,7 @@ import org.hibernate.stat.Statistics;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.redis.core.StringRedisTemplate;
 
 import java.time.Instant;
 import java.util.HashMap;
@@ -38,6 +39,8 @@ class OpPipelineIntegrationTest extends IntegrationTestSupport {
     ActivityLogRepository activityLogRepository;
     @Autowired
     EntityManagerFactory entityManagerFactory;
+    @Autowired
+    StringRedisTemplate redisTemplate;
 
     private long createBlock(User user, Project project, String name) {
         return blockCommandService.createBlock(user.getId(), project.getId(), null,
@@ -101,6 +104,25 @@ class OpPipelineIntegrationTest extends IntegrationTestSupport {
 
         assertThat(result.applied()).containsEntry("budget", false);
         assertThat(activityLogRepository.findLastSeq(project.getId())).isEqualTo(before);
+    }
+
+    @Test
+    @DisplayName("Redis 카운터가 유실돼도 seq는 DB 기준으로 이어진다 — 지연 리시드")
+    void seqReseedsFromDbAfterRedisLoss() {
+        User user = seedUser();
+        Project project = seedProject(user);
+        createBlock(user, project, "블록1");
+        long s2 = createBlock(user, project, "블록2");
+
+        // Redis 재기동/flush 시뮬레이션 — 카운터 키만 사라지고 저널(DB)은 남는 상황
+        redisTemplate.delete("project:" + project.getId() + ":seq");
+
+        long s3 = createBlock(user, project, "블록3");
+
+        // INCR이 1부터 다시 시작하면 UNIQUE(project_id, seq) 충돌로 저장이 죽는다 —
+        // SeqGenerator가 DB MAX(seq) 기준으로 이어붙이는지가 이 테스트의 핵심
+        assertThat(s3).isEqualTo(s2 + 1);
+        assertThat(activityLogRepository.findLastSeq(project.getId())).isEqualTo(s3);
     }
 
     @Test
