@@ -12,6 +12,7 @@ import com.ssafy.ieumgil.domain.project.repository.ProjectRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.ai.chat.messages.AssistantMessage;
@@ -19,6 +20,7 @@ import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.ai.chat.model.ChatResponse;
 import org.springframework.ai.chat.model.Generation;
 import org.springframework.ai.chat.prompt.Prompt;
+import org.springframework.ai.model.tool.ToolCallingChatOptions;
 
 import java.time.LocalDate;
 import java.util.List;
@@ -149,6 +151,27 @@ class ChatbotCommandServiceImplTest {
         when(projectRepository.findByIdAndDeletedAtIsNull(1L)).thenReturn(Optional.empty());
 
         assertThat(chatbotCommandService.resolveFestivalTool(1L)).isEmpty();
+    }
+
+    @Test
+    void sendMessageRegistersFestivalToolWhenProjectResolvable() {
+        when(chatHistoryStore.loadHistory(1L, 1L)).thenReturn(List.of());
+        Project project = Project.builder()
+                .destination("제주도")
+                .startDate(LocalDate.of(2026, 8, 1))
+                .endDate(LocalDate.of(2026, 8, 3))
+                .build();
+        when(projectRepository.findByIdAndDeletedAtIsNull(1L)).thenReturn(Optional.of(project));
+        when(chatModel.call(any(Prompt.class))).thenReturn(canned("여기서 뭐 할만한거 있어?"));
+
+        chatbotCommandService.sendMessage(1L, 1L, new ChatbotReqDTO.SendMessage("여기서 뭐 할만한거 있어?"));
+
+        ArgumentCaptor<Prompt> promptCaptor = ArgumentCaptor.forClass(Prompt.class);
+        verify(chatModel).call(promptCaptor.capture());
+        ToolCallingChatOptions options = (ToolCallingChatOptions) promptCaptor.getValue().getOptions();
+        assertThat(options.getToolCallbacks())
+                .extracting(tc -> tc.getToolDefinition().name())
+                .containsExactly("findFestivalsForCurrentTrip");
     }
 
     private ChatResponse canned(String text) {
