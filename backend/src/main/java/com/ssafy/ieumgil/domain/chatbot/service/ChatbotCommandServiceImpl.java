@@ -6,9 +6,17 @@ import com.ssafy.ieumgil.domain.chatbot.exception.ChatbotErrorCode;
 import com.ssafy.ieumgil.domain.chatbot.exception.ChatbotException;
 import com.ssafy.ieumgil.domain.chatbot.repository.ChatHistoryStore;
 import com.ssafy.ieumgil.domain.chatbot.repository.ChatTurn;
+import com.ssafy.ieumgil.domain.chatbot.tool.BusScheduleTool;
 import com.ssafy.ieumgil.domain.chatbot.tool.FestivalRecommendationTool;
+import com.ssafy.ieumgil.domain.chatbot.tool.FlightScheduleTool;
+import com.ssafy.ieumgil.domain.chatbot.tool.KakaoPlaceCoordinateResolver;
+import com.ssafy.ieumgil.domain.chatbot.tool.KakaoPlaceSearchTool;
+import com.ssafy.ieumgil.domain.chatbot.tool.TaxiRouteTool;
+import com.ssafy.ieumgil.domain.chatbot.tool.TrainScheduleTool;
+import com.ssafy.ieumgil.domain.chatbot.tool.WalkingRouteTool;
 import com.ssafy.ieumgil.domain.festival.RegionCode;
 import com.ssafy.ieumgil.domain.festival.service.FestivalQueryService;
+import com.ssafy.ieumgil.domain.place.service.PlaceQueryService;
 import com.ssafy.ieumgil.domain.project.entity.Project;
 import com.ssafy.ieumgil.domain.project.repository.ProjectRepository;
 import lombok.RequiredArgsConstructor;
@@ -39,6 +47,10 @@ public class ChatbotCommandServiceImpl implements ChatbotCommandService {
     private final ChatHistoryStore chatHistoryStore;
     private final ProjectRepository projectRepository;
     private final FestivalQueryService festivalQueryService;
+    private final PlaceQueryService placeQueryService;
+    private final TrainScheduleTool trainScheduleTool;
+    private final BusScheduleTool busScheduleTool;
+    private final FlightScheduleTool flightScheduleTool;
 
     @Override
     public ChatbotResDTO.MessageResult sendMessage(Long projectId, Long memberId, ChatbotReqDTO.SendMessage request) {
@@ -52,7 +64,8 @@ public class ChatbotCommandServiceImpl implements ChatbotCommandService {
         messages.add(new UserMessage(request.message()));
 
         Optional<FestivalRecommendationTool> festivalTool = resolveFestivalTool(projectId);
-        String reply = callGms(messages, festivalTool);
+        List<Object> kakaoTools = resolveKakaoTools(projectId);
+        String reply = callGms(messages, festivalTool, kakaoTools);
 
         chatHistoryStore.appendExchange(
                 projectId,
@@ -76,13 +89,32 @@ public class ChatbotCommandServiceImpl implements ChatbotCommandService {
                         )));
     }
 
-    private String callGms(List<Message> messages, Optional<FestivalRecommendationTool> festivalTool) {
+    /** 프로젝트 목적지가 있을 때만 카카오 tool 3개(장소검색/도보/택시)를 만든다. 목적지 없으면 빈 리스트. */
+    List<Object> resolveKakaoTools(Long projectId) {
+        return projectRepository.findByIdAndDeletedAtIsNull(projectId)
+                .map(Project::getDestination)
+                .filter(destination -> destination != null && !destination.isBlank())
+                .map(destination -> {
+                    KakaoPlaceCoordinateResolver resolver = new KakaoPlaceCoordinateResolver(placeQueryService);
+                    return List.<Object>of(
+                            new KakaoPlaceSearchTool(destination, placeQueryService),
+                            new WalkingRouteTool(destination, placeQueryService, resolver),
+                            new TaxiRouteTool(destination, placeQueryService, resolver)
+                    );
+                })
+                .orElseGet(List::of);
+    }
+
+    private String callGms(List<Message> messages, Optional<FestivalRecommendationTool> festivalTool, List<Object> kakaoTools) {
         try {
             ChatClient.ChatClientRequestSpec spec = ChatClient.builder(chatModel).build()
                     .prompt(new Prompt(messages));
-            if (festivalTool.isPresent()) {
-                spec = spec.tools(festivalTool.get());
-            }
+            List<Object> tools = new ArrayList<>(kakaoTools);
+            tools.add(trainScheduleTool);
+            tools.add(busScheduleTool);
+            tools.add(flightScheduleTool);
+            festivalTool.ifPresent(tools::add);
+            spec = spec.tools(tools.toArray());
             return spec.call().content();
         } catch (RuntimeException e) {
             throw new ChatbotException(ChatbotErrorCode.GMS_CALL_FAILED);

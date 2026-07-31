@@ -5,10 +5,20 @@ import com.ssafy.ieumgil.domain.chatbot.dto.ChatbotResDTO;
 import com.ssafy.ieumgil.domain.chatbot.exception.ChatbotException;
 import com.ssafy.ieumgil.domain.chatbot.repository.ChatHistoryStore;
 import com.ssafy.ieumgil.domain.chatbot.repository.ChatTurn;
+import com.ssafy.ieumgil.domain.chatbot.tool.BusScheduleTool;
 import com.ssafy.ieumgil.domain.chatbot.tool.FestivalRecommendationTool;
+import com.ssafy.ieumgil.domain.chatbot.tool.FlightScheduleTool;
+import com.ssafy.ieumgil.domain.chatbot.tool.KakaoPlaceSearchTool;
+import com.ssafy.ieumgil.domain.chatbot.tool.TaxiRouteTool;
+import com.ssafy.ieumgil.domain.chatbot.tool.TrainScheduleTool;
+import com.ssafy.ieumgil.domain.chatbot.tool.WalkingRouteTool;
 import com.ssafy.ieumgil.domain.festival.service.FestivalQueryService;
+import com.ssafy.ieumgil.domain.place.service.PlaceQueryService;
 import com.ssafy.ieumgil.domain.project.entity.Project;
 import com.ssafy.ieumgil.domain.project.repository.ProjectRepository;
+import com.ssafy.ieumgil.domain.transit.service.BusScheduleProvider;
+import com.ssafy.ieumgil.domain.transit.service.FlightScheduleProvider;
+import com.ssafy.ieumgil.domain.transit.service.TrainScheduleProvider;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -48,12 +58,27 @@ class ChatbotCommandServiceImplTest {
     @Mock
     private FestivalQueryService festivalQueryService;
 
+    @Mock
+    private PlaceQueryService placeQueryService;
+
+    @Mock
+    private TrainScheduleProvider trainScheduleProvider;
+
+    @Mock
+    private BusScheduleProvider busScheduleProvider;
+
+    @Mock
+    private FlightScheduleProvider flightScheduleProvider;
+
     private ChatbotCommandServiceImpl chatbotCommandService;
 
     @BeforeEach
     void setUp() {
         chatbotCommandService = new ChatbotCommandServiceImpl(
-                chatModel, chatHistoryStore, projectRepository, festivalQueryService
+                chatModel, chatHistoryStore, projectRepository, festivalQueryService, placeQueryService,
+                new TrainScheduleTool(trainScheduleProvider),
+                new BusScheduleTool(busScheduleProvider),
+                new FlightScheduleTool(flightScheduleProvider)
         );
     }
 
@@ -171,7 +196,73 @@ class ChatbotCommandServiceImplTest {
         ToolCallingChatOptions options = (ToolCallingChatOptions) promptCaptor.getValue().getOptions();
         assertThat(options.getToolCallbacks())
                 .extracting(tc -> tc.getToolDefinition().name())
-                .containsExactly("findFestivalsForCurrentTrip");
+                .containsExactlyInAnyOrder(
+                        "searchPlaces", "getWalkingRoute", "getTaxiRoute",
+                        "getTrainSchedule", "getBusSchedule", "getFlightSchedule",
+                        "findFestivalsForCurrentTrip"
+                );
+    }
+
+    @Test
+    void resolvesKakaoToolsWhenDestinationPresent() {
+        Project project = Project.builder().destination("제주도").build();
+        when(projectRepository.findByIdAndDeletedAtIsNull(1L)).thenReturn(Optional.of(project));
+
+        List<Object> tools = chatbotCommandService.resolveKakaoTools(1L);
+
+        assertThat(tools).hasSize(3);
+        assertThat(tools.get(0)).isInstanceOf(KakaoPlaceSearchTool.class);
+        assertThat(tools.get(1)).isInstanceOf(WalkingRouteTool.class);
+        assertThat(tools.get(2)).isInstanceOf(TaxiRouteTool.class);
+    }
+
+    @Test
+    void skipsKakaoToolsWhenDestinationBlank() {
+        Project project = Project.builder().destination(null).build();
+        when(projectRepository.findByIdAndDeletedAtIsNull(1L)).thenReturn(Optional.of(project));
+
+        assertThat(chatbotCommandService.resolveKakaoTools(1L)).isEmpty();
+    }
+
+    @Test
+    void skipsKakaoToolsWhenProjectNotFound() {
+        when(projectRepository.findByIdAndDeletedAtIsNull(1L)).thenReturn(Optional.empty());
+
+        assertThat(chatbotCommandService.resolveKakaoTools(1L)).isEmpty();
+    }
+
+    @Test
+    void sendMessageRegistersKakaoToolsWhenDestinationPresent() {
+        when(chatHistoryStore.loadHistory(1L, 1L)).thenReturn(List.of());
+        Project project = Project.builder().destination("제주도").build();
+        when(projectRepository.findByIdAndDeletedAtIsNull(1L)).thenReturn(Optional.of(project));
+        when(chatModel.call(any(Prompt.class))).thenReturn(canned("근처 카페 추천해줘"));
+
+        chatbotCommandService.sendMessage(1L, 1L, new ChatbotReqDTO.SendMessage("근처 카페 추천해줘"));
+
+        ArgumentCaptor<Prompt> promptCaptor = ArgumentCaptor.forClass(Prompt.class);
+        verify(chatModel).call(promptCaptor.capture());
+        ToolCallingChatOptions options = (ToolCallingChatOptions) promptCaptor.getValue().getOptions();
+        assertThat(options.getToolCallbacks())
+                .extracting(tc -> tc.getToolDefinition().name())
+                .containsExactlyInAnyOrder("searchPlaces", "getWalkingRoute", "getTaxiRoute",
+                        "getTrainSchedule", "getBusSchedule", "getFlightSchedule");
+    }
+
+    @Test
+    void sendMessageAlwaysRegistersScheduleTools() {
+        when(chatHistoryStore.loadHistory(1L, 1L)).thenReturn(List.of());
+        when(projectRepository.findByIdAndDeletedAtIsNull(1L)).thenReturn(Optional.empty());
+        when(chatModel.call(any(Prompt.class))).thenReturn(canned("서울에서 부산 기차 몇시에 있어?"));
+
+        chatbotCommandService.sendMessage(1L, 1L, new ChatbotReqDTO.SendMessage("서울에서 부산 기차 몇시에 있어?"));
+
+        ArgumentCaptor<Prompt> promptCaptor = ArgumentCaptor.forClass(Prompt.class);
+        verify(chatModel).call(promptCaptor.capture());
+        ToolCallingChatOptions options = (ToolCallingChatOptions) promptCaptor.getValue().getOptions();
+        assertThat(options.getToolCallbacks())
+                .extracting(tc -> tc.getToolDefinition().name())
+                .containsExactlyInAnyOrder("getTrainSchedule", "getBusSchedule", "getFlightSchedule");
     }
 
     private ChatResponse canned(String text) {
