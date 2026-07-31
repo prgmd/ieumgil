@@ -22,6 +22,7 @@ import { CSS } from "@dnd-kit/utilities";
 import { generateKeyBetween } from "fractional-indexing";
 import { AppBar } from "../My/shared/ui/AppBar";
 import { useDashboard } from "../../features/dashboard/hooks/useDashboard";
+import { useProjectOps } from "../../features/dashboard/realtime/useProjectOps";
 import * as blockApi from "../../features/dashboard/api/dashboardApi";
 import { useToastStore } from "../../global/stores/toastStore";
 import "./index.css";
@@ -665,6 +666,10 @@ export function DashboardPage() {
     error,
     reload,
   } = useDashboard(projectId);
+
+  // 실시간 op 구독 (스파이크 — 수신을 콘솔에만 찍는다. 화면 적용은 다음 단계에서
+  // onOp 콜백으로 붙인다). 탭 2개를 열고 한쪽에서 편집하면 다른 쪽 콘솔에 op 가 보인다.
+  useProjectOps(projectId);
 
   const [viewMode, setViewMode] = useState("edit");
   const [activeDay, setActiveDay] = useState("d1");
