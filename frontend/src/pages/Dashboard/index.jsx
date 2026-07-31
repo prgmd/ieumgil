@@ -38,12 +38,25 @@ const DAY_END = 1440;
 const TL_PAD_TOP = 20;
 const TL_PAD_LEFT = 70;
 
+/**
+ * 카테고리(대분류) 표. 색은 값을 직접 적지 않고 공통 토큰(tokens.css)을 가리킨다 —
+ * 팔레트를 바꿀 일이 생기면 CSS 한 곳만 고치면 된다.
+ * hex/bg 는 그대로 CSS 변수(--dc/--cb)나 배경색으로 넘어가므로 var() 문자열로 둔다.
+ */
 const CAT_COLORS = {
-  stay: { nm: "숙소", hex: "#8a5aa8", bg: "var(--stayB, #f3edfa)" },
-  food: { nm: "식당", hex: "#d97e3c", bg: "var(--foodB, #fdf1e4)" },
-  spot: { nm: "명소/활동", hex: "#3e8e63", bg: "var(--spotB, #eaf5ec)" },
-  etc: { nm: "기타", hex: "#7a6a5c", bg: "var(--etcB, #f1ece4)" },
-  trans: { nm: "교통", hex: "#6b7fc7", bg: "var(--transB, #eef0fb)" },
+  stay: { nm: "숙소", hex: "var(--stay, #8a5aa8)", bg: "var(--stayB, #f3edfa)" },
+  food: { nm: "식당", hex: "var(--food, #d97e3c)", bg: "var(--foodB, #fdf1e4)" },
+  spot: {
+    nm: "명소/활동",
+    hex: "var(--spot, #3e8e63)",
+    bg: "var(--spotB, #eaf5ec)",
+  },
+  etc: { nm: "기타", hex: "var(--etc, #7a6a5c)", bg: "var(--etcB, #f1ece4)" },
+  trans: {
+    nm: "교통",
+    hex: "var(--trans, #6b7fc7)",
+    bg: "var(--transB, #eef0fb)",
+  },
 };
 
 const fmtTime = (mins) => {
@@ -178,9 +191,7 @@ function CardBody({
           <span className="grip">⠿</span>
         </div>
         {/* 💡 연필 아이콘 삭제, 글씨 두께만 강조 */}
-        <div className="nm" style={{ fontWeight: "bold", color: "#333" }}>
-          {item?.name}
-        </div>
+        <div className="nm">{item?.name}</div>
         <div className="sub">{item?.memo || item?.addr}</div>
       </>
     );
@@ -190,18 +201,8 @@ function CardBody({
     <>
       {onEdge && (
         <div
+          className={`tl-edge is-top ${isThisResizing === "top" ? "is-active" : ""}`}
           onClick={(e) => onEdge(e, "top")}
-          style={{
-            position: "absolute",
-            top: 0,
-            left: 0,
-            right: 0,
-            height: "16px",
-            cursor: "ns-resize",
-            zIndex: 40,
-            background:
-              isThisResizing === "top" ? "rgba(0,0,0,0.1)" : "transparent",
-          }}
         />
       )}
       <div className="l1">
@@ -211,9 +212,7 @@ function CardBody({
         </span>
         {item?.auto && <span className="auto-badge">자동</span>}
         <span>
-          <span className="nm" style={{ fontWeight: "bold", color: "#333" }}>
-            {item?.name}
-          </span>{" "}
+          <span className="nm">{item?.name}</span>{" "}
           <span className="nm-sub">{item?.memo}</span>
         </span>
         <span className="time">
@@ -222,14 +221,9 @@ function CardBody({
         <span className="cost">{won(item?.cost)}</span>
       </div>
       <div className="addr">📍 {item?.addr || "위치 정보 없음"}</div>
-      <div className="ctl" style={{ marginTop: "auto", paddingTop: "8px" }}>
-        <span
-          className="dur"
-          style={{
-            color: isThisResizing ? catStyle.hex : undefined,
-            fontWeight: isThisResizing ? "bold" : "normal",
-          }}
-        >
+      <div className="ctl">
+        {/* 리사이즈 중에는 안내 문구가 카테고리 색으로 강조된다(.dur.is-resizing) */}
+        <span className={`dur ${isThisResizing ? "is-resizing" : ""}`}>
           {isThisResizing
             ? "마우스를 움직여 조절 후 클릭하여 확정"
             : `소요 ${item?.dur}분`}
@@ -237,18 +231,8 @@ function CardBody({
       </div>
       {onEdge && (
         <div
+          className={`tl-edge is-bottom ${isThisResizing === "bottom" ? "is-active" : ""}`}
           onClick={(e) => onEdge(e, "bottom")}
-          style={{
-            position: "absolute",
-            bottom: 0,
-            left: 0,
-            right: 0,
-            height: "16px",
-            cursor: "ns-resize",
-            zIndex: 40,
-            background:
-              isThisResizing === "bottom" ? "rgba(0,0,0,0.1)" : "transparent",
-          }}
         />
       )}
     </>
@@ -291,20 +275,19 @@ function PoolCard({ id, item, onEditBlock }) {
     isDragging,
   } = useSortable({ id, data: { from: "pool" } });
   const catStyle = catOf(item);
+  // dnd-kit 이 만들어주는 이동값과 카테고리 색만 인라인으로 넘긴다(색 지정은 CSS 몫).
   const style = {
     transform: isDragging ? undefined : CSS.Transform.toString(transform),
     transition,
-    opacity: isDragging ? 0.35 : 1,
     "--dc": catStyle.hex,
     "--cb": catStyle.bg,
-    cursor: "pointer", // 💡 박스 전체에 클릭(손가락) 커서 적용
   };
 
   return (
     <div
       ref={setNodeRef}
       style={style}
-      className="pcard"
+      className={`pcard ${isDragging ? "is-dragging" : ""}`}
       data-pool-id={id}
       {...attributes}
       {...listeners}
@@ -343,64 +326,24 @@ function TimelineCard({
     }
   };
 
+  // 위치·높이는 시간 계산 결과라 인라인으로 남기고, 색·모양은 CSS(.slot/.card)가 쥔다.
   const topPx = (startMins - dayStartMins) * PX;
   const slotStyle = {
-    position: "absolute",
-    top: `${topPx}px`,
-    left: "10px",
-    right: "10px",
-    height: `${height}px`,
-    opacity: isDragging ? 0 : 1,
-    pointerEvents: isDragging ? "none" : "auto",
-    transition:
-      isDragging || isThisResizing
-        ? "none"
-        : "top 0.25s cubic-bezier(0.2, 0, 0, 1), height 0.25s cubic-bezier(0.2, 0, 0, 1)",
-    zIndex: isDragging || isThisResizing ? 100 : 5,
-  };
-  const cardStyle = {
-    height: "100%",
     "--dc": catStyle.hex,
     "--cb": catStyle.bg,
-    position: "relative",
-    overflow: "hidden",
-    cursor: isThisResizing ? "ns-resize" : "pointer", // 💡 리사이징 중이 아닐 때는 포인터(손가락) 커서
-    boxShadow: isThisResizing ? `0 0 0 2px ${catStyle.hex}` : undefined,
+    top: `${topPx}px`,
+    height: `${height}px`,
   };
 
   return (
-    <div className="slot" style={slotStyle}>
-      <span
-        className="tlab"
-        style={{
-          position: "absolute",
-          left: "-64px",
-          top: "-10px",
-          width: "52px",
-          textAlign: "right",
-          fontSize: "12.5px",
-          fontWeight: "700",
-          color: catStyle.hex,
-          background: "rgba(255, 253, 248, 0.95)",
-          zIndex: 15,
-          padding: "2px 0",
-        }}
-      >
-        {fmtTime(startMins)}
-      </span>
-      <span
-        className="dot"
-        style={{
-          position: "absolute",
-          left: "-6px",
-          top: "-7px",
-          "--dc": catStyle.hex,
-          zIndex: 15,
-        }}
-      />
+    <div
+      className={`slot ${isDragging ? "is-dragging" : ""} ${isThisResizing ? "is-resizing" : ""}`}
+      style={slotStyle}
+    >
+      <span className="tlab">{fmtTime(startMins)}</span>
+      <span className="dot" />
       <div
         ref={setNodeRef}
-        style={cardStyle}
         className={`card ${item?.auto ? "auto-block" : ""}`}
         {...(!isThisResizing ? attributes : {})}
         {...(!isThisResizing ? listeners : {})}
@@ -440,51 +383,22 @@ function SearchResultDraggable({ place }) {
   return (
     <div
       ref={setNodeRef}
-      style={{
-        display: "flex",
-        justifyContent: "space-between",
-        alignItems: "center",
-        padding: "10px 12px",
-        backgroundColor: "#fff",
-        borderRadius: "10px",
-        border: "1px solid #e6dec8",
-        opacity: isDragging ? 0.4 : 1,
-        cursor: "grab",
-        boxShadow: isDragging
-          ? "0 8px 16px rgba(0,0,0,0.12)"
-          : "0 2px 4px rgba(0,0,0,0.02)",
-        transition: "box-shadow 0.2s, transform 0.2s",
-      }}
+      className={`sr-item ${isDragging ? "is-dragging" : ""}`}
       {...attributes}
       {...listeners}
     >
-      <div style={{ display: "flex", alignItems: "flex-start", gap: "8px" }}>
-        <div style={{ color: "#d97e3c", fontSize: "10px", marginTop: "4px" }}>
-          ●
-        </div>
+      <div className="sr-main">
+        <div className="sr-dot">●</div>
         <div>
-          <div
-            style={{
-              fontSize: "14px",
-              fontWeight: "bold",
-              color: "#333",
-              marginBottom: "2px",
-            }}
-          >
-            {place.place_name}
-          </div>
-          <div style={{ fontSize: "12px", color: "#888", marginBottom: "2px" }}>
+          <div className="sr-name">{place.place_name}</div>
+          <div className="sr-addr">
             {place.road_address_name || place.address_name}
           </div>
-          <div style={{ fontSize: "11px", color: "#aaa" }}>
-            {place.category_group_name}
-          </div>
+          <div className="sr-cat">{place.category_group_name}</div>
         </div>
       </div>
       {/* 끌어다 놓기 유도용 손잡이 아이콘 */}
-      <div style={{ color: "#c9b8a5", fontSize: "18px", paddingLeft: "8px" }}>
-        ⠿
-      </div>
+      <div className="sr-grip">⠿</div>
     </div>
   );
 }
@@ -498,59 +412,16 @@ function ReadModeView({ chains, items, dayKeys, project }) {
         const chain = chains[day] || [];
         if (chain.length === 0) return null;
         return (
-          <div
-            key={day}
-            style={{
-              marginBottom: "32px",
-              backgroundColor: "#fbf8f1",
-              padding: "32px",
-              borderRadius: "16px",
-              boxShadow: "0 4px 12px rgba(0,0,0,0.05)",
-            }}
-          >
-            {/* 폰트는 앱 공통 손글씨체(--font-app)를 쓴다 — 이전에 serif/sans-serif 를
-                직접 박아둬서 이 두 줄만 다른 폰트로 보였다. */}
-            <div style={{ marginBottom: "24px" }}>
-              <h2
-                style={{
-                  fontSize: "26px",
-                  color: "#3d2b22",
-                  margin: "0 0 8px 0",
-                  fontFamily: "var(--font-app)",
-                }}
-              >
-                Day {index + 1}{" "}
-                <span
-                  style={{
-                    fontSize: "15px",
-                    color: "#888",
-                    fontWeight: "normal",
-                    fontFamily: "var(--font-app)",
-                  }}
-                >
-                  {dayDate(project, index) || "날짜 미정"}
-                </span>
-              </h2>
-            </div>
-            <div
-              style={{
-                position: "relative",
-                display: "flex",
-                flexDirection: "column",
-                gap: "16px",
-              }}
-            >
-              <div
-                style={{
-                  position: "absolute",
-                  left: "55px",
-                  top: "20px",
-                  bottom: "20px",
-                  width: "2px",
-                  backgroundColor: "#e6dec8",
-                  zIndex: 0,
-                }}
-              />
+          <div key={day} className="rv-day">
+            <h2 className="rv-day-title">
+              Day {index + 1}{" "}
+              <span className="rv-day-date">
+                {dayDate(project, index) || "날짜 미정"}
+              </span>
+            </h2>
+
+            <div className="rv-list">
+              <div className="rv-line" />
               {chain.map((id) => {
                 const item = items[id];
                 if (!item) return null;
@@ -558,102 +429,31 @@ function ReadModeView({ chains, items, dayKeys, project }) {
                 const endMins = startMins + item.dur;
                 const catStyle = catOf(item);
                 return (
+                  // 카테고리 색만 CSS 변수로 넘기고, 그 색을 어디에 쓸지는 CSS 가 정한다
                   <div
                     key={id}
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: "20px",
-                      zIndex: 1,
-                    }}
+                    className="rv-row"
+                    style={{ "--dc": catStyle.hex, "--cb": catStyle.bg }}
                   >
-                    <div
-                      style={{
-                        width: "60px",
-                        textAlign: "right",
-                        fontWeight: "bold",
-                        fontSize: "15px",
-                        color: catStyle.hex,
-                        backgroundColor: "#fbf8f1",
-                      }}
-                    >
-                      {fmtTime(startMins)}
-                    </div>
-                    <div
-                      style={{
-                        width: "12px",
-                        height: "12px",
-                        borderRadius: "50%",
-                        backgroundColor: catStyle.hex,
-                        border: "2px solid #fbf8f1",
-                        flexShrink: 0,
-                      }}
-                    />
-                    <div
-                      style={{
-                        flex: 1,
-                        backgroundColor: catStyle.bg,
-                        padding: "18px 24px",
-                        borderRadius: "12px",
-                        display: "flex",
-                        justifyContent: "space-between",
-                        alignItems: "center",
-                      }}
-                    >
-                      <div
-                        style={{
-                          display: "flex",
-                          alignItems: "center",
-                          gap: "12px",
-                        }}
-                      >
-                        <span
-                          style={{
-                            backgroundColor: catStyle.hex,
-                            color: "#fff",
-                            fontSize: "12px",
-                            padding: "4px 8px",
-                            borderRadius: "6px",
-                            fontWeight: "bold",
-                          }}
-                        >
+                    <div className="rv-time">{fmtTime(startMins)}</div>
+                    <div className="rv-dot" />
+                    <div className="rv-card">
+                      <div className="rv-card-main">
+                        <span className="rv-badge">
                           {catStyle.nm} {item.sub ? `· ${item.sub}` : ""}
                         </span>
                         <div>
-                          <div
-                            style={{
-                              fontWeight: "bold",
-                              fontSize: "17px",
-                              color: "#333",
-                              marginBottom: "4px",
-                            }}
-                          >
-                            {item.name}
-                          </div>
-                          <div style={{ fontSize: "13px", color: "#666" }}>
+                          <div className="rv-name">{item.name}</div>
+                          <div className="rv-addr">
                             📍 {item.addr || "위치 정보 없음"}
                           </div>
                         </div>
                       </div>
-                      <div style={{ textAlign: "right" }}>
-                        <div
-                          style={{
-                            fontWeight: "bold",
-                            color: catStyle.hex,
-                            marginBottom: "6px",
-                          }}
-                        >
+                      <div className="rv-card-side">
+                        <div className="rv-range">
                           {fmtTime(startMins)} - {fmtTime(endMins)}
                         </div>
-                        <div
-                          style={{
-                            fontSize: "15px",
-                            fontWeight: "bold",
-                            color: "#333",
-                          }}
-                        >
-                          {won(item.cost)}
-                        </div>
+                        <div className="rv-cost">{won(item.cost)}</div>
                       </div>
                     </div>
                   </div>
@@ -1692,16 +1492,8 @@ export function DashboardPage() {
               </div>
 
               <div className="main">
-                <div
-                  className="board"
-                  style={{
-                    display: "flex",
-                    flexDirection: "column",
-                    // 좌우로 넓어진 만큼 세로도 화면을 쓰게 한다(지도·타임라인이 함께 커짐)
-                    maxHeight: "min(78vh, 900px)",
-                  }}
-                >
-                  <div className="bd-head" style={{ flexShrink: 0 }}>
+                <div className="board plan-board">
+                  <div className="bd-head">
                     <h2>Day {activeDayIndex + 1}</h2>
                     {/* 날짜를 누르면 캘린더가 열리고, 고른 날짜에 이 Day 가 오도록
                         여행 일정 전체가 함께 옮겨진다. 프로젝트를 못 불러왔으면 표시만. */}
@@ -1779,94 +1571,40 @@ export function DashboardPage() {
                       if (activeDragRef.current)
                         setDragPreview(computeDropTarget(activeDragRef.current));
                     }}
+                    // 하루 길이(분 × PX)만 인라인으로 넘긴다 — 나머지 모양은 CSS(.tl)
                     style={{
-                      marginTop: "10px",
-                      position: "relative",
                       height: `${(timelineEnd - timelineStart) * PX + 120}px`,
-                      minHeight: "320px",
-                      maxHeight: "min(62vh, 740px)",
-                      overflowY: "auto",
-                      overflowX: "hidden",
                     }}
                   >
+                    {/* 눈금·안내선 (--tl-pad-top/left 로 여백만 넘기고 색은 CSS) */}
                     <div
                       className="tl-bg"
                       style={{
-                        position: "absolute",
-                        top: `${TL_PAD_TOP}px`,
-                        left: `${TL_PAD_LEFT}px`,
-                        right: 0,
-                        bottom: 0,
-                        pointerEvents: "none",
-                        zIndex: 0,
+                        "--tl-pad-top": `${TL_PAD_TOP}px`,
+                        "--tl-pad-left": `${TL_PAD_LEFT}px`,
                       }}
                     >
                       {timeSlots.map((t) => (
                         <div
                           key={t}
-                          style={{
-                            position: "absolute",
-                            top: `${(t - timelineStart) * PX}px`,
-                            left: 0,
-                            width: "100%",
-                            height: "1px",
-                          }}
+                          className="tl-mark"
+                          style={{ top: `${(t - timelineStart) * PX}px` }}
                         >
-                          <span
-                            style={{
-                              position: "absolute",
-                              left: "-64px",
-                              top: "-10px",
-                              width: "52px",
-                              textAlign: "right",
-                              fontSize: "12px",
-                              fontWeight: "700",
-                              color: "#c9b8a5",
-                            }}
-                          >
-                            {fmtTime(t)}
-                          </span>
-                          <div
-                            style={{
-                              position: "absolute",
-                              left: "-6px",
-                              right: 0,
-                              top: 0,
-                              borderTop: "1px dashed rgba(61, 43, 34, 0.15)",
-                            }}
-                          />
+                          <span className="tl-mark-time">{fmtTime(t)}</span>
+                          <div className="tl-mark-line" />
                         </div>
                       ))}
                       {dragPreview?.region === "timeline" && draggedItem && (
                         <div
+                          className="tl-ghost"
                           style={{
-                            position: "absolute",
-                            left: "-6px",
-                            right: "10px",
+                            "--dc": catOf(draggedItem).hex,
+                            "--cb": catOf(draggedItem).bg,
                             top: `${(dragPreview.dropMins - timelineStart) * PX}px`,
                             height: `${(dragPreview.dur || draggedItem.dur || 30) * PX}px`,
-                            border: `2px dashed ${catOf(draggedItem).hex}`,
-                            background: catOf(draggedItem).bg,
-                            opacity: 0.75,
-                            borderRadius: "12px",
-                            zIndex: 8,
-                            display: "flex",
-                            alignItems: "flex-start",
-                            justifyContent: "flex-start",
-                            padding: "6px 10px",
-                            pointerEvents: "none",
                           }}
                         >
-                          <span
-                            style={{
-                              fontSize: "12px",
-                              fontWeight: 800,
-                              color: catOf(draggedItem).hex,
-                              background: "#fff",
-                              borderRadius: "8px",
-                              padding: "2px 8px",
-                            }}
-                          >
+                          <span className="tl-ghost-label">
                             {fmtTime(dragPreview.dropMins)} 에 놓기
                           </span>
                         </div>
@@ -1874,13 +1612,10 @@ export function DashboardPage() {
                     </div>
 
                     <div
+                      className="tl-slots"
                       style={{
-                        position: "absolute",
-                        top: `${TL_PAD_TOP}px`,
-                        left: `${TL_PAD_LEFT}px`,
-                        right: 0,
-                        bottom: "100px",
-                        zIndex: 5,
+                        "--tl-pad-top": `${TL_PAD_TOP}px`,
+                        "--tl-pad-left": `${TL_PAD_LEFT}px`,
                       }}
                     >
                       {activeDayItems.map((data, index) => {
@@ -1908,7 +1643,8 @@ export function DashboardPage() {
                         return (
                           <React.Fragment key={data.id}>
                             {isThisActiveTimelineCard ? (
-                              <div style={{ opacity: 0 }}>
+                              // 드래그 중인 카드의 원래 자리 — 자리만 잡고 보이지 않게
+                              <div className="slot-ghost">
                                 <TimelineCard
                                   id={data.id}
                                   item={data.item}
@@ -1931,42 +1667,22 @@ export function DashboardPage() {
                               />
                             )}
 
-                            {/* 💡 업데이트된 부분: 블록과 겹치지 않는 스마트 교통 아이콘 */}
+                            {/* 💡 업데이트된 부분: 블록과 겹치지 않는 스마트 교통 아이콘.
+                                hover 색 반전은 CSS(.trans-chip:hover)가 한다 — 예전에는
+                                onMouseEnter 에서 스타일을 직접 바꿨다. */}
                             {showGapBtn && !isThisActiveTimelineCard && (
                               <div
+                                className={`trans-slot ${hasEnoughGap ? "has-gap" : ""}`}
                                 style={{
-                                  position: "absolute",
-                                  // 시간이 비어있으면 갭의 정중앙에, 딱 붙어있으면 경계선에 배치
+                                  // 시간이 비어있으면 갭의 정중앙에, 딱 붙어있으면 경계선에
                                   top: hasEnoughGap
                                     ? `${(data.endMins + gapMins / 2 - timelineStart) * PX}px`
                                     : `${(data.endMins - timelineStart) * PX}px`,
-                                  left: "10px",
-                                  right: hasEnoughGap ? "10px" : "15px", // 딱 붙어있을 땐 우측으로 살짝 밀기
-                                  zIndex: 30,
-                                  display: "flex",
-                                  justifyContent: hasEnoughGap
-                                    ? "center"
-                                    : "flex-end", // 붙어있으면 우측 정렬
-                                  alignItems: "center",
-                                  transform: "translateY(-50%)",
-                                  pointerEvents: "none",
                                 }}
                               >
-                                <div
-                                  style={{
-                                    background: "#fff",
-                                    border: "1px solid #d97e3c",
-                                    borderRadius: "20px",
-                                    padding: "6px 14px",
-                                    fontSize: "12px",
-                                    color: "#d97e3c",
-                                    pointerEvents: "auto",
-                                    cursor: "pointer",
-                                    display: "flex",
-                                    alignItems: "center",
-                                    gap: "6px",
-                                    boxShadow: "0 2px 6px rgba(0,0,0,0.12)",
-                                  }}
+                                <button
+                                  type="button"
+                                  className="trans-chip"
                                   onClick={(e) => {
                                     e.stopPropagation();
                                     handleAddSingleTransport(
@@ -1975,23 +1691,14 @@ export function DashboardPage() {
                                       nextData.id,
                                     );
                                   }}
-                                  // 💡 마우스 호버 시 색상이 바뀌는 효과 추가
-                                  onMouseEnter={(e) => {
-                                    e.currentTarget.style.background = "#d97e3c";
-                                    e.currentTarget.style.color = "#fff";
-                                  }}
-                                  onMouseLeave={(e) => {
-                                    e.currentTarget.style.background = "#fff";
-                                    e.currentTarget.style.color = "#d97e3c";
-                                  }}
                                 >
-                                  <span style={{ fontSize: "14px" }}>🚗</span>
-                                  <span style={{ fontWeight: "bold" }}>
+                                  <span className="trans-chip-ico">🚗</span>
+                                  <span className="trans-chip-label">
                                     {hasEnoughGap
                                       ? "이동 시간 계산"
                                       : "이동 추가"}
                                   </span>
-                                </div>
+                                </button>
                               </div>
                             )}
                           </React.Fragment>
@@ -1999,18 +1706,7 @@ export function DashboardPage() {
                       })}
 
                       {activeDayItems.length === 0 && (
-                        <div
-                          className="endzone"
-                          style={{
-                            position: "absolute",
-                            top: "40px",
-                            left: "10px",
-                            right: "10px",
-                            pointerEvents: "none",
-                            color: "#888",
-                            textAlign: "center",
-                          }}
-                        >
+                        <div className="endzone">
                           ＋ 비어있는 타임라인의 원하는 시간 위치로 드래그하여
                           일정을 추가하세요
                         </div>
@@ -2019,59 +1715,26 @@ export function DashboardPage() {
                   </div>
                 </div>
 
-                <div
-                  style={{ display: "flex", gap: "16px", alignItems: "stretch" }}
-                >
+                <div className="pool-row">
                   <div
                     className={`pool-sec ${dragPreview?.region === "pool" ? "dropover" : ""}`}
                     ref={setPoolRef}
-                    style={{ flex: 1, margin: 0 }}
                   >
-                    <div
-                      className="pool-head"
-                      style={{
-                        display: "flex",
-                        justifyContent: "space-between",
-                        alignItems: "center",
-                      }}
-                    >
+                    <div className="pool-head">
                       <div>
                         <b>후보 목록</b> <span className="n">{pool.length}</span>
-                        <span
-                          style={{
-                            fontSize: "12px",
-                            color: "#888",
-                            marginLeft: "8px",
-                          }}
-                        >
+                        <span className="pool-hint">
                           자유롭게 끌어다 놓고 빼세요
                         </span>
                       </div>
                       <button
+                        className="pool-add-btn"
                         onClick={handleCreateCustomBlock}
-                        style={{
-                          backgroundColor: "#7c5443",
-                          color: "#fff",
-                          border: "none",
-                          borderRadius: "8px",
-                          padding: "6px 14px",
-                          fontSize: "13px",
-                          fontWeight: "bold",
-                          cursor: "pointer",
-                          boxShadow: "0 2px 6px rgba(124, 84, 67, 0.2)",
-                        }}
                       >
                         + 커스텀 블록 만들기
                       </button>
                     </div>
-                    <div
-                      className="pool"
-                      style={{
-                        minHeight: "150px",
-                        paddingBottom: "20px",
-                        position: "relative",
-                      }}
-                    >
+                    <div className="pool">
                       <SortableContext
                         items={pool}
                         strategy={rectSortingStrategy}
@@ -2086,16 +1749,7 @@ export function DashboardPage() {
                         ))}
                       </SortableContext>
                       {dragPreview?.region === "pool" && !isDraggingFromPool && (
-                        <div
-                          style={{
-                            position: "absolute",
-                            inset: 0,
-                            border: "2px dashed var(--acc, #9c4a2f)",
-                            borderRadius: "14px",
-                            pointerEvents: "none",
-                            background: "rgba(156, 74, 47, 0.04)",
-                          }}
-                        />
+                        <div className="pool-dropzone" />
                       )}
                     </div>
                   </div>
@@ -2103,19 +1757,10 @@ export function DashboardPage() {
                   <div
                     ref={setTrashRef}
                     className={`trash-zone ${activeId ? "dragging" : ""} ${dragPreview?.region === "trash" ? "dropover" : ""}`}
-                    style={{
-                      margin: 0,
-                      width: "140px",
-                      flexDirection: "column",
-                      justifyContent: "center",
-                      textAlign: "center",
-                      gap: "12px",
-                      padding: "20px",
-                    }}
                   >
                     {/* 개인 페이지의 삭제 버튼과 같은 휴지통 글리프(🗑)를 쓴다 */}
-                    <span style={{ fontSize: "32px", display: "block" }}>🗑</span>
-                    <span style={{ display: "block", lineHeight: "1.4" }}>
+                    <span className="trash-ico">🗑</span>
+                    <span className="trash-text">
                       여기로 블럭을
                       <br />
                       끌어다 놓으면
@@ -2127,83 +1772,24 @@ export function DashboardPage() {
               </div>
 
               <div className="side">
-                <div
-                  className="panel"
-                  style={{
-                    padding: "24px",
-                    backgroundColor: "#fbf8f1",
-                    borderRadius: "16px",
-                    boxShadow: "0 4px 12px rgba(0,0,0,0.05)",
-                    marginBottom: "20px",
-                  }}
-                >
-                  <div style={{ marginBottom: "16px" }}>
-                    <span
-                      style={{
-                        fontSize: "15px",
-                        fontWeight: "bold",
-                        color: "#666",
-                      }}
-                    >
-                      총{" "}
-                    </span>
-                    <span
-                      style={{
-                        fontSize: "28px",
-                        fontWeight: "800",
-                        color: "#3d2b22",
-                      }}
-                    >
+                <div className="panel">
+                  <div className="bud-total">
+                    <span className="bud-total-label">총 </span>
+                    <span className="bud-total-value">
                       {totalBudget.toLocaleString()}원
                     </span>
                   </div>
 
-                  <div
-                    style={{
-                      display: "flex",
-                      justifyContent: "space-between",
-                      alignItems: "center",
-                      marginBottom: "12px",
-                      fontSize: "13px",
-                      color: "#888",
-                    }}
-                  >
+                  <div className="bud-target">
                     <span>희망 총 예산</span>
-                    <div
-                      style={{
-                        display: "flex",
-                        alignItems: "center",
-                        gap: "8px",
-                        backgroundColor: "#f4f1ea",
-                        padding: "4px 8px",
-                        borderRadius: "8px",
-                      }}
-                    >
-                      <button
-                        onClick={() => handleTargetBudgetChange(-100000)}
-                        style={{
-                          border: "none",
-                          background: "none",
-                          cursor: "pointer",
-                          fontWeight: "bold",
-                          color: "#666",
-                        }}
-                      >
+                    <div className="bud-stepper">
+                      <button onClick={() => handleTargetBudgetChange(-100000)}>
                         -
                       </button>
-                      <span style={{ fontWeight: "bold", color: "#333" }}>
+                      <span className="bud-stepper-value">
                         {targetBudget.toLocaleString()}원
                       </span>
-                      <button
-                        onClick={() => handleTargetBudgetChange(100000)}
-                        style={{
-                          border: "none",
-                          background: "none",
-                          cursor: "pointer",
-                          fontWeight: "bold",
-                          color: "#666",
-                        }}
-                      >
+                      <button onClick={() => handleTargetBudgetChange(100000)}>
                         +
                       </button>
                     </div>
@@ -2241,20 +1827,10 @@ export function DashboardPage() {
                     </div>
                   )}
 
-                  <div
-                    style={{
-                      display: "flex",
-                      justifyContent: "space-between",
-                      fontSize: "12px",
-                      color: "#888",
-                    }}
-                  >
+                  <div className="bud-foot">
                     <span>희망 예산의 {Math.round(budgetPercent)}% 사용</span>
                     <span
-                      style={{
-                        color: remainingBudget < 0 ? "#d97e3c" : "#666",
-                        fontWeight: remainingBudget < 0 ? "bold" : "normal",
-                      }}
+                      className={`bud-left ${remainingBudget < 0 ? "is-over" : ""}`}
                     >
                       {remainingBudget < 0
                         ? `${Math.abs(remainingBudget).toLocaleString()}원 초과`
@@ -2263,31 +1839,10 @@ export function DashboardPage() {
                   </div>
                 </div>
 
-                <div
-                  className="panel"
-                  style={{
-                    padding: "24px",
-                    backgroundColor: "#fbf8f1",
-                    borderRadius: "16px",
-                    boxShadow: "0 4px 12px rgba(0,0,0,0.05)",
-                    marginBottom: "20px",
-                  }}
-                >
-                  <h4
-                    style={{
-                      margin: "0 0 16px 0",
-                      color: "#3d2b22",
-                      fontSize: "16px",
-                    }}
-                  >
+                <div className="panel">
+                  <h4 className="panel-title">
                     지도{" "}
-                    <span
-                      style={{
-                        fontSize: "12px",
-                        color: "#888",
-                        fontWeight: "normal",
-                      }}
-                    >
+                    <span className="panel-title-sub">
                       검색하면 지도가 이동합니다
                     </span>
                   </h4>
@@ -2296,90 +1851,26 @@ export function DashboardPage() {
                   <div id="kakao-map-container" className="map-box" />
                 </div>
 
-                <div
-                  className="panel"
-                  style={{
-                    padding: "24px",
-                    backgroundColor: "#fbf8f1",
-                    borderRadius: "16px",
-                    boxShadow: "0 4px 12px rgba(0,0,0,0.05)",
-                  }}
-                >
-                  <h4
-                    style={{
-                      margin: "0 0 16px 0",
-                      color: "#3d2b22",
-                      fontSize: "16px",
-                    }}
-                  >
-                    카카오 장소 검색
-                  </h4>
-                  <div
-                    style={{
-                      display: "flex",
-                      flexDirection: "column",
-                      gap: "16px",
-                    }}
-                  >
-                    <form
-                      onSubmit={handleSearchPlace}
-                      style={{ display: "flex", gap: "8px" }}
-                    >
+                <div className="panel">
+                  <h4 className="panel-title">카카오 장소 검색</h4>
+                  <div className="search-box">
+                    <form className="search-form" onSubmit={handleSearchPlace}>
                       <input
                         type="text"
                         value={searchKeyword}
                         onChange={(e) => setSearchKeyword(e.target.value)}
                         placeholder="도시, 명소, 음식..."
-                        style={{
-                          flex: 1,
-                          padding: "12px",
-                          borderRadius: "10px",
-                          border: "1px solid #e6dec8",
-                          backgroundColor: "#fff",
-                          fontSize: "14px",
-                          outline: "none",
-                          boxSizing: "border-box",
-                        }}
                       />
-                      <button
-                        type="submit"
-                        style={{
-                          padding: "0 16px",
-                          borderRadius: "10px",
-                          border: "none",
-                          backgroundColor: "#7c5443",
-                          color: "#fff",
-                          cursor: "pointer",
-                          fontWeight: "bold",
-                        }}
-                      >
-                        검색
-                      </button>
+                      <button type="submit">검색</button>
                     </form>
 
                     {/* 💡 검색 결과 리스트: 버튼이 사라지고 이젠 꾹 눌러서 끌 수 있습니다! */}
-                    <div
-                      ref={searchListRef}
-                      style={{
-                        maxHeight: "250px",
-                        overflowY: "auto",
-                        display: "flex",
-                        flexDirection: "column",
-                        gap: "8px",
-                      }}
-                    >
+                    <div className="search-results" ref={searchListRef}>
                       {searchResults.map((place) => (
                         <SearchResultDraggable key={place.id} place={place} />
                       ))}
                       {searchResults.length === 0 && (
-                        <div
-                          style={{
-                            textAlign: "center",
-                            color: "#888",
-                            fontSize: "13px",
-                            padding: "20px 0",
-                          }}
-                        >
+                        <div className="search-empty">
                           검색 결과가 여기에 표시됩니다.
                           <br />
                           검색 후 패널을 왼쪽으로 끌어다 놓으세요.
@@ -2395,11 +1886,10 @@ export function DashboardPage() {
                 {activeId && draggedItem ? (
                   isDraggingFromPool || isDraggingFromSearch ? (
                     <div
-                      className="pcard"
+                      className="pcard is-overlay"
                       style={{
                         "--dc": catOf(draggedItem).hex,
                         "--cb": catOf(draggedItem).bg,
-                        cursor: "grabbing",
                       }}
                     >
                       <CardBody
@@ -2410,13 +1900,10 @@ export function DashboardPage() {
                     </div>
                   ) : (
                     <div
-                      className="card"
+                      className="card is-overlay"
                       style={{
                         "--dc": catOf(draggedItem).hex,
                         "--cb": catOf(draggedItem).bg,
-                        width: "320px",
-                        cursor: "grabbing",
-                        boxShadow: "0 10px 28px rgba(61,43,34,0.22)",
                       }}
                     >
                       <CardBody
@@ -2446,21 +1933,7 @@ export function DashboardPage() {
       </div>
 
       {editingBlockId && items[editingBlockId] && (
-        <div
-          className="modal-overlay"
-          style={{
-            position: "fixed",
-            top: 0,
-            left: 0,
-            width: "100vw",
-            height: "100vh",
-            backgroundColor: "rgba(0,0,0,0.5)",
-            zIndex: 9999,
-            display: "flex",
-            justifyContent: "center",
-            alignItems: "center",
-          }}
-        >
+        <div className="blk-modal-ov">
           {(() => {
             const item = items[editingBlockId];
             const sMins = item.startMins;
