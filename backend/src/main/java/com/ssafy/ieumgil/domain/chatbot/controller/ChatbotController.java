@@ -3,6 +3,7 @@ package com.ssafy.ieumgil.domain.chatbot.controller;
 import com.ssafy.ieumgil.domain.chatbot.dto.ChatbotReqDTO;
 import com.ssafy.ieumgil.domain.chatbot.dto.ChatbotResDTO;
 import com.ssafy.ieumgil.domain.chatbot.service.ChatbotCommandService;
+import com.ssafy.ieumgil.domain.group.annotation.GroupMember;
 import com.ssafy.ieumgil.global.apiPayload.CustomResponse;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -26,6 +27,7 @@ public class ChatbotController {
 
     private final ChatbotCommandService chatbotCommandService;
 
+    @GroupMember(GroupMember.Source.PROJECT_ID)
     @PostMapping("/messages")
     @Operation(summary = "챗봇 메시지 전송", description = "사용자 메시지를 GMS(Anthropic Claude)로 전달하고 응답을 받습니다. 프로젝트+멤버 단위로 최근 대화 히스토리가 유지됩니다.")
     public ResponseEntity<CustomResponse<ChatbotResDTO.MessageResult>> sendMessage(
