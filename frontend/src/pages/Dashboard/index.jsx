@@ -751,6 +751,9 @@ export function DashboardPage() {
 
   // 서버에 아직 없는 블록(모달 저장 전의 커스텀 블록)을 구분하는 규약
   const isTempId = (id) => String(id).startsWith("custom-");
+  // 서버에 실재하는 블록만 REST 를 태운다 — custom-(저장 전)·auto-(로컬 교통)는 제외
+  const isServerBlock = (id) =>
+    !isTempId(id) && !String(id).startsWith("auto-");
 
   const handleSaveBlock = async (form) => {
     const targetId = editingBlockId;
@@ -867,8 +870,6 @@ export function DashboardPage() {
           targetId,
         );
 
-        const isServerBlock = (id) =>
-          !isTempId(id) && !String(id).startsWith("auto-");
         const shifted = chains[activeDay].filter(
           (id) =>
             id !== targetId &&
@@ -924,6 +925,38 @@ export function DashboardPage() {
     setItems((prev) => ({ ...prev, [newId]: newBlock }));
     setPool((prev) => [newId, ...prev]);
     setEditingBlockId(newId);
+  };
+
+  // 휴지통 드롭 — 서버 블록은 소프트 삭제(tombstone, DELETE /blocks) 후 로컬에서
+  // 제거한다(4단계). 서버 확인 전에는 지우지 않는다 — 실패 시 원래 위치로 복원하는
+  // 롤백을 관리하는 것보다, 확인까지의 짧은 지연을 감수하는 쪽이 단순하다.
+  // 로컬 전용 블록(auto- 교통)은 요청 없이 바로 제거한다.
+  const handleDeleteBlock = async (id) => {
+    if (isServerBlock(id)) {
+      try {
+        await blockApi.deleteBlock(id);
+      } catch (e) {
+        showToast(
+          e?.message ?? "블록을 삭제하지 못했어요. 잠시 후 다시 시도해주세요.",
+        );
+        return; // 블록을 그대로 둔다 — 다시 드래그하면 재시도
+      }
+    }
+
+    setChains((prev) => {
+      const next = { ...prev };
+      Object.keys(next).forEach((day) => {
+        next[day] = next[day].filter((x) => x !== id);
+      });
+      return next;
+    });
+    setPool((prev) => prev.filter((x) => x !== id));
+    setItems((prev) => {
+      const next = { ...prev };
+      delete next[id];
+      return next;
+    });
+    showToast("블록을 삭제했어요 🗑");
   };
 
   // 저장 전에 모달을 닫으면 임시 블록을 남기지 않는다 (서버에도 아직 없다)
@@ -1201,19 +1234,8 @@ export function DashboardPage() {
     if (!target || !target.region) return;
 
     if (target.region === "trash") {
-      setChains((prev) => {
-        const next = { ...prev };
-        Object.keys(next).forEach((day) => {
-          next[day] = next[day].filter((x) => x !== activeIdLocal);
-        });
-        return next;
-      });
-      setPool((prev) => prev.filter((x) => x !== activeIdLocal));
-      setItems((prev) => {
-        const next = { ...prev };
-        delete next[activeIdLocal];
-        return next;
-      });
+      // async 삭제(서버 왕복 포함)는 별도 함수로 — 드래그 핸들러는 동기로 끝낸다
+      handleDeleteBlock(activeIdLocal);
       return;
     }
 
