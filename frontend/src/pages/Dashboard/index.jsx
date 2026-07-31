@@ -23,7 +23,9 @@ import { generateKeyBetween } from "fractional-indexing";
 import { AppBar } from "../My/shared/ui/AppBar";
 import { useDashboard } from "../../features/dashboard/hooks/useDashboard";
 import { useProjectOps } from "../../features/dashboard/realtime/useProjectOps";
+import { createOpSequencer } from "../../features/dashboard/realtime/opSequencer";
 import * as blockApi from "../../features/dashboard/api/dashboardApi";
+import { getClientId } from "../../global/api/clientId";
 import { useToastStore } from "../../global/stores/toastStore";
 import "./index.css";
 
@@ -109,6 +111,26 @@ const neighborKeysAround = (finalList, pos, itemsMap) => {
  * 편집(3단계)·이동(5단계)·리사이즈가 공유한다 — 로컬만 밀면 새로고침 때
  * 이웃들이 옛 시각으로 되돌아간다(명세 320행: 시각 재계산 저장은 클라이언트 몫).
  */
+/**
+ * orderKey 정렬 위치에 블록을 삽입한 새 배열 (원격 op 적용용).
+ * 로컬 전용 블록(auto- 등, orderKey 없음)은 비교에서 건너뛴다 — 서버 블록들
+ * 사이의 상대 위치만 orderKey 가 정하고, 로컬 블록은 제자리를 유지한다.
+ * 동점은 id 로 판정한다(ERD: ORDER BY order_key, id).
+ */
+const insertByOrderKey = (list, itemsMap, block) => {
+  const without = list.filter((id) => id !== block.id);
+  const at = without.findIndex((id) => {
+    const other = itemsMap[id];
+    if (!isServerBlock(id) || other?.orderKey == null) return false;
+    if (other.orderKey > block.orderKey) return true;
+    return (
+      other.orderKey === block.orderKey && Number(other.id) > Number(block.id)
+    );
+  });
+  without.splice(at === -1 ? without.length : at, 0, block.id);
+  return without;
+};
+
 const persistShiftedTimes = (chainIds, prevItems, nextItems, excludeId) => {
   const shifted = (chainIds ?? []).filter(
     (id) =>
@@ -665,11 +687,19 @@ export function DashboardPage() {
     status,
     error,
     reload,
+    lastSeq,
   } = useDashboard(projectId);
 
-  // 실시간 op 구독 (스파이크 — 수신을 콘솔에만 찍는다. 화면 적용은 다음 단계에서
-  // onOp 콜백으로 붙인다). 탭 2개를 열고 한쪽에서 편집하면 다른 쪽 콘솔에 op 가 보인다.
-  useProjectOps(projectId);
+  // ── 실시간 op 파이프라인: 수신(useProjectOps) → 순서 보장(시퀀서) → 화면 적용 ──
+  // 시퀀서·적용 함수는 아래(상태 선언 이후)에 정의되고, 여기서는 수신만 물린다.
+  const sequencerRef = useRef(null);
+  const applyRemoteOpRef = useRef(() => {});
+  const pendingRemoteOpsRef = useRef([]);
+  const interactingRef = useRef(false);
+
+  useProjectOps(projectId, {
+    onOp: (op) => sequencerRef.current?.push(op),
+  });
 
   const [viewMode, setViewMode] = useState("edit");
   const [activeDay, setActiveDay] = useState("d1");
@@ -1160,12 +1190,172 @@ export function DashboardPage() {
   const activeDragRef = useRef(null);
   const dragRegionRef = useRef(null);
 
-  // 리사이즈 종료(전역 click) 시 최신 items 를 읽기 위한 latest-ref —
-  // 리사이즈 effect 는 items 를 의존성에 두지 않아 클로저가 stale 하다.
+  // 최신 items 를 읽기 위한 latest-ref — 리사이즈 종료 시점과 원격 op 적용이 쓴다.
+  // 원격 적용은 한 tick 에 여러 op 를 연달아 처리할 수 있어(시퀀서 drain), 커밋 전에도
+  // 서로의 결과를 보도록 적용 함수가 이 ref 를 직접 갱신하며 진행한다.
   const itemsRef = useRef(items);
   useEffect(() => {
     itemsRef.current = items;
   });
+
+  // ── 원격 op 적용 ─────────────────────────────────────
+  // 원격 블록을 dayNo·orderKey 가 가리키는 자리로 배치한다 (생성·이동 공용).
+  // 시각(startMins)은 여기서 계산하지 않는다 — 보낸 클라이언트가 position 직후
+  // fields 로 시각을 저장하므로 후속 op 가 바로 따라와 채운다(대개 같은 drain 배치).
+  const placeRemoteBlock = (block) => {
+    const targetDay = block.dayNo == null ? null : `d${block.dayNo}`;
+
+    setPool((prev) => {
+      const without = prev.filter((id) => id !== block.id);
+      return targetDay === null
+        ? insertByOrderKey(without, itemsRef.current, block)
+        : without;
+    });
+    setChains((prev) => {
+      const next = {};
+      let placed = false;
+      for (const [day, chain] of Object.entries(prev)) {
+        const without = chain.filter((id) => id !== block.id);
+        if (day === targetDay) {
+          next[day] = insertByOrderKey(without, itemsRef.current, block);
+          placed = true;
+        } else {
+          next[day] = without;
+        }
+      }
+      if (targetDay !== null && !placed) {
+        // 아직 로컬에 없는 Day(기간 변경 경합) — 칸을 만들어 데이터를 잃지 않는다
+        next[targetDay] = [block.id];
+      }
+      return next;
+    });
+  };
+
+  /**
+   * 시퀀서가 순서를 맞춰 넘겨준 op 를 화면에 반영한다.
+   * 자기 op 는 여기서 걸러진다 — 시퀀서는 커서 전진을 위해 모든 op 를 넘긴다
+   * (자기 op 도 seq 를 소비하므로 걸러서 받으면 갭으로 오인한다).
+   */
+  const applyOpToBoard = (op) => {
+    if (op.clientId === getClientId()) return; // 이미 낙관 반영된 자기 변경
+
+    const payload = op.payload ?? {};
+    switch (op.type) {
+      case "BLOCK_CREATED": {
+        const block = blockApi.toUiBlock(payload.block);
+        itemsRef.current = { ...itemsRef.current, [block.id]: block };
+        setItems((prev) => ({ ...prev, [block.id]: block }));
+        placeRemoteBlock(block);
+        break;
+      }
+      case "BLOCK_FIELD_UPDATED": {
+        const id = payload.blockId;
+        const base = itemsRef.current[id];
+        if (!base) break; // 모르는 블록(이미 삭제 등) — 무시
+        const patch = blockApi.serverFieldsToUiPatch(payload.fields);
+        const updated = { ...base, ...patch };
+        itemsRef.current = { ...itemsRef.current, [id]: updated };
+        setItems((prev) => (prev[id] ? { ...prev, [id]: updated } : prev));
+        break;
+      }
+      case "BLOCK_MOVED": {
+        const base = itemsRef.current[payload.blockId];
+        if (!base) {
+          reload(); // 모르는 블록의 이동 — 로컬이 어긋난 상태라 재시드가 정직하다
+          break;
+        }
+        const moved = {
+          ...base,
+          dayNo: payload.dayNo ?? null,
+          orderKey: payload.orderKey,
+        };
+        itemsRef.current = { ...itemsRef.current, [moved.id]: moved };
+        setItems((prev) => (prev[moved.id] ? { ...prev, [moved.id]: moved } : prev));
+        placeRemoteBlock(moved);
+        break;
+      }
+      case "BLOCK_DELETED": {
+        const id = payload.blockId;
+        const next = { ...itemsRef.current };
+        delete next[id];
+        itemsRef.current = next;
+        setItems((prev) => {
+          const n = { ...prev };
+          delete n[id];
+          return n;
+        });
+        setPool((prev) => prev.filter((x) => x !== id));
+        setChains((prev) => {
+          const n = { ...prev };
+          Object.keys(n).forEach((day) => {
+            n[day] = n[day].filter((x) => x !== id);
+          });
+          return n;
+        });
+        if (editingBlockId === id) {
+          setEditingBlockId(null);
+          showToast("편집 중이던 블록을 다른 멤버가 삭제했어요");
+        }
+        break;
+      }
+      case "TARGET_BUDGET_CHANGED":
+        setTargetBudget(payload.targetBudget ?? 0);
+        break;
+      case "PROJECT_UPDATED":
+        // 이름·기간·movedToPool — Day 탭 수 등 훅 소유 파생에 걸쳐 있어 재시드가 정확하다
+        reload();
+        break;
+      case "PROJECT_DELETED":
+        showToast("이 프로젝트가 삭제됐어요.");
+        navigate(`/groups/${groupId}`, { replace: true });
+        break;
+      default:
+        // PROJECT_STATUS_CHANGED·BUDGET_HEADCOUNT_CHANGED·MEMBER_* —
+        // 표시 UI 가 없어 seq 만 소비한다 (전방 호환: 모르는 타입도 여기로)
+        break;
+    }
+  };
+
+  // 적용 함수는 렌더마다 새로 만들어지므로 latest-ref 로 시퀀서에 노출한다
+  useEffect(() => {
+    applyRemoteOpRef.current = applyOpToBoard;
+  });
+
+  // 시퀀서 수명 — 프로젝트마다 하나. 드래그·리사이즈 중에는 pending 큐로 우회한다.
+  useEffect(() => {
+    if (!Number.isInteger(projectId)) return;
+    const sequencer = createOpSequencer({
+      fetchOpsAfter: (afterSeq) => blockApi.fetchOpsAfter(projectId, afterSeq),
+      apply: (op) => {
+        if (interactingRef.current) pendingRemoteOpsRef.current.push(op);
+        else applyRemoteOpRef.current(op);
+      },
+    });
+    sequencerRef.current = sequencer;
+    return () => {
+      sequencer.dispose();
+      sequencerRef.current = null;
+    };
+  }, [projectId]);
+
+  // 스냅샷 (재)시드마다 커서를 스냅샷의 lastSeq 로 리셋 — 그 이하 op 는 이미
+  // 스냅샷에 반영돼 있고, 그보다 앞서 수신돼 버퍼에 쌓인 op 는 이때 순서대로 적용된다
+  useEffect(() => {
+    if (status !== "loaded") return;
+    sequencerRef.current?.reset(lastSeq);
+  }, [status, serverItems, lastSeq]);
+
+  // 드래그·리사이즈 중에는 원격 적용을 미룬다 — 조작 중 체인이 발밑에서 바뀌면
+  // 드롭 계산이 꼬이고 잡고 있던 블록이 순간이동한다. 끝나는 즉시 밀린 것을 반영한다.
+  useEffect(() => {
+    const interacting = activeId != null || resizingState != null;
+    interactingRef.current = interacting;
+    if (!interacting && pendingRemoteOpsRef.current.length > 0) {
+      const ops = pendingRemoteOpsRef.current;
+      pendingRemoteOpsRef.current = [];
+      ops.forEach((op) => applyRemoteOpRef.current(op));
+    }
+  }, [activeId, resizingState]);
 
   const handleSaveBlock = async (form) => {
     const targetId = editingBlockId;
@@ -1238,16 +1428,16 @@ export function DashboardPage() {
     const changed = {};
     for (const [local, server] of [
       ["name", "name"],
-      ["sub", "subCategory"],
-      ["address", "address"],
       ["detail", "detail"],
       ["dur", "durationMin"],
       ["cost", "budget"],
     ]) {
       if (merged[local] !== base[local]) changed[server] = merged[local];
     }
-    // category 는 보내지 않는다 — 서버 LWW 화이트리스트에 없어 BLOCK400_2 로
-    // 배치 전체가 거부된다(2026-07-31 실측). 기존 블록의 카테고리는 폼에서 잠근다.
+    // category·subCategory·address 는 보내지 않는다 — 서버 LWW 화이트리스트
+    // (LWW_FIELDS: name·budget·durationMin·detail·startTime·endTime·isTimeFixed·
+    // vehicleFlag·transportMeta)에 없어 BLOCK400_2 로 배치 전체가 거부된다.
+    // 셋 다 "생성 시에만" 정하는 값으로 폼에서 잠갔다.
 
     // 소요시간이 바뀌면 종료 시각도 함께 맞춘다 — ERD 불변식:
     // 시각이 둘 다 있으면 end_time − start_time == duration_min

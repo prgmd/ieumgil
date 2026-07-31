@@ -170,18 +170,21 @@ export function BlockEditForm({
           </select>
           {categoryLocked && (
             <p style={{ fontSize: "11px", color: "#8c7b70", margin: "4px 0 0" }}>
-              카테고리는 만들 때만 정할 수 있어요
+              카테고리·소분류·주소는 만들 때만 정할 수 있어요
             </p>
           )}
         </div>
         <div style={styles.col}>
           <label style={styles.label}>소분류</label>
+          {/* 소분류·주소도 카테고리처럼 생성 시에만 — 서버 LWW 화이트리스트에 없어
+              (BLOCK400_2) 기존 블록 수정으로는 저장할 수 없다 */}
           <input
             style={styles.input}
             name="subCategory"
             value={formData.subCategory}
             onChange={handleChange}
             placeholder="예: 회, 산책"
+            disabled={categoryLocked}
           />
         </div>
       </div>
@@ -200,12 +203,15 @@ export function BlockEditForm({
 
       <div style={styles.row}>
         <div style={styles.col}>
-          <label style={styles.label}>주소 (자동 입력 · 수정 가능)</label>
+          <label style={styles.label}>
+            주소 {categoryLocked ? "(생성 시 확정)" : "(자동 입력 · 수정 가능)"}
+          </label>
           <input
             style={styles.input}
             name="address"
             value={formData.address}
             onChange={handleChange}
+            disabled={categoryLocked}
           />
         </div>
       </div>
