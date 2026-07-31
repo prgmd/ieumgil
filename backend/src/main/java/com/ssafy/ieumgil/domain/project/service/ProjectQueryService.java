@@ -7,4 +7,6 @@ import java.util.List;
 public interface ProjectQueryService {
 
     List<ProjectResDTO.Card> getGroupProjects(Long userId, Long groupId);
+
+    ProjectResDTO.Snapshot getSnapshot(Long userId, Long projectId);
 }

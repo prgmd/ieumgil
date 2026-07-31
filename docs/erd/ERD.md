@@ -248,12 +248,14 @@ erDiagram
 >   "depLat": 37.55, "depLng": 126.97,
 >   "arrLat": 35.11, "arrLng": 129.04,
 >   "routeMode": "SUBWAY",
+>   "intervalMin": 13,
 >   "estimated": true,
 >   "fare": 59900,
 >   "fareConfidence": "CONFIRMED"
 > }
 > ```
 > `estimated`(시간 추정)와 `fareConfidence`(요금 신뢰도 `CONFIRMED`/`ESTIMATE`)는 별개 축. 교통 블록의 출발/도착 시각은 `transport_meta`가 아니라 블록의 `start_time`/`end_time`에 저장하고 `is_time_fixed=true`(앵커)로 둔다.
+> `intervalMin`(배차간격, 분)은 `routeMode`가 `BUS`/`SUBWAY`일 때만 있는 값(ODsay `totalIntervalTime`) — 환승 구간 배차간격의 합이라 단일 노선 배차간격이 아니며, WALK/TAXI/CAR에는 없다(`null`).
 > **`field_updated_at` 예시**: `{"budget":"2026-08-01T10:22:31.512Z"}` — `start_time`·`end_time`·`is_time_fixed`도 LWW 대상 필드이며 `jsonb_set`으로 원자적 부분 갱신.
 > **시각 표현 한계(v1 스코프 아웃)**: `start_time`/`end_time`은 날짜 없는 시각이라 익일 도착(심야 이동) 미표현.
 

@@ -6,6 +6,7 @@ import jakarta.persistence.Entity;
 import jakarta.persistence.FetchType;
 import jakarta.persistence.Id;
 import jakarta.persistence.IdClass;
+import jakarta.persistence.Index;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
@@ -31,7 +32,11 @@ import java.time.LocalDateTime;
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 @AllArgsConstructor(access = AccessLevel.PRIVATE)
 @IdClass(GroupMemberId.class)
-@Table(name = "group_member")
+// PK가 (group_id, member_id) 순서라 member_id 단독 조회(내 그룹 목록, 회원 탈퇴 정리)는
+// PK 인덱스를 못 탄다. PostgreSQL은 FK에 인덱스를 자동 생성하지 않으므로 직접 선언한다.
+// (배포 DB는 ddl-auto=none — docker/postgres/migration/001-indexes.sql 수동 반영 필요)
+@Table(name = "group_member",
+        indexes = @Index(name = "ix_group_member_member", columnList = "member_id"))
 public class GroupMember {
 
     /** 그룹이 하드 삭제되면 소속 행도 함께 삭제된다(ERD: ON DELETE CASCADE) */
