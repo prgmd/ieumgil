@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect, useCallback } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { BlockEditForm } from "./components/BlockEditForm";
+import { ChatbotWidget } from "./components/ChatbotWidget";
 import {
   DndContext,
   DragOverlay,
@@ -431,6 +432,10 @@ export function DashboardPage() {
   const [activeId, setActiveId] = useState(null);
   const [resizingState, setResizingState] = useState(null);
   const [dragPreview, setDragPreview] = useState(null);
+  const totalBudget = Object.values(items).reduce(
+    (sum, item) => sum + (item.cost || 0),
+    0,
+  );
 
   const timelineDOMRef = useRef(null);
   const poolDOMRef = useRef(null);
@@ -682,6 +687,31 @@ export function DashboardPage() {
     },
     [chains, items, fetchTransitInfo, dayStart],
   );
+  const handleCreateCustomBlock = () => {
+    // 겹치지 않는 고유 ID 생성 (현재 시간 활용)
+    const newId = `custom-${Date.now()}`;
+
+    // 기본값이 채워진 새 블록 객체
+    const newBlock = {
+      id: newId,
+      cat: "etc", // 기본 카테고리는 '기타'
+      sub: "",
+      name: "새 일정",
+      addr: "",
+      memo: "",
+      dur: 60, // 기본 60분
+      startMins: 540, // 09:00 기본값 (타임라인에 올릴 때 알아서 바뀜)
+      cost: 0,
+      auto: false,
+    };
+
+    // 1. 전체 아이템(items) 목록에 새 블록 추가
+    setItems((prev) => ({ ...prev, [newId]: newBlock }));
+    // 2. 후보 목록(pool)의 제일 앞쪽에 새 블록 ID 추가
+    setPool((prev) => [newId, ...prev]);
+    // 3. 생성과 동시에 정보를 수정할 수 있도록 모달 창 띄우기
+    setEditingBlockId(newId);
+  };
 
   const computeDropTarget = useCallback(
     (active) => {
@@ -1168,9 +1198,44 @@ export function DashboardPage() {
                 ref={setPoolRef}
                 style={{ flex: 1, margin: 0 }}
               >
-                <div className="pool-head">
-                  <b>후보 목록</b> <span className="n">{pool.length}</span>
-                  <span>자유롭게 끌어다 놓고 빼세요</span>
+                {/* 💡 헤더 영역을 Flex로 묶어 양옆으로 배치 */}
+                <div
+                  className="pool-head"
+                  style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "center",
+                  }}
+                >
+                  <div>
+                    <b>후보 목록</b> <span className="n">{pool.length}</span>
+                    <span
+                      style={{
+                        fontSize: "12px",
+                        color: "#888",
+                        marginLeft: "8px",
+                      }}
+                    >
+                      자유롭게 끌어다 놓고 빼세요
+                    </span>
+                  </div>
+                  {/* 💡 커스텀 블록 추가 버튼 */}
+                  <button
+                    onClick={handleCreateCustomBlock}
+                    style={{
+                      backgroundColor: "#7c5443",
+                      color: "#fff",
+                      border: "none",
+                      borderRadius: "8px",
+                      padding: "6px 14px",
+                      fontSize: "13px",
+                      fontWeight: "bold",
+                      cursor: "pointer",
+                      boxShadow: "0 2px 6px rgba(124, 84, 67, 0.2)",
+                    }}
+                  >
+                    + 커스텀 블록 만들기
+                  </button>
                 </div>
                 <div
                   className="pool"
@@ -1277,7 +1342,8 @@ export function DashboardPage() {
           <div className="panel">
             <h4>예산</h4>
             <div className="bud">
-              <span>총</span> <span className="t">734,000원</span>
+              <span>총</span>{" "}
+              <span className="t">{totalBudget.toLocaleString()}원</span>
             </div>
           </div>
           <div className="panel">
@@ -1320,6 +1386,7 @@ export function DashboardPage() {
           />
         </div>
       )}
+      <ChatbotWidget />
     </>
   );
 }
