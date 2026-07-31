@@ -5,6 +5,10 @@ import com.ssafy.ieumgil.domain.chatbot.dto.ChatbotResDTO;
 import com.ssafy.ieumgil.domain.chatbot.exception.ChatbotException;
 import com.ssafy.ieumgil.domain.chatbot.repository.ChatHistoryStore;
 import com.ssafy.ieumgil.domain.chatbot.repository.ChatTurn;
+import com.ssafy.ieumgil.domain.chatbot.tool.FestivalRecommendationTool;
+import com.ssafy.ieumgil.domain.festival.service.FestivalQueryService;
+import com.ssafy.ieumgil.domain.project.entity.Project;
+import com.ssafy.ieumgil.domain.project.repository.ProjectRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -16,7 +20,9 @@ import org.springframework.ai.chat.model.ChatResponse;
 import org.springframework.ai.chat.model.Generation;
 import org.springframework.ai.chat.prompt.Prompt;
 
+import java.time.LocalDate;
 import java.util.List;
+import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -34,16 +40,25 @@ class ChatbotCommandServiceImplTest {
     @Mock
     private ChatHistoryStore chatHistoryStore;
 
+    @Mock
+    private ProjectRepository projectRepository;
+
+    @Mock
+    private FestivalQueryService festivalQueryService;
+
     private ChatbotCommandServiceImpl chatbotCommandService;
 
     @BeforeEach
     void setUp() {
-        chatbotCommandService = new ChatbotCommandServiceImpl(chatModel, chatHistoryStore);
+        chatbotCommandService = new ChatbotCommandServiceImpl(
+                chatModel, chatHistoryStore, projectRepository, festivalQueryService
+        );
     }
 
     @Test
     void firstMessageWithNoHistoryReturnsGmsReply() {
         when(chatHistoryStore.loadHistory(1L, 1L)).thenReturn(List.of());
+        when(projectRepository.findByIdAndDeletedAtIsNull(1L)).thenReturn(Optional.empty());
         when(chatModel.call(any(Prompt.class))).thenReturn(canned("안녕하세요! 여행 계획 도와드릴게요."));
 
         ChatbotResDTO.MessageResult result = chatbotCommandService.sendMessage(
@@ -57,6 +72,7 @@ class ChatbotCommandServiceImplTest {
     void existingHistoryIsAppendedAfterSuccess() {
         List<ChatTurn> existing = List.of(new ChatTurn(ChatTurn.ROLE_USER, "이전 질문"));
         when(chatHistoryStore.loadHistory(1L, 1L)).thenReturn(existing);
+        when(projectRepository.findByIdAndDeletedAtIsNull(1L)).thenReturn(Optional.empty());
         when(chatModel.call(any(Prompt.class))).thenReturn(canned("이어지는 답변"));
 
         chatbotCommandService.sendMessage(1L, 1L, new ChatbotReqDTO.SendMessage("다음 질문"));
@@ -71,10 +87,68 @@ class ChatbotCommandServiceImplTest {
     @Test
     void gmsFailureThrowsChatbotException() {
         when(chatHistoryStore.loadHistory(1L, 1L)).thenReturn(List.of());
+        when(projectRepository.findByIdAndDeletedAtIsNull(1L)).thenReturn(Optional.empty());
         when(chatModel.call(any(Prompt.class))).thenThrow(new RuntimeException("boom"));
 
         assertThatThrownBy(() -> chatbotCommandService.sendMessage(1L, 1L, new ChatbotReqDTO.SendMessage("안녕")))
                 .isInstanceOf(ChatbotException.class);
+    }
+
+    @Test
+    void resolvesFestivalToolWhenProjectHasDestinationAndDates() {
+        Project project = Project.builder()
+                .destination("제주도")
+                .startDate(LocalDate.of(2026, 8, 1))
+                .endDate(LocalDate.of(2026, 8, 3))
+                .build();
+        when(projectRepository.findByIdAndDeletedAtIsNull(1L)).thenReturn(Optional.of(project));
+
+        Optional<FestivalRecommendationTool> tool = chatbotCommandService.resolveFestivalTool(1L);
+
+        assertThat(tool).isPresent();
+    }
+
+    @Test
+    void skipsFestivalToolWhenDestinationBlank() {
+        Project project = Project.builder()
+                .destination(null)
+                .startDate(LocalDate.of(2026, 8, 1))
+                .endDate(LocalDate.of(2026, 8, 3))
+                .build();
+        when(projectRepository.findByIdAndDeletedAtIsNull(1L)).thenReturn(Optional.of(project));
+
+        assertThat(chatbotCommandService.resolveFestivalTool(1L)).isEmpty();
+    }
+
+    @Test
+    void skipsFestivalToolWhenDatesMissing() {
+        Project project = Project.builder()
+                .destination("제주도")
+                .startDate(null)
+                .endDate(null)
+                .build();
+        when(projectRepository.findByIdAndDeletedAtIsNull(1L)).thenReturn(Optional.of(project));
+
+        assertThat(chatbotCommandService.resolveFestivalTool(1L)).isEmpty();
+    }
+
+    @Test
+    void skipsFestivalToolWhenDestinationUnmatched() {
+        Project project = Project.builder()
+                .destination("도쿄")
+                .startDate(LocalDate.of(2026, 8, 1))
+                .endDate(LocalDate.of(2026, 8, 3))
+                .build();
+        when(projectRepository.findByIdAndDeletedAtIsNull(1L)).thenReturn(Optional.of(project));
+
+        assertThat(chatbotCommandService.resolveFestivalTool(1L)).isEmpty();
+    }
+
+    @Test
+    void skipsFestivalToolWhenProjectNotFound() {
+        when(projectRepository.findByIdAndDeletedAtIsNull(1L)).thenReturn(Optional.empty());
+
+        assertThat(chatbotCommandService.resolveFestivalTool(1L)).isEmpty();
     }
 
     private ChatResponse canned(String text) {
