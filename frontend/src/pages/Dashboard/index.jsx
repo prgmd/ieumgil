@@ -883,7 +883,7 @@ export function DashboardPage() {
     clearTimeout(targetBudgetTimerRef.current);
     targetBudgetTimerRef.current = setTimeout(() => {
       blockApi
-        .updateProject(projectId, { targetBudget: next })
+        .updateTargetBudget(projectId, next)
         .catch(rollbackToServer);
     }, 600);
   };

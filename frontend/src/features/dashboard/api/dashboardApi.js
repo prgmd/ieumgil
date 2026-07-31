@@ -207,15 +207,15 @@ export async function deleteBlock(blockId) {
 // ── 프로젝트 속성 ────────────────────────────────────
 
 /**
- * 프로젝트 속성 부분 수정 — 보낸 필드만 바뀐다 (name·startDate·endDate,
- * 그리고 백엔드 합의(2026-07-31)로 targetBudget).
- * 예: updateProject(12, { targetBudget: 500000 })
+ * 목표 예산(전체 총액) 변경 — 전용 엔드포인트(PATCH /projects/{id}/budget).
+ * null 을 보내면 예산 미설정으로 초기화된다.
+ * @returns {Promise<{targetBudget: number}>}
  */
-export async function updateProject(projectId, fields) {
+export async function updateTargetBudget(projectId, targetBudget) {
   try {
     const { data } = await axiosInstance.patch(
-      `/projects/${projectId}`,
-      fields,
+      `/projects/${projectId}/budget`,
+      { targetBudget },
     );
     return unwrap(data);
   } catch (error) {
