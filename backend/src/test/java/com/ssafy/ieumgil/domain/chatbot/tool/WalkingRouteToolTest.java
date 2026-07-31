@@ -11,7 +11,10 @@ import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyDouble;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -29,8 +32,8 @@ class WalkingRouteToolTest {
 
     @org.junit.jupiter.api.BeforeEach
     void setUp() {
-        start = PlaceResDTO.Place.builder().placeId("1").name("숙소").address("addr1").lat(33.1).lng(126.1).category("숙박").build();
-        end = PlaceResDTO.Place.builder().placeId("2").name("카페").address("addr2").lat(33.2).lng(126.2).category("카페").build();
+        start = PlaceResDTO.Place.builder().placeId("1").name("제주 게스트하우스 A").address("addr1").lat(33.1).lng(126.1).category("숙박").build();
+        end = PlaceResDTO.Place.builder().placeId("2").name("제주 원두카페").address("addr2").lat(33.2).lng(126.2).category("카페").build();
         tool = new WalkingRouteTool("제주도", placeQueryService, resolver);
     }
 
@@ -44,8 +47,8 @@ class WalkingRouteToolTest {
         WalkingRouteResult result = tool.getWalkingRoute("숙소", "카페");
 
         assertThat(result.found()).isTrue();
-        assertThat(result.startPlaceName()).isEqualTo("숙소");
-        assertThat(result.endPlaceName()).isEqualTo("카페");
+        assertThat(result.startPlaceName()).isEqualTo("제주 게스트하우스 A");
+        assertThat(result.endPlaceName()).isEqualTo("제주 원두카페");
         assertThat(result.distanceM()).isEqualTo(850);
         assertThat(result.durationMin()).isEqualTo(12);
     }
@@ -58,6 +61,7 @@ class WalkingRouteToolTest {
 
         assertThat(result.found()).isFalse();
         assertThat(result.distanceM()).isNull();
+        verify(placeQueryService, never()).getWalkingRoute(anyDouble(), anyDouble(), anyDouble(), anyDouble());
     }
 
     @Test
@@ -68,6 +72,7 @@ class WalkingRouteToolTest {
         WalkingRouteResult result = tool.getWalkingRoute("숙소", "존재하지않는곳");
 
         assertThat(result.found()).isFalse();
+        verify(placeQueryService, never()).getWalkingRoute(anyDouble(), anyDouble(), anyDouble(), anyDouble());
     }
 
     @Test
