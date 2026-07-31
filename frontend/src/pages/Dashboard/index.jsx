@@ -1233,15 +1233,26 @@ export function DashboardPage() {
 
   /**
    * 시퀀서가 순서를 맞춰 넘겨준 op 를 화면에 반영한다.
-   * 자기 op 는 여기서 걸러진다 — 시퀀서는 커서 전진을 위해 모든 op 를 넘긴다
-   * (자기 op 도 seq 를 소비하므로 걸러서 받으면 갭으로 오인한다).
+   * 시퀀서는 커서 전진을 위해 자기 op 까지 전부 넘긴다(자기 op 도 seq 를 소비하므로
+   * 걸러서 받으면 갭으로 오인한다). 자기 op 를 적용할지는 op 종류별로 여기서 정한다 —
+   * 명세(§X-Client-Id)는 낙관 중복 적용을 막으려 일괄 스킵을 권하지만, 그러면
+   * 동시 편집에서 마지막 편집자의 화면만 남의 값으로 굳는다. 아래 own 주석 참조.
    */
   const applyOpToBoard = (op) => {
-    if (op.clientId === getClientId()) return; // 이미 낙관 반영된 자기 변경
+    // 자기 op 를 통째로 버리면 동시 편집에서 "마지막에 놓은 사람"이 진다 —
+    // 남의 op 를 내 낙관 상태 위에 덮은 뒤 내 echo 를 스킵하면 남의 값이 최종으로
+    // 남는다(서버 DB 는 마지막 쓰기인 내 값인데 화면만 어긋난다).
+    // 시퀀서가 seq 순서로 넘겨주고 seq 순서 = 서버가 쓴 순서이므로, 마지막 쓰기가
+    // 이기는 op(이동·필드 갱신)는 자기 것도 그대로 적용해 제 위치를 재확정한다.
+    // 재적용이 해로운 op 만 아래에서 개별로 스킵한다.
+    const own = op.clientId === getClientId();
 
     const payload = op.payload ?? {};
     switch (op.type) {
       case "BLOCK_CREATED": {
+        // 자기 생성만은 스킵한다 — POST 응답이 임시 id 를 서버 id 로 바꾸는
+        // (adoptServerId) 사이에 echo 가 끼어들면 같은 블록이 두 벌 들어간다.
+        if (own) break;
         const block = blockApi.toUiBlock(payload.block);
         itemsRef.current = { ...itemsRef.current, [block.id]: block };
         setItems((prev) => ({ ...prev, [block.id]: block }));
@@ -1249,6 +1260,10 @@ export function DashboardPage() {
         break;
       }
       case "BLOCK_FIELD_UPDATED": {
+        // 자기 op 도 적용한다 — 서버가 스테일 필드를 payload 에서 빼고 보내므로
+        // (명세: "적용된 필드만 포함") seq 순서대로 덮으면 서버 최종값과 같아진다.
+        // 블록의 화면상 y 위치는 startMins 라서, 이게 빠지면 이동을 재확정해도
+        // 시각은 남의 값 그대로 남는다.
         const id = payload.blockId;
         const base = itemsRef.current[id];
         if (!base) break; // 모르는 블록(이미 삭제 등) — 무시
@@ -1259,8 +1274,11 @@ export function DashboardPage() {
         break;
       }
       case "BLOCK_MOVED": {
+        // 자기 op 도 적용한다 — 이동은 마지막 쓰기가 이긴다. 남이 먼저 옮긴 op 에
+        // 덮인 자리를 자기 echo 가 제 위치로 되돌려 놓는 것이 이 재적용의 목적이다.
         const base = itemsRef.current[payload.blockId];
         if (!base) {
+          if (own) break; // 내가 옮긴 뒤 지운 블록 — 재시드할 이유가 없다
           reload(); // 모르는 블록의 이동 — 로컬이 어긋난 상태라 재시드가 정직하다
           break;
         }
@@ -1275,6 +1293,9 @@ export function DashboardPage() {
         break;
       }
       case "BLOCK_DELETED": {
+        // 자기 삭제는 이미 로컬에서 제거됐다 — 재적용하면 아래 "다른 멤버가
+        // 삭제했어요" 토스트가 자기 삭제에 뜬다.
+        if (own) break;
         const id = payload.blockId;
         const next = { ...itemsRef.current };
         delete next[id];
@@ -1299,9 +1320,11 @@ export function DashboardPage() {
         break;
       }
       case "TARGET_BUDGET_CHANGED":
+        if (own) break; // 디바운스 중인 로컬 ± 입력과 싸운다
         setTargetBudget(payload.targetBudget ?? 0);
         break;
       case "PROJECT_UPDATED":
+        if (own) break; // 자기 변경으로 보드 전체를 재시드할 이유가 없다
         // 이름·기간·movedToPool — Day 탭 수 등 훅 소유 파생에 걸쳐 있어 재시드가 정확하다
         reload();
         break;
