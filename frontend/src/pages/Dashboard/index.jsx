@@ -61,10 +61,19 @@ const dayDateLabel = (startDate, dayIdx) => {
 };
 
 // ── 블록 id 규약 ─────────────────────────────────────
-// 서버에 아직 없는 블록(모달 저장 전의 커스텀 블록)을 구분하는 규약
-const isTempId = (id) => String(id).startsWith("custom-");
-// 서버에 실재하는 블록만 REST 를 태운다 — custom-(저장 전)·auto-(로컬 교통)는 제외
+// 서버에 아직 없는 블록을 구분하는 규약 — custom-(모달 저장 전), search-(생성 요청 중)
+const isTempId = (id) =>
+  String(id).startsWith("custom-") || String(id).startsWith("search-");
+// 서버에 실재하는 블록만 REST 를 태운다 — 임시 id·auto-(로컬 교통)는 제외
 const isServerBlock = (id) => !isTempId(id) && !String(id).startsWith("auto-");
+
+// 카카오 category_group_code → 화면 cat. 음식점(FD6)·카페(CE7)는 food,
+// 숙박(AD5)은 stay, 그 외 장소는 spot 으로 본다.
+const catFromKakaoGroup = (code) => {
+  if (code === "FD6" || code === "CE7") return "food";
+  if (code === "AD5") return "stay";
+  return "spot";
+};
 
 // "d3" → 3 (서버 dayNo)
 const dayNoOf = (dayKey) => Number(String(dayKey).replace("d", ""));
@@ -119,14 +128,6 @@ const persistShiftedTimes = (chainIds, prevItems, nextItems, excludeId) => {
   );
 };
 
-const restrictTimelineX = ({ transform, active, over }) => {
-  if (active?.data?.current?.from === "timeline") {
-    if (over?.id !== "poolArea" && over?.id !== "trashArea")
-      return { ...transform, x: 0 };
-  }
-  return transform;
-};
-
 const resolveOverlaps = (currentItems, dayChain, dayStartMins, fixedId) => {
   let newItems = { ...currentItems };
   const others = dayChain.filter((id) => id !== fixedId);
@@ -162,16 +163,7 @@ function DayTab({ label, count, isActive, onClick }) {
   );
 }
 
-function CardBody({
-  id,
-  item,
-  mode,
-  startMins,
-  endMins,
-  isThisResizing,
-  onEdge,
-  onEditBlock,
-}) {
+function CardBody({ item, mode, startMins, endMins, isThisResizing, onEdge }) {
   const catStyle = catOf(item);
 
   if (mode !== "timeline") {
@@ -222,7 +214,7 @@ function CardBody({
           <span className="nm" style={{ fontWeight: "bold", color: "#333" }}>
             {item?.name}
           </span>{" "}
-          <span className="nm-sub">{item?.memo}</span>
+          <span className="nm-sub">{item?.detail}</span>
         </span>
         <span className="time">
           {fmtTime(startMins)} – {fmtTime(endMins)}
@@ -698,38 +690,45 @@ export function DashboardPage() {
   const searchListRef = useRef(null);
   const infoWindowRef = useRef(null);
 
-  useEffect(() => {
-    // 지도를 실제로 화면에 그리는 함수
-    const initMap = () => {
-      window.kakao.maps.load(() => {
-        const container = document.getElementById("kakao-map-container");
-        if (container) {
-          const options = {
-            center: new window.kakao.maps.LatLng(33.450701, 126.570667),
-            level: 7,
-          };
-          const newMap = new window.kakao.maps.Map(container, options);
-          setMap(newMap);
-        }
-      });
-    };
-
-    // 1. 이미 스크립트가 있다면 바로 지도 그리기 (중복 방지)
-    if (document.getElementById("kakao-map-script") && window.kakao) {
-      initMap();
+  // 지도 초기화 — 컨테이너 div 의 ref callback 으로 한다.
+  //
+  // "마운트 시 1회 effect + getElementById" 방식은 레이스가 있었다: 스냅샷 로딩
+  // 가드가 null 을 반환하는 동안에는 컨테이너가 DOM 에 없어서, SDK 가 이미 로드된
+  // 재진입(그룹 페이지에서 되돌아오기 등)에서는 initMap 이 빈손으로 끝나고 지도가
+  // 영영 회색으로 남았다. ref callback 은 "div 가 실제로 마운트된 순간"에 불리므로
+  // 레이스가 없고, 읽기 모드 전환으로 div 가 재마운트될 때도 다시 바인딩된다.
+  const initMapOnContainer = useCallback((container) => {
+    if (!container) {
+      // 언마운트(읽기 모드 전환 등) — 카카오 지도는 destroy API 가 없어
+      // 참조만 끊는다. 다음 마운트 때 새 인스턴스로 바인딩된다.
+      setMap(null);
       return;
     }
 
-    // 2. 스크립트가 없다면 새로 만들어서 붙이기
+    const bind = () => {
+      window.kakao.maps.load(() => {
+        const newMap = new window.kakao.maps.Map(container, {
+          center: new window.kakao.maps.LatLng(33.450701, 126.570667),
+          level: 7,
+        });
+        setMap(newMap);
+      });
+    };
+
+    const existing = document.getElementById("kakao-map-script");
+    if (existing) {
+      // 스크립트 태그는 있는데 아직 로딩 중일 수 있다 — 그때는 load 를 기다린다
+      if (window.kakao?.maps) bind();
+      else existing.addEventListener("load", bind, { once: true });
+      return;
+    }
+
     const script = document.createElement("script");
     script.id = "kakao-map-script";
     // 💡 autoload=false 파라미터가 반드시 있어야 리액트와 충돌하지 않습니다!
     script.src = `https://dapi.kakao.com/v2/maps/sdk.js?appkey=71b94eabee0913242230da390f4d20f2&autoload=false&libraries=services`;
     script.async = true;
-
-    // 3. 스크립트 로딩이 끝나면 지도 그리기 함수 실행
-    script.onload = initMap;
-
+    script.onload = bind;
     document.head.appendChild(script);
   }, []);
 
@@ -911,6 +910,26 @@ export function DashboardPage() {
     },
     [showToast, reload],
   );
+
+  // 임시 id 로 만든 로컬 블록을 서버 blockId 로 교체한다 (items + pool + chains).
+  // 생성 요청이 도는 사이 사용자가 블록을 지웠으면(items 에 없음) 조용히 무시한다.
+  const adoptServerId = useCallback((tempId, blockId, extra) => {
+    setItems((prev) => {
+      if (!prev[tempId]) return prev;
+      const next = { ...prev };
+      next[blockId] = { ...next[tempId], ...extra, id: blockId };
+      delete next[tempId];
+      return next;
+    });
+    setPool((prev) => prev.map((id) => (id === tempId ? blockId : id)));
+    setChains((prev) => {
+      const next = { ...prev };
+      for (const day of Object.keys(next)) {
+        next[day] = next[day].map((id) => (id === tempId ? blockId : id));
+      }
+      return next;
+    });
+  }, []);
 
   const regenerateAutoTransport = useCallback(
     async (dayKey) => {
@@ -1602,6 +1621,10 @@ export function DashboardPage() {
         return { region: "pool", insertIndex };
       }
       if (isOverTimeline) {
+        // 검색 결과는 타임라인에 직접 놓을 수 없다 — 후보(POOL)에 먼저 담는 흐름만
+        // 허용한다. 여기서 끊으면 드롭뿐 아니라 미리보기·하이라이트도 함께 꺼진다.
+        if (active.data?.current?.from === "search") return { region: null };
+
         const relativeY =
           topY - tlRect.top + (timelineDOMRef.current?.scrollTop || 0);
         const calcMins =
@@ -1619,9 +1642,14 @@ export function DashboardPage() {
     [pool, chains, activeDay, items, dayStart],
   );
 
+  // 렌더에서 쓰는 드래그 출처 정보({ from, place })는 state 로 둔다 —
+  // ref(activeDragRef)는 스크롤 핸들러용이고 렌더 중에 읽으면 안 된다(react-hooks/refs).
+  const [activeDragMeta, setActiveDragMeta] = useState(null);
+
   const handleDragStart = (event) => {
     if (resizingState) return;
     setActiveId(event.active.id);
+    setActiveDragMeta(event.active.data?.current ?? null);
     activeDragRef.current = event.active;
     setDragPreview(computeDropTarget(event.active));
   };
@@ -1631,6 +1659,7 @@ export function DashboardPage() {
   };
   const handleDragCancel = () => {
     setActiveId(null);
+    setActiveDragMeta(null);
     activeDragRef.current = null;
     setDragPreview(null);
   };
@@ -1643,57 +1672,70 @@ export function DashboardPage() {
     const target = computeDropTarget(active);
 
     setActiveId(null);
+    setActiveDragMeta(null);
     activeDragRef.current = null;
     setDragPreview(null);
 
     if (!target || !target.region) return;
 
-    // 💡 1. 검색 결과 항목을 드래그해서 놓았을 때의 처리
+    // 💡 1. 검색 결과 항목을 드래그해서 놓았을 때의 처리 — 드롭 = 블록 생성(POST).
+    // 타임라인 직행은 computeDropTarget 이 region: null 로 끊는다 — 검색 블록은
+    // 후보(POOL)에 먼저 담는 흐름만 허용한다.
     if (isFromSearch) {
-      if (target.region === "trash") return; // 휴지통에 놓으면 그냥 무시
+      if (target.region !== "pool") return;
 
       const place = active.data.current.place;
       const newId = `search-${place.id}-${Date.now()}`;
 
-      // 검색 데이터를 우리 앱의 블록 데이터 구조로 변환
+      // 검색 데이터를 우리 앱의 블록 데이터 구조로 변환.
+      // 카카오 응답은 y=위도, x=경도(문자열) — 좌표·placeId 를 버리면 장소성
+      // 블록의 서버 검증(BLOCK400)에 걸리고 지도 핀도 찍을 수 없다.
       const newBlock = {
         id: newId,
-        cat: "spot",
+        cat: catFromKakaoGroup(place.category_group_code),
         sub: place.category_group_name || "검색된 장소",
         name: place.place_name,
-        addr: place.road_address_name || place.address_name,
-        memo: place.phone || "",
+        address: place.road_address_name || place.address_name,
+        detail: place.phone || "",
         dur: 60, // 기본 소요시간 1시간
-        startMins: target.region === "timeline" ? target.dropMins : 540,
+        startMins: null, // 후보(POOL) 블록은 시각 없는 느슨한 블록
+        endMins: null,
         cost: 0,
+        lat: Number(place.y),
+        lng: Number(place.x),
+        placeId: String(place.id),
+        source: "KAKAO",
         auto: false,
       };
 
-      if (target.region === "pool") {
-        setItems((prev) => ({ ...prev, [newId]: newBlock }));
-        setPool((prev) => {
-          const next = [...prev];
-          next.splice(
-            Math.max(0, Math.min(target.insertIndex, next.length)),
-            0,
-            newId,
-          );
-          return next;
-        });
-      } else if (target.region === "timeline") {
-        setItems((prevItems) => {
-          let updatedItems = { ...prevItems, [newId]: newBlock };
-          let currentDayList = [...(chains[activeDay] || []), newId];
-          const { newItems, newChain } = resolveOverlaps(
-            updatedItems,
-            currentDayList,
-            dayStart[activeDay],
-            newId,
-          );
-          setChains((prevChains) => ({ ...prevChains, [activeDay]: newChain }));
-          return newItems;
-        });
-      }
+      const insertAt = Math.max(0, Math.min(target.insertIndex, pool.length));
+      const nextPool = [...pool];
+      nextPool.splice(insertAt, 0, newId);
+
+      // 낙관 적용
+      setItems((prev) => ({ ...prev, [newId]: newBlock }));
+      setPool(nextPool);
+
+      (async () => {
+        try {
+          const [before, after] = neighborKeysAround(nextPool, insertAt, items);
+          const orderKey = generateKeyBetween(before, after);
+          const created = await blockApi.createBlock(projectId, {
+            ...newBlock,
+            dayNo: null,
+            orderKey,
+          });
+          // 전화번호(detail)는 생성 바디에 없다(명세) — 생성 직후 별도 저장
+          if (newBlock.detail) {
+            await blockApi.updateBlockFields(created.blockId, {
+              detail: newBlock.detail,
+            });
+          }
+          adoptServerId(newId, created.blockId, { dayNo: null, orderKey });
+        } catch (e) {
+          rollbackToServer(e);
+        }
+      })();
       return;
     }
 
@@ -1846,14 +1888,14 @@ export function DashboardPage() {
   // 💡 드래그 중인 임시 아이템 정의 (검색 패널에서 드래그할 경우 임시 객체를 만들어 보여줌)
   let draggedItem = null;
   if (activeId) {
-    if (activeDragRef.current?.data?.current?.from === "search") {
-      const place = activeDragRef.current.data.current.place;
+    if (activeDragMeta?.from === "search") {
+      const place = activeDragMeta.place;
       draggedItem = {
         id: activeId,
-        cat: "spot",
+        cat: catFromKakaoGroup(place.category_group_code),
         name: place.place_name,
         sub: place.category_group_name,
-        addr: place.road_address_name || place.address_name,
+        address: place.road_address_name || place.address_name,
         dur: 60,
         cost: 0,
       };
@@ -1863,8 +1905,7 @@ export function DashboardPage() {
   }
 
   const isDraggingFromPool = activeId ? pool.includes(activeId) : false;
-  const isDraggingFromSearch =
-    activeDragRef.current?.data?.current?.from === "search";
+  const isDraggingFromSearch = activeDragMeta?.from === "search";
 
   let displayItems = items;
   let displayChain = chains[activeDay] || [];
@@ -2559,6 +2600,7 @@ export function DashboardPage() {
                 </h4>
                 <div
                   id="kakao-map-container"
+                  ref={initMapOnContainer}
                   style={{
                     height: "220px",
                     backgroundColor: "#e0e0e0",
