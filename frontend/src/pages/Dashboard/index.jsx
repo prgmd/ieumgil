@@ -705,9 +705,27 @@ export function DashboardPage() {
     return { mode: "이동", dur: 20, cost: 0 };
   }, []);
 
+  // 저장 실패 시 롤백 — "어디서 왔는지"를 복원하는 대신 서버 진실로 보드를
+  // 다시 시드한다. 5.5단계 이후엔 교통 블록까지 전부 서버에 있으므로
+  // reload 로 잃는 것이 없다.
+  const rollbackToServer = useCallback(
+    (e) => {
+      showToast(
+        e?.message ?? "변경을 저장하지 못했어요. 서버 상태로 되돌립니다.",
+      );
+      reload();
+    },
+    [showToast, reload],
+  );
+
   const regenerateAutoTransport = useCallback(
     async (dayKey) => {
-      const realIds = (chains[dayKey] || []).filter((id) => !items[id]?.auto);
+      const chain = chains[dayKey] || [];
+      const realIds = chain.filter((id) => !items[id]?.auto);
+      // 재생성 = 이 Day 의 기존 자동 생성분을 지우고 새로 만든다.
+      // 삭제 대상은 체인 소속으로 한정한다 — 팀원이 직접 만든 교통 블록(auto 아님)은
+      // 건드리지 않는다(그룹 자산 보호).
+      const oldAutoIds = chain.filter((id) => items[id]?.auto);
       if (realIds.length < 2) return;
 
       setIsGeneratingTransport(true);
@@ -718,26 +736,25 @@ export function DashboardPage() {
             items[realIds[i]],
             items[realIds[i + 1]],
           );
-          segments.push({ afterId: realIds[i], index: i, info });
+          segments.push(info);
         }
 
         let newItems = { ...items };
-        Object.keys(newItems).forEach((id) => {
-          if (newItems[id]?.auto && newItems[id]?.autoDay === dayKey)
-            delete newItems[id];
-        });
+        oldAutoIds.forEach((id) => delete newItems[id]);
 
         const rebuilt = [];
+        const createdLocalIds = [];
         realIds.forEach((id, i) => {
           rebuilt.push(id);
           if (i < realIds.length - 1) {
-            const info = segments[i].info;
+            const info = segments[i];
             const newId = `auto-${dayKey}-${id}-${i}`;
             newItems[newId] = {
+              id: newId,
               cat: "trans",
               sub: info.mode,
               name: `${newItems[id]?.name || ""} 다음 이동`,
-              addr: "",
+              address: "",
               dur: info.dur,
               cost: info.cost,
               auto: true,
@@ -745,6 +762,7 @@ export function DashboardPage() {
               startMins: newItems[id].startMins + newItems[id].dur,
             };
             rebuilt.push(newId);
+            createdLocalIds.push(newId);
           }
         });
 
@@ -754,19 +772,83 @@ export function DashboardPage() {
           dayStart[dayKey],
           null,
         );
+
+        // 낙관 적용
         setItems(resolvedItems);
         setChains((prev) => ({ ...prev, [dayKey]: newChain }));
+
+        // ── 서버 반영 (5.5단계): 기존 생성분 삭제 → 밀린 실블록 시각 저장 →
+        //    새 교통 블록 생성 → 로컬 임시 id 를 서버 blockId 로 교체 ──
+        try {
+          await Promise.all(
+            oldAutoIds
+              .filter(isServerBlock)
+              .map((id) => blockApi.deleteBlock(id)),
+          );
+          await persistShiftedTimes(newChain, items, resolvedItems, null);
+
+          const idMap = {};
+          for (const localId of createdLocalIds) {
+            const b = resolvedItems[localId];
+            const pos = newChain.indexOf(localId);
+            // 각 교통 블록의 경계는 양옆 실블록 — 아직 로컬인 다른 교통 블록은
+            // neighborKeysAround 가 건너뛴다
+            const [before, after] = neighborKeysAround(
+              newChain,
+              pos,
+              resolvedItems,
+            );
+            const orderKey = generateKeyBetween(before, after);
+            const created = await blockApi.createBlock(projectId, {
+              ...b,
+              endMins: b.startMins + b.dur,
+              dayNo: dayNoOf(dayKey),
+              orderKey,
+              transportMeta: { generated: true, mode: b.sub },
+            });
+            idMap[localId] = { blockId: created.blockId, orderKey };
+          }
+
+          setItems((prev) => {
+            const next = { ...prev };
+            for (const [localId, mapped] of Object.entries(idMap)) {
+              if (!next[localId]) continue;
+              next[mapped.blockId] = {
+                ...next[localId],
+                id: mapped.blockId,
+                dayNo: dayNoOf(dayKey),
+                orderKey: mapped.orderKey,
+                transportMeta: { generated: true, mode: next[localId].sub },
+              };
+              delete next[localId];
+            }
+            return next;
+          });
+          setChains((prev) => ({
+            ...prev,
+            [dayKey]: (prev[dayKey] || []).map(
+              (id) => idMap[id]?.blockId ?? id,
+            ),
+          }));
+        } catch (e) {
+          rollbackToServer(e);
+        }
       } finally {
         setIsGeneratingTransport(false);
       }
     },
-    [chains, items, fetchTransitInfo, dayStart],
+    [chains, items, fetchTransitInfo, dayStart, projectId, rollbackToServer],
   );
 
   // 💡 특정 블록 2개 사이에만 교통수단 단일 추가하는 로직
   const handleAddSingleTransport = useCallback(
     async (dayKey, currentId, nextId) => {
       if (isGeneratingTransport) return;
+
+      const currentChain = [...(chains[dayKey] || [])];
+      const insertIdx = currentChain.indexOf(currentId);
+      if (insertIdx === -1) return; // 체인에 없는 블록 뒤에는 만들 수 없다
+
       setIsGeneratingTransport(true);
       try {
         const info = await fetchTransitInfo(items[currentId], items[nextId]);
@@ -774,22 +856,18 @@ export function DashboardPage() {
 
         let newItems = { ...items };
         newItems[newId] = {
+          id: newId,
           cat: "trans",
           sub: info.mode,
           name: `${items[currentId]?.name || "이전 장소"} 다음 이동`,
-          addr: "",
+          address: "",
           dur: info.dur,
           cost: info.cost,
           auto: true,
           autoDay: dayKey,
           startMins: items[currentId].startMins + items[currentId].dur,
         };
-
-        let currentChain = [...(chains[dayKey] || [])];
-        const insertIdx = currentChain.indexOf(currentId);
-        if (insertIdx !== -1) {
-          currentChain.splice(insertIdx + 1, 0, newId);
-        }
+        currentChain.splice(insertIdx + 1, 0, newId);
 
         const { newItems: resolvedItems, newChain } = resolveOverlaps(
           newItems,
@@ -798,13 +876,65 @@ export function DashboardPage() {
           null,
         );
 
+        // 낙관 적용
         setItems(resolvedItems);
         setChains((prev) => ({ ...prev, [dayKey]: newChain }));
+
+        // ── 서버 반영 (5.5단계): 밀린 이웃 시각 저장 → 생성 → id 교체 ──
+        try {
+          await persistShiftedTimes(newChain, items, resolvedItems, null);
+
+          const b = resolvedItems[newId];
+          const pos = newChain.indexOf(newId);
+          const [before, after] = neighborKeysAround(
+            newChain,
+            pos,
+            resolvedItems,
+          );
+          const orderKey = generateKeyBetween(before, after);
+          const created = await blockApi.createBlock(projectId, {
+            ...b,
+            endMins: b.startMins + b.dur,
+            dayNo: dayNoOf(dayKey),
+            orderKey,
+            transportMeta: { generated: true, mode: b.sub },
+          });
+
+          setItems((prev) => {
+            if (!prev[newId]) return prev;
+            const next = { ...prev };
+            next[created.blockId] = {
+              ...next[newId],
+              id: created.blockId,
+              dayNo: dayNoOf(dayKey),
+              orderKey,
+              transportMeta: { generated: true, mode: next[newId].sub },
+            };
+            delete next[newId];
+            return next;
+          });
+          setChains((prev) => ({
+            ...prev,
+            [dayKey]: (prev[dayKey] || []).map((id) =>
+              id === newId ? created.blockId : id,
+            ),
+          }));
+        } catch (e) {
+          rollbackToServer(e);
+        }
       } finally {
         setIsGeneratingTransport(false);
       }
     },
-    [isGeneratingTransport, items, chains, dayStart, fetchTransitInfo],
+    [
+      isGeneratingTransport,
+      items,
+      chains,
+      dayStart,
+      fetchTransitInfo,
+      projectId,
+      rollbackToServer,
+    ],
   );
 
   const timelineDOMRef = useRef(null);
@@ -819,15 +949,6 @@ export function DashboardPage() {
   useEffect(() => {
     itemsRef.current = items;
   });
-
-  // 이동 저장 실패 시 롤백 — "어느 체인 몇 번째에서 왔는지"를 복원하는 대신
-  // 서버 진실로 보드를 다시 시드한다. 5단계 이후엔 auto- 교통 블록 말고는 전부
-  // 서버에 있으므로 reload 로 잃는 것이 없다(auto 블록은 재생성 버튼으로 복구).
-  const rollbackToServer = (e) => {
-    showToast(e?.message ?? "변경을 저장하지 못했어요. 서버 상태로 되돌립니다.");
-    reload();
-  };
-
 
   const handleSaveBlock = async (form) => {
     const targetId = editingBlockId;

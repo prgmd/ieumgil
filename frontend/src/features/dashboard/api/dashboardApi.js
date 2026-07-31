@@ -87,8 +87,9 @@ function toUiBlock(b) {
     source: b.source,
     authorId: b.authorId,
     fieldUpdatedAt: b.fieldUpdatedAt ?? {},
-    // 프로토타입의 클라이언트 전용 플래그(자동 생성 교통 블록 표시) — 서버 개념이 아니다.
-    auto: false,
+    // "자동 생성" 표식 — 서버에 auto 필드가 없어 transportMeta.generated 로 실어 둔다
+    // (자유 형식 jsonb). 재생성 시 삭제 대상 판별과 "자동" 배지 표시에 쓴다.
+    auto: b.transportMeta?.generated === true,
   };
 }
 
