@@ -643,9 +643,11 @@ export function DashboardPage() {
   const [map, setMap] = useState(null);
   const [searchKeyword, setSearchKeyword] = useState("");
   const [searchResults, setSearchResults] = useState([]);
+  const searchListRef = useRef(null);
 
   useEffect(() => {
-    if (window.kakao && window.kakao.maps) {
+    // 지도를 실제로 화면에 그리는 함수
+    const initMap = () => {
       window.kakao.maps.load(() => {
         const container = document.getElementById("kakao-map-container");
         if (container) {
@@ -657,9 +659,25 @@ export function DashboardPage() {
           setMap(newMap);
         }
       });
-    } else {
-      console.warn("카카오맵 SDK가 로드되지 않았습니다.");
+    };
+
+    // 1. 이미 스크립트가 있다면 바로 지도 그리기 (중복 방지)
+    if (document.getElementById("kakao-map-script") && window.kakao) {
+      initMap();
+      return;
     }
+
+    // 2. 스크립트가 없다면 새로 만들어서 붙이기
+    const script = document.createElement("script");
+    script.id = "kakao-map-script";
+    // 💡 autoload=false 파라미터가 반드시 있어야 리액트와 충돌하지 않습니다!
+    script.src = `https://dapi.kakao.com/v2/maps/sdk.js?appkey=71b94eabee0913242230da390f4d20f2&autoload=false&libraries=services`;
+    script.async = true;
+
+    // 3. 스크립트 로딩이 끝나면 지도 그리기 함수 실행
+    script.onload = initMap;
+
+    document.head.appendChild(script);
   }, []);
 
   const handleSearchPlace = (e) => {
@@ -677,6 +695,11 @@ export function DashboardPage() {
     ps.keywordSearch(searchKeyword, (data, status) => {
       if (status === window.kakao.maps.services.Status.OK) {
         setSearchResults(data);
+
+        // 💡 2. 데이터가 업데이트될 때 스크롤을 맨 위로 끌어올림!
+        if (searchListRef.current) {
+          searchListRef.current.scrollTop = 0;
+        }
 
         if (map) {
           const bounds = new window.kakao.maps.LatLngBounds();
@@ -2053,6 +2076,7 @@ export function DashboardPage() {
 
                   {/* 💡 검색 결과 리스트: 버튼이 사라지고 이젠 꾹 눌러서 끌 수 있습니다! */}
                   <div
+                    ref={searchListRef}
                     style={{
                       maxHeight: "250px",
                       overflowY: "auto",
