@@ -20,6 +20,8 @@ import {
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { AppBar } from "../My/shared/ui/AppBar";
+import { useDashboard } from "../../features/dashboard/hooks/useDashboard";
+import { useToastStore } from "../../global/stores/toastStore";
 import "./index.css";
 
 const PX = 2.0;
@@ -44,6 +46,17 @@ const fmtTime = (mins) => {
 
 const won = (n) => (n ? n.toLocaleString("ko-KR") + "원" : "무료");
 const catOf = (item) => CAT_COLORS[item?.cat] || CAT_COLORS.etc;
+
+// "2026-08-10" + dayIdx → "2026.08.12" — Day 헤더의 날짜 라벨.
+// 기간이 없는 프로젝트(start/end nullable)는 빈 문자열로 라벨을 생략한다.
+const dayDateLabel = (startDate, dayIdx) => {
+  if (!startDate) return "";
+  const d = new Date(startDate);
+  d.setDate(d.getDate() + dayIdx);
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  return `${d.getFullYear()}.${mm}.${dd}`;
+};
 
 const restrictTimelineX = ({ transform, active, over }) => {
   if (active?.data?.current?.from === "timeline") {
@@ -251,8 +264,10 @@ function TimelineCard({
   boundTop,
   onEditBlock,
 }) {
-  const { attributes, listeners, setNodeRef, transform, isDragging } =
-    useDraggable({ id, data: { from: "timeline" } });
+  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
+    id,
+    data: { from: "timeline" },
+  });
   const catStyle = catOf(item);
   const height = (item?.dur || 30) * PX;
   const isThisResizing =
@@ -343,8 +358,9 @@ function TimelineCard({
   );
 }
 
-function ReadModeView({ chains, items }) {
-  const days = ["d1", "d2", "d3", "d4"];
+function ReadModeView({ chains, items, startDate }) {
+  // Day 수는 프로젝트 기간에서 파생된 chains 의 키를 그대로 따른다 (useDashboard 가 만든다)
+  const days = Object.keys(chains);
   return (
     <div
       style={{
@@ -385,7 +401,7 @@ function ReadModeView({ chains, items }) {
                     fontFamily: "sans-serif",
                   }}
                 >
-                  2026.10.0{3 + index}
+                  {dayDateLabel(startDate, index)}
                 </span>
               </h2>
             </div>
@@ -525,75 +541,38 @@ function ReadModeView({ chains, items }) {
 }
 
 export function DashboardPage() {
-  const { groupId, projectId } = useParams();
+  const { groupId } = useParams();
+  // 라우트 파라미터는 문자열 — 서버의 숫자 ID와 맞추려면 변환이 필요하다 (GroupPage 와 동일)
+  const projectId = Number(useParams().projectId);
+  const navigate = useNavigate();
+  const showToast = useToastStore((s) => s.show);
+
+  // 스냅샷은 훅이 소유한다(1단계 — 읽기 연동). 아래 items/chains/pool 편집 상태는
+  // 아직 로컬이다: 드래그·수정 결과의 서버 저장은 2~5단계 mutation 에서 붙는다.
+  // 그래서 지금 구조는 "로딩 완료 시 서버 보드를 로컬 상태로 시드"이며,
+  // 새로고침하면 서버 상태로 되돌아간다(로컬 편집은 아직 휘발).
+  const {
+    project,
+    items: serverItems,
+    chains: serverChains,
+    pool: serverPool,
+    status,
+    error,
+  } = useDashboard(projectId);
 
   // 모드 상태 ('edit' or 'read')
   const [viewMode, setViewMode] = useState("edit");
 
   const [activeDay, setActiveDay] = useState("d1");
-  const [dayStart, setDayStart] = useState({
-    d1: 540,
-    d2: 540,
-    d3: 540,
-    d4: 540,
-  });
+  // Day 시작 시각 — 서버에 저장 칸이 없다(ERD 가 day_settings 를 제거:
+  // Day 시작 = 그 Day 첫 블록의 start_time). 시드 때 첫 블록 시각으로 파생하고,
+  // 이후 ± 조절은 본인 화면에서만 유효한 로컬 값이다.
+  const [dayStart, setDayStart] = useState({});
 
-  // API 대신 바로 보여줄 더미 데이터 세팅
-  const [items, setItems] = useState({
-    b1: {
-      id: "b1",
-      cat: "spot",
-      name: "성산일출봉",
-      dur: 90,
-      startMins: 540,
-      cost: 0,
-      auto: false,
-    },
-    b2: {
-      id: "b2",
-      cat: "food",
-      name: "제주 흑돼지",
-      dur: 60,
-      startMins: 660,
-      cost: 50000,
-      auto: false,
-    },
-    b3: {
-      id: "b3",
-      cat: "stay",
-      name: "신라호텔",
-      dur: 120,
-      startMins: 750,
-      cost: 200000,
-      auto: false,
-    },
-    c1: {
-      id: "c1",
-      cat: "spot",
-      name: "우도",
-      dur: 120,
-      startMins: 540,
-      cost: 10000,
-      auto: false,
-    },
-    c2: {
-      id: "c2",
-      cat: "etc",
-      name: "렌트카 대여",
-      dur: 30,
-      startMins: 540,
-      cost: 50000,
-      auto: false,
-    },
-  });
-
-  const [chains, setChains] = useState({
-    d1: ["b1", "b2", "b3"],
-    d2: [],
-    d3: [],
-    d4: [],
-  });
-  const [pool, setPool] = useState(["c1", "c2"]);
+  // 보드 편집 상태 — 초기값은 비워 두고, 스냅샷이 도착하면 아래 시드 effect 가 채운다.
+  const [items, setItems] = useState({});
+  const [chains, setChains] = useState({});
+  const [pool, setPool] = useState([]);
 
   const [editingBlockId, setEditingBlockId] = useState(null);
   const [activeId, setActiveId] = useState(null);
@@ -606,7 +585,46 @@ export function DashboardPage() {
     (sum, item) => sum + (item.cost || 0),
     0,
   );
-  const [targetBudget, setTargetBudget] = useState(1500000);
+  const [targetBudget, setTargetBudget] = useState(0);
+
+  // ── 스냅샷 → 로컬 보드 시드 ──────────────────────────
+  // effect 가 아니라 "렌더 중 조건부 setState"(React 공식 파생 상태 리셋 패턴)를 쓴다.
+  // 시드가 커밋 전에 반영되므로 빈 보드가 한 프레임 그려지는 일이 없고,
+  // effect 내 setState 를 금지하는 lint 규칙(set-state-in-effect)과도 맞는다.
+  // serverItems 는 스냅샷이 바뀔 때만 참조가 바뀌므로(useDashboard 의 useMemo)
+  // 이 블록은 로딩·재조회 완료 렌더에서 한 번만 실행되고, 로컬 편집을 덮어쓰지 않는다.
+  const [seededFrom, setSeededFrom] = useState(null);
+  if (status === "loaded" && seededFrom !== serverItems) {
+    setSeededFrom(serverItems);
+
+    setItems(serverItems);
+    setChains(serverChains);
+    setPool(serverPool);
+
+    // Day 시작 시각 = 그 Day 첫 블록의 시각, 블록이 없으면 09:00
+    const starts = {};
+    for (const [dayKey, chain] of Object.entries(serverChains)) {
+      const first = chain
+        .map((id) => serverItems[id])
+        .find((b) => b?.startMins != null);
+      starts[dayKey] = first ? first.startMins : 540;
+    }
+    setDayStart(starts);
+
+    // 다른 프로젝트에서 넘어온 경우 이전 프로젝트의 Day 탭이 남지 않게 한다
+    if (!serverChains[activeDay]) setActiveDay("d1");
+
+    // 목표 예산은 스냅샷의 project 에 실려 온다. 수정을 저장할 엔드포인트는 아직
+    // 백엔드에 없어(PATCH /projects 는 name·기간만 받는다) 위젯의 조절은 로컬 표시용이다.
+    setTargetBudget(project?.targetBudget ?? 0);
+  }
+
+  // 없는 프로젝트·비멤버·잘못된 URL 이면 그룹 페이지로 되돌린다 (GroupPage 와 같은 규칙)
+  useEffect(() => {
+    if (status !== "error") return;
+    showToast(error?.message ?? "프로젝트를 열 수 없어요.");
+    navigate(`/groups/${groupId}`, { replace: true });
+  }, [status, error, groupId, navigate, showToast]);
   const handleTargetBudgetChange = (amount) => {
     setTargetBudget((prev) => Math.max(0, prev + amount)); // 0원 밑으로는 안 내려가게 방지
   };
@@ -614,7 +632,9 @@ export function DashboardPage() {
     targetBudget > 0 ? Math.min(100, (totalBudget / targetBudget) * 100) : 0;
   const remainingBudget = targetBudget - totalBudget;
 
-  const fetchTransitInfo = useCallback(async (fromItem, toItem) => {
+  // 임시 목업 — 6단계에서 GET /api/transit/route 로 교체한다(BUS/SUBWAY만 구현됨).
+  // 인자(출발/도착 블록)는 그때 다시 받는다.
+  const fetchTransitInfo = useCallback(async () => {
     await new Promise((resolve) => setTimeout(resolve, 120));
     return { mode: "이동", dur: 20, cost: 0 };
   }, []);
@@ -1170,12 +1190,16 @@ export function DashboardPage() {
     })
     .filter(Boolean);
 
+  // 스냅샷이 시드되기 전(로딩 중)에는 보드를 그리지 않는다 — dayStart[activeDay]
+  // 같은 파생값이 아직 없다. 에러일 때는 위 effect 가 그룹 페이지로 되돌린다.
+  if (status !== "loaded" || dayStart[activeDay] == null) return null;
+
   return (
     <>
       <AppBar
         crumbs={[
           { label: "그룹", to: `/groups/${groupId}` },
-          { label: "프로젝트 대시보드" },
+          { label: project?.name ?? "프로젝트 대시보드" },
         ]}
       />
 
@@ -1246,7 +1270,7 @@ export function DashboardPage() {
             onDragCancel={handleDragCancel}
           >
             <div className="daycol">
-              {["d1", "d2", "d3", "d4"].map((day, i) => (
+              {Object.keys(chains).map((day, i) => (
                 <DayTab
                   key={day}
                   label={`Day ${i + 1}`}
@@ -1269,7 +1293,10 @@ export function DashboardPage() {
                 <div className="bd-head" style={{ flexShrink: 0 }}>
                   <h2>Day {activeDay.replace("d", "")}</h2>
                   <span className="date">
-                    2026.10.0{activeDay.replace("d", "")}
+                    {dayDateLabel(
+                      project?.startDate,
+                      Number(activeDay.replace("d", "")) - 1,
+                    )}
                   </span>
                   <div className="right">
                     <button
@@ -1955,7 +1982,11 @@ export function DashboardPage() {
           </div>
         </div>
       ) : (
-        <ReadModeView chains={chains} items={items} />
+        <ReadModeView
+          chains={chains}
+          items={items}
+          startDate={project?.startDate}
+        />
       )}
 
       {/* 모달 렌더링 영역 */}

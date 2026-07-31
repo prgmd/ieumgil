@@ -1,5 +1,3 @@
-import React from "react";
-
 const CATEGORY_UI = {
   SPOT: { icon: "🚩", color: "#ffebee" },
   FOOD: { icon: "🍽️", color: "#fff3e0" },
