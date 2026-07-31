@@ -60,6 +60,65 @@ const dayDateLabel = (startDate, dayIdx) => {
   return `${d.getFullYear()}.${mm}.${dd}`;
 };
 
+// ── 블록 id 규약 ─────────────────────────────────────
+// 서버에 아직 없는 블록(모달 저장 전의 커스텀 블록)을 구분하는 규약
+const isTempId = (id) => String(id).startsWith("custom-");
+// 서버에 실재하는 블록만 REST 를 태운다 — custom-(저장 전)·auto-(로컬 교통)는 제외
+const isServerBlock = (id) => !isTempId(id) && !String(id).startsWith("auto-");
+
+// "d3" → 3 (서버 dayNo)
+const dayNoOf = (dayKey) => Number(String(dayKey).replace("d", ""));
+
+/**
+ * 최종 목록에서 pos 위치 블록의 양옆 orderKey 경계를 찾는다.
+ * auto- 같은 로컬 전용 블록은 서버에 없어 orderKey 가 없으므로 건너뛰고
+ * 가장 가까운 서버 블록의 키를 경계로 쓴다. 끝이면 null(개방 경계).
+ */
+const neighborKeysAround = (finalList, pos, itemsMap) => {
+  let before = null;
+  for (let i = pos - 1; i >= 0; i -= 1) {
+    const id = finalList[i];
+    if (isServerBlock(id) && itemsMap[id]?.orderKey != null) {
+      before = itemsMap[id].orderKey;
+      break;
+    }
+  }
+  let after = null;
+  for (let i = pos + 1; i < finalList.length; i += 1) {
+    const id = finalList[i];
+    if (isServerBlock(id) && itemsMap[id]?.orderKey != null) {
+      after = itemsMap[id].orderKey;
+      break;
+    }
+  }
+  return [before, after];
+};
+
+/**
+ * 겹침 해소(resolveOverlaps)로 시각이 밀린 체인 내 서버 블록들의 시각을 저장한다.
+ * 편집(3단계)·이동(5단계)·리사이즈가 공유한다 — 로컬만 밀면 새로고침 때
+ * 이웃들이 옛 시각으로 되돌아간다(명세 320행: 시각 재계산 저장은 클라이언트 몫).
+ */
+const persistShiftedTimes = (chainIds, prevItems, nextItems, excludeId) => {
+  const shifted = (chainIds ?? []).filter(
+    (id) =>
+      id !== excludeId &&
+      isServerBlock(id) &&
+      nextItems[id]?.startMins != null &&
+      nextItems[id].startMins !== prevItems[id]?.startMins,
+  );
+  return Promise.all(
+    shifted.map((id) =>
+      blockApi.updateBlockFields(id, {
+        startTime: blockApi.minsToTime(nextItems[id].startMins),
+        endTime: blockApi.minsToTime(
+          nextItems[id].startMins + nextItems[id].dur,
+        ),
+      }),
+    ),
+  );
+};
+
 const restrictTimelineX = ({ transform, active, over }) => {
   if (active?.data?.current?.from === "timeline") {
     if (over?.id !== "poolArea" && over?.id !== "trashArea")
@@ -560,15 +619,16 @@ export function DashboardPage() {
     pool: serverPool,
     status,
     error,
+    reload,
   } = useDashboard(projectId);
 
   // 모드 상태 ('edit' or 'read')
   const [viewMode, setViewMode] = useState("edit");
 
   const [activeDay, setActiveDay] = useState("d1");
-  // Day 시작 시각 — 서버에 저장 칸이 없다(ERD 가 day_settings 를 제거:
-  // Day 시작 = 그 Day 첫 블록의 start_time). 시드 때 첫 블록 시각으로 파생하고,
-  // 이후 ± 조절은 본인 화면에서만 유효한 로컬 값이다.
+  // Day 시작 시각(타임라인 상단) — 서버에 저장 칸이 없는(ERD) 본인 화면 전용 값.
+  // 기본 09:00 고정이고 상단 ± 버튼으로만 바뀐다. 블록 시각에서 파생하지 않는다 —
+  // 파생하면 블록을 놓을 때마다 새로고침 후 타임라인 시작이 멋대로 움직인다.
   const [dayStart, setDayStart] = useState({});
 
   // 보드 편집 상태 — 초기값은 비워 두고, 스냅샷이 도착하면 아래 시드 effect 가 채운다.
@@ -603,13 +663,17 @@ export function DashboardPage() {
     setChains(serverChains);
     setPool(serverPool);
 
-    // Day 시작 시각 = 그 Day 첫 블록의 시각, 블록이 없으면 09:00
+    // Day 시작 시각은 09:00 고정 — 버튼으로만 바뀐다(로컬 값이라 새로고침 시 초기화).
+    // 단 09:00 이전에 시작하는 블록이 있으면 타임라인 위로 잘려 안 보이므로,
+    // 그런 Day 에 한해 가장 이른 블록 시각까지만 내려서 맞춘다.
     const starts = {};
     for (const [dayKey, chain] of Object.entries(serverChains)) {
-      const first = chain
-        .map((id) => serverItems[id])
-        .find((b) => b?.startMins != null);
-      starts[dayKey] = first ? first.startMins : 540;
+      let start = 540;
+      for (const id of chain) {
+        const s = serverItems[id]?.startMins;
+        if (s != null && s < start) start = s;
+      }
+      starts[dayKey] = start;
     }
     setDayStart(starts);
 
@@ -749,11 +813,21 @@ export function DashboardPage() {
   const activeDragRef = useRef(null);
   const dragRegionRef = useRef(null);
 
-  // 서버에 아직 없는 블록(모달 저장 전의 커스텀 블록)을 구분하는 규약
-  const isTempId = (id) => String(id).startsWith("custom-");
-  // 서버에 실재하는 블록만 REST 를 태운다 — custom-(저장 전)·auto-(로컬 교통)는 제외
-  const isServerBlock = (id) =>
-    !isTempId(id) && !String(id).startsWith("auto-");
+  // 리사이즈 종료(전역 click) 시 최신 items 를 읽기 위한 latest-ref —
+  // 리사이즈 effect 는 items 를 의존성에 두지 않아 클로저가 stale 하다.
+  const itemsRef = useRef(items);
+  useEffect(() => {
+    itemsRef.current = items;
+  });
+
+  // 이동 저장 실패 시 롤백 — "어느 체인 몇 번째에서 왔는지"를 복원하는 대신
+  // 서버 진실로 보드를 다시 시드한다. 5단계 이후엔 auto- 교통 블록 말고는 전부
+  // 서버에 있으므로 reload 로 잃는 것이 없다(auto 블록은 재생성 버튼으로 복구).
+  const rollbackToServer = (e) => {
+    showToast(e?.message ?? "변경을 저장하지 못했어요. 서버 상태로 되돌립니다.");
+    reload();
+  };
+
 
   const handleSaveBlock = async (form) => {
     const targetId = editingBlockId;
@@ -870,23 +944,7 @@ export function DashboardPage() {
           targetId,
         );
 
-        const shifted = chains[activeDay].filter(
-          (id) =>
-            id !== targetId &&
-            isServerBlock(id) &&
-            newItems[id]?.startMins != null &&
-            newItems[id].startMins !== items[id]?.startMins,
-        );
-        await Promise.all(
-          shifted.map((id) =>
-            blockApi.updateBlockFields(id, {
-              startTime: blockApi.minsToTime(newItems[id].startMins),
-              endTime: blockApi.minsToTime(
-                newItems[id].startMins + newItems[id].dur,
-              ),
-            }),
-          ),
-        );
+        await persistShiftedTimes(chains[activeDay], items, newItems, targetId);
 
         setItems(newItems);
         setChains((pc) => ({ ...pc, [activeDay]: newChain }));
@@ -1032,6 +1090,45 @@ export function DashboardPage() {
     [items],
   );
 
+  // 리사이즈 종료 시 결과를 서버에 저장한다 — 리사이즈된 블록(dur·시각)과
+  // 겹침 해소로 밀린 이웃들 전부. originalItems(리사이즈 시작 스냅샷) 대비
+  // 값이 바뀐 체인 내 서버 블록이 저장 대상이다.
+  const persistResize = useCallback(
+    async (rs) => {
+      const current = itemsRef.current;
+      const original = rs.originalItems;
+      const dirty = (chains[activeDay] ?? []).filter(
+        (id) =>
+          isServerBlock(id) &&
+          current[id] &&
+          original[id] &&
+          (current[id].startMins !== original[id].startMins ||
+            current[id].dur !== original[id].dur),
+      );
+      if (dirty.length === 0) return;
+
+      try {
+        await Promise.all(
+          dirty.map((id) => {
+            const b = current[id];
+            const fields = {
+              startTime: blockApi.minsToTime(b.startMins),
+              endTime: blockApi.minsToTime(b.startMins + b.dur),
+            };
+            if (b.dur !== original[id].dur) fields.durationMin = b.dur;
+            return blockApi.updateBlockFields(id, fields);
+          }),
+        );
+      } catch (e) {
+        showToast(
+          e?.message ?? "크기 변경을 저장하지 못했어요. 서버 상태로 되돌립니다.",
+        );
+        reload();
+      }
+    },
+    [chains, activeDay, reload, showToast],
+  );
+
   useEffect(() => {
     if (!resizingState) return;
     const handleMouseMove = (e) => {
@@ -1084,7 +1181,10 @@ export function DashboardPage() {
       });
     };
 
-    const handleGlobalClick = () => setResizingState(null);
+    const handleGlobalClick = () => {
+      persistResize(resizingState); // fire-and-forget — 실패는 내부에서 reload 롤백
+      setResizingState(null);
+    };
     window.addEventListener("mousemove", handleMouseMove);
     const timer = setTimeout(
       () => window.addEventListener("click", handleGlobalClick),
@@ -1095,7 +1195,7 @@ export function DashboardPage() {
       window.removeEventListener("mousemove", handleMouseMove);
       window.removeEventListener("click", handleGlobalClick);
     };
-  }, [resizingState, activeDay, chains, dayStart]);
+  }, [resizingState, activeDay, chains, dayStart, persistResize]);
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
@@ -1240,16 +1340,23 @@ export function DashboardPage() {
     }
 
     if (target.region === "pool") {
-      if (isFromPool) {
-        const withoutActive = pool.filter((id) => id !== activeIdLocal);
-        withoutActive.splice(
-          Math.max(0, Math.min(target.insertIndex, withoutActive.length)),
-          0,
-          activeIdLocal,
-        );
-        setPool(withoutActive);
-        return;
-      }
+      // 재정렬(pool→pool)과 내리기(chain→pool)를 최종 배열 하나로 통일해 계산한다
+      const withoutActive = pool.filter((id) => id !== activeIdLocal);
+      const insertAt = Math.max(
+        0,
+        Math.min(target.insertIndex, withoutActive.length),
+      );
+      const nextPool = [...withoutActive];
+      nextPool.splice(insertAt, 0, activeIdLocal);
+
+      // 제자리 드롭(집었다 그대로 놓음)이면 아무것도 하지 않는다
+      const unchanged =
+        isFromPool &&
+        nextPool.length === pool.length &&
+        nextPool.every((id, i) => id === pool[i]);
+      if (unchanged) return;
+
+      // 낙관 적용 — 체인 제거는 pool→pool 이동에서는 자연히 no-op 이다
       setChains((prev) => {
         const next = { ...prev };
         Object.keys(next).forEach((day) => {
@@ -1257,49 +1364,112 @@ export function DashboardPage() {
         });
         return next;
       });
-      setPool((prev) => {
-        if (prev.includes(activeIdLocal)) return prev;
-        const next = [...prev];
-        next.splice(
-          Math.max(0, Math.min(target.insertIndex, next.length)),
-          0,
-          activeIdLocal,
-        );
-        return next;
-      });
+      setPool(nextPool);
+
+      // 서버 저장: 후보로 이동/재정렬 = dayNo null + 이웃 사이 orderKey.
+      // 시각(startTime/endTime)은 건드리지 않는다 — 후보 블록의 옛 시각은 무해하고,
+      // 체인에 다시 올라갈 때 드롭 위치로 재계산된다.
+      if (isServerBlock(activeIdLocal)) {
+        (async () => {
+          try {
+            const [before, after] = neighborKeysAround(nextPool, insertAt, items);
+            const orderKey = generateKeyBetween(before, after);
+            await blockApi.moveBlock(activeIdLocal, { dayNo: null, orderKey });
+            // 다음 이동의 이웃 계산이 정확하도록 로컬에도 새 위치 값을 반영
+            setItems((prev) =>
+              prev[activeIdLocal]
+                ? {
+                    ...prev,
+                    [activeIdLocal]: {
+                      ...prev[activeIdLocal],
+                      dayNo: null,
+                      orderKey,
+                    },
+                  }
+                : prev,
+            );
+          } catch (e) {
+            rollbackToServer(e); // 키 생성 실패(키 중복 등)·요청 실패 공통 안전망
+          }
+        })();
+      }
       return;
     }
 
     if (target.region === "timeline") {
       const dropMins = target.dropMins;
-      setItems((prevItems) => {
-        let updatedItems = {
-          ...prevItems,
-          [activeIdLocal]: { ...prevItems[activeIdLocal], startMins: dropMins },
-        };
-        let currentDayList = [...(chains[activeDay] || [])];
-        if (!currentDayList.includes(activeIdLocal))
-          currentDayList.push(activeIdLocal);
-        const { newItems, newChain } = resolveOverlaps(
-          updatedItems,
-          currentDayList,
-          dayStart[activeDay],
-          activeIdLocal,
-        );
 
-        setChains((prevChains) => {
-          const next = { ...prevChains };
-          Object.keys(next).forEach((day) => {
-            if (day !== activeDay)
-              next[day] = next[day].filter((id) => id !== activeIdLocal);
-          });
-          next[activeDay] = newChain;
-          return next;
+      // 계산을 updater 밖에서 한다 — 저장(async)이 결과를 필요로 하고,
+      // updater 안의 중첩 setState(순수성 위반)도 함께 없어진다. 수학은 동일.
+      const updatedItems = {
+        ...items,
+        [activeIdLocal]: { ...items[activeIdLocal], startMins: dropMins },
+      };
+      const currentDayList = [...(chains[activeDay] || [])];
+      if (!currentDayList.includes(activeIdLocal))
+        currentDayList.push(activeIdLocal);
+      const { newItems, newChain } = resolveOverlaps(
+        updatedItems,
+        currentDayList,
+        dayStart[activeDay],
+        activeIdLocal,
+      );
+
+      // 낙관 적용
+      setItems(newItems);
+      setChains((prevChains) => {
+        const next = { ...prevChains };
+        Object.keys(next).forEach((day) => {
+          if (day !== activeDay)
+            next[day] = next[day].filter((id) => id !== activeIdLocal);
         });
-        if (isFromPool)
-          setPool((prev) => prev.filter((id) => id !== activeIdLocal));
-        return newItems;
+        next[activeDay] = newChain;
+        return next;
       });
+      if (isFromPool)
+        setPool((prev) => prev.filter((id) => id !== activeIdLocal));
+
+      // 서버 저장: 옮긴 블록 1건의 position(dayNo·orderKey) + 자기 시각 +
+      // 겹침 해소로 밀린 이웃들의 시각. resolveOverlaps 는 이동 블록 외의
+      // 상대 순서를 보존하므로 position 은 정확히 1건이다(명세와 일치).
+      if (isServerBlock(activeIdLocal)) {
+        (async () => {
+          try {
+            const pos = newChain.indexOf(activeIdLocal);
+            const [before, after] = neighborKeysAround(newChain, pos, newItems);
+            const orderKey = generateKeyBetween(before, after);
+            const moved = newItems[activeIdLocal];
+
+            await blockApi.moveBlock(activeIdLocal, {
+              dayNo: dayNoOf(activeDay),
+              orderKey,
+            });
+            await Promise.all([
+              blockApi.updateBlockFields(activeIdLocal, {
+                startTime: blockApi.minsToTime(moved.startMins),
+                endTime: blockApi.minsToTime(moved.startMins + moved.dur),
+              }),
+              persistShiftedTimes(newChain, items, newItems, activeIdLocal),
+            ]);
+
+            // 다음 이동의 이웃 계산이 정확하도록 로컬에도 새 위치 값을 반영
+            setItems((prev) =>
+              prev[activeIdLocal]
+                ? {
+                    ...prev,
+                    [activeIdLocal]: {
+                      ...prev[activeIdLocal],
+                      dayNo: dayNoOf(activeDay),
+                      orderKey,
+                    },
+                  }
+                : prev,
+            );
+          } catch (e) {
+            rollbackToServer(e);
+          }
+        })();
+      }
     }
   };
 
