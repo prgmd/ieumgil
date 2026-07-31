@@ -326,7 +326,7 @@ function TimelineCard({
 }
 
 // 💡 새롭게 추가된 검색 결과용 드래그 컴포넌트
-function SearchResultDraggable({ place }) {
+function SearchResultDraggable({ place, onClick }) {
   const id = `search-result-${place.id}`;
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
     id,
@@ -353,6 +353,7 @@ function SearchResultDraggable({ place }) {
       }}
       {...attributes}
       {...listeners}
+      onClick={() => onClick && onClick(place)}
     >
       <div style={{ display: "flex", alignItems: "flex-start", gap: "8px" }}>
         <div style={{ color: "#d97e3c", fontSize: "10px", marginTop: "4px" }}>
@@ -644,6 +645,7 @@ export function DashboardPage() {
   const [searchKeyword, setSearchKeyword] = useState("");
   const [searchResults, setSearchResults] = useState([]);
   const searchListRef = useRef(null);
+  const infoWindowRef = useRef(null);
 
   useEffect(() => {
     // 지도를 실제로 화면에 그리는 함수
@@ -694,22 +696,41 @@ export function DashboardPage() {
     const ps = new window.kakao.maps.services.Places();
     ps.keywordSearch(searchKeyword, (data, status) => {
       if (status === window.kakao.maps.services.Status.OK) {
+        // 검색 결과 데이터 업데이트
         setSearchResults(data);
 
-        // 💡 2. 데이터가 업데이트될 때 스크롤을 맨 위로 끌어올림!
+        // ✅ 디테일 1: 새 검색을 하면 스크롤을 맨 위로 휙! 올리기
         if (searchListRef.current) {
           searchListRef.current.scrollTop = 0;
         }
 
+        // ✅ 디테일 2 (보너스): 새 검색을 하면 기존에 열려있던 정보 창(말풍선) 닫기!
+        if (infoWindowRef.current) {
+          infoWindowRef.current.close();
+        }
+
+        // 지도 화면 범위를 새 검색 결과들에 맞게 이동시키기
+        // (기존 handleSearchPlace 함수 내부의 if (map) 안쪽 로직)
         if (map) {
           const bounds = new window.kakao.maps.LatLngBounds();
+
+          // 💡 이 forEach 부분을 통째로 교체해 주세요!
           data.forEach((place) => {
-            bounds.extend(new window.kakao.maps.LatLng(place.y, place.x));
-            new window.kakao.maps.Marker({
+            const position = new window.kakao.maps.LatLng(place.y, place.x);
+            bounds.extend(position);
+
+            // 1. 마커를 변수에 담아서 생성
+            const marker = new window.kakao.maps.Marker({
               map: map,
-              position: new window.kakao.maps.LatLng(place.y, place.x),
+              position: position,
+            });
+
+            // 2. 💡 생성된 마커에 클릭 이벤트(클릭 시 상세정보 띄우기) 연결!
+            window.kakao.maps.event.addListener(marker, "click", () => {
+              handlePlaceClick(place);
             });
           });
+
           map.setBounds(bounds);
         }
       } else if (status === window.kakao.maps.services.Status.ZERO_RESULT) {
@@ -719,6 +740,38 @@ export function DashboardPage() {
         alert("검색 중 오류가 발생했습니다.");
       }
     });
+  };
+  const handlePlaceClick = (place) => {
+    if (map && window.kakao && window.kakao.maps) {
+      const moveLatLon = new window.kakao.maps.LatLng(place.y, place.x);
+
+      map.setLevel(4);
+      map.panTo(moveLatLon);
+
+      // 💡 2-1. 인포윈도우가 아직 안 만들어졌다면 최초 1회 생성
+      if (!infoWindowRef.current) {
+        infoWindowRef.current = new window.kakao.maps.InfoWindow({
+          zIndex: 1,
+          removable: true, // 창 닫기(X) 버튼 활성화
+        });
+      }
+
+      // 💡 2-2. 정보 창 안에 들어갈 디자인(HTML) 구성
+      // 현재 앱의 테마 색상(#d97e3c 등)을 사용해 통일감을 주었습니다.
+      const content = `
+        <div style="padding:15px; font-size:13px; color:#333; min-width:200px; border-radius:8px;">
+          <b style="font-size:15px; display:block; margin-bottom:5px; color:#d97e3c;">${place.place_name}</b>
+          ${place.road_address_name ? `<span style="display:block;">${place.road_address_name}</span>` : ""}
+          <span style="color:#888; display:block; margin-top:2px;">${place.address_name}</span>
+          ${place.phone ? `<span style="display:block; margin-top:5px; color:#6b7fc7;">📞 ${place.phone}</span>` : ""}
+        </div>
+      `;
+
+      // 💡 2-3. 내용과 좌표를 갱신하고 지도에 열기
+      infoWindowRef.current.setContent(content);
+      infoWindowRef.current.setPosition(moveLatLon);
+      infoWindowRef.current.open(map);
+    }
   };
 
   const totalBudget = Object.values(items).reduce(
@@ -2086,7 +2139,11 @@ export function DashboardPage() {
                     }}
                   >
                     {searchResults.map((place) => (
-                      <SearchResultDraggable key={place.id} place={place} />
+                      <SearchResultDraggable
+                        key={place.id}
+                        place={place}
+                        onClick={handlePlaceClick} // 💡 만든 함수를 여기에 쏙!
+                      />
                     ))}
                     {searchResults.length === 0 && (
                       <div
