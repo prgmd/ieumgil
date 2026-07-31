@@ -79,4 +79,15 @@ public class ProjectReqDTO {
             Integer headcount
     ) {
     }
+
+    /**
+     * 총 예산 변경 요청 (PATCH /projects/{projectId}/budget).
+     * targetBudget null = "예산 미설정으로 초기화" — 값 누락이 아니라 명시적 의도다.
+     */
+    public record UpdateBudget(
+            @Schema(description = "변경할 목표 예산(전체 총액). null이면 예산 미설정으로 초기화", example = "100000")
+            @PositiveOrZero(message = "목표 예산은 0 이상이어야 합니다.")
+            Integer targetBudget
+    ) {
+    }
 }
