@@ -8,15 +8,18 @@ import com.ssafy.ieumgil.domain.group.exception.GroupErrorCode;
 import com.ssafy.ieumgil.domain.group.repository.GroupMemberRepository;
 import com.ssafy.ieumgil.domain.group.repository.TravelGroupRepository;
 import com.ssafy.ieumgil.domain.group.util.InviteCodeGenerator;
+import com.ssafy.ieumgil.domain.project.repository.ProjectRepository;
 import com.ssafy.ieumgil.domain.user.entity.User;
 import com.ssafy.ieumgil.domain.user.exception.UserErrorCode;
 import com.ssafy.ieumgil.domain.user.repository.UserRepository;
 import com.ssafy.ieumgil.global.exception.CustomException;
+import com.ssafy.ieumgil.global.realtime.OpPublisher;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
+import java.util.Map;
 
 @Service
 @RequiredArgsConstructor
@@ -36,6 +39,8 @@ public class GroupCommandServiceImpl implements GroupCommandService {
     private final GroupMemberRepository groupMemberRepository;
     private final UserRepository userRepository;
     private final InviteCodeGenerator inviteCodeGenerator;
+    private final ProjectRepository projectRepository;
+    private final OpPublisher opPublisher;
 
     /**
      * 그룹 생성 (GRP-01). 그룹 저장과 생성자를 첫 멤버로 등록하는 작업이
@@ -84,6 +89,13 @@ public class GroupCommandServiceImpl implements GroupCommandService {
 
         groupMemberRepository.save(GroupConverter.toGroupMember(group, user));
 
+        // 대시보드를 보고 있는 멤버들의 멤버 목록 실시간 갱신용 (DSH). 그룹 op는 그룹의
+        // 살아있는 프로젝트마다 발행한다 — 저널이 프로젝트 단위라 재전송 일관성이 유지된다.
+        publishToGroupProjects(group.getId(), userId, "MEMBER_JOINED", Map.of(
+                "memberId", userId,
+                "nickname", user.getNickname(),
+                "profileImg", user.getProfileImageUrl() != null ? user.getProfileImageUrl() : ""));
+
         return GroupConverter.toJoined(group);
     }
 
@@ -108,6 +120,11 @@ public class GroupCommandServiceImpl implements GroupCommandService {
     public GroupResDTO.Left leaveGroup(Long userId, Long groupId) {
         boolean lastMember = groupMemberRepository.countMembers(groupId) <= 1;
 
+        // 마지막 1인이면 그룹이 통째로 사라진다 — 들을 사람도, op를 남길 프로젝트도 없다
+        if (!lastMember) {
+            publishToGroupProjects(groupId, userId, "MEMBER_LEFT", Map.of("memberId", userId));
+        }
+
         groupMemberRepository.deleteMembership(groupId, userId);
 
         if (lastMember) {
@@ -115,6 +132,16 @@ public class GroupCommandServiceImpl implements GroupCommandService {
         }
 
         return GroupConverter.toLeft(lastMember);
+    }
+
+    /**
+     * 그룹 범위 이벤트를 그룹의 살아있는 프로젝트 전부에 op로 발행한다.
+     * 프로젝트별 seq·저널이 유지되므로 어느 대시보드에서 재접속해도 멤버 변화가 재전송에 포함된다.
+     * (WS 세션의 멤버십 캐시 무효화·강제 종료는 Step 5의 세션 레지스트리에서 처리)
+     */
+    private void publishToGroupProjects(Long groupId, Long actorId, String opType, Map<String, Object> payload) {
+        projectRepository.findByTravelGroupIdAndDeletedAtIsNullOrderByIdDesc(groupId)
+                .forEach(project -> opPublisher.publish(project.getId(), actorId, null, opType, payload));
     }
 
     /** 그룹명 수정 (GRP-05). flat 모델이라 멤버 누구나 가능 */

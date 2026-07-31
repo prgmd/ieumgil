@@ -415,17 +415,18 @@ coord2address 역지오코딩(MAP-04 핀 지정).
   "isSuccess": true,
   "code": "COMMON200",
   "message": "요청에 성공했습니다.",
-  "result": { "durationMin": 42, "fare": 1400, "estimated": false, "fareConfidence": "CONFIRMED" }
+  "result": { "durationMin": 42, "fare": 1400, "intervalMin": 13, "estimated": false, "fareConfidence": "CONFIRMED" }
 }
 ```
-> - `BUS`/`SUBWAY`: ODsay. 실패·쿼터 초과 시 하버사인 추정 `estimated: true`.
+> `intervalMin`은 BUS/SUBWAY 전용 확장 필드로 ODsay의 `totalIntervalTime`(환승 구간 배차간격 합, 분)이며 WALK/TAXI/CAR에는 없다(향후 그 모드들이 붙을 때 `null`).
+> - `BUS`/`SUBWAY`: ODsay. 실패·경로없음 시 하버사인 추정 없이 즉시 실패(대중교통은 정류장 배치·환승 구조상 직선거리 추정이 부정확해 의미 없다고 판단) — `502`(API 실패) 또는 `404`(경로 없음)를 반환하며 프론트는 곧장 수동 입력으로 전환한다.
 > - `CAR`: v1은 하버사인 × 평균속도(시내 30·시외 60km/h) 산식, `estimated: true`, 비용 수동(`fareConfidence: ESTIMATE`).
 > - `TAXI`: 서버 산식(기본 4,800원 + km당 1,000원), `fareConfidence: ESTIMATE`.
 > **요금 신뢰도**: 지하철·버스·기차 → `CONFIRMED`, 항공·택시·자차 → `ESTIMATE`. UI는 ESTIMATE에 "약 ~원 (변동 가능)" + "확정 예약 전 실제 사이트에서 확인" 안내.
 
 ### GET /api/trains
 
-TAGO KTX 시간표 → 출발 후보 목록(앞 일정 종료 + 45분 버퍼 이후).
+ODsay 열차 시간표(KTX·무궁화 등) → 출발 후보 목록(앞 일정 종료 + 45분 버퍼 이후).
 
 **Query Params:** `dep`(출발역), `arr`(도착역), `after`(기준 시각)
 
@@ -440,11 +441,11 @@ TAGO KTX 시간표 → 출발 후보 목록(앞 일정 종료 + 45분 버퍼 이
   ]
 }
 ```
-> 실패 시 수동 입력 안내.
+> 실패 시 수동 입력 안내. (`domain.transit`의 `TransitScheduleQueryService.getTrainSchedule`이 이 조회를 이미 제공 — 이 엔드포인트 자체는 아직 컨트롤러 미구현, 위 시각/버퍼 계산 로직만 남음.)
 
 ### GET /api/stations
 
-역명 정적 목록 자동완성. **Query Params:** `query`. **Response:** `result: ["서울역", "서대구역", ...]`(서버 내장 데이터).
+역/터미널 이름검색 — ODsay 라이브 프록시(정적 목록 아님). **Query Params:** `type`(`TRAIN`\|`EXPRESS_BUS`\|`INTERCITY_BUS`), `query`(역/터미널 이름 일부, 부분일치). **Response:** `result: { stationId, stationName, lat, lng, destinations: [{stationId, stationName, lat, lng}, ...] }`(검색된 역 자체 정보 + 그 역에서 갈 수 있는 목적지 목록). `domain.transit`의 `TransitScheduleQueryService.searchTrainStation`/`searchExpressBusTerminal`/`searchIntercityBusTerminal`이 이미 제공 — 이 엔드포인트 자체는 아직 컨트롤러 미구현.
 
 ---
 

@@ -93,6 +93,9 @@ services:
       # 클라이언트가 다시 한번 인코딩해서 이중 인코딩으로 401 발생
       TOUR_API_KEY: ${TOUR_API_KEY}
       GMS_API_KEY: ${GMS_API_KEY}
+      # 카카오 디벨로퍼스 앱의 REST API 키(OAuth client-id/secret과 별개)
+      KAKAO_REST_API_KEY: ${KAKAO_REST_API_KEY}
+      ODSAY_API_KEY: ${ODSAY_API_KEY}
 
     depends_on:
       postgres:
