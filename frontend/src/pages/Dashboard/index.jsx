@@ -409,10 +409,6 @@ function TimelineCard({
   );
 }
 
-function ReadModeView({ chains, items, startDate }) {
-  // Day 수는 프로젝트 기간에서 파생된 chains 의 키를 그대로 따른다 (useDashboard 가 만든다)
-  const days = Object.keys(chains);
-
 // 💡 새롭게 추가된 검색 결과용 드래그 컴포넌트
 function SearchResultDraggable({ place, onClick }) {
   const id = `search-result-${place.id}`;
@@ -474,7 +470,9 @@ function SearchResultDraggable({ place, onClick }) {
   );
 }
 
-function ReadModeView({ chains, items }) {
+function ReadModeView({ chains, items, startDate }) {
+  // Day 수는 프로젝트 기간에서 파생된 chains 의 키를 그대로 따른다 (useDashboard 가 만든다)
+  const days = Object.keys(chains);
 
   return (
     <div
