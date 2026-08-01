@@ -1,6 +1,10 @@
 # 프론트엔드 코딩 컨벤션
 
-> React + TypeScript 기반 프로젝트 공통 규칙
+> React(JSX) 기반 프로젝트 공통 규칙
+>
+> 이 프로젝트는 TypeScript를 쓰지 않는다. 소스는 `.js` / `.jsx`이며 예제도 그 기준으로 작성한다.
+>
+> **미결 사항**: TypeScript가 담당했을 "런타임 전 타입 오류 검출"을 무엇으로 대체할지는 아직 정하지 않았다. 후보는 PropTypes, JSDoc 타입 주석(`// @ts-check`와 함께 쓰면 `tsc`로 검사 가능), ESLint 규칙 강화 정도다. **팀 논의 필요** — 정해지기 전까지는 이 축의 검출 공백이 남아 있다는 점을 인지하고 작업한다.
 
 
 ## 1. 디렉터리 구조
@@ -10,26 +14,24 @@
 ```
 src/
 ├── app/                    # 앱 진입점, 라우터, 전역 프로바이더
-│   ├── App.tsx
-│   ├── router.tsx
+│   ├── App.jsx
+│   ├── router.jsx
 │   └── providers/
 ├── pages/                  # 라우트 단위 페이지
 │   └── ProjectDetail/
-│       ├── index.tsx
+│       ├── index.jsx
 │       └── components/     # 이 페이지에서만 쓰는 컴포넌트
 ├── features/               # 도메인 기능 단위
 │   └── auth/
 │       ├── api/            # 이 기능의 API 호출
 │       ├── components/
 │       ├── hooks/
-│       ├── types.ts
-│       └── index.ts        # 외부 공개 항목만 export
+│       └── index.js        # 외부 공개 항목만 export
 ├── global/                 # 도메인 무관 공용
 │   ├── components/                 # Button, Modal, Input …
 │   ├── hooks/              # useDebounce, useMediaQuery …
 │   ├── util/               # 유틸 함수
 │   └── api/                # axios 인스턴스, 인터셉터
-├── types/                  # 전역 타입
 └── constants/
 ```
 
@@ -41,9 +43,9 @@ pages → features → global
 
 **역방향 import를 금지한다.** `global`이 `features`를 참조하는 순간 공용 모듈이 아니다.
 
-**feature 간 직접 참조도 금지한다.** `features/auth`가 `features/project`의 내부 파일을 가져오면 두 기능이 한 덩어리가 된다. 필요하면 `index.ts`를 통해서만 접근하고, 공유가 잦아지면 `global`로 올린다.
+**feature 간 직접 참조도 금지한다.** `features/auth`가 `features/project`의 내부 파일을 가져오면 두 기능이 한 덩어리가 된다. 필요하면 `index.js`를 통해서만 접근하고, 공유가 잦아지면 `global`로 올린다.
 
-```ts
+```js
 // ❌ 내부 경로 직접 참조
 import { parseToken } from '@/features/auth/util/parseToken';
 
@@ -55,9 +57,16 @@ import { parseToken } from '@/features/auth';
 
 상대 경로 `../../../`를 금지한다. 같은 폴더 내부(`./`)만 상대 경로를 허용한다.
 
-```ts
-// tsconfig.json
-{ "compilerOptions": { "paths": { "@/*": ["./src/*"] } } }
+```js
+// vite.config.js — 번들러가 실제로 해석하는 곳
+export default defineConfig({
+  resolve: { alias: { '@': path.resolve(__dirname, './src') } },
+});
+```
+
+```json
+// jsconfig.json — 에디터 자동완성·이동을 위해 함께 둔다
+{ "compilerOptions": { "baseUrl": ".", "paths": { "@/*": ["./src/*"] } } }
 ```
 
 ---
@@ -66,12 +75,11 @@ import { parseToken } from '@/features/auth';
 
 | 대상 | 규칙 | 예시 |
 |---|---|---|
-| 컴포넌트 파일·폴더 | PascalCase | `UserProfile.tsx` |
-| 그 외 파일 | camelCase | `formatDate.ts` |
+| 컴포넌트 파일·폴더 | PascalCase | `UserProfile.jsx` |
+| 그 외 파일 | camelCase | `formatDate.js` |
 | 컴포넌트 | PascalCase | `function UserProfile()` |
 | 변수·함수 | camelCase | `const userName`, `formatDate()` |
 | 상수 | UPPER_SNAKE_CASE | `const MAX_RETRY = 3` |
-| 타입·인터페이스 | PascalCase | `type User`, `interface Props` |
 | 커스텀 훅 | `use` + camelCase | `useUserProfile()` |
 | 불리언 | `is` / `has` / `can` / `should` | `isLoading`, `hasPermission` |
 | 이벤트 핸들러(내부) | `handle` + 동작 | `handleSubmit` |
@@ -82,7 +90,7 @@ import { parseToken } from '@/features/auth';
 
 **축약하지 않는다.** IDE가 자동완성해 준다.
 
-```ts
+```js
 // ❌
 const usr = getUsr();
 const btnClk = () => {};
@@ -94,113 +102,14 @@ const handleButtonClick = () => {};
 
 **단, 관용어는 예외다.** `id`, `url`, `props`, `ref`, `params`, `i`(짧은 루프 인덱스)는 그대로 쓴다.
 
-**타입 이름에 접두사를 붙이지 않는다.**
-
-```ts
-// ❌ IUser, TUser, UserInterface
-// ✅ User
-```
-
 ---
 
-## 3. TypeScript
-
-### `any`를 쓰지 않는다
-
-타입을 모르면 `unknown`을 쓰고 좁혀서 사용한다. `any`는 그 값이 지나가는 모든 코드의 타입 검사를 끈다.
-
-```ts
-// ❌
-function parse(data: any) {
-  return data.items.map((i: any) => i.name);
-}
-
-// ✅
-function parse(data: unknown): string[] {
-  if (!isApiResponse(data)) throw new Error('Invalid response');
-  return data.items.map((item) => item.name);
-}
-```
-
-**불가피하면 `eslint-disable`과 이유를 함께 남긴다.** 조용히 쓰지 않는다.
-
-```ts
-// eslint-disable-next-line @typescript-eslint/no-explicit-any -- 외부 SDK가 타입을 제공하지 않음
-```
-
-### 타입 단언(`as`)보다 타입 가드
-
-`as`는 "컴파일러야 믿어라"는 선언이고, 틀리면 런타임에서 터진다.
-
-```ts
-// ❌
-const user = data as User;
-
-// ✅
-function isUser(value: unknown): value is User {
-  return typeof value === 'object' && value !== null && 'id' in value;
-}
-```
-
-**예외** — `as const`, 테스트 코드의 목 데이터는 허용한다.
-
-### `interface`와 `type`
-
-**객체 형태는 `interface`, 그 외는 `type`.** 선언 병합이 필요 없으면 어느 쪽이든 동작하므로, 팀 내에서 하나로 통일하는 것이 목적이다.
-
-```ts
-interface User {
-  id: string;
-  name: string;
-}
-
-type Status = 'idle' | 'loading' | 'error';
-type UserId = User['id'];
-```
-
-### 유니온을 활용해 불가능한 상태를 없앤다
-
-```ts
-// ❌ isLoading이면서 error도 있는 상태가 타입상 가능하다
-interface State {
-  isLoading: boolean;
-  data?: User;
-  error?: Error;
-}
-
-// ✅ 세 상태 중 하나만 존재한다
-type State =
-  | { status: 'loading' }
-  | { status: 'success'; data: User }
-  | { status: 'error'; error: Error };
-```
-
-### enum 대신 유니온 또는 `as const`
-
-TS `enum`은 런타임 코드를 생성하고 트리셰이킹이 안 된다.
-
-```ts
-// ❌
-enum Role { Admin, Member }
-
-// ✅
-const ROLE = { ADMIN: 'ADMIN', MEMBER: 'MEMBER' } as const;
-type Role = (typeof ROLE)[keyof typeof ROLE];
-```
-
----
-
-## 4. 컴포넌트
+## 3. 컴포넌트
 
 ### 기본 형태
 
-```tsx
-interface Props {
-  userId: string;
-  onSelect?: (id: string) => void;
-}
-
-export function UserCard({ userId, onSelect }: Props) {
+```jsx
+export function UserCard({ userId, onSelect }) {
   // 1. 훅
   const { data, isLoading } = useUser(userId);
 
@@ -226,7 +135,7 @@ export function UserCard({ userId, onSelect }: Props) {
 
 ### 조건부 렌더링
 
-```tsx
+```jsx
 // ❌ items.length가 0이면 화면에 "0"이 출력된다
 {items.length && <List items={items} />}
 
@@ -249,7 +158,7 @@ export function UserCard({ userId, onSelect }: Props) {
 
 ### 컴포넌트 안에서 컴포넌트를 정의하지 않는다
 
-```tsx
+```jsx
 // ❌ 렌더링마다 새 타입이 되어 하위 트리가 통째로 언마운트된다
 function Parent() {
   function Child() { return <div />; }
@@ -259,7 +168,7 @@ function Parent() {
 
 ---
 
-## 5. 훅
+## 4. 훅
 
 ### 규칙
 
@@ -270,8 +179,8 @@ function Parent() {
 
 **같은 로직이 두 번째로 등장할 때** 분리한다. 처음부터 추상화하면 대개 틀린 추상화가 된다.
 
-```ts
-export function useDebounce<T>(value: T, delay = 300): T {
+```js
+export function useDebounce(value, delay = 300) {
   const [debounced, setDebounced] = useState(value);
 
   useEffect(() => {
@@ -290,7 +199,7 @@ export function useDebounce<T>(value: T, delay = 300): T {
 
 `useEffect`는 **외부 시스템과 동기화할 때만** 쓴다(구독, 타이머, DOM 이벤트, 로깅). 아래는 전부 잘못된 사용이다.
 
-```tsx
+```jsx
 // ❌ 파생 상태를 effect로 만든다
 const [fullName, setFullName] = useState('');
 useEffect(() => setFullName(`${first} ${last}`), [first, last]);
@@ -299,7 +208,7 @@ useEffect(() => setFullName(`${first} ${last}`), [first, last]);
 const fullName = `${first} ${last}`;
 ```
 
-```tsx
+```jsx
 // ❌ 이벤트에 대한 반응을 effect로 처리한다
 useEffect(() => {
   if (submitted) sendRequest();
@@ -313,7 +222,7 @@ const handleSubmit = () => sendRequest();
 
 ---
 
-## 6. 상태 관리
+## 5. 상태 관리
 
 ### 상태를 두는 위치
 
@@ -340,9 +249,9 @@ Context (자주 안 바뀌는 값: 테마, 로그인 사용자)
 
 ### 파생 상태를 저장하지 않는다
 
-```tsx
+```jsx
 // ❌ 두 상태가 어긋날 수 있다
-const [items, setItems] = useState<Item[]>([]);
+const [items, setItems] = useState([]);
 const [count, setCount] = useState(0);
 
 // ✅ 계산한다
@@ -353,7 +262,7 @@ const count = items.length;
 
 ### 상태를 갱신할 때 불변성을 지킨다
 
-```ts
+```js
 // ❌
 items.push(newItem);
 setItems(items);
@@ -366,7 +275,7 @@ setItems((prev) => [...prev, newItem]);
 
 ---
 
-## 7. 스타일
+## 6. 스타일
 
 **하나의 방식만 쓴다.** CSS Modules / Tailwind / CSS-in-JS 중 프로젝트 시작 시 정하고, 섞지 않는다.
 
@@ -377,13 +286,13 @@ setItems((prev) => [...prev, newItem]);
 - **`!important`를 쓰지 않는다.** 필요하다면 선택자 구조가 잘못됐다.
 - **`z-index`는 상수로 관리한다.** `9999` 같은 값이 코드에 흩어지면 순서를 아무도 모른다.
 
-```ts
-export const Z_INDEX = { dropdown: 10, modal: 100, toast: 1000 } as const;
+```js
+export const Z_INDEX = Object.freeze({ dropdown: 10, modal: 100, toast: 1000 });
 ```
 
 ---
 
-## 8. API 통신
+## 7. API 통신
 
 ### 계층을 분리한다
 
@@ -393,36 +302,36 @@ export const Z_INDEX = { dropdown: 10, modal: 100, toast: 1000 } as const;
 컴포넌트 → 훅 → api 함수 → HTTP 클라이언트
 ```
 
-```ts
-// global/api/client.ts — 인스턴스와 인터셉터
+```js
+// global/api/client.js — 인스턴스와 인터셉터
 export const client = axios.create({ baseURL: import.meta.env.VITE_API_URL });
 
-// features/user/api/getUser.ts — 엔드포인트 하나당 함수 하나
-export async function getUser(id: string): Promise<User> {
-  const { data } = await client.get<User>(`/users/${id}`);
+// features/user/api/getUser.js — 엔드포인트 하나당 함수 하나
+export async function getUser(id) {
+  const { data } = await client.get(`/users/${id}`);
   return data;
 }
 
-// features/user/hooks/useUser.ts — 컴포넌트가 쓰는 인터페이스
-export function useUser(id: string) {
+// features/user/hooks/useUser.js — 컴포넌트가 쓰는 인터페이스
+export function useUser(id) {
   return useQuery({ queryKey: ['user', id], queryFn: () => getUser(id) });
 }
 ```
 
 ### 규칙
 
-- **API 응답 타입을 명시한다.** 서버 스키마가 있으면 코드 생성(OpenAPI, GraphQL Codegen)을 우선한다.
+- **응답 형태를 api 함수에서 확정한다.** 컴포넌트가 서버 응답의 원형을 그대로 받지 않도록, api 함수가 필요한 필드만 골라 일정한 형태로 돌려준다. 서버 스키마가 바뀌었을 때 고칠 곳이 한 군데로 모인다.
 - **에러 처리는 인터셉터에서 공통 처리하고**, 화면별 분기가 필요한 것만 개별 처리한다.
 - **URL 문자열을 컴포넌트에 두지 않는다.**
 - **환경 변수로 분리한다.** 코드에 도메인을 하드코딩하지 않는다.
 
 ---
 
-## 9. 주석
+## 8. 주석
 
 **"무엇"이 아니라 "왜"를 쓴다.** 무엇을 하는지는 코드가 이미 말하고 있다.
 
-```ts
+```js
 // ❌ 사용자 목록을 필터링한다
 const activeUsers = users.filter((u) => u.isActive);
 
