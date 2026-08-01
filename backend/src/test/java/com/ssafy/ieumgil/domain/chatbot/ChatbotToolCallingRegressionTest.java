@@ -66,8 +66,16 @@ class ChatbotToolCallingRegressionTest {
 
 	private static final String SYSTEM_PROMPT = """
 			당신은 '이음길' 여행 일정 플래너 앱의 챗봇 캐릭터 '이음이'입니다.
-			사용자의 여행 계획을 도와주는 친근하고 간결한 도우미입니다.
-			답변은 2~3문장 이내로 짧고 실용적으로 하세요.""";
+			사용자가 여행 일정을 세우도록 돕는 친근한 도우미로, 장소·맛집·볼거리·이동·축제 등
+			여행 전반의 질문을 폭넓게 도와줍니다. 특정 기능에만 자신을 한정하지 마세요.
+			답할 수 있는 질문에는 사과하거나 되묻기부터 하지 말고, 먼저 도움이 되는 답을 준 뒤
+			필요하면 구체화를 위한 질문을 덧붙이세요.
+			도구(검색·경로·시간표 등)가 준 정보만 사용하고, 그 밖의 사실·날짜·기간을 지어내거나
+			넘겨짚어 부풀리지 마세요. 검색 결과가 비었거나 빈약하면 억지로 추천을 만들지 말고
+			솔직히 알린 뒤 더 구체적인 조건을 물어보세요.
+			날씨·환율·실시간 정보처럼 확인할 수 없는 것은 모른다고 말하고 대안을 안내하세요.
+			요청이 목적지·기간 등 핵심 정보 없이 지나치게 모호할 때만 필요한 정보를 되물으세요.
+			답변은 핵심만 간결하게 전하고, 불필요하게 길게 나열하지 마세요.""";
 
 	private static final String DESTINATION = "부산";
 	private static final LocalDate TRIP_START = LocalDate.of(2026, 10, 1);
@@ -165,6 +173,20 @@ class ChatbotToolCallingRegressionTest {
 		verify(mocks.placeQueryService, never()).getWalkingRoute(anyDouble(), anyDouble(), anyDouble(), anyDouble());
 		verify(mocks.placeQueryService, never()).getTaxiRoute(anyDouble(), anyDouble(), anyDouble(), anyDouble());
 		verify(mocks.festivalQueryService, never()).findByRegionAndDateRange(any(), any(), any());
+	}
+
+	@Test
+	void modelDoesNotInvokeAnyTool_forAmbiguousRequest() throws IOException {
+		ToolMocks mocks = runAllTools("여행 가고 싶어.");
+
+		// 목적지·기간 없는 모호 입력 → 프롬프트의 되묻기 규칙대로 어떤 tool도 부르지 않아야 한다.
+		verify(mocks.festivalQueryService, never()).findByRegionAndDateRange(any(), any(), any());
+		verify(mocks.placeQueryService, never()).searchPlaces(any(), any(), any());
+		verify(mocks.placeQueryService, never()).getWalkingRoute(anyDouble(), anyDouble(), anyDouble(), anyDouble());
+		verify(mocks.placeQueryService, never()).getTaxiRoute(anyDouble(), anyDouble(), anyDouble(), anyDouble());
+		verify(mocks.trainScheduleProvider, never()).findSchedule(any(), any());
+		verify(mocks.busScheduleProvider, never()).findSchedule(any(), any());
+		verify(mocks.flightScheduleProvider, never()).findSchedule(any(), any());
 	}
 
 	// === 공용 헬퍼: 전체 tool 세트를 mock 다운스트림으로 구성해 실모델에 프롬프트를 던진다 ===
