@@ -34,7 +34,7 @@ import java.util.Map;
 /**
  * 프로젝트는 경로가 두 갈래다 —
  * 목록·생성은 그룹 하위(/groups/{groupId}/projects), 수정·삭제는 단독(/projects/{projectId}).
- * 그래서 공통 접두사를 /api/v0까지만 두고 메서드에서 나머지를 적는다.
+ * 그래서 공통 접두사를 /api까지만 두고 메서드에서 나머지를 적는다.
  */
 @RestController
 @Validated

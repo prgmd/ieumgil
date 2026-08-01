@@ -13,7 +13,7 @@ import java.time.LocalDate;
 
 public class ProjectReqDTO {
 
-    /** 프로젝트 생성 요청 (POST /api/v0/groups/{groupId}/projects) */
+    /** 프로젝트 생성 요청 (POST /api/groups/{groupId}/projects) */
     public record Create(
             @Schema(description = "프로젝트 이름", example = "제주 3박 4일")
             @NotBlank(message = "프로젝트 이름은 필수입니다.")
@@ -47,7 +47,7 @@ public class ProjectReqDTO {
     ) {
     }
 
-    /** 프로젝트 이름·기간 수정 요청 (PATCH /api/v0/projects/{projectId}). 보낸 필드만 바뀐다 */
+    /** 프로젝트 이름·기간 수정 요청 (PATCH /api/projects/{projectId}). 보낸 필드만 바뀐다 */
     public record Update(
             @Schema(description = "프로젝트 이름", example = "제주 4박 5일")
             @Size(min = 1, max = 100, message = "프로젝트 이름은 1~100자여야 합니다.")
