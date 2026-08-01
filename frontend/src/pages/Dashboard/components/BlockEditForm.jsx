@@ -1,5 +1,7 @@
 import { useState } from "react";
 import { CAT_TO_SERVER } from "../../../features/dashboard/api/dashboardApi";
+import "./BlockEditForm.css";
+
 
 export function BlockEditForm({
   initialData,
@@ -54,109 +56,21 @@ export function BlockEditForm({
     setFormData((prev) => ({ ...prev, [name]: value }));
   };
 
-  const styles = {
-    container: {
-      width: "460px",
-      backgroundColor: "#fbf8f1",
-      borderRadius: "16px",
-      padding: "28px",
-      boxShadow: "0 10px 30px rgba(0,0,0,0.15)",
-      fontFamily: "sans-serif",
-      color: "#4a3a31",
-      maxHeight: "90vh",
-      overflowY: "auto",
-    },
-    header: { marginBottom: "24px" },
-    title: {
-      fontSize: "22px",
-      fontWeight: "800",
-      marginBottom: "6px",
-      color: "#3d2b22",
-    },
-    subtitle: { fontSize: "13px", color: "#8c7b70" },
-    row: { display: "flex", gap: "16px", marginBottom: "16px" },
-    col: { flex: 1, display: "flex", flexDirection: "column" },
-    label: {
-      fontSize: "13px",
-      fontWeight: "700",
-      color: "#7a6a5c",
-      marginBottom: "8px",
-    },
-    input: {
-      padding: "12px 14px",
-      borderRadius: "10px",
-      border: "1px solid #e6dec8",
-      backgroundColor: "#fff",
-      fontSize: "15px",
-      color: "#333",
-      outline: "none",
-      transition: "border 0.2s",
-    },
-    readOnlyInput: {
-      padding: "12px 14px",
-      borderRadius: "10px",
-      border: "1px solid #e6dec8",
-      backgroundColor: "#f0ebd8",
-      fontSize: "15px",
-      color: "#555",
-      outline: "none",
-    },
-    textarea: {
-      padding: "12px 14px",
-      borderRadius: "10px",
-      border: "1px solid #e6dec8",
-      backgroundColor: "#fff",
-      fontSize: "15px",
-      color: "#333",
-      outline: "none",
-      minHeight: "80px",
-      resize: "none",
-    },
-    footer: {
-      display: "flex",
-      justifyContent: "space-between",
-      alignItems: "center",
-      marginTop: "30px",
-    },
-    editorInfo: { fontSize: "12px", color: "#8c7b70" },
-    btnGroup: { display: "flex", gap: "8px" },
-    btnCancel: {
-      padding: "10px 24px",
-      borderRadius: "10px",
-      border: "1px solid #d9cebc",
-      backgroundColor: "#fff",
-      color: "#4a3a31",
-      fontWeight: "bold",
-      fontSize: "15px",
-      cursor: "pointer",
-    },
-    btnSave: {
-      padding: "10px 24px",
-      borderRadius: "10px",
-      border: "none",
-      backgroundColor: "#7c5443",
-      color: "#fff",
-      fontWeight: "bold",
-      fontSize: "15px",
-      cursor: "pointer",
-    },
-  };
-
   return (
-    <div style={styles.container}>
-      <div style={styles.header}>
-        <h2 style={styles.title}>블록 상세</h2>
-        <p style={styles.subtitle}>
+    <div className="bef">
+      <div className="bef-head">
+        <h2 className="bef-title">블록 상세</h2>
+        <p className="bef-sub">
           장소명·주소·시간은 자동으로 채워진 뒤 수정할 수 있어요. 비용은 직접
           입력합니다.
         </p>
       </div>
 
-      <div style={styles.row}>
-        <div style={styles.col}>
-          <label style={styles.label}>대분류</label>
+      <div className="bef-row">
+        <div className="bef-col">
+          <label className="bef-label">대분류</label>
           <select
-            style={styles.input}
+            className="bef-input"
             name="category"
             value={formData.category}
             onChange={handleChange}
@@ -174,12 +88,15 @@ export function BlockEditForm({
             </p>
           )}
         </div>
-        <div style={styles.col}>
-          <label style={styles.label}>소분류</label>
-          {/* 소분류·주소도 카테고리처럼 생성 시에만 — 서버 LWW 화이트리스트에 없어
+
+        <div className="bef-col">
+          <label className="bef-label">소분류</label>
+
+           {/* 소분류·주소도 카테고리처럼 생성 시에만 — 서버 LWW 화이트리스트에 없어
               (BLOCK400_2) 기존 블록 수정으로는 저장할 수 없다 */}
+               
           <input
-            style={styles.input}
+            className="bef-input"
             name="subCategory"
             value={formData.subCategory}
             onChange={handleChange}
@@ -189,11 +106,11 @@ export function BlockEditForm({
         </div>
       </div>
 
-      <div style={styles.row}>
-        <div style={styles.col}>
-          <label style={styles.label}>장소명 (수정 가능)</label>
+      <div className="bef-row">
+        <div className="bef-col">
+          <label className="bef-label">장소명 (수정 가능)</label>
           <input
-            style={styles.input}
+            className="bef-input"
             name="name"
             value={formData.name}
             onChange={handleChange}
@@ -201,13 +118,12 @@ export function BlockEditForm({
         </div>
       </div>
 
-      <div style={styles.row}>
-        <div style={styles.col}>
-          <label style={styles.label}>
-            주소 {categoryLocked ? "(생성 시 확정)" : "(자동 입력 · 수정 가능)"}
-          </label>
+      <div className="bef-row">
+        <div className="bef-col">
+          <label className="bef-label">주소 (자동 입력 · 수정 가능)</label>
+
           <input
-            style={styles.input}
+            className="bef-input"
             name="address"
             value={formData.address}
             onChange={handleChange}
@@ -216,19 +132,19 @@ export function BlockEditForm({
         </div>
       </div>
 
-      <div style={styles.row}>
-        <div style={styles.col}>
-          <label style={styles.label}>시간 (체인에서 자동 계산)</label>
+      <div className="bef-row">
+        <div className="bef-col">
+          <label className="bef-label">시간 (체인에서 자동 계산)</label>
           <input
-            style={styles.readOnlyInput}
+            className="bef-input"
             value={timeString || "시간 정보 없음"}
             readOnly
           />
         </div>
-        <div style={styles.col}>
-          <label style={styles.label}>소요 (분 · 30분 단위)</label>
+        <div className="bef-col">
+          <label className="bef-label">소요 (분 · 30분 단위)</label>
           <input
-            style={styles.input}
+            className="bef-input"
             type="number"
             step="30"
             name="durationMin"
@@ -238,11 +154,11 @@ export function BlockEditForm({
         </div>
       </div>
 
-      <div style={styles.row}>
-        <div style={styles.col}>
-          <label style={styles.label}>비용 (직접 입력 · 원)</label>
+      <div className="bef-row">
+        <div className="bef-col">
+          <label className="bef-label">비용 (직접 입력 · 원)</label>
           <input
-            style={styles.input}
+            className="bef-input"
             type="number"
             name="budget"
             value={formData.budget}
@@ -251,11 +167,11 @@ export function BlockEditForm({
         </div>
       </div>
 
-      <div style={styles.row}>
-        <div style={styles.col}>
-          <label style={styles.label}>비고 — 메모·세부사항 (최대 500자)</label>
+      <div className="bef-row">
+        <div className="bef-col">
+          <label className="bef-label">비고 — 메모·세부사항</label>
           <textarea
-            style={styles.textarea}
+            className="bef-textarea"
             name="detail"
             value={formData.detail}
             onChange={handleChange}
@@ -271,14 +187,19 @@ export function BlockEditForm({
         </p>
       )}
 
-      <div style={styles.footer}>
-        <div style={styles.editorInfo}>✏️ 마지막 수정 · 민준</div>
-        <div style={styles.btnGroup}>
-          <button style={styles.btnCancel} onClick={onCancel} disabled={saving}>
+      <div className="bef-foot">
+        <div className="bef-editor">✎ 마지막 수정 · 민준</div>
+        <div className="bef-btns">
+          <button className="bef-btn bef-btn-cancel" onClick={onCancel}>
             닫기
           </button>
-          <button style={styles.btnSave} onClick={handleSave} disabled={saving}>
-            {saving ? "저장 중…" : "저장"}
+          {/* handleSave 를 거쳐야 입력 검증·중복 제출 방지(saving)가 동작한다 */}
+          <button
+            className="bef-btn bef-btn-save"
+            onClick={handleSave}
+            disabled={saving}
+          >
+            {saving ? "저장 중..." : "저장"}
           </button>
         </div>
       </div>

@@ -1,4 +1,10 @@
-import React, { useState, useRef, useEffect, useCallback } from "react";
+import React, {
+  useState,
+  useRef,
+  useEffect,
+  useCallback,
+  useMemo,
+} from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { BlockEditForm } from "./components/BlockEditForm";
 import { ChatbotWidget } from "./components/ChatbotWidget";
@@ -26,6 +32,9 @@ import { useProjectOps } from "../../features/dashboard/realtime/useProjectOps";
 import { createOpSequencer } from "../../features/dashboard/realtime/opSequencer";
 import * as blockApi from "../../features/dashboard/api/dashboardApi";
 import { getClientId } from "../../global/api/clientId";
+import { useGroupDetail } from "../../features/group/hooks/useGroupDetail";
+import { useProjects } from "../../features/group/hooks/useProjects";
+import { useAuthStore } from "../../global/stores/authStore";
 import { useToastStore } from "../../global/stores/toastStore";
 import "./index.css";
 
@@ -35,12 +44,25 @@ const DAY_END = 1440;
 const TL_PAD_TOP = 20;
 const TL_PAD_LEFT = 70;
 
+/**
+ * 카테고리(대분류) 표. 색은 값을 직접 적지 않고 공통 토큰(tokens.css)을 가리킨다 —
+ * 팔레트를 바꿀 일이 생기면 CSS 한 곳만 고치면 된다.
+ * hex/bg 는 그대로 CSS 변수(--dc/--cb)나 배경색으로 넘어가므로 var() 문자열로 둔다.
+ */
 const CAT_COLORS = {
-  stay: { nm: "숙소", hex: "#8a5aa8", bg: "var(--stayB, #f3edfa)" },
-  food: { nm: "식당", hex: "#d97e3c", bg: "var(--foodB, #fdf1e4)" },
-  spot: { nm: "명소/활동", hex: "#3e8e63", bg: "var(--spotB, #eaf5ec)" },
-  etc: { nm: "기타", hex: "#7a6a5c", bg: "var(--etcB, #f1ece4)" },
-  trans: { nm: "교통", hex: "#6b7fc7", bg: "var(--transB, #eef0fb)" },
+  stay: { nm: "숙소", hex: "var(--stay, #8a5aa8)", bg: "var(--stayB, #f3edfa)" },
+  food: { nm: "식당", hex: "var(--food, #d97e3c)", bg: "var(--foodB, #fdf1e4)" },
+  spot: {
+    nm: "명소/활동",
+    hex: "var(--spot, #3e8e63)",
+    bg: "var(--spotB, #eaf5ec)",
+  },
+  etc: { nm: "기타", hex: "var(--etc, #7a6a5c)", bg: "var(--etcB, #f1ece4)" },
+  trans: {
+    nm: "교통",
+    hex: "var(--trans, #6b7fc7)",
+    bg: "var(--transB, #eef0fb)",
+  },
 };
 
 const fmtTime = (mins) => {
@@ -51,17 +73,6 @@ const fmtTime = (mins) => {
 
 const won = (n) => (n ? n.toLocaleString("ko-KR") + "원" : "무료");
 const catOf = (item) => CAT_COLORS[item?.cat] || CAT_COLORS.etc;
-
-// "2026-08-10" + dayIdx → "2026.08.12" — Day 헤더의 날짜 라벨.
-// 기간이 없는 프로젝트(start/end nullable)는 빈 문자열로 라벨을 생략한다.
-const dayDateLabel = (startDate, dayIdx) => {
-  if (!startDate) return "";
-  const d = new Date(startDate);
-  d.setDate(d.getDate() + dayIdx);
-  const mm = String(d.getMonth() + 1).padStart(2, "0");
-  const dd = String(d.getDate()).padStart(2, "0");
-  return `${d.getFullYear()}.${mm}.${dd}`;
-};
 
 // ── 블록 id 규약 ─────────────────────────────────────
 // 서버에 아직 없는 블록을 구분하는 규약 — custom-(모달 저장 전), search-(생성 요청 중)
@@ -151,6 +162,58 @@ const persistShiftedTimes = (chainIds, prevItems, nextItems, excludeId) => {
   );
 };
 
+const DAY_MS = 24 * 60 * 60 * 1000;
+/** 프로젝트를 아직 못 불러왔을 때만 쓰는 Day 수 (기존 목업과 같은 4일). */
+const FALLBACK_DAY_COUNT = 4;
+const WEEKDAYS = ["일", "월", "화", "수", "목", "금", "토"];
+
+// 'YYYY-MM-DD' 를 그냥 new Date() 에 넣으면 UTC 자정으로 읽혀 KST에서 하루 밀린다.
+const parseDate = (iso) =>
+  typeof iso === "string" && iso.length >= 10
+    ? new Date(`${iso.slice(0, 10)}T00:00:00`)
+    : null;
+
+/**
+ * 프로젝트 기간(startDate~endDate)에서 Day 키 목록을 만든다.
+ * 그룹 페이지에서 기간을 수정하면 이 목록이 바뀌고, Day 탭·읽기 모드가 함께 따라간다.
+ */
+function dayKeysOf(project) {
+  const start = parseDate(project?.startDate);
+  const end = parseDate(project?.endDate);
+  const count =
+    start && end
+      ? Math.min(30, Math.max(1, Math.round((end - start) / DAY_MS) + 1))
+      : FALLBACK_DAY_COUNT;
+  return Array.from({ length: count }, (_, i) => `d${i + 1}`);
+}
+
+/** Date → 'YYYY-MM-DD' (서버·<input type="date"> 가 쓰는 형식). */
+function toISODate(date) {
+  const mm = String(date.getMonth() + 1).padStart(2, "0");
+  const dd = String(date.getDate()).padStart(2, "0");
+  return `${date.getFullYear()}-${mm}-${dd}`;
+}
+
+/** Day n(0-based)의 날짜를 'YYYY-MM-DD' 로. 기간을 모르면 빈 문자열. */
+function dayISODate(project, index) {
+  const start = parseDate(project?.startDate);
+  return start ? toISODate(new Date(start.getTime() + index * DAY_MS)) : "";
+}
+
+/** Day n(0-based)의 실제 날짜. 기간을 모르면 빈 문자열 — 가짜 날짜를 만들지 않는다. */
+function dayDate(project, index, style = "full") {
+  const start = parseDate(project?.startDate);
+  if (!start) return "";
+  const d = new Date(start.getTime() + index * DAY_MS);
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  if (style === "short") return `${mm}.${dd}`;
+  return `${d.getFullYear()}.${mm}.${dd} (${WEEKDAYS[d.getDay()]})`;
+}
+
+/** 없는/잘못된 cat 은 기타로 모은다 — 카테고리 합계에서 한 칸이 사라지지 않게. */
+const catKeyOf = (item) => (CAT_COLORS[item?.cat] ? item.cat : "etc");
+
 const resolveOverlaps = (currentItems, dayChain, dayStartMins, fixedId) => {
   let newItems = { ...currentItems };
   const others = dayChain.filter((id) => id !== fixedId);
@@ -178,10 +241,23 @@ const resolveOverlaps = (currentItems, dayChain, dayStartMins, fixedId) => {
   return { newItems, newChain };
 };
 
-function DayTab({ label, count, isActive, onClick }) {
+/**
+ * 다이어리 책갈피 모양의 Day 탭.
+ * 모양(리본 노치·보드 아래로 끼워지는 느낌)은 CSS(.day-tab)에서 만들고 여기서는
+ * 책갈피에 적히는 세 줄 — Day 번호 / 날짜 / 블록 수 — 만 담는다.
+ */
+function DayTab({ label, date, count, isActive, onClick }) {
   return (
-    <button className={`day-tab ${isActive ? "on" : ""}`} onClick={onClick}>
-      {label} <span className="cnt">{count}</span>
+    <button
+      className={`day-tab ${isActive ? "on" : ""}`}
+      onClick={onClick}
+      aria-current={isActive ? "true" : undefined}
+    >
+      <span className="dt-top">
+        <span className="dt-label">{label}</span>
+        <span className="cnt">{count}</span>
+      </span>
+      {date && <span className="dt-date">{date}</span>}
     </button>
   );
 }
@@ -200,9 +276,7 @@ function CardBody({ item, mode, startMins, endMins, isThisResizing, onEdge }) {
           <span className="grip">⠿</span>
         </div>
         {/* 💡 연필 아이콘 삭제, 글씨 두께만 강조 */}
-        <div className="nm" style={{ fontWeight: "bold", color: "#333" }}>
-          {item?.name}
-        </div>
+        <div className="nm">{item?.name}</div>
         <div className="sub">{item?.detail || item?.address}</div>
       </>
     );
@@ -212,18 +286,8 @@ function CardBody({ item, mode, startMins, endMins, isThisResizing, onEdge }) {
     <>
       {onEdge && (
         <div
+          className={`tl-edge is-top ${isThisResizing === "top" ? "is-active" : ""}`}
           onClick={(e) => onEdge(e, "top")}
-          style={{
-            position: "absolute",
-            top: 0,
-            left: 0,
-            right: 0,
-            height: "16px",
-            cursor: "ns-resize",
-            zIndex: 40,
-            background:
-              isThisResizing === "top" ? "rgba(0,0,0,0.1)" : "transparent",
-          }}
         />
       )}
       <div className="l1">
@@ -233,10 +297,7 @@ function CardBody({ item, mode, startMins, endMins, isThisResizing, onEdge }) {
         </span>
         {item?.auto && <span className="auto-badge">자동</span>}
         <span>
-          {/* 💡 밑줄 및 연필 아이콘 삭제 */}
-          <span className="nm" style={{ fontWeight: "bold", color: "#333" }}>
-            {item?.name}
-          </span>{" "}
+          <span className="nm">{item?.name}</span>{" "}
           <span className="nm-sub">{item?.detail}</span>
         </span>
         <span className="time">
@@ -244,15 +305,10 @@ function CardBody({ item, mode, startMins, endMins, isThisResizing, onEdge }) {
         </span>
         <span className="cost">{won(item?.cost)}</span>
       </div>
-      <div className="addr">📍 {item?.addr || "위치 정보 없음"}</div>
-      <div className="ctl" style={{ marginTop: "auto", paddingTop: "8px" }}>
-        <span
-          className="dur"
-          style={{
-            color: isThisResizing ? catStyle.hex : undefined,
-            fontWeight: isThisResizing ? "bold" : "normal",
-          }}
-        >
+      <div className="addr">📍 {item?.address || "위치 정보 없음"}</div>
+      <div className="ctl">
+        {/* 리사이즈 중에는 안내 문구가 카테고리 색으로 강조된다(.dur.is-resizing) */}
+        <span className={`dur ${isThisResizing ? "is-resizing" : ""}`}>
           {isThisResizing
             ? "마우스를 움직여 조절 후 클릭하여 확정"
             : `소요 ${item?.dur}분`}
@@ -260,21 +316,37 @@ function CardBody({ item, mode, startMins, endMins, isThisResizing, onEdge }) {
       </div>
       {onEdge && (
         <div
+          className={`tl-edge is-bottom ${isThisResizing === "bottom" ? "is-active" : ""}`}
           onClick={(e) => onEdge(e, "bottom")}
-          style={{
-            position: "absolute",
-            bottom: 0,
-            left: 0,
-            right: 0,
-            height: "16px",
-            cursor: "ns-resize",
-            zIndex: 40,
-            background:
-              isThisResizing === "bottom" ? "rgba(0,0,0,0.1)" : "transparent",
-          }}
         />
       )}
     </>
+  );
+}
+
+/**
+ * 블록의 수정 표시. 개인 페이지의 카드(.g-card .op)와 같은 ✎ 아이콘·같은 규칙 —
+ * 평소에는 숨어 있고 카드에 마우스를 올릴 때만 나타난다(노출은 CSS .blk-op).
+ *
+ * 카드 전체에 드래그 리스너가 걸려 있어 pointerdown 을 여기서 끊어야 버튼을 누르는
+ * 동작이 드래그 시작으로 오해되지 않는다.
+ */
+function BlockEditBadge({ onEdit }) {
+  if (!onEdit) return null;
+  return (
+    <button
+      type="button"
+      className="blk-op"
+      title="블록 수정"
+      aria-label="블록 수정"
+      onPointerDown={(e) => e.stopPropagation()}
+      onClick={(e) => {
+        e.stopPropagation();
+        onEdit();
+      }}
+    >
+      ✎
+    </button>
   );
 }
 
@@ -288,20 +360,19 @@ function PoolCard({ id, item, onEditBlock }) {
     isDragging,
   } = useSortable({ id, data: { from: "pool" } });
   const catStyle = catOf(item);
+  // dnd-kit 이 만들어주는 이동값과 카테고리 색만 인라인으로 넘긴다(색 지정은 CSS 몫).
   const style = {
     transform: isDragging ? undefined : CSS.Transform.toString(transform),
     transition,
-    opacity: isDragging ? 0.35 : 1,
     "--dc": catStyle.hex,
     "--cb": catStyle.bg,
-    cursor: "pointer", // 💡 박스 전체에 클릭(손가락) 커서 적용
   };
 
   return (
     <div
       ref={setNodeRef}
       style={style}
-      className="pcard"
+      className={`pcard ${isDragging ? "is-dragging" : ""}`}
       data-pool-id={id}
       {...attributes}
       {...listeners}
@@ -309,6 +380,7 @@ function PoolCard({ id, item, onEditBlock }) {
       onClick={() => onEditBlock && onEditBlock(id)}
     >
       <CardBody id={id} item={item} mode="pool" onEditBlock={onEditBlock} />
+      <BlockEditBadge onEdit={onEditBlock && (() => onEditBlock(id))} />
     </div>
   );
 }
@@ -341,64 +413,24 @@ function TimelineCard({
     }
   };
 
+  // 위치·높이는 시간 계산 결과라 인라인으로 남기고, 색·모양은 CSS(.slot/.card)가 쥔다.
   const topPx = (startMins - dayStartMins) * PX;
   const slotStyle = {
-    position: "absolute",
-    top: `${topPx}px`,
-    left: "10px",
-    right: "10px",
-    height: `${height}px`,
-    opacity: isDragging ? 0 : 1,
-    pointerEvents: isDragging ? "none" : "auto",
-    transition:
-      isDragging || isThisResizing
-        ? "none"
-        : "top 0.25s cubic-bezier(0.2, 0, 0, 1), height 0.25s cubic-bezier(0.2, 0, 0, 1)",
-    zIndex: isDragging || isThisResizing ? 100 : 5,
-  };
-  const cardStyle = {
-    height: "100%",
     "--dc": catStyle.hex,
     "--cb": catStyle.bg,
-    position: "relative",
-    overflow: "hidden",
-    cursor: isThisResizing ? "ns-resize" : "pointer", // 💡 리사이징 중이 아닐 때는 포인터(손가락) 커서
-    boxShadow: isThisResizing ? `0 0 0 2px ${catStyle.hex}` : undefined,
+    top: `${topPx}px`,
+    height: `${height}px`,
   };
 
   return (
-    <div className="slot" style={slotStyle}>
-      <span
-        className="tlab"
-        style={{
-          position: "absolute",
-          left: "-64px",
-          top: "-10px",
-          width: "52px",
-          textAlign: "right",
-          fontSize: "12.5px",
-          fontWeight: "700",
-          color: catStyle.hex,
-          background: "rgba(255, 253, 248, 0.95)",
-          zIndex: 15,
-          padding: "2px 0",
-        }}
-      >
-        {fmtTime(startMins)}
-      </span>
-      <span
-        className="dot"
-        style={{
-          position: "absolute",
-          left: "-6px",
-          top: "-7px",
-          "--dc": catStyle.hex,
-          zIndex: 15,
-        }}
-      />
+    <div
+      className={`slot ${isDragging ? "is-dragging" : ""} ${isThisResizing ? "is-resizing" : ""}`}
+      style={slotStyle}
+    >
+      <span className="tlab">{fmtTime(startMins)}</span>
+      <span className="dot" />
       <div
         ref={setNodeRef}
-        style={cardStyle}
         className={`card ${item?.auto ? "auto-block" : ""}`}
         {...(!isThisResizing ? attributes : {})}
         {...(!isThisResizing ? listeners : {})}
@@ -419,6 +451,9 @@ function TimelineCard({
           onEdge={handleEdgeClick}
           onEditBlock={onEditBlock}
         />
+        {!isThisResizing && (
+          <BlockEditBadge onEdit={onEditBlock && (() => onEditBlock(id))} />
+        )}
       </div>
     </div>
   );
@@ -435,123 +470,46 @@ function SearchResultDraggable({ place, onClick }) {
   return (
     <div
       ref={setNodeRef}
-      style={{
-        display: "flex",
-        justifyContent: "space-between",
-        alignItems: "center",
-        padding: "10px 12px",
-        backgroundColor: "#fff",
-        borderRadius: "10px",
-        border: "1px solid #e6dec8",
-        opacity: isDragging ? 0.4 : 1,
-        cursor: "grab",
-        boxShadow: isDragging
-          ? "0 8px 16px rgba(0,0,0,0.12)"
-          : "0 2px 4px rgba(0,0,0,0.02)",
-        transition: "box-shadow 0.2s, transform 0.2s",
-      }}
+      className={`sr-item ${isDragging ? "is-dragging" : ""}`}
       {...attributes}
       {...listeners}
       onClick={() => onClick && onClick(place)}
     >
-      <div style={{ display: "flex", alignItems: "flex-start", gap: "8px" }}>
-        <div style={{ color: "#d97e3c", fontSize: "10px", marginTop: "4px" }}>
-          ●
-        </div>
+      <div className="sr-main">
+        <div className="sr-dot">●</div>
         <div>
-          <div
-            style={{
-              fontSize: "14px",
-              fontWeight: "bold",
-              color: "#333",
-              marginBottom: "2px",
-            }}
-          >
-            {place.place_name}
-          </div>
-          <div style={{ fontSize: "12px", color: "#888", marginBottom: "2px" }}>
+          <div className="sr-name">{place.place_name}</div>
+          <div className="sr-addr">
             {place.road_address_name || place.address_name}
           </div>
-          <div style={{ fontSize: "11px", color: "#aaa" }}>
-            {place.category_group_name}
-          </div>
+          <div className="sr-cat">{place.category_group_name}</div>
         </div>
       </div>
       {/* 끌어다 놓기 유도용 손잡이 아이콘 */}
-      <div style={{ color: "#c9b8a5", fontSize: "18px", paddingLeft: "8px" }}>
-        ⠿
-      </div>
+      <div className="sr-grip">⠿</div>
     </div>
   );
 }
 
-function ReadModeView({ chains, items, startDate }) {
-  // Day 수는 프로젝트 기간에서 파생된 chains 의 키를 그대로 따른다 (useDashboard 가 만든다)
-  const days = Object.keys(chains);
-
+function ReadModeView({ chains, items, dayKeys, project }) {
+  // 배경·좌우 여백은 편집 모드와 같은 껍데기(.dash-shell/.dash-body)가 쥔다 —
+  // 여기서 배경을 따로 칠하면 모드를 바꿀 때 화면이 갈라져 보인다.
   return (
-    <div
-      style={{
-        padding: "20px 40px",
-        backgroundColor: "#f4f1ea",
-        minHeight: "100vh",
-      }}
-    >
-      {days.map((day, index) => {
+    <div className="dash-body read-view">
+      {dayKeys.map((day, index) => {
         const chain = chains[day] || [];
         if (chain.length === 0) return null;
         return (
-          <div
-            key={day}
-            style={{
-              marginBottom: "32px",
-              backgroundColor: "#fbf8f1",
-              padding: "32px",
-              borderRadius: "16px",
-              boxShadow: "0 4px 12px rgba(0,0,0,0.05)",
-            }}
-          >
-            <div style={{ marginBottom: "24px" }}>
-              <h2
-                style={{
-                  fontSize: "26px",
-                  color: "#3d2b22",
-                  margin: "0 0 8px 0",
-                  fontFamily: "serif",
-                }}
-              >
-                Day {index + 1}{" "}
-                <span
-                  style={{
-                    fontSize: "15px",
-                    color: "#888",
-                    fontWeight: "normal",
-                    fontFamily: "sans-serif",
-                  }}
-                >
-                  {dayDateLabel(startDate, index)}
-                </span>
-              </h2>
-            </div>
-            <div
-              style={{
-                position: "relative",
-                display: "flex",
-                flexDirection: "column",
-                gap: "16px",
-              }}
-            >
-              <div
-                style={{
-                  position: "absolute",
-                  left: "55px",
-                  top: "20px",
-                  bottom: "20px",
-                  width: "2px",
-                  backgroundColor: "#e6dec8",
-                  zIndex: 0,
-                }}
-              />
+          <div key={day} className="rv-day">
+            <h2 className="rv-day-title">
+              Day {index + 1}{" "}
+              <span className="rv-day-date">
+                {dayDate(project, index) || "날짜 미정"}
+              </span>
+            </h2>
+
+            <div className="rv-list">
+              <div className="rv-line" />
               {chain.map((id) => {
                 const item = items[id];
                 if (!item) return null;
@@ -559,102 +517,31 @@ function ReadModeView({ chains, items, startDate }) {
                 const endMins = startMins + item.dur;
                 const catStyle = catOf(item);
                 return (
+                  // 카테고리 색만 CSS 변수로 넘기고, 그 색을 어디에 쓸지는 CSS 가 정한다
                   <div
                     key={id}
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: "20px",
-                      zIndex: 1,
-                    }}
+                    className="rv-row"
+                    style={{ "--dc": catStyle.hex, "--cb": catStyle.bg }}
                   >
-                    <div
-                      style={{
-                        width: "60px",
-                        textAlign: "right",
-                        fontWeight: "bold",
-                        fontSize: "15px",
-                        color: catStyle.hex,
-                        backgroundColor: "#fbf8f1",
-                      }}
-                    >
-                      {fmtTime(startMins)}
-                    </div>
-                    <div
-                      style={{
-                        width: "12px",
-                        height: "12px",
-                        borderRadius: "50%",
-                        backgroundColor: catStyle.hex,
-                        border: "2px solid #fbf8f1",
-                        flexShrink: 0,
-                      }}
-                    />
-                    <div
-                      style={{
-                        flex: 1,
-                        backgroundColor: catStyle.bg,
-                        padding: "18px 24px",
-                        borderRadius: "12px",
-                        display: "flex",
-                        justifyContent: "space-between",
-                        alignItems: "center",
-                      }}
-                    >
-                      <div
-                        style={{
-                          display: "flex",
-                          alignItems: "center",
-                          gap: "12px",
-                        }}
-                      >
-                        <span
-                          style={{
-                            backgroundColor: catStyle.hex,
-                            color: "#fff",
-                            fontSize: "12px",
-                            padding: "4px 8px",
-                            borderRadius: "6px",
-                            fontWeight: "bold",
-                          }}
-                        >
+                    <div className="rv-time">{fmtTime(startMins)}</div>
+                    <div className="rv-dot" />
+                    <div className="rv-card">
+                      <div className="rv-card-main">
+                        <span className="rv-badge">
                           {catStyle.nm} {item.sub ? `· ${item.sub}` : ""}
                         </span>
                         <div>
-                          <div
-                            style={{
-                              fontWeight: "bold",
-                              fontSize: "17px",
-                              color: "#333",
-                              marginBottom: "4px",
-                            }}
-                          >
-                            {item.name}
-                          </div>
-                          <div style={{ fontSize: "13px", color: "#666" }}>
-                            📍 {item.addr || "위치 정보 없음"}
+                          <div className="rv-name">{item.name}</div>
+                          <div className="rv-addr">
+                            📍 {item.address || "위치 정보 없음"}
                           </div>
                         </div>
                       </div>
-                      <div style={{ textAlign: "right" }}>
-                        <div
-                          style={{
-                            fontWeight: "bold",
-                            color: catStyle.hex,
-                            marginBottom: "6px",
-                          }}
-                        >
+                      <div className="rv-card-side">
+                        <div className="rv-range">
                           {fmtTime(startMins)} - {fmtTime(endMins)}
                         </div>
-                        <div
-                          style={{
-                            fontSize: "15px",
-                            fontWeight: "bold",
-                            color: "#333",
-                          }}
-                        >
-                          {won(item.cost)}
-                        </div>
+                        <div className="rv-cost">{won(item.cost)}</div>
                       </div>
                     </div>
                   </div>
@@ -701,17 +588,59 @@ export function DashboardPage() {
     onOp: (op) => sequencerRef.current?.push(op),
   });
 
+  // 상단바(개인 페이지 › 그룹명 › 프로젝트명)의 그룹명·멤버 아바타는 그룹 상세에서,
+  // 접속자 표시는 로그인 사용자에서 얻는다. 프로젝트 데이터(이름·기간·예산)의
+  // 원천은 위 스냅샷 하나다 — 두 소스가 섞이면 날짜 수정 직후 값이 어긋난다.
+  const numericGroupId = Number(groupId);
+  const { group } = useGroupDetail(numericGroupId);
+  // 날짜 캘린더(handleDayDateChange)의 저장 경로로만 쓴다 — 저장 후 reload() 로
+  // 스냅샷을 다시 읽어야 이 화면의 Day 탭·날짜가 따라 바뀐다.
+  const { updateProject } = useProjects(numericGroupId);
+  const currentUser = useAuthStore((s) => s.currentUser);
+
+  // 여행 기간이 곧 Day 개수다. 기간이 바뀌면(날짜 캘린더·그룹 페이지 수정 후 재조회)
+  // 탭도 함께 바뀐다.
+  const dayKeys = useMemo(() => dayKeysOf(project), [project]);
+
   const [viewMode, setViewMode] = useState("edit");
-  const [activeDay, setActiveDay] = useState("d1");
+  const [dateEditOpen, setDateEditOpen] = useState(false); // 날짜 캘린더 열림 여부
+  const [selectedDay, setActiveDay] = useState("d1");
+  // 기간이 줄어 보고 있던 Day 가 사라지면 첫째 날을 본다 — 상태를 되돌리지 않고
+  // 렌더 시점에 정하므로 "없는 Day 를 가리키는 한 프레임"이 생기지 않는다.
+  const activeDay = dayKeys.includes(selectedDay) ? selectedDay : dayKeys[0];
+  const activeDayIndex = Math.max(0, dayKeys.indexOf(activeDay));
+
   // Day 시작 시각(타임라인 상단) — 서버에 저장 칸이 없는(ERD) 본인 화면 전용 값.
   // 기본 09:00 고정이고 상단 ± 버튼으로만 바뀐다. 블록 시각에서 파생하지 않는다 —
   // 파생하면 블록을 놓을 때마다 새로고침 후 타임라인 시작이 멋대로 움직인다.
+  // 초기값은 비워 두고 스냅샷 시드가 Day 별로 채운다. 시드에 없는 Day(기간 연장 등)는
+  // 읽는 쪽이 전부 `?? 540` 으로 받는다.
   const [dayStart, setDayStart] = useState({});
 
   // 보드 편집 상태 — 초기값은 비워 두고, 스냅샷이 도착하면 아래 시드 effect 가 채운다.
   const [items, setItems] = useState({});
   const [chains, setChains] = useState({});
   const [pool, setPool] = useState([]);
+
+  // 기간이 줄어 사라진 Day 에 남아 있던 블록은 버리지 않고 후보 목록으로 되돌린다 —
+  // 서버가 PATCH 응답의 movedToPool 로 알려주는 것과 같은 규칙이다.
+  // (늘어난 Day 는 상태를 만들 필요가 없다. 조회하는 쪽이 전부 `chains[day] || []`,
+  //  `dayStart[day] ?? 540` 로 비어 있는 경우를 받아낸다.)
+  // 시드와 같은 "렌더 중 조건부 setState" 패턴 — effect 로 하면 set-state-in-effect 에
+  // 걸리고, 스냅샷 재시드와 같은 렌더에 겹칠 때도 아래 시드 블록이 나중에 실행되므로
+  // 서버 진실이 이긴다.
+  const goneDays = Object.keys(chains).filter((key) => !dayKeys.includes(key));
+  if (goneDays.length > 0) {
+    const dropped = goneDays.flatMap((key) => chains[key]);
+    if (dropped.length > 0) {
+      setPool((p) => [...dropped.filter((id) => !p.includes(id)), ...p]);
+    }
+    const next = {};
+    dayKeys.forEach((key) => {
+      next[key] = chains[key] ?? [];
+    });
+    setChains(next);
+  }
 
   const [editingBlockId, setEditingBlockId] = useState(null);
   const [activeId, setActiveId] = useState(null);
@@ -766,6 +695,59 @@ export function DashboardPage() {
     script.onload = bind;
     document.head.appendChild(script);
   }, []);
+
+  // 지도 패널이 사이드 폭을 그대로 쓰게 되면서(빈 공간 활용) 창 크기에 따라 실제
+  // 픽셀 크기가 바뀐다 — 카카오 지도는 컨테이너 크기가 변하면 relayout() 을 불러줘야
+  // 타일과 중심이 어긋나지 않는다.
+  useEffect(() => {
+    if (!map) return;
+    const onResize = () => map.relayout();
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, [map]);
+
+  // 날짜 팝오버는 Esc 로 닫는다. 브라우저 캘린더를 자동으로 띄우지는 않는다 —
+  // 팝오버가 열리자마자 캘린더가 겹쳐 뜨면 시야를 가려서, 입력칸의 달력 표시를
+  // 눌렀을 때만 열리게 둔다.
+  useEffect(() => {
+    if (!dateEditOpen) return;
+    const onKey = (e) => e.key === "Escape" && setDateEditOpen(false);
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [dateEditOpen]);
+
+  /**
+   * 캘린더에서 고른 날짜를 지금 보고 있는 Day 의 날짜로 삼는다.
+   *
+   * 여행은 이어진 기간이라 Day 하나만 다른 날로 뗄 수 없다 — 고른 날짜에 이 Day 가 오도록
+   * 시작일·종료일을 통째로 옮긴다. 기간 길이는 그대로여서 Day 수와 블록 배치가 흔들리지
+   * 않는다. (며칠짜리 여행인지 자체를 바꾸는 건 그룹 페이지의 수정 폼에서 한다.)
+   */
+  async function handleDayDateChange(picked) {
+    setDateEditOpen(false);
+    const pickedDate = parseDate(picked);
+    if (!pickedDate || !project) return;
+
+    const newStart = new Date(pickedDate.getTime() - activeDayIndex * DAY_MS);
+    const newEnd = new Date(newStart.getTime() + (dayKeys.length - 1) * DAY_MS);
+    const startISO = toISODate(newStart);
+    const endISO = toISODate(newEnd);
+    if (startISO === project.startDate && endISO === project.endDate) return;
+
+    try {
+      await updateProject(projectId, {
+        name: project.name,
+        startDate: startISO,
+        endDate: endISO,
+      });
+      // 이 화면의 project 원천은 스냅샷이다 — 다시 읽어야 Day 탭·날짜가 따라온다.
+      // (기간 밖으로 밀려난 블록의 후보 이동도 서버 응답이 진실이다.)
+      reload();
+      showToast(`여행 일정을 ${startISO} 시작으로 옮겼어요 ✓`);
+    } catch {
+      showToast("날짜를 바꾸지 못했어요. 잠시 후 다시 시도해주세요.");
+    }
+  }
 
   const handleSearchPlace = (e) => {
     e.preventDefault();
@@ -926,6 +908,47 @@ export function DashboardPage() {
     targetBudget > 0 ? Math.min(100, (totalBudget / targetBudget) * 100) : 0;
   const remainingBudget = targetBudget - totalBudget;
 
+  /**
+   * 카테고리(대분류)별 예산 세그먼트.
+   *
+   * 사용량 전체가 갈색 한 덩어리였을 때는 "무엇이 예산을 잡아먹는지"를 알 수 없었다.
+   * 블록 하나하나로 쪼개면 칸이 너무 잘게 나뉘므로, 숙소·식당·명소/활동·기타·교통
+   * 다섯 대분류로 합산해 카테고리 색 그대로 쌓는다.
+   *
+   * 칸의 폭은 "희망 예산 대비 비율"이다 — 그래야 남은 예산(빈 트랙)과 같은 자를 쓴다.
+   * 예산을 넘긴 경우에는 기준을 총 사용액으로 바꿔 막대를 꽉 채우고, 초과분은 아래
+   * 텍스트가 알려준다(비율이 100%를 넘는 칸은 그릴 수 없으므로).
+   *
+   * 순서는 금액순이 아니라 CAT_COLORS 선언 순서다 — 블록을 하나 고칠 때마다 칸이
+   * 자리를 바꾸면 눈으로 따라가기 어렵다.
+   */
+  const budgetSegments = useMemo(() => {
+    const denominator =
+      remainingBudget < 0 || targetBudget <= 0
+        ? totalBudget || 1
+        : targetBudget;
+
+    const sumByCat = {};
+    Object.values(items).forEach((item) => {
+      const cost = item?.cost || 0;
+      if (cost <= 0) return;
+      const cat = catKeyOf(item);
+      sumByCat[cat] = (sumByCat[cat] ?? 0) + cost;
+    });
+
+    return Object.keys(CAT_COLORS)
+      .filter((cat) => sumByCat[cat] > 0)
+      .map((cat) => ({
+        cat,
+        name: CAT_COLORS[cat].nm,
+        color: CAT_COLORS[cat].hex,
+        cost: sumByCat[cat],
+        percent: (sumByCat[cat] / denominator) * 100,
+        shareOfTotal:
+          totalBudget > 0 ? (sumByCat[cat] / totalBudget) * 100 : 0,
+      }));
+  }, [items, targetBudget, totalBudget, remainingBudget]);
+
   // 임시 목업 — 6단계에서 GET /api/transit/route 로 교체한다(BUS/SUBWAY만 구현됨).
   // 인자(출발/도착 블록)는 그때 다시 받는다.
   const fetchTransitInfo = useCallback(async () => {
@@ -1017,7 +1040,7 @@ export function DashboardPage() {
         const { newItems: resolvedItems, newChain } = resolveOverlaps(
           newItems,
           rebuilt,
-          dayStart[dayKey],
+          dayStart[dayKey] ?? 540,
           null,
         );
 
@@ -1119,7 +1142,7 @@ export function DashboardPage() {
         const { newItems: resolvedItems, newChain } = resolveOverlaps(
           newItems,
           currentChain,
-          dayStart[dayKey],
+          dayStart[dayKey] ?? 540,
           null,
         );
 
@@ -1491,7 +1514,7 @@ export function DashboardPage() {
         const { newItems, newChain } = resolveOverlaps(
           updatedItems,
           chains[activeDay],
-          dayStart[activeDay],
+          dayStart[activeDay] ?? 540,
           targetId,
         );
 
@@ -1725,7 +1748,7 @@ export function DashboardPage() {
         const { newItems } = resolveOverlaps(
           updatedSnapshot,
           chains[activeDay],
-          dayStart[activeDay],
+          dayStart[activeDay] ?? 540,
           resizingState.id,
         );
         return newItems;
@@ -1758,7 +1781,10 @@ export function DashboardPage() {
   const handleStartChange = (delta) => {
     setDayStart((prev) => ({
       ...prev,
-      [activeDay]: Math.max(300, Math.min(1380, prev[activeDay] + delta)),
+      [activeDay]: Math.max(
+        300,
+        Math.min(1380, (prev[activeDay] ?? 540) + delta),
+      ),
     }));
   };
 
@@ -1846,18 +1872,19 @@ export function DashboardPage() {
         const relativeY =
           topY - tlRect.top + (timelineDOMRef.current?.scrollTop || 0);
         const calcMins =
-          dayStart[activeDay] + Math.round((relativeY - TL_PAD_TOP) / PX);
+          (dayStart[activeDay] ?? 540) +
+          Math.round((relativeY - TL_PAD_TOP) / PX);
         let dropMins = Math.round(calcMins / SNAP) * SNAP;
         const dur = items[activeIdLocal]?.dur || 60; // 기본 소요시간 60분
         dropMins = Math.max(
-          dayStart[activeDay],
+          dayStart[activeDay] ?? 540,
           Math.min(dropMins, DAY_END - dur),
         );
         return { region: "timeline", dropMins, dur };
       }
       return { region: null };
     },
-    [pool, chains, activeDay, items, dayStart],
+    [pool, activeDay, items, dayStart],
   );
 
   // 렌더에서 쓰는 드래그 출처 정보({ from, place })는 state 로 둔다 —
@@ -2036,7 +2063,7 @@ export function DashboardPage() {
       const { newItems, newChain } = resolveOverlaps(
         updatedItems,
         currentDayList,
-        dayStart[activeDay],
+        dayStart[activeDay] ?? 540,
         activeIdLocal,
       );
 
@@ -2098,7 +2125,9 @@ export function DashboardPage() {
     }
   };
 
-  const timelineStart = dayStart[activeDay];
+  // Day 개수가 프로젝트 기간을 따라 바뀌므로, 동기화 effect 가 돌기 전 한 프레임 동안
+  // 아직 없는 Day 를 가리킬 수 있다 — 기본 09:00 으로 받쳐 NaN 좌표를 만들지 않는다.
+  const timelineStart = dayStart[activeDay] ?? 540;
   const timelineEnd = DAY_END;
   const timeSlots = [];
   for (let t = timelineStart; t <= timelineEnd; t += 30) timeSlots.push(t);
@@ -2143,7 +2172,7 @@ export function DashboardPage() {
     const { newItems, newChain } = resolveOverlaps(
       tempItems,
       tempChain,
-      dayStart[activeDay],
+      timelineStart,
       activeId,
     );
     displayItems = newItems;
@@ -2164,9 +2193,11 @@ export function DashboardPage() {
     })
     .filter(Boolean);
 
-  // 스냅샷이 시드되기 전(로딩 중)에는 보드를 그리지 않는다 — dayStart[activeDay]
-  // 같은 파생값이 아직 없다. 에러일 때는 위 effect 가 그룹 페이지로 되돌린다.
-  if (status !== "loaded" || dayStart[activeDay] == null) return null;
+  // 스냅샷이 시드되기 전(로딩 중)에는 보드를 그리지 않는다.
+  // 에러일 때는 위 effect 가 그룹 페이지로 되돌린다.
+  // dayStart 는 조건에 넣지 않는다 — 기간 미정 프로젝트는 dayKeys(기본 4일)가
+  // 서버 chains 보다 넓어 시드에 없는 Day 가 있을 수 있고, 그때는 `?? 540` 폴백이 받는다.
+  if (status !== "loaded") return null;
 
   // 💡 타임라인 드래그 미리보기 합치기
   if (dragPreview?.region === "timeline" && activeId && draggedItem) {
@@ -2182,818 +2213,535 @@ export function DashboardPage() {
 
   return (
     <>
+      {/* 개인 페이지 › 그룹명 › 프로젝트명. 그룹·프로젝트를 못 불러온 동안에는
+          자리만 지키는 문구를 쓴다(빈 칸이 생기면 경로가 끊겨 보인다). */}
       <AppBar
         crumbs={[
-          { label: "그룹", to: `/groups/${groupId}` },
-          { label: project?.name ?? "프로젝트 대시보드" },
+          { label: "개인 페이지", to: "/my" },
+          { label: group?.name ?? "그룹", to: `/groups/${groupId}` },
+          { label: project?.name ?? "여행 대시보드" },
         ]}
+        members={group?.members ?? []}
+        // 실시간 접속 정보가 아직 없어 지금은 나만 활동 중으로 표시된다.
+        // WebSocket 이 붙으면 접속자 id 목록을 그대로 여기에 넣으면 된다.
+        activeMemberIds={currentUser?.id ? [currentUser.id] : []}
       />
 
-      <div
-        style={{
-          display: "flex",
-          justifyContent: "flex-end",
-          padding: "12px 30px",
-          backgroundColor: "#f4f1ea",
-        }}
-      >
-        <div
-          style={{
-            display: "flex",
-            gap: "4px",
-            backgroundColor: "#f0ebd8",
-            padding: "6px",
-            borderRadius: "24px",
-          }}
-        >
-          <button
-            onClick={() => setViewMode("edit")}
-            style={{
-              padding: "8px 16px",
-              borderRadius: "20px",
-              border: "none",
-              cursor: "pointer",
-              fontSize: "14px",
-              transition: "all 0.2s",
-              backgroundColor: viewMode === "edit" ? "#fff" : "transparent",
-              fontWeight: viewMode === "edit" ? "bold" : "normal",
-              color: viewMode === "edit" ? "#7c5443" : "#8c7b70",
-              boxShadow:
-                viewMode === "edit" ? "0 2px 6px rgba(0,0,0,0.1)" : "none",
-            }}
-          >
-            ✏️ 편집
-          </button>
-          <button
-            onClick={() => setViewMode("read")}
-            style={{
-              padding: "8px 16px",
-              borderRadius: "20px",
-              border: "none",
-              cursor: "pointer",
-              fontSize: "14px",
-              transition: "all 0.2s",
-              backgroundColor: viewMode === "read" ? "#fff" : "transparent",
-              fontWeight: viewMode === "read" ? "bold" : "normal",
-              color: viewMode === "read" ? "#7c5443" : "#8c7b70",
-              boxShadow:
-                viewMode === "read" ? "0 2px 6px rgba(0,0,0,0.1)" : "none",
-            }}
-          >
-            ≡ 읽기
-          </button>
+      {/* 모드 전환 바 + 보드를 한 껍데기(.dash-shell) 안에 두어 경계 없이 이어 보이게 한다.
+          예전에는 전환 바가 자기 배경을 가진 별도 띠였다. */}
+      <div className="dash-shell">
+        <div className="dash-toolbar">
+          <div className="dash-heading">
+            <h1>{project?.name ?? "여행 대시보드"}</h1>
+            <span className="dash-sub">
+              {[
+                project?.destination,
+                // 시작일 ~ 종료일 (기간이 하루면 물결표 없이 한 날짜만)
+                project?.startDate && project?.endDate
+                  ? dayKeys.length > 1
+                    ? `${dayDate(project, 0, "short")} ~ ${dayDate(project, dayKeys.length - 1, "short")}`
+                    : dayDate(project, 0, "short")
+                  : null,
+                `${dayKeys.length}일`,
+              ]
+                .filter(Boolean)
+                .join(" · ")}
+            </span>
+          </div>
+          <div className="mode-switch">
+            <button
+              className={`mode-tab ${viewMode === "edit" ? "on" : ""}`}
+              onClick={() => setViewMode("edit")}
+            >
+              ✎ 편집
+            </button>
+            <button
+              className={`mode-tab ${viewMode === "read" ? "on" : ""}`}
+              onClick={() => setViewMode("read")}
+            >
+              ≡ 읽기
+            </button>
+          </div>
         </div>
-      </div>
 
-      {viewMode === "edit" ? (
-        // 💡 사이드바까지 드래그 기능이 통하도록 DndContext를 가장 상위 껍데기로 이동시켰습니다!
-        <DndContext
-          sensors={sensors}
-          autoScroll={dragPreview?.region === "timeline"}
-          onDragStart={handleDragStart}
-          onDragMove={handleDragMove}
-          onDragEnd={handleDragEnd}
-          onDragCancel={handleDragCancel}
-        >
-          <div className="dashboard-page">
-            <div className="daycol">
-              {Object.keys(chains).map((day, i) => (
-                <DayTab
-                  key={day}
-                  label={`Day ${i + 1}`}
-                  count={(chains[day] || []).length}
-                  isActive={activeDay === day}
-                  onClick={() => setActiveDay(day)}
-                />
-              ))}
-            </div>
+        {viewMode === "edit" ? (
+          // 💡 사이드바까지 드래그 기능이 통하도록 DndContext를 가장 상위 껍데기로 이동시켰습니다!
+          <DndContext
+            sensors={sensors}
+            autoScroll={dragPreview?.region === "timeline"}
+            onDragStart={handleDragStart}
+            onDragMove={handleDragMove}
+            onDragEnd={handleDragEnd}
+            onDragCancel={handleDragCancel}
+          >
+            <div className="dashboard-page dash-body">
+              <div className="daycol">
+                {dayKeys.map((day, i) => (
+                  <DayTab
+                    key={day}
+                    label={`Day ${i + 1}`}
+                    date={dayDate(project, i, "short")}
+                    count={(chains[day] || []).length}
+                    isActive={activeDay === day}
+                    onClick={() => setActiveDay(day)}
+                  />
+                ))}
+              </div>
 
-            <div className="main">
-              <div
-                className="board"
-                style={{
-                  display: "flex",
-                  flexDirection: "column",
-                  maxHeight: "620px",
-                }}
-              >
-                <div className="bd-head" style={{ flexShrink: 0 }}>
-                  <h2>Day {activeDay.replace("d", "")}</h2>
-                  <span className="date">
-                    {dayDateLabel(
-                      project?.startDate,
-                      Number(activeDay.replace("d", "")) - 1,
-                    )}
-                  </span>
-                  <div className="right">
-                    <button
-                      className="auto-transport-btn"
-                      onClick={() => regenerateAutoTransport(activeDay)}
-                      disabled={
-                        isGeneratingTransport ||
-                        (chains[activeDay] || []).filter(
-                          (id) => !items[id]?.auto,
-                        ).length < 2
-                      }
-                    >
-                      {isGeneratingTransport
-                        ? "생성 중..."
-                        : "🚗 이동수단 자동 생성"}
-                    </button>
-                    <div className="start-ctl">
-                      시작{" "}
-                      <button onClick={() => handleStartChange(-30)}>−</button>
-                      <b>{fmtTime(dayStart[activeDay])}</b>
-                      <button onClick={() => handleStartChange(30)}>＋</button>
+              <div className="main">
+                <div className="board plan-board">
+                  <div className="bd-head">
+                    <h2>Day {activeDayIndex + 1}</h2>
+                    {/* 날짜를 누르면 캘린더가 열리고, 고른 날짜에 이 Day 가 오도록
+                        여행 일정 전체가 함께 옮겨진다. 프로젝트를 못 불러왔으면 표시만. */}
+                    <div className="date-wrap">
+                      {project ? (
+                        <button
+                          type="button"
+                          className="date date-btn"
+                          title="날짜를 눌러 일정을 옮기세요"
+                          onClick={() => setDateEditOpen((v) => !v)}
+                        >
+                          {dayDate(project, activeDayIndex) || "날짜 미정"}
+                          <span className="date-ico">🗓</span>
+                        </button>
+                      ) : (
+                        <span className="date">
+                          {dayDate(project, activeDayIndex) || "날짜 미정"}
+                        </span>
+                      )}
+
+                      {dateEditOpen && (
+                        <>
+                          <div
+                            className="date-pop-back"
+                            onClick={() => setDateEditOpen(false)}
+                          />
+                          <div className="date-pop">
+                            <label htmlFor="day-date-input">
+                              Day {activeDayIndex + 1} 날짜
+                            </label>
+                            <input
+                              id="day-date-input"
+                              type="date"
+                              value={dayISODate(project, activeDayIndex)}
+                              onChange={(e) =>
+                                handleDayDateChange(e.target.value)
+                              }
+                            />
+                            <p>
+                              고른 날짜에 Day {activeDayIndex + 1} 이 오도록 여행{" "}
+                              {dayKeys.length}일 전체가 함께 옮겨져요.
+                            </p>
+                          </div>
+                        </>
+                      )}
+                    </div>
+                    <div className="right">
+                      <button
+                        className="auto-transport-btn"
+                        onClick={() => regenerateAutoTransport(activeDay)}
+                        disabled={
+                          isGeneratingTransport ||
+                          (chains[activeDay] || []).filter(
+                            (id) => !items[id]?.auto,
+                          ).length < 2
+                        }
+                      >
+                        {isGeneratingTransport
+                          ? "생성 중..."
+                          : "🚗 이동수단 자동 생성"}
+                      </button>
+                      <div className="start-ctl">
+                        시작{" "}
+                        <button onClick={() => handleStartChange(-30)}>−</button>
+                        <b>{fmtTime(timelineStart)}</b>
+                        <button onClick={() => handleStartChange(30)}>＋</button>
+                      </div>
                     </div>
                   </div>
-                </div>
 
-                <div
-                  className={`tl ${dragPreview?.region === "timeline" ? "dropover" : ""}`}
-                  ref={setTimelineRefs}
-                  onScroll={() => {
-                    if (activeDragRef.current)
-                      setDragPreview(computeDropTarget(activeDragRef.current));
-                  }}
-                  style={{
-                    marginTop: "10px",
-                    position: "relative",
-                    height: `${(timelineEnd - timelineStart) * PX + 120}px`,
-                    minHeight: "300px",
-                    maxHeight: "420px",
-                    overflowY: "auto",
-                    overflowX: "hidden",
-                  }}
-                >
                   <div
-                    className="tl-bg"
+                    className={`tl ${dragPreview?.region === "timeline" ? "dropover" : ""}`}
+                    ref={setTimelineRefs}
+                    onScroll={() => {
+                      if (activeDragRef.current)
+                        setDragPreview(computeDropTarget(activeDragRef.current));
+                    }}
+                    // 하루 길이(분 × PX)만 인라인으로 넘긴다 — 나머지 모양은 CSS(.tl)
                     style={{
-                      position: "absolute",
-                      top: `${TL_PAD_TOP}px`,
-                      left: `${TL_PAD_LEFT}px`,
-                      right: 0,
-                      bottom: 0,
-                      pointerEvents: "none",
-                      zIndex: 0,
+                      height: `${(timelineEnd - timelineStart) * PX + 120}px`,
                     }}
                   >
-                    {timeSlots.map((t) => (
-                      <div
-                        key={t}
-                        style={{
-                          position: "absolute",
-                          top: `${(t - timelineStart) * PX}px`,
-                          left: 0,
-                          width: "100%",
-                          height: "1px",
-                        }}
-                      >
-                        <span
-                          style={{
-                            position: "absolute",
-                            left: "-64px",
-                            top: "-10px",
-                            width: "52px",
-                            textAlign: "right",
-                            fontSize: "12px",
-                            fontWeight: "700",
-                            color: "#c9b8a5",
-                          }}
-                        >
-                          {fmtTime(t)}
-                        </span>
+                    {/* 눈금·안내선 (--tl-pad-top/left 로 여백만 넘기고 색은 CSS) */}
+                    <div
+                      className="tl-bg"
+                      style={{
+                        "--tl-pad-top": `${TL_PAD_TOP}px`,
+                        "--tl-pad-left": `${TL_PAD_LEFT}px`,
+                      }}
+                    >
+                      {timeSlots.map((t) => (
                         <div
+                          key={t}
+                          className="tl-mark"
+                          style={{ top: `${(t - timelineStart) * PX}px` }}
+                        >
+                          <span className="tl-mark-time">{fmtTime(t)}</span>
+                          <div className="tl-mark-line" />
+                        </div>
+                      ))}
+                      {dragPreview?.region === "timeline" && draggedItem && (
+                        <div
+                          className="tl-ghost"
                           style={{
-                            position: "absolute",
-                            left: "-6px",
-                            right: 0,
-                            top: 0,
-                            borderTop: "1px dashed rgba(61, 43, 34, 0.15)",
-                          }}
-                        />
-                      </div>
-                    ))}
-                    {dragPreview?.region === "timeline" && draggedItem && (
-                      <div
-                        style={{
-                          position: "absolute",
-                          left: "-6px",
-                          right: "10px",
-                          top: `${(dragPreview.dropMins - timelineStart) * PX}px`,
-                          height: `${(dragPreview.dur || draggedItem.dur || 30) * PX}px`,
-                          border: `2px dashed ${catOf(draggedItem).hex}`,
-                          background: catOf(draggedItem).bg,
-                          opacity: 0.75,
-                          borderRadius: "12px",
-                          zIndex: 8,
-                          display: "flex",
-                          alignItems: "flex-start",
-                          justifyContent: "flex-start",
-                          padding: "6px 10px",
-                          pointerEvents: "none",
-                        }}
-                      >
-                        <span
-                          style={{
-                            fontSize: "12px",
-                            fontWeight: 800,
-                            color: catOf(draggedItem).hex,
-                            background: "#fff",
-                            borderRadius: "8px",
-                            padding: "2px 8px",
+                            "--dc": catOf(draggedItem).hex,
+                            "--cb": catOf(draggedItem).bg,
+                            top: `${(dragPreview.dropMins - timelineStart) * PX}px`,
+                            height: `${(dragPreview.dur || draggedItem.dur || 30) * PX}px`,
                           }}
                         >
-                          {fmtTime(dragPreview.dropMins)} 에 놓기
-                        </span>
-                      </div>
-                    )}
-                  </div>
+                          <span className="tl-ghost-label">
+                            {fmtTime(dragPreview.dropMins)} 에 놓기
+                          </span>
+                        </div>
+                      )}
+                    </div>
 
-                  <div
-                    style={{
-                      position: "absolute",
-                      top: `${TL_PAD_TOP}px`,
-                      left: `${TL_PAD_LEFT}px`,
-                      right: 0,
-                      bottom: "100px",
-                      zIndex: 5,
-                    }}
-                  >
-                    {activeDayItems.map((data, index) => {
-                      const boundTop =
-                        index > 0
-                          ? activeDayItems[index - 1].endMins
-                          : dayStart[activeDay];
+                    <div
+                      className="tl-slots"
+                      style={{
+                        "--tl-pad-top": `${TL_PAD_TOP}px`,
+                        "--tl-pad-left": `${TL_PAD_LEFT}px`,
+                      }}
+                    >
+                      {activeDayItems.map((data, index) => {
+                        const boundTop =
+                          index > 0
+                            ? activeDayItems[index - 1].endMins
+                            : timelineStart;
 
-                      const nextData = activeDayItems[index + 1];
-                      const showGapBtn =
-                        nextData &&
-                        data.item.cat !== "trans" &&
-                        nextData.item.cat !== "trans";
+                        const nextData = activeDayItems[index + 1];
+                        const showGapBtn =
+                          nextData &&
+                          data.item.cat !== "trans" &&
+                          nextData.item.cat !== "trans";
 
-                      // 💡 추가된 부분: 두 일정 사이의 빈 시간(gap) 계산
-                      const gapMins = nextData
-                        ? nextData.startMins - data.endMins
-                        : 0;
-                      const hasEnoughGap = gapMins >= 15; // 빈 시간이 15분 이상인지 확인
+                        // 💡 추가된 부분: 두 일정 사이의 빈 시간(gap) 계산
+                        const gapMins = nextData
+                          ? nextData.startMins - data.endMins
+                          : 0;
+                        const hasEnoughGap = gapMins >= 15; // 빈 시간이 15분 이상인지 확인
 
-                      const isThisActiveTimelineCard =
-                        activeId === data.id &&
-                        dragPreview?.region === "timeline";
+                        const isThisActiveTimelineCard =
+                          activeId === data.id &&
+                          dragPreview?.region === "timeline";
 
-                      return (
-                        <React.Fragment key={data.id}>
-                          {isThisActiveTimelineCard ? (
-                            <div style={{ opacity: 0 }}>
+                        return (
+                          <React.Fragment key={data.id}>
+                            {isThisActiveTimelineCard ? (
+                              // 드래그 중인 카드의 원래 자리 — 자리만 잡고 보이지 않게
+                              <div className="slot-ghost">
+                                <TimelineCard
+                                  id={data.id}
+                                  item={data.item}
+                                  startMins={data.startMins}
+                                  endMins={data.endMins}
+                                  dayStartMins={timelineStart}
+                                />
+                              </div>
+                            ) : (
                               <TimelineCard
                                 id={data.id}
                                 item={data.item}
                                 startMins={data.startMins}
                                 endMins={data.endMins}
-                                dayStartMins={dayStart[activeDay]}
+                                resizingState={resizingState}
+                                onResizeStart={handleResizeStart}
+                                dayStartMins={timelineStart}
+                                boundTop={boundTop}
+                                onEditBlock={setEditingBlockId}
                               />
-                            </div>
-                          ) : (
-                            <TimelineCard
-                              id={data.id}
-                              item={data.item}
-                              startMins={data.startMins}
-                              endMins={data.endMins}
-                              resizingState={resizingState}
-                              onResizeStart={handleResizeStart}
-                              dayStartMins={dayStart[activeDay]}
-                              boundTop={boundTop}
-                              onEditBlock={setEditingBlockId}
-                            />
-                          )}
+                            )}
 
-                          {/* 💡 업데이트된 부분: 블록과 겹치지 않는 스마트 교통 아이콘 */}
-                          {showGapBtn && !isThisActiveTimelineCard && (
-                            <div
-                              style={{
-                                position: "absolute",
-                                // 시간이 비어있으면 갭의 정중앙에, 딱 붙어있으면 경계선에 배치
-                                top: hasEnoughGap
-                                  ? `${(data.endMins + gapMins / 2 - dayStart[activeDay]) * PX}px`
-                                  : `${(data.endMins - dayStart[activeDay]) * PX}px`,
-                                left: "10px",
-                                right: hasEnoughGap ? "10px" : "15px", // 딱 붙어있을 땐 우측으로 살짝 밀기
-                                zIndex: 30,
-                                display: "flex",
-                                justifyContent: hasEnoughGap
-                                  ? "center"
-                                  : "flex-end", // 붙어있으면 우측 정렬
-                                alignItems: "center",
-                                transform: "translateY(-50%)",
-                                pointerEvents: "none",
-                              }}
-                            >
+                            {/* 💡 업데이트된 부분: 블록과 겹치지 않는 스마트 교통 아이콘.
+                                hover 색 반전은 CSS(.trans-chip:hover)가 한다 — 예전에는
+                                onMouseEnter 에서 스타일을 직접 바꿨다. */}
+                            {showGapBtn && !isThisActiveTimelineCard && (
                               <div
+                                className={`trans-slot ${hasEnoughGap ? "has-gap" : ""}`}
                                 style={{
-                                  background: "#fff",
-                                  border: "1px solid #d97e3c",
-                                  borderRadius: "20px",
-                                  padding: "6px 14px",
-                                  fontSize: "12px",
-                                  color: "#d97e3c",
-                                  pointerEvents: "auto",
-                                  cursor: "pointer",
-                                  display: "flex",
-                                  alignItems: "center",
-                                  gap: "6px",
-                                  boxShadow: "0 2px 6px rgba(0,0,0,0.12)",
-                                }}
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  handleAddSingleTransport(
-                                    activeDay,
-                                    data.id,
-                                    nextData.id,
-                                  );
-                                }}
-                                // 💡 마우스 호버 시 색상이 바뀌는 효과 추가
-                                onMouseEnter={(e) => {
-                                  e.currentTarget.style.background = "#d97e3c";
-                                  e.currentTarget.style.color = "#fff";
-                                }}
-                                onMouseLeave={(e) => {
-                                  e.currentTarget.style.background = "#fff";
-                                  e.currentTarget.style.color = "#d97e3c";
+                                  // 시간이 비어있으면 갭의 정중앙에, 딱 붙어있으면 경계선에
+                                  top: hasEnoughGap
+                                    ? `${(data.endMins + gapMins / 2 - timelineStart) * PX}px`
+                                    : `${(data.endMins - timelineStart) * PX}px`,
                                 }}
                               >
-                                <span style={{ fontSize: "14px" }}>🚗</span>
-                                <span style={{ fontWeight: "bold" }}>
-                                  {hasEnoughGap
-                                    ? "이동 시간 계산"
-                                    : "이동 추가"}
-                                </span>
+                                <button
+                                  type="button"
+                                  className="trans-chip"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleAddSingleTransport(
+                                      activeDay,
+                                      data.id,
+                                      nextData.id,
+                                    );
+                                  }}
+                                >
+                                  <span className="trans-chip-ico">🚗</span>
+                                  <span className="trans-chip-label">
+                                    {hasEnoughGap
+                                      ? "이동 시간 계산"
+                                      : "이동 추가"}
+                                  </span>
+                                </button>
                               </div>
-                            </div>
-                          )}
-                        </React.Fragment>
-                      );
-                    })}
+                            )}
+                          </React.Fragment>
+                        );
+                      })}
 
-                    {activeDayItems.length === 0 && (
-                      <div
-                        className="endzone"
-                        style={{
-                          position: "absolute",
-                          top: "40px",
-                          left: "10px",
-                          right: "10px",
-                          pointerEvents: "none",
-                          color: "#888",
-                          textAlign: "center",
-                        }}
-                      >
-                        ＋ 비어있는 타임라인의 원하는 시간 위치로 드래그하여
-                        일정을 추가하세요
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </div>
-
-              <div
-                style={{ display: "flex", gap: "16px", alignItems: "stretch" }}
-              >
-                <div
-                  className={`pool-sec ${dragPreview?.region === "pool" ? "dropover" : ""}`}
-                  ref={setPoolRef}
-                  style={{ flex: 1, margin: 0 }}
-                >
-                  <div
-                    className="pool-head"
-                    style={{
-                      display: "flex",
-                      justifyContent: "space-between",
-                      alignItems: "center",
-                    }}
-                  >
-                    <div>
-                      <b>후보 목록</b> <span className="n">{pool.length}</span>
-                      <span
-                        style={{
-                          fontSize: "12px",
-                          color: "#888",
-                          marginLeft: "8px",
-                        }}
-                      >
-                        자유롭게 끌어다 놓고 빼세요
-                      </span>
+                      {activeDayItems.length === 0 && (
+                        <div className="endzone">
+                          ＋ 비어있는 타임라인의 원하는 시간 위치로 드래그하여
+                          일정을 추가하세요
+                        </div>
+                      )}
                     </div>
-                    <button
-                      onClick={handleCreateCustomBlock}
-                      style={{
-                        backgroundColor: "#7c5443",
-                        color: "#fff",
-                        border: "none",
-                        borderRadius: "8px",
-                        padding: "6px 14px",
-                        fontSize: "13px",
-                        fontWeight: "bold",
-                        cursor: "pointer",
-                        boxShadow: "0 2px 6px rgba(124, 84, 67, 0.2)",
-                      }}
-                    >
-                      + 커스텀 블록 만들기
-                    </button>
-                  </div>
-                  <div
-                    className="pool"
-                    style={{
-                      minHeight: "150px",
-                      paddingBottom: "20px",
-                      position: "relative",
-                    }}
-                  >
-                    <SortableContext
-                      items={pool}
-                      strategy={rectSortingStrategy}
-                    >
-                      {pool.map((id) => (
-                        <PoolCard
-                          key={id}
-                          id={id}
-                          item={items[id]}
-                          onEditBlock={setEditingBlockId}
-                        />
-                      ))}
-                    </SortableContext>
-                    {dragPreview?.region === "pool" && !isDraggingFromPool && (
-                      <div
-                        style={{
-                          position: "absolute",
-                          inset: 0,
-                          border: "2px dashed var(--acc, #9c4a2f)",
-                          borderRadius: "14px",
-                          pointerEvents: "none",
-                          background: "rgba(156, 74, 47, 0.04)",
-                        }}
-                      />
-                    )}
                   </div>
                 </div>
 
-                <div
-                  ref={setTrashRef}
-                  className={`trash-zone ${activeId ? "dragging" : ""} ${dragPreview?.region === "trash" ? "dropover" : ""}`}
-                  style={{
-                    margin: 0,
-                    width: "140px",
-                    flexDirection: "column",
-                    justifyContent: "center",
-                    textAlign: "center",
-                    gap: "12px",
-                    padding: "20px",
-                  }}
-                >
-                  <span style={{ fontSize: "32px", display: "block" }}>🗑️</span>
-                  <span style={{ display: "block", lineHeight: "1.4" }}>
-                    여기로 블럭을
-                    <br />
-                    끌어다 놓으면
-                    <br />
-                    삭제됩니다
-                  </span>
+                <div className="pool-row">
+                  <div
+                    className={`pool-sec ${dragPreview?.region === "pool" ? "dropover" : ""}`}
+                    ref={setPoolRef}
+                  >
+                    <div className="pool-head">
+                      <div>
+                        <b>후보 목록</b> <span className="n">{pool.length}</span>
+                        <span className="pool-hint">
+                          자유롭게 끌어다 놓고 빼세요
+                        </span>
+                      </div>
+                      <button
+                        className="pool-add-btn"
+                        onClick={handleCreateCustomBlock}
+                      >
+                        + 커스텀 블록 만들기
+                      </button>
+                    </div>
+                    <div className="pool">
+                      <SortableContext
+                        items={pool}
+                        strategy={rectSortingStrategy}
+                      >
+                        {pool.map((id) => (
+                          <PoolCard
+                            key={id}
+                            id={id}
+                            item={items[id]}
+                            onEditBlock={setEditingBlockId}
+                          />
+                        ))}
+                      </SortableContext>
+                      {dragPreview?.region === "pool" && !isDraggingFromPool && (
+                        <div className="pool-dropzone" />
+                      )}
+                    </div>
+                  </div>
+
+                  <div
+                    ref={setTrashRef}
+                    className={`trash-zone ${activeId ? "dragging" : ""} ${dragPreview?.region === "trash" ? "dropover" : ""}`}
+                  >
+                    {/* 개인 페이지의 삭제 버튼과 같은 휴지통 글리프(🗑)를 쓴다 */}
+                    <span className="trash-ico">🗑</span>
+                    <span className="trash-text">
+                      여기로 블럭을
+                      <br />
+                      끌어다 놓으면
+                      <br />
+                      삭제됩니다
+                    </span>
+                  </div>
                 </div>
               </div>
-            </div>
 
-            <div className="side">
-              <div
-                className="panel"
-                style={{
-                  padding: "24px",
-                  backgroundColor: "#fbf8f1",
-                  borderRadius: "16px",
-                  boxShadow: "0 4px 12px rgba(0,0,0,0.05)",
-                  marginBottom: "20px",
-                }}
-              >
-                <div style={{ marginBottom: "16px" }}>
-                  <span
-                    style={{
-                      fontSize: "15px",
-                      fontWeight: "bold",
-                      color: "#666",
-                    }}
-                  >
-                    총{" "}
-                  </span>
-                  <span
-                    style={{
-                      fontSize: "28px",
-                      fontWeight: "800",
-                      color: "#3d2b22",
-                    }}
-                  >
-                    {totalBudget.toLocaleString()}원
-                  </span>
-                </div>
-
-                <div
-                  style={{
-                    display: "flex",
-                    justifyContent: "space-between",
-                    alignItems: "center",
-                    marginBottom: "12px",
-                    fontSize: "13px",
-                    color: "#888",
-                  }}
-                >
-                  <span>희망 총 예산</span>
-                  <div
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: "8px",
-                      backgroundColor: "#f4f1ea",
-                      padding: "4px 8px",
-                      borderRadius: "8px",
-                    }}
-                  >
-                    <button
-                      onClick={() => handleTargetBudgetChange(-100000)}
-                      style={{
-                        border: "none",
-                        background: "none",
-                        cursor: "pointer",
-                        fontWeight: "bold",
-                        color: "#666",
-                      }}
-                    >
-                      -
-                    </button>
-                    <span style={{ fontWeight: "bold", color: "#333" }}>
-                      {targetBudget.toLocaleString()}원
+              <div className="side">
+                <div className="panel">
+                  <div className="bud-total">
+                    <span className="bud-total-label">총 </span>
+                    <span className="bud-total-value">
+                      {totalBudget.toLocaleString()}원
                     </span>
-                    <button
-                      onClick={() => handleTargetBudgetChange(100000)}
-                      style={{
-                        border: "none",
-                        background: "none",
-                        cursor: "pointer",
-                        fontWeight: "bold",
-                        color: "#666",
-                      }}
+                  </div>
+
+                  <div className="bud-target">
+                    <span>희망 총 예산</span>
+                    <div className="bud-stepper">
+                      <button onClick={() => handleTargetBudgetChange(-100000)}>
+                        -
+                      </button>
+                      <span className="bud-stepper-value">
+                        {targetBudget.toLocaleString()}원
+                      </span>
+                      <button onClick={() => handleTargetBudgetChange(100000)}>
+                        +
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* 블록별 사용량 — 한 덩어리 갈색 바 대신 블록마다 색이 다른 칸으로 쌓는다.
+                      칸에 마우스를 올리면 블록 이름·금액·비중이 툴팁으로 나온다. */}
+                  <div className="bud-track">
+                    {budgetSegments.map((seg) => (
+                      <div
+                        key={seg.cat}
+                        className="bud-seg"
+                        style={{
+                          width: `${seg.percent}%`,
+                          backgroundColor: seg.color,
+                        }}
+                        title={`${seg.name} · ${seg.cost.toLocaleString()}원 (사용액의 ${Math.round(seg.shareOfTotal)}%)`}
+                      />
+                    ))}
+                    {budgetSegments.length === 0 && (
+                      <div className="bud-empty">아직 비용이 있는 블록이 없어요</div>
+                    )}
+                  </div>
+
+                  {budgetSegments.length > 0 && (
+                    <div className="bud-legend">
+                      {budgetSegments.map((seg) => (
+                        <span key={seg.cat} className="bud-legend-item">
+                          <i style={{ backgroundColor: seg.color }} />
+                          <b>{seg.name}</b>
+                          {seg.cost.toLocaleString()}원
+                          <em>{Math.round(seg.shareOfTotal)}%</em>
+                        </span>
+                      ))}
+                    </div>
+                  )}
+
+                  <div className="bud-foot">
+                    <span>희망 예산의 {Math.round(budgetPercent)}% 사용</span>
+                    <span
+                      className={`bud-left ${remainingBudget < 0 ? "is-over" : ""}`}
                     >
-                      +
-                    </button>
+                      {remainingBudget < 0
+                        ? `${Math.abs(remainingBudget).toLocaleString()}원 초과`
+                        : `남은 ${remainingBudget.toLocaleString()}원`}
+                    </span>
                   </div>
                 </div>
 
-                <div
-                  style={{
-                    width: "100%",
-                    height: "8px",
-                    backgroundColor: "#e6dec8",
-                    borderRadius: "4px",
-                    marginBottom: "10px",
-                    overflow: "hidden",
-                  }}
-                >
+                <div className="panel">
+                  <h4 className="panel-title">
+                    지도{" "}
+                    <span className="panel-title-sub">
+                      검색하면 지도가 이동합니다
+                    </span>
+                  </h4>
+                  {/* 높이는 CSS(.map-box)에서 화면 높이에 맞춰 늘린다 — 사이드 폭이
+                      넓어진 만큼 지도도 남는 공간을 다 쓰게 하기 위함.
+                      초기화는 ref callback 으로 — getElementById 방식은 로딩 가드가
+                      null 을 반환하는 동안 컨테이너가 없어 재진입 시 회색 지도가 됐다 */}
                   <div
-                    style={{
-                      width: `${budgetPercent}%`,
-                      height: "100%",
-                      backgroundColor:
-                        remainingBudget < 0 ? "#d97e3c" : "#7c5443",
-                      transition: "width 0.3s ease, background-color 0.3s ease",
-                    }}
+                    id="kakao-map-container"
+                    className="map-box"
+                    ref={initMapOnContainer}
                   />
                 </div>
 
-                <div
-                  style={{
-                    display: "flex",
-                    justifyContent: "space-between",
-                    fontSize: "12px",
-                    color: "#888",
-                  }}
-                >
-                  <span>희망 예산의 {Math.round(budgetPercent)}% 사용</span>
-                  <span
-                    style={{
-                      color: remainingBudget < 0 ? "#d97e3c" : "#666",
-                      fontWeight: remainingBudget < 0 ? "bold" : "normal",
-                    }}
-                  >
-                    {remainingBudget < 0
-                      ? `${Math.abs(remainingBudget).toLocaleString()}원 초과`
-                      : `남은 ${remainingBudget.toLocaleString()}원`}
-                  </span>
+                <div className="panel">
+                  <h4 className="panel-title">카카오 장소 검색</h4>
+                  <div className="search-box">
+                    <form className="search-form" onSubmit={handleSearchPlace}>
+                      <input
+                        type="text"
+                        value={searchKeyword}
+                        onChange={(e) => setSearchKeyword(e.target.value)}
+                        placeholder="도시, 명소, 음식..."
+                      />
+                      <button type="submit">검색</button>
+                    </form>
+
+                    {/* 💡 검색 결과 리스트: 버튼이 사라지고 이젠 꾹 눌러서 끌 수 있습니다! */}
+                    <div className="search-results" ref={searchListRef}>
+                      {searchResults.map((place) => (
+                        <SearchResultDraggable
+                          key={place.id}
+                          place={place}
+                          // 클릭 = 지도 이동 + 상세 말풍선 (드래그와 별개 동작)
+                          onClick={handlePlaceClick}
+                        />
+                      ))}
+                      {searchResults.length === 0 && (
+                        <div className="search-empty">
+                          검색 결과가 여기에 표시됩니다.
+                          <br />
+                          검색 후 패널을 왼쪽으로 끌어다 놓으세요.
+                        </div>
+                      )}
+                    </div>
+                  </div>
                 </div>
               </div>
 
-              <div
-                className="panel"
-                style={{
-                  padding: "24px",
-                  backgroundColor: "#fbf8f1",
-                  borderRadius: "16px",
-                  boxShadow: "0 4px 12px rgba(0,0,0,0.05)",
-                  marginBottom: "20px",
-                }}
-              >
-                <h4
-                  style={{
-                    margin: "0 0 16px 0",
-                    color: "#3d2b22",
-                    fontSize: "16px",
-                  }}
-                >
-                  지도{" "}
-                  <span
-                    style={{
-                      fontSize: "12px",
-                      color: "#888",
-                      fontWeight: "normal",
-                    }}
-                  >
-                    검색하면 지도가 이동합니다
-                  </span>
-                </h4>
-                <div
-                  id="kakao-map-container"
-                  ref={initMapOnContainer}
-                  style={{
-                    height: "220px",
-                    backgroundColor: "#e0e0e0",
-                    borderRadius: "12px",
-                  }}
-                />
-              </div>
-
-              <div
-                className="panel"
-                style={{
-                  padding: "24px",
-                  backgroundColor: "#fbf8f1",
-                  borderRadius: "16px",
-                  boxShadow: "0 4px 12px rgba(0,0,0,0.05)",
-                }}
-              >
-                <h4
-                  style={{
-                    margin: "0 0 16px 0",
-                    color: "#3d2b22",
-                    fontSize: "16px",
-                  }}
-                >
-                  카카오 장소 검색
-                </h4>
-                <div
-                  style={{
-                    display: "flex",
-                    flexDirection: "column",
-                    gap: "16px",
-                  }}
-                >
-                  <form
-                    onSubmit={handleSearchPlace}
-                    style={{ display: "flex", gap: "8px" }}
-                  >
-                    <input
-                      type="text"
-                      value={searchKeyword}
-                      onChange={(e) => setSearchKeyword(e.target.value)}
-                      placeholder="도시, 명소, 음식..."
+              {/* 💡 끌려다니는 마우스 오버레이 부분 업데이트 */}
+              <DragOverlay>
+                {activeId && draggedItem ? (
+                  isDraggingFromPool || isDraggingFromSearch ? (
+                    <div
+                      className="pcard is-overlay"
                       style={{
-                        flex: 1,
-                        padding: "12px",
-                        borderRadius: "10px",
-                        border: "1px solid #e6dec8",
-                        backgroundColor: "#fff",
-                        fontSize: "14px",
-                        outline: "none",
-                        boxSizing: "border-box",
-                      }}
-                    />
-                    <button
-                      type="submit"
-                      style={{
-                        padding: "0 16px",
-                        borderRadius: "10px",
-                        border: "none",
-                        backgroundColor: "#7c5443",
-                        color: "#fff",
-                        cursor: "pointer",
-                        fontWeight: "bold",
+                        "--dc": catOf(draggedItem).hex,
+                        "--cb": catOf(draggedItem).bg,
                       }}
                     >
-                      검색
-                    </button>
-                  </form>
-
-                  {/* 💡 검색 결과 리스트: 버튼이 사라지고 이젠 꾹 눌러서 끌 수 있습니다! */}
-                  <div
-                    ref={searchListRef}
-                    style={{
-                      maxHeight: "250px",
-                      overflowY: "auto",
-                      display: "flex",
-                      flexDirection: "column",
-                      gap: "8px",
-                    }}
-                  >
-                    {searchResults.map((place) => (
-                      <SearchResultDraggable
-                        key={place.id}
-                        place={place}
-                        onClick={handlePlaceClick} // 💡 만든 함수를 여기에 쏙!
+                      <CardBody
+                        id={draggedItem.id}
+                        item={draggedItem}
+                        mode="pool"
                       />
-                    ))}
-                    {searchResults.length === 0 && (
-                      <div
-                        style={{
-                          textAlign: "center",
-                          color: "#888",
-                          fontSize: "13px",
-                          padding: "20px 0",
-                        }}
-                      >
-                        검색 결과가 여기에 표시됩니다.
-                        <br />
-                        검색 후 패널을 왼쪽으로 끌어다 놓으세요.
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </div>
+                    </div>
+                  ) : (
+                    <div
+                      className="card is-overlay"
+                      style={{
+                        "--dc": catOf(draggedItem).hex,
+                        "--cb": catOf(draggedItem).bg,
+                      }}
+                    >
+                      <CardBody
+                        id={draggedItem.id}
+                        item={draggedItem}
+                        mode="timeline"
+                        startMins={items[activeId]?.startMins || 0}
+                        endMins={
+                          (items[activeId]?.startMins || 0) +
+                          (draggedItem.dur || 0)
+                        }
+                      />
+                    </div>
+                  )
+                ) : null}
+              </DragOverlay>
             </div>
-
-            {/* 💡 끌려다니는 마우스 오버레이 부분 업데이트 */}
-            <DragOverlay>
-              {activeId && draggedItem ? (
-                isDraggingFromPool || isDraggingFromSearch ? (
-                  <div
-                    className="pcard"
-                    style={{
-                      "--dc": catOf(draggedItem).hex,
-                      "--cb": catOf(draggedItem).bg,
-                      cursor: "grabbing",
-                    }}
-                  >
-                    <CardBody
-                      id={draggedItem.id}
-                      item={draggedItem}
-                      mode="pool"
-                    />
-                  </div>
-                ) : (
-                  <div
-                    className="card"
-                    style={{
-                      "--dc": catOf(draggedItem).hex,
-                      "--cb": catOf(draggedItem).bg,
-                      width: "320px",
-                      cursor: "grabbing",
-                      boxShadow: "0 10px 28px rgba(61,43,34,0.22)",
-                    }}
-                  >
-                    <CardBody
-                      id={draggedItem.id}
-                      item={draggedItem}
-                      mode="timeline"
-                      startMins={items[activeId]?.startMins || 0}
-                      endMins={
-                        (items[activeId]?.startMins || 0) +
-                        (draggedItem.dur || 0)
-                      }
-                    />
-                  </div>
-                )
-              ) : null}
-            </DragOverlay>
-          </div>
-        </DndContext>
-      ) : (
-        <ReadModeView
-          chains={chains}
-          items={items}
-          startDate={project?.startDate}
-        />
-      )}
+          </DndContext>
+        ) : (
+          <ReadModeView
+            chains={chains}
+            items={items}
+            dayKeys={dayKeys}
+            project={project}
+          />
+        )}
+      </div>
 
       {editingBlockId && items[editingBlockId] && (
-        <div
-          className="modal-overlay"
-          style={{
-            position: "fixed",
-            top: 0,
-            left: 0,
-            width: "100vw",
-            height: "100vh",
-            backgroundColor: "rgba(0,0,0,0.5)",
-            zIndex: 9999,
-            display: "flex",
-            justifyContent: "center",
-            alignItems: "center",
-          }}
-        >
+        <div className="blk-modal-ov">
           {(() => {
             const item = items[editingBlockId];
             const sMins = item.startMins;

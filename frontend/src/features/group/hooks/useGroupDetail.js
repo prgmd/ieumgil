@@ -1,5 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
 import * as api from "../api/groupPageApi";
+// 그룹명 수정은 개인 페이지와 같은 엔드포인트(PATCH /groups/{id})다 — 래퍼를 하나 더
+// 만들지 않고 이미 있는 함수를 그대로 쓴다.
+import { renameGroup as renameGroupApi } from "../../my/api/groupApi";
 
 const INVALID_ID_ERROR = { code: "INVALID_GROUP_ID" };
 
@@ -59,6 +62,23 @@ export function useGroupDetail(groupId) {
     );
   }, [groupId]);
 
+  /**
+   * 그룹명 수정. 응답(Updated)은 id·name 뿐이라 이름만 덮어쓴다 —
+   * 통째로 갈아끼우면 이 화면이 쓰는 초대코드·멤버가 사라진다.
+   */
+  const renameGroup = useCallback(
+    async (name) => {
+      const updated = await renameGroupApi(groupId, name);
+      setResult((prev) =>
+        prev.group
+          ? { ...prev, group: { ...prev.group, name: updated.name } }
+          : prev,
+      );
+      return updated;
+    },
+    [groupId],
+  );
+
   // 나간 뒤에는 호출부가 개인 페이지로 이동하므로 여기서 상태를 손대지 않는다.
   const leaveGroup = useCallback(() => api.leaveGroup(groupId), [groupId]);
 
@@ -67,6 +87,7 @@ export function useGroupDetail(groupId) {
     status: !isValidId ? "error" : isStale ? "loading" : result.status,
     error: !isValidId ? INVALID_ID_ERROR : isStale ? null : result.error,
     reissueInviteCode,
+    renameGroup,
     leaveGroup,
   };
 }

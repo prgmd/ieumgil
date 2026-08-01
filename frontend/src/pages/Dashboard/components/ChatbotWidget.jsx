@@ -1,4 +1,6 @@
 import { useState } from "react";
+import "./ChatbotWidget.css";
+
 
 export function ChatbotWidget() {
   const [isOpen, setIsOpen] = useState(false);
@@ -8,187 +10,52 @@ export function ChatbotWidget() {
   return (
     <>
       {!isOpen && (
-        <button
-          onClick={() => setIsOpen(true)}
-          style={{
-            position: "fixed",
-            bottom: "30px",
-            right: "30px",
-            width: "60px",
-            height: "60px",
-            borderRadius: "50%",
-            backgroundColor: "#6A4C3D",
-            color: "white",
-            border: "none",
-            boxShadow: "0 4px 12px rgba(0,0,0,0.15)",
-            cursor: "pointer",
-            zIndex: 9999,
-            display: "flex",
-            justifyContent: "center",
-            alignItems: "center",
-            fontSize: "28px",
-            transition: "transform 0.2s",
-          }}
-          onMouseOver={(e) => (e.currentTarget.style.transform = "scale(1.05)")}
-          onMouseOut={(e) => (e.currentTarget.style.transform = "scale(1)")}
-        >
+        <button className="cbw-fab" onClick={() => setIsOpen(true)}>
           ✈️
         </button>
       )}
 
       {isOpen && (
-        <div
-          style={{
-            position: "fixed",
-            bottom: "30px",
-            right: "30px",
-            width: "340px",
-            backgroundColor: "#fbf8f1",
-            borderRadius: "16px",
-            boxShadow: "0 8px 24px rgba(0,0,0,0.2)",
-            zIndex: 9999,
-            display: "flex",
-            flexDirection: "column",
-            overflow: "hidden",
-            fontFamily: "sans-serif",
-          }}
-        >
-          <div
-            style={{
-              backgroundColor: "#6A4C3D",
-              color: "#fff",
-              padding: "16px",
-              display: "flex",
-              justifyContent: "space-between",
-              alignItems: "center",
-            }}
-          >
-            <span style={{ fontWeight: "bold", fontSize: "15px" }}>
-              ✈️ 챗봇 이음이
-            </span>
-            <button
-              onClick={() => setIsOpen(false)}
-              style={{
-                background: "none",
-                border: "none",
-                color: "#fff",
-                cursor: "pointer",
-                fontSize: "18px",
-              }}
-            >
+        <div className="cbw">
+          <div className="cbw-head">
+            <span className="cbw-head-title">✈️ 챗봇 이음이</span>
+            <button className="cbw-close" onClick={() => setIsOpen(false)}>
               ✕
             </button>
           </div>
 
-          <div style={{ display: "flex", padding: "12px 16px 0", gap: "8px" }}>
+          <div className="cbw-tabs">
             <button
+              className={`cbw-tab ${activeTab === "general" ? "on" : ""}`}
               onClick={() => setActiveTab("general")}
-              style={{
-                flex: 1,
-                padding: "10px",
-                borderRadius: "8px 8px 0 0",
-                border: "none",
-                backgroundColor: activeTab === "general" ? "#8a624a" : "#fff",
-                color: activeTab === "general" ? "#fff" : "#666",
-                cursor: "pointer",
-                fontSize: "13px",
-                fontWeight: "bold",
-                boxShadow:
-                  activeTab === "general"
-                    ? "none"
-                    : "inset 0 -2px 5px rgba(0,0,0,0.05)",
-              }}
             >
               💬 일반 채팅
             </button>
             <button
+              className={`cbw-tab ${activeTab === "map" ? "on" : ""}`}
               onClick={() => setActiveTab("map")}
-              style={{
-                flex: 1,
-                padding: "10px",
-                borderRadius: "8px 8px 0 0",
-                border: "1px solid #eee",
-                borderBottom: "none",
-                backgroundColor: activeTab === "map" ? "#8a624a" : "#fff",
-                color: activeTab === "map" ? "#fff" : "#666",
-                cursor: "pointer",
-                fontSize: "13px",
-                fontWeight: "bold",
-              }}
             >
               🗺️ 지도 기반 추천
             </button>
           </div>
 
-          <div
-            style={{
-              padding: "20px 16px",
-              backgroundColor: "#fbf8f1",
-              minHeight: "180px",
-              display: "flex",
-              flexDirection: "column",
-              gap: "12px",
-            }}
-          >
-            <div
-              style={{
-                backgroundColor: "#fff",
-                padding: "14px",
-                borderRadius: "0 12px 12px 12px",
-                fontSize: "13px",
-                color: "#333",
-                lineHeight: "1.6",
-                border: "1px solid #eee",
-                boxShadow: "0 2px 4px rgba(0,0,0,0.02)",
-                alignSelf: "flex-start",
-                maxWidth: "90%",
-              }}
-            >
+          <div className="cbw-body">
+            <div className="cbw-bubble">
               안녕하세요, 이음이예요! 키워드를 던지면 여기 대화창에 추천을
               보여드릴게요 — 마음에 드는 것만 <b>+ 추가</b>로 후보 목록에
               담으세요.
             </div>
           </div>
 
-          <div
-            style={{
-              padding: "12px 16px",
-              backgroundColor: "#fff",
-              display: "flex",
-              gap: "8px",
-              borderTop: "1px solid #eee",
-            }}
-          >
+          <div className="cbw-foot">
             <input
+              className="cbw-input"
               type="text"
               value={inputValue}
               onChange={(e) => setInputValue(e.target.value)}
               placeholder="키워드를 던져보세요 (예: 부산 야경)"
-              style={{
-                flex: 1,
-                padding: "10px 14px",
-                borderRadius: "20px",
-                border: "1px solid #ddd",
-                outline: "none",
-                fontSize: "13px",
-                backgroundColor: "#f9f9f9",
-              }}
             />
-            <button
-              onClick={() => {
-                setInputValue("");
-              }}
-              style={{
-                backgroundColor: "#6A4C3D",
-                color: "#fff",
-                border: "none",
-                borderRadius: "20px",
-                padding: "0 18px",
-                fontWeight: "bold",
-                cursor: "pointer",
-                fontSize: "13px",
-              }}
-            >
+            <button className="cbw-send" onClick={() => setInputValue("")}>
               전송
             </button>
           </div>
