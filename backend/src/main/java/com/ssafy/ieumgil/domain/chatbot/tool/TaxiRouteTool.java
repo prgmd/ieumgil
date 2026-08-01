@@ -21,11 +21,11 @@ public class TaxiRouteTool {
     }
 
     @Tool(description = """
-            사용자가 두 장소 사이를 택시로 이동할 때 예상 요금·거리·시간을 물을 때 호출한다.
-            출발지명과 도착지명은 대화에서 알 수 있는 가장 구체적인 이름으로 전달한다(모호한 "숙소"보다 실제 상호명이 있다면 그걸 우선한다).
-            응답의 출발지명·도착지명은 실제로 검색되어 매칭된 장소명이므로, 사용자가 말한 곳과 다르게 매칭된 것 같으면 답변에서 확인을 요청한다.
-            found가 false면 택시 경로를 찾지 못한 것이다.
-            이 툴은 현재 프로젝트 목적지 안에서만 장소를 찾는다(장소명 앞에 목적지가 자동으로 붙는다) — 도시/지역 간 장거리 이동(예: "서울에서 부산까지")의 예상 요금·거리·시간은 이 툴 대신 기차/버스/항공 시간표 툴을 쓴다.
+            Call this when the user asks the estimated fare, distance, and time of a taxi ride between two places.
+            Pass the start and end place names as the most specific names known from the conversation (prefer an actual place name over a vague word like "the accommodation" when one is available).
+            The start/end names in the response are the place names that were actually searched and matched, so if a match looks different from what the user said, ask for confirmation in your answer.
+            If found is false, no taxi route was found.
+            This tool only finds places within the current project's destination (the destination is automatically prepended to the place name) — for intercity/interregional long-distance travel (e.g. "from Seoul to Busan"), use the train/bus/flight schedule tools instead of this one.
             """)
     public TaxiRouteResult getTaxiRoute(String startPlaceName, String endPlaceName) {
         try {

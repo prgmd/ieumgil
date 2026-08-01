@@ -27,12 +27,10 @@ public class FestivalRecommendationTool {
     }
 
     @Tool(description = """
-            사용자가 여행 기간 중 할 만한 것(축제, 행사, 이벤트, 즐길거리)을 추천해달라는 의도로
-            물을 때 호출한다. 명시적으로 '축제'라는 단어를 쓰지 않아도 의도가 즐길거리 추천이면 호출한다.
-            식당, 숙소, 교통수단처럼 축제/행사와 무관한 추천 요청에는 호출하지 않는다.
-            현재 프로젝트의 목적지·여행기간에 해당하는 축제/행사 목록을 반환한다.
-            결과에는 조회 기준이 된 지역명과 여행 기간도 함께 포함되므로, 사용자가 다른 지역을 물었다면
-            결과가 그 지역과 다를 수 있음을 알고 답변에 반영한다.
+            Call this whenever the user asks for things to do, festivals, events, or activities to enjoy during their trip. This is the main tool for "what can I do / what's happening" style requests, even if the user does not literally say "festival".
+            It takes no input: it automatically uses the current project's saved destination and travel dates. So call it directly and immediately — never ask the user for the destination or travel dates first.
+            Do NOT call it for requests about restaurants, cafes, lodging, or transportation — those are not festivals/events.
+            Returns the festivals/events for the current project's destination and travel period, along with the region name and period used; if the user asked about a different region, note the result may differ.
             """)
     public FestivalRecommendationResult findFestivalsForCurrentTrip() {
         try {

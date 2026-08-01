@@ -14,7 +14,7 @@ import java.util.List;
 @RequiredArgsConstructor
 public class ChatHistoryStore {
 
-    private static final int MAX_TURNS = 10;
+    private static final int MAX_TURNS = 6;
     private static final int MAX_ELEMENTS = MAX_TURNS * 2;
     private static final Duration TTL = Duration.ofDays(1);
 

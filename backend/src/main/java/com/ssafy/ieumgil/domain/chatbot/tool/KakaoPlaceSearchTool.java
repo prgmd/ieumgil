@@ -18,11 +18,9 @@ public class KakaoPlaceSearchTool {
     }
 
     @Tool(description = """
-            사용자가 맛집, 카페, 숙소, 관광명소 등 구체적인 장소를 추천해달라고 물을 때 호출한다.
-            축제, 행사, 이벤트 추천 요청에는 이 툴 대신 지역 축제 추천 툴을 쓴다 — 이 툴은
-            상시 운영되는 장소만 다룬다.
-            현재 프로젝트의 목적지 근처에서 검색어에 맞는 장소 목록을 반환한다. 결과에는 각 장소를
-            직접 확인할 수 있는 링크가 포함되므로, 답변에 링크도 함께 안내한다.
+            Call this when the user asks for specific places to recommend, such as restaurants, cafes, lodging, or tourist attractions.
+            For festival, event, or things-to-do recommendations, use the regional festival recommendation tool instead of this one; this tool only covers places that operate year-round.
+            Returns a list of places near the current project's destination matching the search query. Each result includes a link to view the place directly, so include the link in your answer as well.
             """)
     public List<PlaceSearchSummary> searchPlaces(String keyword) {
         try {
