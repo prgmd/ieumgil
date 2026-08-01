@@ -22,6 +22,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.ai.anthropic.AnthropicChatModel;
 import org.springframework.ai.anthropic.AnthropicChatOptions;
 import org.springframework.ai.anthropic.api.AnthropicApi;
+import org.springframework.web.client.RestClient;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.messages.SystemMessage;
 import org.springframework.ai.chat.messages.UserMessage;
@@ -279,9 +280,13 @@ class ChatbotToolCallingRegressionTest {
 	}
 
 	private AnthropicChatModel buildGmsChatModel(String apiKey) {
+		// 프로덕션과 동일하게 web_search 서버tool을 주입해, web_search 등장 후에도 클라이언트 tool 선택이
+		// 유지되는지(회귀) 함께 검증한다.
 		AnthropicApi anthropicApi = AnthropicApi.builder()
 				.baseUrl("https://gms.ssafy.io/gmsapi/api.anthropic.com")
 				.apiKey(apiKey)
+				.restClientBuilder(RestClient.builder()
+						.requestInterceptor(new com.ssafy.ieumgil.domain.chatbot.config.WebSearchInterceptor()))
 				.build();
 
 		return AnthropicChatModel.builder()
