@@ -123,8 +123,8 @@
 
 | code | HTTP | 상황 |
 |---|---|---|
-| `FORBIDDEN` | 403 | 그룹 멤버가 아님 |
-| `NOT_FOUND` | 404 | 프로젝트 없음/삭제됨 |
+| `GROUP403` | 403 | 그룹 멤버가 아님 |
+| `PROJECT404` | 404 | 프로젝트 없음/삭제됨 |
 
 ---
 
@@ -182,7 +182,7 @@
 
 | code | HTTP | 상황 |
 |---|---|---|
-| `VALIDATION_ERROR` | 400 | status가 PLANNING/DONE 이외 |
+| `COMMON400_1` | 400 | status가 PLANNING/DONE 이외 |
 
 ---
 
@@ -300,8 +300,9 @@
 
 | code | HTTP | 상황 |
 |---|---|---|
-| `VALIDATION_ERROR` | 400 | 장소성 카테고리 lat/lng 누락, vehicleFlag를 ETC 외 카테고리에 지정 |
-| `FORBIDDEN` | 403 | 그룹 멤버가 아님 |
+| `BLOCK400` | 400 | 장소성 카테고리 lat/lng 누락 |
+| `BLOCK400_1` | 400 | vehicleFlag를 ETC 외 카테고리에 지정 |
+| `GROUP403` | 403 | 그룹 멤버가 아님 |
 
 ---
 
@@ -366,7 +367,7 @@
 
 | code | HTTP | 상황 |
 |---|---|---|
-| `GONE` | 410 | 이미 삭제된 블록에 대한 지연 op |
+| `BLOCK410` | 410 | 이미 삭제된 블록에 대한 지연 op |
 
 ---
 
@@ -521,8 +522,9 @@ ODsay 열차 시간표(KTX·무궁화 등) → 출발 후보 목록(앞 일정 �
 
 | code | HTTP | 상황 |
 |---|---|---|
-| `VALIDATION_ERROR` | 400 | `message` 공백/2000자 초과, `mode: MAP`인데 `mapContext` 누락 |
-| `AI_SERVER_ERROR` | 500 | LLM 파이프라인 실패 |
+| `COMMON400_1` | 400 | `message` 공백/2000자 초과, `mode: MAP`인데 `mapContext` 누락 |
+| `CHATBOT502` | 502 | GMS/LLM 호출 실패 |
+| `CHATBOT500` | 500 | 대화 이력 저장 실패 |
 
 ---
 
