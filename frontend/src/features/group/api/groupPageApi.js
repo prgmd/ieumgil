@@ -33,6 +33,23 @@ export async function fetchProjects(groupId) {
   }
 }
 
+/**
+ * 프로젝트 부분 수정. PATCH /projects/{projectId} 는 보낸 필드만 반영한다
+ * (ProjectReqDTO.Update — name·startDate·endDate).
+ *
+ * 응답은 { projectId, name, startDate, endDate, movedToPool } 이다.
+ * movedToPool 은 기간이 줄어 후보로 밀려난 블록 id 목록으로, 대시보드가 블록을
+ * 서버에 저장하기 전까지는 항상 빈 배열이다.
+ */
+export async function updateProject(projectId, patch) {
+  try {
+    const { data } = await axiosInstance.patch(`/projects/${projectId}`, patch);
+    return unwrap(data);
+  } catch (error) {
+    unwrapError(error);
+  }
+}
+
 export async function deleteProject(projectId) {
   try {
     const { data } = await axiosInstance.delete(`/projects/${projectId}`);

@@ -21,7 +21,20 @@ body{background:linear-gradient(150deg,#fdf6ea 0%,#f4ecd9 30%,#e2e8d8 65%,#cfe0d
 .appbar .crumb button:hover{color:var(--acc)}
 .appbar .crumb b{color:var(--ink);font-weight:500;font-size:15px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .appbar .crumb-sep{color:#cdbfad;font-family:'Noto Sans KR',Arial,sans-serif}
+/* 함께 보는 멤버 겹침 아바타 (대시보드) — 개인 페이지 그룹 카드(.g-card .avs)와 같은 겹침 규칙 */
+.appbar .crew{margin-left:auto;display:flex;align-items:center;padding-right:10px;margin-right:4px;border-right:1px solid rgba(61,43,34,.14)}
+.appbar .crew-item{position:relative;display:inline-flex;margin-left:-8px;transition:transform .15s}
+.appbar .crew-item:first-child{margin-left:0}
+.appbar .crew-item:hover{transform:translateY(-2px);z-index:2}
+.appbar .crew-item .mini-av{width:28px;height:28px;font-size:11.5px;border:2px solid #fffdf8;box-shadow:0 2px 5px rgba(61,43,34,.14)}
+.appbar .crew-item.is-off .mini-av{filter:grayscale(.65);opacity:.55}
+/* 활동 표시 — 초록 점(활동 중) / 회색 점(오프라인) */
+.appbar .crew-dot{position:absolute;right:-1px;bottom:-1px;width:9px;height:9px;border-radius:50%;border:2px solid #fffdf8;background:#b8ada2}
+.appbar .crew-item.is-on .crew-dot{background:#3e8e63;box-shadow:0 0 0 3px rgba(62,142,99,.18)}
+.appbar .crew-more{margin-left:-8px;width:28px;height:28px;border-radius:50%;border:2px solid #fffdf8;background:#efe7d8;color:var(--ink2);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:500}
 .appbar .me{margin-left:auto;display:flex;align-items:center;gap:8px;font-size:13px;font-weight:500;flex-shrink:0}
+.appbar .me.with-crew{margin-left:0}
+.appbar .me .crew-item{margin-left:0}
 .appbar .me-avatar,.appbar .me-avatar-fallback{width:28px;height:28px;border-radius:50%;object-fit:cover;flex-shrink:0}
 .appbar .me-avatar-fallback{width:28px;height:28px;font-size:12px}
 .appbar .logout-btn{margin-left:6px;padding:5px 10px;font-size:12px;font-weight:500;color:var(--ink2);background:none;border:1px solid rgba(61,43,34,.16);border-radius:8px;cursor:pointer}
