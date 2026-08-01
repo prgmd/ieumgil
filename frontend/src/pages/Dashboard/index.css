@@ -70,6 +70,7 @@
 
 /* Dashboard 하위에 적용될 전체 레이아웃 래퍼 */
 .dashboard-page {
+  position: relative; /* 페이지 좌표 커서 레이어(.cursor-layer)의 기준 박스 */
   color: var(--ink1, #211c19);
   padding-bottom: 8px;
   display: flex;
@@ -387,6 +388,90 @@
 }
 
 /* 드래그 중 "여기에 놓기" 미리보기 — 색은 끌고 있는 블록의 카테고리(--dc/--cb) */
+/* Day 탭의 "보는 중" 아바타 — 테두리가 그 멤버의 커서 색 (7단계).
+   여러 명이면 살짝 겹쳐 쌓는다(AppBar 의 crew 겹침과 같은 문법). */
+.dt-viewers {
+  position: absolute;
+  top: 5px;
+  right: 8px;
+  display: flex;
+  align-items: center;
+}
+.dt-viewers img,
+.dt-viewers i {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 2px solid hsl(var(--vh) 65% 48%);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
+  box-sizing: border-box;
+  background: #fff;
+}
+.dt-viewers img {
+  object-fit: cover;
+}
+.dt-viewers i {
+  /* 이미지 없는 멤버 — 닉네임 첫 글자 */
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 9px;
+  font-style: normal;
+  font-weight: bold;
+  color: hsl(var(--vh) 65% 38%);
+}
+.dt-viewers img + img,
+.dt-viewers img + i,
+.dt-viewers i + img,
+.dt-viewers i + i {
+  margin-left: -6px;
+}
+.dt-viewers-more {
+  font-size: 9px;
+  font-style: normal;
+  font-weight: bold;
+  color: var(--ink3, #8a776a);
+  margin-left: 2px;
+}
+
+/* 라이브 커서(7단계) — 눈금·카드와 같은 오프셋의 오버레이. 클릭·드래그를
+   가로채면 안 되므로 pointer-events 를 통째로 끈다. */
+.cursor-layer {
+  position: absolute;
+  pointer-events: none;
+  z-index: 20; /* 카드(.tl-slots z5)·고스트(z8) 위 */
+}
+.remote-cursor {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  /* 50ms 스로틀 송신의 점프를 잇는 보간 — 짧게 잡아 '따라오는' 느낌만 준다 */
+  transition:
+    top 90ms linear,
+    left 90ms linear;
+}
+.remote-cursor-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50% 50% 50% 0; /* 좌하단 꼭짓점 — 포인터 느낌 */
+  transform: rotate(45deg);
+  background: hsl(var(--cursor-h) 65% 48%);
+  border: 2px solid #fff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+  flex-shrink: 0;
+}
+.remote-cursor-name {
+  font-size: 11px;
+  font-weight: bold;
+  color: #fff;
+  background: hsl(var(--cursor-h) 65% 48%);
+  padding: 2px 7px;
+  border-radius: 9px;
+  white-space: nowrap;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.15);
+}
+
 .tl-ghost {
   position: absolute;
   left: -6px;

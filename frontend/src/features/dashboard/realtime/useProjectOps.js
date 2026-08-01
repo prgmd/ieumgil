@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Client } from "@stomp/stompjs";
 import { tokenStorage } from "../../../global/util/tokenStorage";
 import { getClientId } from "../../../global/api/clientId";
@@ -27,24 +27,51 @@ import { getClientId } from "../../../global/api/clientId";
  * seq 가 없고 저널에도 안 남는 휘발 정보라 시퀀서를 태우지 않는다 — 재접속하면
  * 스냅샷의 members[].online 이 최신 상태를 준다.
  *
+ * 라이브 커서(7단계)도 같은 연결을 쓴다 — SEND /app/project/{id}/cursor 로 보내면
+ * 서버(RealtimeRelayController)가 actorId 만 붙여 /topic/.../cursor 로 릴레이한다.
+ * DB 미저장·seq 없음. 자기 커서 스킵은 수신 측이 actorId 로 판단한다(clientId 아님).
+ *
  * @param {number} projectId
  * @param {{
  *   onOp?: (op: object, meta: { own: boolean }) => void,
  *   onPresence?: (msg: object) => void,
+ *   onCursor?: (msg: { actorId: number, x: number, y: number, dayNo: number|null }) => void,
  * }} [options]
- * @returns {{ status: "connecting" | "connected" | "disconnected" }}
+ * @returns {{
+ *   status: "connecting" | "connected" | "disconnected",
+ *   sendCursor: (payload: { x?: number, y?: number, dayNo: number|null }) => void,
+ * }}
  */
-export function useProjectOps(projectId, { onOp, onPresence } = {}) {
+export function useProjectOps(projectId, { onOp, onPresence, onCursor } = {}) {
   const isValidId = Number.isInteger(projectId);
   const [status, setStatus] = useState("connecting");
+  const clientRef = useRef(null);
 
   // latest-ref — 콜백이 매 렌더 새 함수여도 재연결하지 않는다
   const onOpRef = useRef(onOp);
   const onPresenceRef = useRef(onPresence);
+  const onCursorRef = useRef(onCursor);
   useEffect(() => {
     onOpRef.current = onOp;
     onPresenceRef.current = onPresence;
+    onCursorRef.current = onCursor;
   });
+
+  /**
+   * 커서 위치 발행 — 미연결(재연결 중 포함)이면 조용히 버린다. 커서는 순간
+   * 정보라 큐잉할 가치가 없고, 다음 mousemove 가 곧바로 대체한다.
+   */
+  const sendCursor = useCallback(
+    (payload) => {
+      const client = clientRef.current;
+      if (!client?.connected) return;
+      client.publish({
+        destination: `/app/project/${projectId}/cursor`,
+        body: JSON.stringify(payload),
+      });
+    },
+    [projectId],
+  );
 
   useEffect(() => {
     if (!isValidId) return;
@@ -78,6 +105,10 @@ export function useProjectOps(projectId, { onOp, onPresence } = {}) {
           console.debug(`[realtime] presence ${msg.type}`, msg);
           onPresenceRef.current?.(msg);
         });
+        // 라이브 커서 — 초당 수십 건이라 로그를 남기지 않는다
+        client.subscribe(`/topic/project/${projectId}/cursor`, (message) => {
+          onCursorRef.current?.(JSON.parse(message.body));
+        });
       },
       onStompError: (frame) => {
         // 인증·인가 실패가 여기로 온다 (서버가 ERROR 프레임 후 연결 종료)
@@ -88,11 +119,13 @@ export function useProjectOps(projectId, { onOp, onPresence } = {}) {
     });
 
     client.activate();
+    clientRef.current = client;
 
     return () => {
+      clientRef.current = null;
       client.deactivate();
     };
   }, [projectId, isValidId]);
 
-  return { status };
+  return { status, sendCursor };
 }

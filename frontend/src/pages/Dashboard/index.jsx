@@ -8,6 +8,8 @@ import React, {
 import { useParams, useNavigate } from "react-router-dom";
 import { BlockEditForm } from "./components/BlockEditForm";
 import { ChatbotWidget } from "./components/ChatbotWidget";
+import { RemoteCursorLayer } from "./components/RemoteCursorLayer";
+import { hueOf } from "./components/memberColor";
 import {
   DndContext,
   DragOverlay,
@@ -246,7 +248,7 @@ const resolveOverlaps = (currentItems, dayChain, dayStartMins, fixedId) => {
  * 모양(리본 노치·보드 아래로 끼워지는 느낌)은 CSS(.day-tab)에서 만들고 여기서는
  * 책갈피에 적히는 세 줄 — Day 번호 / 날짜 / 블록 수 — 만 담는다.
  */
-function DayTab({ label, date, count, isActive, onClick }) {
+function DayTab({ label, date, count, isActive, onClick, viewers = [] }) {
   return (
     <button
       className={`day-tab ${isActive ? "on" : ""}`}
@@ -258,6 +260,32 @@ function DayTab({ label, date, count, isActive, onClick }) {
         <span className="cnt">{count}</span>
       </span>
       {date && <span className="dt-date">{date}</span>}
+      {/* 이 Day 를 지금 보고 있는 멤버들 — 프로필 아바타, 테두리는 커서와 같은
+          멤버 색 (7단계). 이미지가 없으면 닉네임 첫 글자로 대신한다 */}
+      {viewers.length > 0 && (
+        <span
+          className="dt-viewers"
+          title={`보는 중: ${viewers.map((v) => v.name).join(", ")}`}
+        >
+          {viewers.slice(0, 3).map((v) =>
+            v.profileImg?.startsWith("http") ? (
+              <img
+                key={v.id}
+                src={v.profileImg}
+                alt={v.name}
+                style={{ "--vh": hueOf(v.id) }}
+              />
+            ) : (
+              <i key={v.id} style={{ "--vh": hueOf(v.id) }}>
+                {v.name[0]}
+              </i>
+            ),
+          )}
+          {viewers.length > 3 && (
+            <em className="dt-viewers-more">+{viewers.length - 3}</em>
+          )}
+        </span>
+      )}
     </button>
   );
 }
@@ -604,10 +632,23 @@ export function DashboardPage() {
   const applyPresenceRef = useRef(() => {});
   const pendingRemoteOpsRef = useRef([]);
   const interactingRef = useRef(false);
+  // 커서 위치 수신은 대시보드 상태를 거치지 않고 RemoteCursorLayer(타임라인·페이지
+  // 두 장)로 직행한다 — 초당 수십 건이 보드 전체를 리렌더하지 않도록 성능을 격리.
+  // 어느 레이어 소관인지는 각 레이어가 메시지의 area 로 스스로 판단한다.
+  const tlCursorHandlerRef = useRef(() => {});
+  const pageCursorHandlerRef = useRef(() => {});
+  const registerTlCursorHandler = useCallback((fn) => {
+    tlCursorHandlerRef.current = fn;
+  }, []);
+  const registerPageCursorHandler = useCallback((fn) => {
+    pageCursorHandlerRef.current = fn;
+  }, []);
+  const applyCursorRef = useRef(() => {});
 
-  useProjectOps(projectId, {
+  const { sendCursor } = useProjectOps(projectId, {
     onOp: (op) => sequencerRef.current?.push(op),
     onPresence: (msg) => applyPresenceRef.current(msg),
+    onCursor: (msg) => applyCursorRef.current(msg),
   });
 
   // 상단바(개인 페이지 › 그룹명 › 프로젝트명)의 그룹명·멤버 아바타는 그룹 상세에서,
@@ -652,6 +693,11 @@ export function DashboardPage() {
   const [boardMembers, setBoardMembers] = useState([]);
   const [onlineIds, setOnlineIds] = useState(() => new Set());
   const [detailLocks, setDetailLocks] = useState({});
+  // "누가 어느 Day 를 보는 중인가" (Day 탭 점 표시, 7단계) — 커서 메시지의 dayNo 로
+  // 유지된다. Day 가 바뀔 때만 setState 하므로 초당 수십 건의 커서 트래픽이 보드
+  // 리렌더로 이어지지 않는다 — 커서 위치는 레이어 소관, 여기는 Day 만.
+  const [viewingDays, setViewingDays] = useState({}); // actorId → dayNo
+  const cursorLastSeenRef = useRef({}); // actorId → ts (하트비트 만료 판정)
 
   const applyPresenceMessage = (msg) => {
     if (msg?.type === "PRESENCE") {
@@ -674,6 +720,13 @@ export function DashboardPage() {
             ? prev
             : Object.fromEntries(entries);
         });
+        // Day 탭의 "보는 중" 점도 함께 걷는다 — 하트비트 만료(12초)보다 빠르다
+        setViewingDays((prev) => {
+          if (!(msg.memberId in prev)) return prev;
+          const next = { ...prev };
+          delete next[msg.memberId];
+          return next;
+        });
       }
     } else if (msg?.type === "DETAIL_LOCK") {
       setDetailLocks((prev) => {
@@ -690,6 +743,51 @@ export function DashboardPage() {
   useEffect(() => {
     applyPresenceRef.current = applyPresenceMessage;
   });
+
+  // ── 커서 메시지 라우팅 — 위치는 두 레이어로, dayNo 는 viewingDays 로 ──
+  // 모든 커서 메시지에 발신자가 보는 dayNo 가 실려 온다(마우스가 멈춰 있어도
+  // 5초 주기 view 하트비트가 유지).
+  const applyCursorMessage = (msg) => {
+    if (msg?.actorId == null) return;
+    tlCursorHandlerRef.current(msg);
+    pageCursorHandlerRef.current(msg);
+    // 내 Day 는 표시하지 않는다 — 내가 보는 탭이 곧 내 위치다
+    if (msg.actorId === currentUser?.id) return;
+    if (msg.dayNo == null) return;
+    cursorLastSeenRef.current[msg.actorId] = Date.now();
+    setViewingDays((prev) =>
+      prev[msg.actorId] === msg.dayNo
+        ? prev
+        : { ...prev, [msg.actorId]: msg.dayNo },
+    );
+  };
+  useEffect(() => {
+    applyCursorRef.current = applyCursorMessage;
+  });
+
+  // 하트비트(5초)가 두 번 유실되면 떠난 것으로 본다 — 잔점 방지
+  useEffect(() => {
+    const timer = setInterval(() => {
+      const now = Date.now();
+      setViewingDays((prev) => {
+        const alive = Object.keys(prev).filter(
+          (id) => now - (cursorLastSeenRef.current[id] ?? 0) < 12_000,
+        );
+        return alive.length === Object.keys(prev).length
+          ? prev
+          : Object.fromEntries(alive.map((id) => [id, prev[id]]));
+      });
+    }, 5000);
+    return () => clearInterval(timer);
+  }, []);
+
+  // 내가 보는 Day 를 알린다 — Day 전환 즉시 + 5초 주기(마우스가 안 움직여도 유지)
+  useEffect(() => {
+    const dayNo = dayNoOf(activeDay);
+    sendCursor({ area: "view", dayNo });
+    const timer = setInterval(() => sendCursor({ area: "view", dayNo }), 5000);
+    return () => clearInterval(timer);
+  }, [activeDay, sendCursor]);
 
   // 기간이 줄어 사라진 Day 에 남아 있던 블록은 버리지 않고 후보 목록으로 되돌린다 —
   // 서버가 PATCH 응답의 movedToPool 로 알려주는 것과 같은 규칙이다.
@@ -1288,6 +1386,7 @@ export function DashboardPage() {
   const timelineDOMRef = useRef(null);
   const poolDOMRef = useRef(null);
   const trashDOMRef = useRef(null);
+  const pageDOMRef = useRef(null); // 페이지 좌표 커서(area:"page")의 기준 박스
   const activeDragRef = useRef(null);
   const dragRegionRef = useRef(null);
 
@@ -2277,6 +2376,48 @@ export function DashboardPage() {
   const timeSlots = [];
   for (let t = timelineStart; t <= timelineEnd; t += 30) timeSlots.push(t);
 
+  // ── 라이브 커서 송신 (7단계) — 명세의 50ms 스로틀, 대시보드 전역 ──
+  // 타임라인 위에서는 "가로 비율 + 분(시각)"(area:"tl") — 상대와 내 스크롤·시작
+  // 시각이 달라도 같은 시간 위치에 그려진다. 그 밖(후보·사이드 등)에서는 페이지
+  // 비율 좌표(area:"page") — 창 크기가 달라도 대략 같은 자리를 가리킨다.
+  const lastCursorSendRef = useRef(0);
+  const handlePageCursorMove = (e) => {
+    const now = Date.now();
+    if (now - lastCursorSendRef.current < 50) return;
+    lastCursorSendRef.current = now;
+    const dayNo = dayNoOf(activeDay);
+
+    const tlEl = timelineDOMRef.current;
+    const tlRect = tlEl?.getBoundingClientRect();
+    const inTimeline =
+      !!tlRect &&
+      e.clientX >= tlRect.left &&
+      e.clientX <= tlRect.right &&
+      e.clientY >= tlRect.top &&
+      e.clientY <= tlRect.bottom;
+
+    if (inTimeline) {
+      sendCursor({
+        area: "tl",
+        x: (e.clientX - tlRect.left - TL_PAD_LEFT) / (tlRect.width - TL_PAD_LEFT),
+        y:
+          timelineStart +
+          (e.clientY - tlRect.top + tlEl.scrollTop - TL_PAD_TOP) / PX,
+        dayNo,
+      });
+      return;
+    }
+
+    const pageRect = pageDOMRef.current?.getBoundingClientRect();
+    if (!pageRect) return;
+    sendCursor({
+      area: "page",
+      x: (e.clientX - pageRect.left) / pageRect.width,
+      y: (e.clientY - pageRect.top) / pageRect.height,
+      dayNo,
+    });
+  };
+
   // 💡 드래그 중인 임시 아이템 정의 (검색 패널에서 드래그할 경우 임시 객체를 만들어 보여줌)
   let draggedItem = null;
   if (activeId) {
@@ -2347,6 +2488,23 @@ export function DashboardPage() {
     return holder != null && holder !== currentUser?.id
       ? nicknameOf(holder)
       : null;
+  };
+
+  // Day 탭에 찍을 "이 Day 를 보는 중" 멤버들 (커서 하트비트 기반).
+  // 프로필 이미지까지 실어 탭에 아바타로 띄운다 — 테두리는 커서와 같은 멤버 색.
+  const dayViewersOf = (dayKey) => {
+    const dayNo = dayNoOf(dayKey);
+    return Object.entries(viewingDays)
+      .filter(([, d]) => d === dayNo)
+      .map(([id]) => {
+        const memberId = Number(id);
+        const member = boardMembers.find((m) => m.memberId === memberId);
+        return {
+          id: memberId,
+          name: member?.nickname ?? "다른 멤버",
+          profileImg: member?.profileImg ?? null,
+        };
+      });
   };
 
   // 스냅샷이 시드되기 전(로딩 중)에는 보드를 그리지 않는다.
@@ -2430,7 +2588,16 @@ export function DashboardPage() {
             onDragEnd={handleDragEnd}
             onDragCancel={handleDragCancel}
           >
-            <div className="dashboard-page dash-body">
+            <div
+              className="dashboard-page dash-body"
+              ref={pageDOMRef}
+              onMouseMove={handlePageCursorMove}
+              // 대시보드를 벗어나면(상단바 등) 상대 화면의 내 커서를 걷는다.
+              // Day 탭 점은 유지된다 — 아직 이 Day 를 보는 중이므로.
+              onMouseLeave={() =>
+                sendCursor({ area: "leave", dayNo: dayNoOf(activeDay) })
+              }
+            >
               <div className="daycol">
                 {dayKeys.map((day, i) => (
                   <DayTab
@@ -2440,6 +2607,7 @@ export function DashboardPage() {
                     count={(chains[day] || []).length}
                     isActive={activeDay === day}
                     onClick={() => setActiveDay(day)}
+                    viewers={dayViewersOf(day)}
                   />
                 ))}
               </div>
@@ -2666,6 +2834,20 @@ export function DashboardPage() {
                         </div>
                       )}
                     </div>
+
+                    {/* 다른 멤버들의 라이브 커서(타임라인 정밀 좌표) — 카드 위에 뜨되
+                        클릭은 통과시킨다(pointer-events: none). 상태는 레이어가 자체 보유 */}
+                    <RemoteCursorLayer
+                      mode="tl"
+                      register={registerTlCursorHandler}
+                      myId={currentUser?.id}
+                      activeDayNo={dayNoOf(activeDay)}
+                      timelineStart={timelineStart}
+                      px={PX}
+                      padTop={TL_PAD_TOP}
+                      padLeft={TL_PAD_LEFT}
+                      nicknameOf={nicknameOf}
+                    />
                   </div>
                 </div>
 
@@ -2886,6 +3068,15 @@ export function DashboardPage() {
                   )
                 ) : null}
               </DragOverlay>
+
+              {/* 타임라인 밖(후보·사이드 등)의 라이브 커서 — 페이지 비율 좌표.
+                  Day 무관 영역이라 상대가 다른 Day 를 봐도 그린다 */}
+              <RemoteCursorLayer
+                mode="page"
+                register={registerPageCursorHandler}
+                myId={currentUser?.id}
+                nicknameOf={nicknameOf}
+              />
             </div>
           </DndContext>
         ) : (
