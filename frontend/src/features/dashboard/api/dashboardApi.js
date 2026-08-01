@@ -202,6 +202,43 @@ export async function fetchOpsAfter(projectId, afterSeq) {
   }
 }
 
+// ── 세부 내용 편집 락 (advisory) ─────────────────────
+// Redis SET NX + TTL 30s. 서버가 detail 쓰기를 막지는 않는다 — 편집 배지용이다.
+// 락 상태 변화(획득·해제)는 presence 토픽에 DETAIL_LOCK 메시지로 전파된다.
+
+/**
+ * 편집 락 획득. 실패해도 편집을 막지 않는다(advisory) — holder 를 배지에 쓴다.
+ * @returns {Promise<{acquired: boolean, holder: number|null, ttlRemaining: number}>}
+ */
+export async function acquireDetailLock(blockId) {
+  try {
+    const { data } = await axiosInstance.post(`/blocks/${blockId}/detail-lock`);
+    return unwrap(data);
+  } catch (error) {
+    unwrapError(error);
+  }
+}
+
+/** 락 TTL 연장 — 10초 주기, 소유자만 가능(비소유 하트비트 = BLOCK409). */
+export async function heartbeatDetailLock(blockId) {
+  try {
+    const { data } = await axiosInstance.put(`/blocks/${blockId}/detail-lock`);
+    return unwrap(data);
+  } catch (error) {
+    unwrapError(error);
+  }
+}
+
+/** 락 해제 — 멱등(만료 직후 해제 요청도 에러가 아니다). */
+export async function releaseDetailLock(blockId) {
+  try {
+    const { data } = await axiosInstance.delete(`/blocks/${blockId}/detail-lock`);
+    return unwrap(data);
+  } catch (error) {
+    unwrapError(error);
+  }
+}
+
 // ── 블록 CRUD ────────────────────────────────────────
 
 /** @returns {Promise<{blockId: number, seq: number}>} */

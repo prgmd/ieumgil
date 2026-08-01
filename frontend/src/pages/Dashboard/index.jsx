@@ -262,7 +262,15 @@ function DayTab({ label, date, count, isActive, onClick }) {
   );
 }
 
-function CardBody({ item, mode, startMins, endMins, isThisResizing, onEdge }) {
+function CardBody({
+  item,
+  mode,
+  startMins,
+  endMins,
+  isThisResizing,
+  onEdge,
+  lockedBy,
+}) {
   const catStyle = catOf(item);
 
   if (mode !== "timeline") {
@@ -273,6 +281,7 @@ function CardBody({ item, mode, startMins, endMins, isThisResizing, onEdge }) {
             {catStyle.nm}
             {item?.sub ? ` · ${item.sub}` : ""}
           </span>
+          {lockedBy && <span className="lock-badge">✎ {lockedBy}</span>}
           <span className="grip">⠿</span>
         </div>
         {/* 💡 연필 아이콘 삭제, 글씨 두께만 강조 */}
@@ -296,6 +305,7 @@ function CardBody({ item, mode, startMins, endMins, isThisResizing, onEdge }) {
           {item?.sub ? ` · ${item.sub}` : ""}
         </span>
         {item?.auto && <span className="auto-badge">자동</span>}
+        {lockedBy && <span className="lock-badge">✎ {lockedBy} 편집 중</span>}
         <span>
           <span className="nm">{item?.name}</span>{" "}
           <span className="nm-sub">{item?.detail}</span>
@@ -350,7 +360,7 @@ function BlockEditBadge({ onEdit }) {
   );
 }
 
-function PoolCard({ id, item, onEditBlock }) {
+function PoolCard({ id, item, onEditBlock, lockedBy }) {
   const {
     attributes,
     listeners,
@@ -379,7 +389,13 @@ function PoolCard({ id, item, onEditBlock }) {
       // 💡 박스 전체 영역에 클릭 이벤트 연결
       onClick={() => onEditBlock && onEditBlock(id)}
     >
-      <CardBody id={id} item={item} mode="pool" onEditBlock={onEditBlock} />
+      <CardBody
+        id={id}
+        item={item}
+        mode="pool"
+        onEditBlock={onEditBlock}
+        lockedBy={lockedBy}
+      />
       <BlockEditBadge onEdit={onEditBlock && (() => onEditBlock(id))} />
     </div>
   );
@@ -395,6 +411,7 @@ function TimelineCard({
   dayStartMins,
   boundTop,
   onEditBlock,
+  lockedBy,
 }) {
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
     id,
@@ -450,6 +467,7 @@ function TimelineCard({
           isThisResizing={isThisResizing}
           onEdge={handleEdgeClick}
           onEditBlock={onEditBlock}
+          lockedBy={lockedBy}
         />
         {!isThisResizing && (
           <BlockEditBadge onEdit={onEditBlock && (() => onEditBlock(id))} />
@@ -568,6 +586,7 @@ export function DashboardPage() {
   // 새로고침하면 서버 상태로 되돌아간다(로컬 편집은 아직 휘발).
   const {
     project,
+    members: serverMembers,
     items: serverItems,
     chains: serverChains,
     pool: serverPool,
@@ -579,13 +598,16 @@ export function DashboardPage() {
 
   // ── 실시간 op 파이프라인: 수신(useProjectOps) → 순서 보장(시퀀서) → 화면 적용 ──
   // 시퀀서·적용 함수는 아래(상태 선언 이후)에 정의되고, 여기서는 수신만 물린다.
+  // presence(접속·편집 배지)는 seq 없는 휘발 정보라 시퀀서를 거치지 않고 바로 적용한다.
   const sequencerRef = useRef(null);
   const applyRemoteOpRef = useRef(() => {});
+  const applyPresenceRef = useRef(() => {});
   const pendingRemoteOpsRef = useRef([]);
   const interactingRef = useRef(false);
 
   useProjectOps(projectId, {
     onOp: (op) => sequencerRef.current?.push(op),
+    onPresence: (msg) => applyPresenceRef.current(msg),
   });
 
   // 상단바(개인 페이지 › 그룹명 › 프로젝트명)의 그룹명·멤버 아바타는 그룹 상세에서,
@@ -621,6 +643,53 @@ export function DashboardPage() {
   const [items, setItems] = useState({});
   const [chains, setChains] = useState({});
   const [pool, setPool] = useState([]);
+
+  // ── 함께 있는 느낌 (6단계) ───────────────────────────
+  // members: 스냅샷이 시드하고 MEMBER_JOINED/LEFT op 가 갱신한다 (상단바 아바타).
+  // onlineIds: 시드는 members[].online, 이후는 PRESENCE 메시지 — 초록 점의 진실.
+  // detailLocks: blockId → 락 소유 memberId. DETAIL_LOCK 메시지로만 갱신되는 휘발
+  //   정보라 새로고침하면 기존 락은 다음 획득/해제 전까지 안 보인다(advisory 라 감수).
+  const [boardMembers, setBoardMembers] = useState([]);
+  const [onlineIds, setOnlineIds] = useState(() => new Set());
+  const [detailLocks, setDetailLocks] = useState({});
+
+  const applyPresenceMessage = (msg) => {
+    if (msg?.type === "PRESENCE") {
+      setOnlineIds((prev) => {
+        if (prev.has(msg.memberId) === !!msg.online) return prev; // 변화 없음
+        const next = new Set(prev);
+        if (msg.online) next.add(msg.memberId);
+        else next.delete(msg.memberId);
+        return next;
+      });
+      // 락 만료(TTL)는 브로드캐스트가 없다 — 편집자가 해제 없이 사라지면(브라우저
+      // 강제 종료 등) 배지가 남는다. 이탈 신호를 만료의 근사로 삼아 그의 배지를
+      // 걷는다. 실제 락도 하트비트가 끊겨 30초 내 만료된다.
+      if (!msg.online) {
+        setDetailLocks((prev) => {
+          const entries = Object.entries(prev).filter(
+            ([, holder]) => holder !== msg.memberId,
+          );
+          return entries.length === Object.keys(prev).length
+            ? prev
+            : Object.fromEntries(entries);
+        });
+      }
+    } else if (msg?.type === "DETAIL_LOCK") {
+      setDetailLocks((prev) => {
+        if (msg.locked) return { ...prev, [msg.blockId]: msg.memberId };
+        // 해제는 소유자 것만 지운다 — 늦게 도착한 옛 소유자의 해제가
+        // 새 소유자의 배지를 지우면 안 된다
+        if (prev[msg.blockId] !== msg.memberId) return prev;
+        const next = { ...prev };
+        delete next[msg.blockId];
+        return next;
+      });
+    }
+  };
+  useEffect(() => {
+    applyPresenceRef.current = applyPresenceMessage;
+  });
 
   // 기간이 줄어 사라진 Day 에 남아 있던 블록은 버리지 않고 후보 목록으로 되돌린다 —
   // 서버가 PATCH 응답의 movedToPool 로 알려주는 것과 같은 규칙이다.
@@ -860,6 +929,15 @@ export function DashboardPage() {
     setItems(serverItems);
     setChains(serverChains);
     setPool(serverPool);
+
+    // 멤버·접속 상태의 시드 — 이후는 MEMBER_JOINED/LEFT op 와 PRESENCE 메시지가
+    // 이어받는다. 스냅샷의 online 이 실값(서버 PresenceRegistry)이라 그대로 믿는다.
+    setBoardMembers(serverMembers);
+    setOnlineIds(
+      new Set(
+        serverMembers.filter((m) => m.online).map((m) => m.memberId),
+      ),
+    );
 
     // Day 시작 시각은 09:00 고정 — 버튼으로만 바뀐다(로컬 값이라 새로고침 시 초기화).
     // 단 09:00 이전에 시작하는 블록이 있으면 타임라인 위로 잘려 안 보이므로,
@@ -1355,8 +1433,36 @@ export function DashboardPage() {
         showToast("이 프로젝트가 삭제됐어요.");
         navigate(`/groups/${groupId}`, { replace: true });
         break;
+      case "MEMBER_JOINED":
+        // 그룹의 모든 프로젝트 토픽에 발행된다 — 상단바 아바타 목록 갱신.
+        // own(자기 가입)도 중복 가드가 있어 재적용이 무해하다.
+        setBoardMembers((prev) =>
+          prev.some((m) => m.memberId === payload.memberId)
+            ? prev
+            : [
+                ...prev,
+                {
+                  memberId: payload.memberId,
+                  nickname: payload.nickname,
+                  profileImg: payload.profileImg || null,
+                  online: false, // 접속하면 PRESENCE 가 알려준다
+                },
+              ],
+        );
+        break;
+      case "MEMBER_LEFT":
+        setBoardMembers((prev) =>
+          prev.filter((m) => m.memberId !== payload.memberId),
+        );
+        setOnlineIds((prev) => {
+          if (!prev.has(payload.memberId)) return prev;
+          const next = new Set(prev);
+          next.delete(payload.memberId);
+          return next;
+        });
+        break;
       default:
-        // PROJECT_STATUS_CHANGED·BUDGET_HEADCOUNT_CHANGED·MEMBER_* —
+        // PROJECT_STATUS_CHANGED·BUDGET_HEADCOUNT_CHANGED —
         // 표시 UI 가 없어 seq 만 소비한다 (전방 호환: 모르는 타입도 여기로)
         break;
     }
@@ -1604,6 +1710,45 @@ export function DashboardPage() {
     }
     setEditingBlockId(null);
   };
+
+  // ── 편집 락 수명 = 편집 모달 수명 (6단계, advisory) ──
+  // 모달을 열면 획득 → 10초 주기 하트비트(TTL 30초) → 닫으면 해제.
+  // 락은 편집을 막지 않는다(서버도 안 막는다) — 다른 멤버 화면에 "편집 중" 배지를
+  // 띄우는 신호일 뿐이다. 획득 실패·요청 실패 모두 편집을 계속하게 둔다.
+  useEffect(() => {
+    if (!editingBlockId || !isServerBlock(editingBlockId)) return undefined;
+    const blockId = editingBlockId;
+    let heartbeatTimer = null;
+    let acquired = false;
+    let cancelled = false;
+
+    blockApi
+      .acquireDetailLock(blockId)
+      .then((r) => {
+        if (cancelled) {
+          // 응답 전에 모달이 닫혔다 — 방금 얻은 락을 바로 되돌려 준다
+          if (r?.acquired) blockApi.releaseDetailLock(blockId).catch(() => {});
+          return;
+        }
+        if (r?.acquired) {
+          acquired = true;
+          heartbeatTimer = setInterval(() => {
+            blockApi.heartbeatDetailLock(blockId).catch(() => {});
+          }, 10_000);
+        } else if (r?.holder != null) {
+          // 남이 잡고 있다 — 배지 상태에 직접 반영한다. 락이 내 구독 이전부터
+          // 있었으면 DETAIL_LOCK 메시지를 받은 적이 없어 이 경로가 유일한 단서다.
+          setDetailLocks((prev) => ({ ...prev, [blockId]: r.holder }));
+        }
+      })
+      .catch(() => {});
+
+    return () => {
+      cancelled = true;
+      if (heartbeatTimer) clearInterval(heartbeatTimer);
+      if (acquired) blockApi.releaseDetailLock(blockId).catch(() => {});
+    };
+  }, [editingBlockId]);
 
   useEffect(() => {
     dragRegionRef.current = dragPreview?.region;
@@ -2193,6 +2338,17 @@ export function DashboardPage() {
     })
     .filter(Boolean);
 
+  // 편집 배지에 쓸 이름 — 락 소유자가 멤버 목록에 없으면(탈퇴 직후 등) 뭉뚱그린다
+  const nicknameOf = (memberId) =>
+    boardMembers.find((m) => m.memberId === memberId)?.nickname ?? "다른 멤버";
+  // 남이 잡은 락만 배지가 된다 — 내 락(내 다른 탭 포함, memberId 기준)은 표시하지 않는다
+  const lockBadgeOf = (blockId) => {
+    const holder = detailLocks[blockId];
+    return holder != null && holder !== currentUser?.id
+      ? nicknameOf(holder)
+      : null;
+  };
+
   // 스냅샷이 시드되기 전(로딩 중)에는 보드를 그리지 않는다.
   // 에러일 때는 위 effect 가 그룹 페이지로 되돌린다.
   // dayStart 는 조건에 넣지 않는다 — 기간 미정 프로젝트는 dayKeys(기본 4일)가
@@ -2221,10 +2377,10 @@ export function DashboardPage() {
           { label: group?.name ?? "그룹", to: `/groups/${groupId}` },
           { label: project?.name ?? "여행 대시보드" },
         ]}
-        members={group?.members ?? []}
-        // 실시간 접속 정보가 아직 없어 지금은 나만 활동 중으로 표시된다.
-        // WebSocket 이 붙으면 접속자 id 목록을 그대로 여기에 넣으면 된다.
-        activeMemberIds={currentUser?.id ? [currentUser.id] : []}
+        // 프로젝트 멤버(스냅샷 시드 + MEMBER_JOINED/LEFT 갱신)와 실시간 접속
+        // 상태(PRESENCE) — 초록 점이 진짜 "지금 보는 중"을 뜻하게 됐다(6단계)
+        members={boardMembers}
+        activeMemberIds={Array.from(onlineIds)}
       />
 
       {/* 모드 전환 바 + 보드를 한 껍데기(.dash-shell) 안에 두어 경계 없이 이어 보이게 한다.
@@ -2461,6 +2617,7 @@ export function DashboardPage() {
                                 dayStartMins={timelineStart}
                                 boundTop={boundTop}
                                 onEditBlock={setEditingBlockId}
+                                lockedBy={lockBadgeOf(data.id)}
                               />
                             )}
 
@@ -2542,6 +2699,7 @@ export function DashboardPage() {
                             id={id}
                             item={items[id]}
                             onEditBlock={setEditingBlockId}
+                            lockedBy={lockBadgeOf(id)}
                           />
                         ))}
                       </SortableContext>
@@ -2753,6 +2911,7 @@ export function DashboardPage() {
                 ? ""
                 : `Day ${dayNum} · ${fmtTime(sMins)} - ${fmtTime(eMins)}`;
 
+            const lockedByName = lockBadgeOf(editingBlockId);
             return (
               <BlockEditForm
                 initialData={item}
@@ -2760,6 +2919,13 @@ export function DashboardPage() {
                 // 서버가 category 필드 갱신을 지원하지 않는다(BLOCK400_2) —
                 // 카테고리는 생성 시에만 정할 수 있다
                 categoryLocked={!isTempId(editingBlockId)}
+                // advisory 락 — 편집을 막지 않고 동시 편집 사실만 알린다.
+                // 세부 내용(detail)은 마지막 저장이 통째로 이기므로 겹치면 유실될 수 있다.
+                lockNotice={
+                  lockedByName
+                    ? `✎ ${lockedByName} 님도 이 블록을 편집하고 있어요`
+                    : ""
+                }
                 onSave={handleSaveBlock}
                 onCancel={handleCancelEdit}
               />

@@ -7,6 +7,7 @@ export function BlockEditForm({
   initialData,
   timeString,
   categoryLocked = false,
+  lockNotice = "",
   onSave,
   onCancel,
 }) {
@@ -188,7 +189,9 @@ export function BlockEditForm({
       )}
 
       <div className="bef-foot">
-        <div className="bef-editor">✎ 마지막 수정 · 민준</div>
+        {/* 다른 멤버가 같은 블록을 편집 중일 때만 채워진다(advisory 락, 6단계).
+            빈 div 를 유지해 space-between 레이아웃에서 버튼이 왼쪽으로 쏠리지 않게 한다. */}
+        <div className="bef-editor">{lockNotice}</div>
         <div className="bef-btns">
           <button className="bef-btn bef-btn-cancel" onClick={onCancel}>
             닫기

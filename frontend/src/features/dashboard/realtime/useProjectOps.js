@@ -20,18 +20,30 @@ import { getClientId } from "../../../global/api/clientId";
  *   "순차 적용 + 버퍼 + 갭 fetch"여야 하며, 그건 다음 단계(op 적용)에서 이 훅의
  *   onOp 위에 얹는다. 이 훅은 수신·연결 관리까지만 책임진다.
  *
+ * presence 토픽(/presence)은 같은 연결로 함께 구독한다 — 한 토픽에 두 메시지가
+ * type 으로 구분되어 온다(백엔드 PresenceEventListener·DetailLockServiceImpl 대조):
+ *   { type: "PRESENCE",    memberId, online }          접속/이탈
+ *   { type: "DETAIL_LOCK", blockId, memberId, locked } 편집 배지
+ * seq 가 없고 저널에도 안 남는 휘발 정보라 시퀀서를 태우지 않는다 — 재접속하면
+ * 스냅샷의 members[].online 이 최신 상태를 준다.
+ *
  * @param {number} projectId
- * @param {{ onOp?: (op: object, meta: { own: boolean }) => void }} [options]
+ * @param {{
+ *   onOp?: (op: object, meta: { own: boolean }) => void,
+ *   onPresence?: (msg: object) => void,
+ * }} [options]
  * @returns {{ status: "connecting" | "connected" | "disconnected" }}
  */
-export function useProjectOps(projectId, { onOp } = {}) {
+export function useProjectOps(projectId, { onOp, onPresence } = {}) {
   const isValidId = Number.isInteger(projectId);
   const [status, setStatus] = useState("connecting");
 
-  // latest-ref — onOp 이 매 렌더 새 함수여도 재연결하지 않는다
+  // latest-ref — 콜백이 매 렌더 새 함수여도 재연결하지 않는다
   const onOpRef = useRef(onOp);
+  const onPresenceRef = useRef(onPresence);
   useEffect(() => {
     onOpRef.current = onOp;
+    onPresenceRef.current = onPresence;
   });
 
   useEffect(() => {
@@ -58,6 +70,13 @@ export function useProjectOps(projectId, { onOp } = {}) {
             op.payload,
           );
           onOpRef.current?.(op, { own });
+        });
+        // presence 는 메인 토픽을 구독한 세션만 "보는 중"으로 세므로(서버 판정 기준)
+        // 반드시 메인 구독과 같은 연결에서 함께 구독한다
+        client.subscribe(`/topic/project/${projectId}/presence`, (message) => {
+          const msg = JSON.parse(message.body);
+          console.debug(`[realtime] presence ${msg.type}`, msg);
+          onPresenceRef.current?.(msg);
         });
       },
       onStompError: (frame) => {
