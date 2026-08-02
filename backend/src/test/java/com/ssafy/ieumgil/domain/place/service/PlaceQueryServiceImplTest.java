@@ -139,4 +139,24 @@ class PlaceQueryServiceImplTest {
 
         assertThat(result).isEmpty();
     }
+
+    @Test
+    void searchPlacesInRectDelegatesToRectSearchAndCapsResults() {
+        placeQueryService = new PlaceQueryServiceImpl(kakaoLocalClient);
+        List<KakaoPlaceResponse.Document> documents = new java.util.ArrayList<>();
+        for (int i = 0; i < 10; i++) {
+            documents.add(new KakaoPlaceResponse.Document(
+                    "id" + i, "장소" + i, "카페", "제주 서귀포시", "제주 서귀포시 일출로", "126.94", "33.45"));
+        }
+        when(kakaoLocalClient.searchByKeywordInRect("카페", 33.44, 126.93, 33.47, 126.95))
+                .thenReturn(documents);
+
+        List<PlaceResDTO.Place> result = placeQueryService.searchPlacesInRect(
+                "카페", 33.44, 126.93, 33.47, 126.95);
+
+        // 일반 검색과 같은 상한을 적용한다 — 모델 입력 토큰과 후보 개수를 같은 기준으로 묶는다
+        assertThat(result).hasSize(5);
+        assertThat(result.get(0).placeId()).isEqualTo("id0");
+        assertThat(result.get(0).lat()).isEqualTo(33.45);
+    }
 }

@@ -27,6 +27,15 @@ public class PlaceQueryServiceImpl implements PlaceQueryService {
     }
 
     @Override
+    public List<PlaceResDTO.Place> searchPlacesInRect(String query, double swLat, double swLng,
+                                                     double neLat, double neLng) {
+        return kakaoLocalClient.searchByKeywordInRect(query, swLat, swLng, neLat, neLng).stream()
+                .limit(MAX_RESULTS)
+                .map(this::toPlace)
+                .toList();
+    }
+
+    @Override
     public Optional<PlaceResDTO.Address> reverseGeocode(double lat, double lng) {
         return kakaoLocalClient.coord2Address(lat, lng).map(this::toAddress);
     }

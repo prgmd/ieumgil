@@ -1,5 +1,6 @@
 package com.ssafy.ieumgil.domain.chatbot.service;
 
+import com.ssafy.ieumgil.domain.chatbot.ChatbotMode;
 import com.ssafy.ieumgil.domain.chatbot.dto.ChatbotReqDTO;
 import com.ssafy.ieumgil.domain.chatbot.dto.ChatbotResDTO;
 import com.ssafy.ieumgil.domain.chatbot.exception.ChatbotException;
@@ -105,7 +106,7 @@ class ChatbotCommandServiceImplTest {
         when(chatModel.call(any(Prompt.class))).thenReturn(canned("안녕하세요! 여행 계획 도와드릴게요."));
 
         ChatbotResDTO.MessageResult result = chatbotCommandService.sendMessage(
-                1L, 1L, new ChatbotReqDTO.SendMessage("안녕", null)
+                1L, 1L, new ChatbotReqDTO.SendMessage("안녕", null, null)
         );
 
         assertThat(result.reply()).isEqualTo("안녕하세요! 여행 계획 도와드릴게요.");
@@ -118,7 +119,7 @@ class ChatbotCommandServiceImplTest {
         when(projectRepository.findByIdAndDeletedAtIsNull(1L)).thenReturn(Optional.empty());
         when(chatModel.call(any(Prompt.class))).thenReturn(canned("이어지는 답변"));
 
-        chatbotCommandService.sendMessage(1L, 1L, new ChatbotReqDTO.SendMessage("다음 질문", null));
+        chatbotCommandService.sendMessage(1L, 1L, new ChatbotReqDTO.SendMessage("다음 질문", null, null));
 
         verify(chatHistoryStore).appendExchange(
                 eq(1L), eq(1L),
@@ -133,7 +134,7 @@ class ChatbotCommandServiceImplTest {
         when(projectRepository.findByIdAndDeletedAtIsNull(1L)).thenReturn(Optional.empty());
         when(chatModel.call(any(Prompt.class))).thenThrow(new RuntimeException("boom"));
 
-        assertThatThrownBy(() -> chatbotCommandService.sendMessage(1L, 1L, new ChatbotReqDTO.SendMessage("안녕", null)))
+        assertThatThrownBy(() -> chatbotCommandService.sendMessage(1L, 1L, new ChatbotReqDTO.SendMessage("안녕", null, null)))
                 .isInstanceOf(ChatbotException.class);
     }
 
@@ -195,7 +196,7 @@ class ChatbotCommandServiceImplTest {
         when(projectRepository.findByIdAndDeletedAtIsNull(1L)).thenReturn(Optional.of(project));
         when(chatModel.call(any(Prompt.class))).thenReturn(canned("여기서 뭐 할만한거 있어?"));
 
-        chatbotCommandService.sendMessage(1L, 1L, new ChatbotReqDTO.SendMessage("여기서 뭐 할만한거 있어?", null));
+        chatbotCommandService.sendMessage(1L, 1L, new ChatbotReqDTO.SendMessage("여기서 뭐 할만한거 있어?", null, null));
 
         ArgumentCaptor<Prompt> promptCaptor = ArgumentCaptor.forClass(Prompt.class);
         verify(chatModel).call(promptCaptor.capture());
@@ -223,7 +224,7 @@ class ChatbotCommandServiceImplTest {
         when(projectRepository.findByIdAndDeletedAtIsNull(1L)).thenReturn(Optional.of(project));
         when(chatModel.call(any(Prompt.class))).thenReturn(canned("답변"));
 
-        chatbotCommandService.sendMessage(1L, 1L, new ChatbotReqDTO.SendMessage("뭐 먹을까?", null));
+        chatbotCommandService.sendMessage(1L, 1L, new ChatbotReqDTO.SendMessage("뭐 먹을까?", null, null));
 
         ArgumentCaptor<Prompt> promptCaptor = ArgumentCaptor.forClass(Prompt.class);
         verify(chatModel).call(promptCaptor.capture());
@@ -246,7 +247,7 @@ class ChatbotCommandServiceImplTest {
         when(projectRepository.findByIdAndDeletedAtIsNull(1L)).thenReturn(Optional.of(project));
         when(chatModel.call(any(Prompt.class))).thenReturn(canned("답변"));
 
-        chatbotCommandService.sendMessage(1L, 1L, new ChatbotReqDTO.SendMessage("안녕", null));
+        chatbotCommandService.sendMessage(1L, 1L, new ChatbotReqDTO.SendMessage("안녕", null, null));
 
         verify(groupMemberRepository, never()).countMembers(any());
     }
@@ -263,7 +264,7 @@ class ChatbotCommandServiceImplTest {
         when(groupMemberRepository.countMembers(9L)).thenReturn(3L);
         when(chatModel.call(any(Prompt.class))).thenReturn(canned("답변"));
 
-        chatbotCommandService.sendMessage(1L, 1L, new ChatbotReqDTO.SendMessage("안녕", null));
+        chatbotCommandService.sendMessage(1L, 1L, new ChatbotReqDTO.SendMessage("안녕", null, null));
 
         ArgumentCaptor<Prompt> promptCaptor = ArgumentCaptor.forClass(Prompt.class);
         verify(chatModel).call(promptCaptor.capture());
@@ -288,7 +289,7 @@ class ChatbotCommandServiceImplTest {
         when(projectRepository.findByIdAndDeletedAtIsNull(1L)).thenReturn(Optional.of(project));
         when(chatModel.call(any(Prompt.class))).thenReturn(canned("답변"));
 
-        chatbotCommandService.sendMessage(1L, 1L, new ChatbotReqDTO.SendMessage("안녕", null));
+        chatbotCommandService.sendMessage(1L, 1L, new ChatbotReqDTO.SendMessage("안녕", null, null));
 
         verify(projectRepository, times(1)).findByIdAndDeletedAtIsNull(1L);
     }
@@ -322,7 +323,7 @@ class ChatbotCommandServiceImplTest {
         when(projectRepository.findByIdAndDeletedAtIsNull(1L)).thenReturn(Optional.of(project));
         when(chatModel.call(any(Prompt.class))).thenReturn(canned("근처 카페 추천해줘"));
 
-        chatbotCommandService.sendMessage(1L, 1L, new ChatbotReqDTO.SendMessage("근처 카페 추천해줘", null));
+        chatbotCommandService.sendMessage(1L, 1L, new ChatbotReqDTO.SendMessage("근처 카페 추천해줘", null, null));
 
         ArgumentCaptor<Prompt> promptCaptor = ArgumentCaptor.forClass(Prompt.class);
         verify(chatModel).call(promptCaptor.capture());
@@ -339,7 +340,7 @@ class ChatbotCommandServiceImplTest {
         when(projectRepository.findByIdAndDeletedAtIsNull(1L)).thenReturn(Optional.empty());
         when(chatModel.call(any(Prompt.class))).thenReturn(canned("서울에서 부산 기차 몇시에 있어?"));
 
-        chatbotCommandService.sendMessage(1L, 1L, new ChatbotReqDTO.SendMessage("서울에서 부산 기차 몇시에 있어?", null));
+        chatbotCommandService.sendMessage(1L, 1L, new ChatbotReqDTO.SendMessage("서울에서 부산 기차 몇시에 있어?", null, null));
 
         ArgumentCaptor<Prompt> promptCaptor = ArgumentCaptor.forClass(Prompt.class);
         verify(chatModel).call(promptCaptor.capture());
@@ -361,7 +362,7 @@ class ChatbotCommandServiceImplTest {
         when(chatModel.call(any(Prompt.class))).thenReturn(canned("안녕하세요"));
 
         ChatbotResDTO.MessageResult result = chatbotCommandService.sendMessage(
-                1L, 1L, new ChatbotReqDTO.SendMessage("안녕", null));
+                1L, 1L, new ChatbotReqDTO.SendMessage("안녕", null, null));
 
         assertThat(result.candidates()).isNotNull().isEmpty();
     }
@@ -390,10 +391,85 @@ class ChatbotCommandServiceImplTest {
         });
 
         ChatbotResDTO.MessageResult result = chatbotCommandService.sendMessage(
-                1L, 1L, new ChatbotReqDTO.SendMessage("카페 추천해줘", null));
+                1L, 1L, new ChatbotReqDTO.SendMessage("카페 추천해줘", null, null));
 
         assertThat(result.candidates()).hasSize(1);
         assertThat(result.candidates().get(0).placeId()).isEqualTo("77");
         assertThat(result.candidates().get(0).category()).isEqualTo(BlockCategory.FOOD);
+    }
+
+    private static final ChatbotReqDTO.MapContext VIEWPORT =
+            new ChatbotReqDTO.MapContext(33.44, 126.93, 33.47, 126.95);
+
+    @Test
+    @DisplayName("MAP 모드인데 뷰포트가 없으면 거절한다 — 조건부 필수라 애노테이션으로 못 걸린다")
+    void mapModeWithoutViewportIsRejected() {
+        assertThatThrownBy(() -> chatbotCommandService.sendMessage(
+                1L, 1L, new ChatbotReqDTO.SendMessage("카페 추천", ChatbotMode.MAP, null)))
+                .isInstanceOf(ChatbotException.class);
+    }
+
+    @Test
+    @DisplayName("MAP 모드는 뷰포트 장소검색 tool만 등록한다 — 축제·경로·시간표는 지도 추천과 무관하고 tool이 적을수록 선택이 정확하다")
+    void mapModeRegistersOnlyViewportTool() {
+        when(chatHistoryStore.loadHistory(1L, 1L)).thenReturn(List.of());
+        Project project = Project.builder()
+                .destination("제주도")
+                .startDate(LocalDate.of(2026, 8, 1))
+                .endDate(LocalDate.of(2026, 8, 3))
+                .budgetHeadcount(4)
+                .build();
+        when(projectRepository.findByIdAndDeletedAtIsNull(1L)).thenReturn(Optional.of(project));
+        when(chatModel.call(any(Prompt.class))).thenReturn(canned("이 근처 카페예요"));
+
+        chatbotCommandService.sendMessage(
+                1L, 1L, new ChatbotReqDTO.SendMessage("카페 추천", ChatbotMode.MAP, VIEWPORT));
+
+        ArgumentCaptor<Prompt> promptCaptor = ArgumentCaptor.forClass(Prompt.class);
+        verify(chatModel).call(promptCaptor.capture());
+        ToolCallingChatOptions options = (ToolCallingChatOptions) promptCaptor.getValue().getOptions();
+        assertThat(options.getToolCallbacks())
+                .extracting(tc -> tc.getToolDefinition().name())
+                .containsExactly("searchPlacesInView");
+    }
+
+    @Test
+    @DisplayName("MAP 모드는 지도 범위 밖을 추천하지 말라는 지시를 프롬프트에 붙인다")
+    void mapModeAppendsViewportInstructionToPrompt() {
+        when(chatHistoryStore.loadHistory(1L, 1L)).thenReturn(List.of());
+        when(projectRepository.findByIdAndDeletedAtIsNull(1L)).thenReturn(Optional.empty());
+        when(chatModel.call(any(Prompt.class))).thenReturn(canned("답변"));
+
+        chatbotCommandService.sendMessage(
+                1L, 1L, new ChatbotReqDTO.SendMessage("카페 추천", ChatbotMode.MAP, VIEWPORT));
+
+        ArgumentCaptor<Prompt> promptCaptor = ArgumentCaptor.forClass(Prompt.class);
+        verify(chatModel).call(promptCaptor.capture());
+        String systemText = promptCaptor.getValue().getInstructions().stream()
+                .filter(SystemMessage.class::isInstance)
+                .map(Message::getText)
+                .findFirst()
+                .orElseThrow();
+        assertThat(systemText).contains("지도 기반 추천 모드");
+    }
+
+    @Test
+    @DisplayName("GENERAL 모드에서는 뷰포트를 보내도 무시한다 — 일반 채팅 tool 구성이 그대로다")
+    void generalModeIgnoresViewport() {
+        when(chatHistoryStore.loadHistory(1L, 1L)).thenReturn(List.of());
+        Project project = Project.builder().destination("제주도").budgetHeadcount(4).build();
+        when(projectRepository.findByIdAndDeletedAtIsNull(1L)).thenReturn(Optional.of(project));
+        when(chatModel.call(any(Prompt.class))).thenReturn(canned("답변"));
+
+        chatbotCommandService.sendMessage(
+                1L, 1L, new ChatbotReqDTO.SendMessage("카페 추천", ChatbotMode.GENERAL, VIEWPORT));
+
+        ArgumentCaptor<Prompt> promptCaptor = ArgumentCaptor.forClass(Prompt.class);
+        verify(chatModel).call(promptCaptor.capture());
+        ToolCallingChatOptions options = (ToolCallingChatOptions) promptCaptor.getValue().getOptions();
+        assertThat(options.getToolCallbacks())
+                .extracting(tc -> tc.getToolDefinition().name())
+                .contains("searchPlaces")
+                .doesNotContain("searchPlacesInView");
     }
 }

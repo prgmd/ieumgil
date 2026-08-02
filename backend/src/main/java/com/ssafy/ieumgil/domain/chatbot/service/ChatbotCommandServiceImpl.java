@@ -1,5 +1,7 @@
 package com.ssafy.ieumgil.domain.chatbot.service;
 
+import com.ssafy.ieumgil.domain.chatbot.ChatbotMode;
+import com.ssafy.ieumgil.domain.chatbot.tool.ViewportPlaceSearchTool;
 import com.ssafy.ieumgil.domain.chatbot.dto.ChatbotReqDTO;
 import com.ssafy.ieumgil.domain.chatbot.dto.ChatbotResDTO;
 import com.ssafy.ieumgil.domain.chatbot.exception.ChatbotErrorCode;
@@ -68,22 +70,26 @@ public class ChatbotCommandServiceImpl implements ChatbotCommandService {
 
     @Override
     public ChatbotResDTO.MessageResult sendMessage(Long projectId, Long memberId, ChatbotReqDTO.SendMessage request) {
+        ChatbotMode mode = request.modeOrDefault();
+        // 조건부 필수라 애노테이션으로 못 걸린다 — 블록 생성의 좌표 교차 검증과 같은 패턴
+        if (mode == ChatbotMode.MAP && request.mapContext() == null) {
+            throw new ChatbotException(ChatbotErrorCode.MAP_CONTEXT_REQUIRED);
+        }
+
         List<ChatTurn> history = chatHistoryStore.loadHistory(projectId, memberId);
 
         // 메타데이터 주입과 tool 구성이 같은 로드를 공유한다 — 예전엔 resolver 둘이 각자 조회해 쿼리가 두 번 나갔다
         Optional<Project> project = projectRepository.findByIdAndDeletedAtIsNull(projectId);
 
         List<Message> messages = new ArrayList<>();
-        messages.add(new SystemMessage(SYSTEM_PROMPT + buildTripContext(project)));
+        messages.add(new SystemMessage(SYSTEM_PROMPT + modePrompt(mode) + buildTripContext(project)));
         for (ChatTurn turn : history) {
             messages.add(toMessage(turn));
         }
         messages.add(new UserMessage(request.message()));
 
         CandidateCollector candidateCollector = new CandidateCollector();
-        Optional<FestivalRecommendationTool> festivalTool = resolveFestivalTool(project, candidateCollector);
-        List<Object> kakaoTools = resolveKakaoTools(project, candidateCollector);
-        String reply = callGms(messages, festivalTool, kakaoTools);
+        String reply = callGms(messages, resolveTools(mode, request, project, candidateCollector));
 
         chatHistoryStore.appendExchange(
                 projectId,
@@ -96,6 +102,21 @@ public class ChatbotCommandServiceImpl implements ChatbotCommandService {
                 .reply(reply)
                 .candidates(candidateCollector.candidates())
                 .build();
+    }
+
+    /**
+     * 모드별 프롬프트 꼬리. 지도 모드에서 범위 밖 장소를 끼워넣지 않도록 못을 박는다.
+     * 마지막 문장이 중요하다 — 좁은 범위에서 결과가 0건일 때 억지로 지어내는 것을 막는다.
+     */
+    private String modePrompt(ChatbotMode mode) {
+        if (mode != ChatbotMode.MAP) {
+            return "";
+        }
+        return """
+                지금은 지도 기반 추천 모드입니다. 사용자가 보고 있는 지도 범위 안의 장소만 추천하세요.
+                그 범위 밖 장소나 학습 지식으로 아는 장소를 끼워넣지 마세요.
+                범위 안에 마땅한 결과가 없으면 없다고 알리고 지도를 옮기거나 넓혀 보라고 안내하세요.
+                """;
     }
 
     /**
@@ -150,17 +171,34 @@ public class ChatbotCommandServiceImpl implements ChatbotCommandService {
                 .orElseGet(List::of);
     }
 
-    private String callGms(List<Message> messages, Optional<FestivalRecommendationTool> festivalTool, List<Object> kakaoTools) {
+    /**
+     * 모드별 tool 구성.
+     *
+     * <p>MAP 모드는 뷰포트 장소검색 하나만 등록한다. 축제(BOT-05는 일반 채팅 전용)·경로·시간표는
+     * "지도에 보이는 범위에서 장소를 고른다"는 흐름과 무관하고, 노출 tool이 적을수록
+     * 모델의 선택 정확도가 올라간다.
+     */
+    private List<Object> resolveTools(ChatbotMode mode, ChatbotReqDTO.SendMessage request,
+                                      Optional<Project> project, CandidateCollector candidateCollector) {
+        if (mode == ChatbotMode.MAP) {
+            return List.of(new ViewportPlaceSearchTool(request.mapContext(), placeQueryService, candidateCollector));
+        }
+
+        List<Object> tools = new ArrayList<>(resolveKakaoTools(project, candidateCollector));
+        tools.add(trainScheduleTool);
+        tools.add(busScheduleTool);
+        tools.add(flightScheduleTool);
+        resolveFestivalTool(project, candidateCollector).ifPresent(tools::add);
+        return tools;
+    }
+
+    private String callGms(List<Message> messages, List<Object> tools) {
         try {
-            ChatClient.ChatClientRequestSpec spec = ChatClient.builder(chatModel).build()
-                    .prompt(new Prompt(messages));
-            List<Object> tools = new ArrayList<>(kakaoTools);
-            tools.add(trainScheduleTool);
-            tools.add(busScheduleTool);
-            tools.add(flightScheduleTool);
-            festivalTool.ifPresent(tools::add);
-            spec = spec.tools(tools.toArray());
-            return spec.call().content();
+            return ChatClient.builder(chatModel).build()
+                    .prompt(new Prompt(messages))
+                    .tools(tools.toArray())
+                    .call()
+                    .content();
         } catch (RuntimeException e) {
             throw new ChatbotException(ChatbotErrorCode.GMS_CALL_FAILED);
         }
