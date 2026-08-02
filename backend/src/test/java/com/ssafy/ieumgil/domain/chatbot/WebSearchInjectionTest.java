@@ -1,6 +1,7 @@
 package com.ssafy.ieumgil.domain.chatbot;
 
 import com.ssafy.ieumgil.domain.chatbot.config.WebSearchInterceptor;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Test;
 import org.springframework.ai.anthropic.AnthropicChatModel;
@@ -21,6 +22,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * 그 결과를 Spring AI가 파싱 가능한 형태로 정규화해 최종 답변까지 반환하는지 검증하는 통합 테스트.
  * GMS_API_KEY(.env)로만 게이팅하는 실모델 호출이라 비-CI.
  */
+@Tag("live")
 class WebSearchInjectionTest {
 
     @Test

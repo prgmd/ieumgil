@@ -1,21 +1,24 @@
 package com.ssafy.ieumgil.domain.festival.repository;
 
 import com.ssafy.ieumgil.domain.festival.entity.Festival;
+import com.ssafy.ieumgil.support.IntegrationTestSupport;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.jdbc.AutoConfigureTestDatabase;
-import org.springframework.boot.test.autoconfigure.orm.jpa.DataJpaTest;
 
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.springframework.boot.test.autoconfigure.jdbc.AutoConfigureTestDatabase.Replace.NONE;
 
-@DataJpaTest
-@AutoConfigureTestDatabase(replace = NONE)
-class FestivalRepositoryTest {
+/**
+ * 다른 JPA 테스트들과 같이 IntegrationTestSupport(Testcontainers)를 상속한다.
+ *
+ * <p>예전에는 {@code @DataJpaTest @AutoConfigureTestDatabase(replace = NONE)}이라 외부 DB
+ * 접속 정보가 환경에 있어야만 컨텍스트가 떴다. 그래서 로컬 gradle 실행에서
+ * "URL must start with 'jdbc'"로 계속 실패했다 — .env 없는 CI나 다른 팀원 PC에서도 같다.
+ */
+class FestivalRepositoryTest extends IntegrationTestSupport {
 
     @Autowired
     private FestivalRepository festivalRepository;

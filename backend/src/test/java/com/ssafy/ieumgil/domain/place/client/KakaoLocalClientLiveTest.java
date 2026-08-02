@@ -4,6 +4,7 @@ import com.ssafy.ieumgil.domain.place.dto.KakaoAddressResponse;
 import com.ssafy.ieumgil.domain.place.dto.KakaoDirectionsResponse;
 import com.ssafy.ieumgil.domain.place.dto.KakaoPlaceResponse;
 import com.ssafy.ieumgil.domain.place.dto.KakaoWalkingRouteResponse;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Test;
 import org.springframework.web.client.RestClient;
@@ -23,6 +24,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * 네트워크/쿼터/실데이터에 의존해 비결정적이므로 CI 게이트가 되어서는 안 된다.
  * 목적: "test-key" MockRestServiceServer 테스트가 못 잡는 실제 스키마/인증/파라미터 드리프트 감지.
  */
+@Tag("live")
 class KakaoLocalClientLiveTest {
 
 	private static final String BASE_URL = "https://dapi.kakao.com";

@@ -17,6 +17,7 @@ import com.ssafy.ieumgil.domain.transit.dto.TransitScheduleResDTO;
 import com.ssafy.ieumgil.domain.transit.service.BusScheduleProvider;
 import com.ssafy.ieumgil.domain.transit.service.FlightScheduleProvider;
 import com.ssafy.ieumgil.domain.transit.service.TrainScheduleProvider;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Test;
 import org.springframework.ai.anthropic.AnthropicChatModel;
@@ -63,6 +64,7 @@ import static org.mockito.Mockito.when;
  * 게이팅되며 CI 게이트로 쓰면 안 된다. 플레이키하면 그 사실을 기록할 것 —
  * 초록불을 만들려고 단언을 약화시키지 말 것(엉뚱한 tool 선택은 프롬프트/설명 품질 신호다).
  */
+@Tag("live")
 class ChatbotToolCallingRegressionTest {
 
 	private static final String SYSTEM_PROMPT = """

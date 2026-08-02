@@ -51,8 +51,9 @@ class ChatHistoryStoreTest {
         );
     }
 
+    /** 윈도우는 토큰 절감을 위해 6턴으로 줄였다(커밋 8875e7f). 이 숫자가 바뀌면 여기서 깨진다. */
     @Test
-    void keepsOnlyMostRecentTenTurns() {
+    void keepsOnlyMostRecentSixTurns() {
         Long projectId = 9002L;
         Long memberId = 9002L;
         redisTemplate.delete("chatbot:history:9002:9002");
@@ -67,8 +68,8 @@ class ChatHistoryStoreTest {
 
         List<ChatTurn> history = chatHistoryStore.loadHistory(projectId, memberId);
 
-        assertThat(history).hasSize(20);
-        assertThat(history.get(0)).isEqualTo(new ChatTurn(ChatTurn.ROLE_USER, "user-5"));
-        assertThat(history.get(19)).isEqualTo(new ChatTurn(ChatTurn.ROLE_ASSISTANT, "assistant-14"));
+        assertThat(history).hasSize(12);
+        assertThat(history.get(0)).isEqualTo(new ChatTurn(ChatTurn.ROLE_USER, "user-9"));
+        assertThat(history.get(11)).isEqualTo(new ChatTurn(ChatTurn.ROLE_ASSISTANT, "assistant-14"));
     }
 }
