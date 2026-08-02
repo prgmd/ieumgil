@@ -11,7 +11,7 @@
 - **응답 래퍼 `CustomResponse`**: `{ "isSuccess", "code", "message", "result" }`. (인증API.md 참조)
 - **인증 헤더**: 모든 REST 엔드포인트 `Authorization: Bearer {accessToken}` 필요. WS는 CONNECT 헤더로 검증.
 - **멤버십 검증**: 프로젝트가 속한 그룹의 멤버만 접근(REST AOP `@GroupMember` + WS `ChannelInterceptor`). 비멤버는 `403`(REST) / 프레임 거부(WS).
-- **X-Client-Id**: 변경 요청 헤더에 브라우저 탭 UUID를 실어 보내면, 요청자 본인은 브로드캐스트 op에서 clientId로 자기 op를 스킵(낙관적 UI 중복 적용 방지).
+- **X-Client-Id**: 변경 요청 헤더에 브라우저 탭 UUID를 실어 보낸다. 서버는 이 값을 op에 그대로 실어 브로드캐스트하며(수신자 제외 없이 전원 발송), **자기 op를 어떻게 처리할지는 클라이언트가 op 종류별로 판단한다** — 아래 "자기 op 에코 정책" 참조.
 - **범위 구분**: 프로젝트 카드 목록·생성·이름/기간 수정·삭제는 [개인·그룹 페이지API.md](개인·그룹%20페이지API.md) 참조.
 
 ---
@@ -25,6 +25,7 @@
 | GET | `/api/projects/{projectId}` | 대시보드 스냅샷 (최초 로딩·재연결 재로딩) | Yes |
 | GET | `/api/projects/{projectId}/ops?afterSeq={n}` | 유실 op 재전송 (재연결·seq 갭) | Yes |
 | PATCH | `/api/projects/{projectId}/status` | `PLANNING↔DONE` 양방향 전환 | Yes |
+| PATCH | `/api/projects/{projectId}/budget` | 프로젝트 목표 예산(총액) 변경 | Yes |
 | PATCH | `/api/projects/{projectId}/budget-headcount` | 정산 인원(1인당 표시용) 지정/동기화 | Yes |
 
 ### 블록
@@ -53,8 +54,7 @@
 
 | Method | Path | 설명 | Auth |
 |---|---|---|---|
-| POST | `/api/projects/{projectId}/keywords` | 키워드 저장 + 후보 블록 자동 생성 | Yes |
-| POST | `/api/projects/{projectId}/bot/chat` | 대화형 장소 추천 | Yes |
+| POST | `/api/projects/{projectId}/chatbot/messages` | 대화형 채팅 — 일반/지도기반 추천 통합 | Yes |
 
 ---
 
@@ -123,8 +123,8 @@
 
 | code | HTTP | 상황 |
 |---|---|---|
-| `FORBIDDEN` | 403 | 그룹 멤버가 아님 |
-| `NOT_FOUND` | 404 | 프로젝트 없음/삭제됨 |
+| `GROUP403` | 403 | 그룹 멤버가 아님 |
+| `PROJECT404` | 404 | 프로젝트 없음/삭제됨 |
 
 ---
 
@@ -182,7 +182,34 @@
 
 | code | HTTP | 상황 |
 |---|---|---|
-| `VALIDATION_ERROR` | 400 | status가 PLANNING/DONE 이외 |
+| `COMMON400_1` | 400 | status가 PLANNING/DONE 이외 |
+
+---
+
+### PATCH /api/projects/{projectId}/budget
+
+프로젝트 전체 목표 예산 변경(BGT-02). `TARGET_BUDGET_CHANGED` op 브로드캐스트.
+
+**Request Body:**
+```json
+{ "targetBudget": 100000 }
+```
+
+| 필드 | 타입 | 필수 | 설명 |
+|---|---|---|---|
+| `targetBudget` | int | N | 목표 예산(총액, 0 이상). **null이면 예산 미설정으로 초기화** — 값 누락이 아니라 명시적 의도로 취급한다 |
+
+**Response `200`:**
+```json
+{
+  "isSuccess": true,
+  "code": "COMMON200",
+  "message": "목표 예산이 변경되었습니다.",
+  "result": { "targetBudget": 100000 }
+}
+```
+
+> 블록의 `budget`(실제 지출 항목)과 다른 값이다. 이쪽은 "얼마까지 쓸 것인가"이고, 블록 `budget` 합계가 "얼마를 쓰기로 했는가"다.
 
 ---
 
@@ -213,7 +240,7 @@
 
 ## 상세 명세 — 블록
 
-> 모든 성공 변경은 서버가 seq를 붙여 `/topic/project/{id}`로 브로드캐스트한다. 요청 헤더 `X-Client-Id`로 요청자 본인은 스킵.
+> 모든 성공 변경은 서버가 seq를 붙여 `/topic/project/{id}`로 브로드캐스트한다. 요청자 본인에게도 발송되며, 처리 방식은 "자기 op 에코 정책"을 따른다.
 
 ### POST /api/projects/{projectId}/blocks
 
@@ -273,8 +300,9 @@
 
 | code | HTTP | 상황 |
 |---|---|---|
-| `VALIDATION_ERROR` | 400 | 장소성 카테고리 lat/lng 누락, vehicleFlag를 ETC 외 카테고리에 지정 |
-| `FORBIDDEN` | 403 | 그룹 멤버가 아님 |
+| `BLOCK400` | 400 | 장소성 카테고리 lat/lng 누락 |
+| `BLOCK400_1` | 400 | vehicleFlag를 ETC 외 카테고리에 지정 |
+| `GROUP403` | 403 | 그룹 멤버가 아님 |
 
 ---
 
@@ -339,7 +367,7 @@
 
 | code | HTTP | 상황 |
 |---|---|---|
-| `GONE` | 410 | 이미 삭제된 블록에 대한 지연 op |
+| `BLOCK410` | 410 | 이미 삭제된 블록에 대한 지연 op |
 
 ---
 
@@ -452,41 +480,27 @@ ODsay 열차 시간표(KTX·무궁화 등) → 출발 후보 목록(앞 일정 �
 
 ## 상세 명세 — 챗봇
 
-### POST /api/projects/{projectId}/keywords
+### POST /api/projects/{projectId}/chatbot/messages
 
-키워드 저장 + 후보 블록 자동 생성(BOT-02). 재입력 가능 — 재생성 시 기존 후보 블록은 그룹 자산이므로 유지하고 신규 생성분을 추가. Redis 분산 락으로 동시 중복 실행 방지. 생성 결과는 `BLOCK_CREATED` op 다건 브로드캐스트.
+대화형 채팅 엔드포인트 하나로 일반 채팅과 지도 기반 추천을 모두 처리한다(BOT-01~04). 모드는 `mode` 필드로 **명시적으로** 받는다 — `mapContext` 유무로 암묵 추론하지 않는다(지도가 대시보드에 항상 떠 있어 좌표값 자체는 모드와 무관하게 존재할 수 있으므로, 존재 여부를 모드 판단 근거로 쓰면 오판 소지가 있다).
+
+**GENERAL 모드**: 지도 비연동. LLM이 메시지를 분석해 필요한 도구(카카오 키워드 검색·TAGO 시간표 등)를 판단해 호출하고 텍스트로 응답한다. 키워드 기반 후보 생성(BOT-02)도 이 모드 안에서 하나의 도구 호출로 처리되며 별도 엔드포인트가 없다 — 사용자는 그냥 문장으로 입력하고("오름이랑 카페 갈 만한 데 추천해줘"), 백엔드/LLM이 파싱해 프로젝트 `keywords`에 저장한다. 도구를 안 쓰면 `candidates`는 빈 배열.
+
+가게 영업여부·폐업·리뷰처럼 학습 지식만으로 답할 수 없는 실시간 정보는 Anthropic `web_search` 서버 도구로 실검색해 요약 응답한다. 남용·비용 방지를 위해 시스템 프롬프트와 `max_uses`로 용도를 실시간 확인이 필요한 정보에 한정한다(날씨·환율처럼 검색으로도 신뢰하기 어려운 값은 제외). Spring AI 1.1.8이 서버 도구 선언 API를 제공하지 않아, `AnthropicApi`의 RestClient 인터셉터로 요청에 도구를 주입하고 응답의 검색 결과 블록을 정규화한다.
+
+**MAP 모드**: `mapContext`(현재 지도 뷰포트 좌표, 추후 확장 가능) 필수. 서버가 먼저 카카오 API로 해당 범위 장소를 조회하는 고정 파이프라인(LLM이 검색 여부를 판단하지 않는다) → 조회 결과 + 메시지를 LLM에 넘겨 N개 선별·추천 이유 생성 → `candidates`에 블록화 가능한 구조로 반환.
+
+공통: 후보는 **카카오 로컬 검색으로 실좌표 검증**된 것만 사용(LLM 환각 좌표 차단), 서버가 곧바로 후보 블록으로 생성(BOT-04). 4초 초과 대비 프론트 로딩 표시.
 
 **Request Body:**
-```json
-{ "keywords": ["오름", "카페", "흑돼지"] }
-```
-> 최대 5개.
-
-**Response `200`:**
 ```json
 {
-  "isSuccess": true,
-  "code": "COMMON200",
-  "message": "후보 블록이 생성되었습니다.",
-  "result": { "createdBlockIds": [201, 202, 203] }
+  "message": "비 오는 날 실내에서 갈 만한 곳 추천해줘",
+  "mode": "MAP",
+  "mapContext": { "lat": 33.49, "lng": 126.53 }
 }
 ```
-
-**Errors:**
-
-| code | HTTP | 상황 |
-|---|---|---|
-| `VALIDATION_ERROR` | 400 | keywords 5개 초과 또는 빈 배열 |
-| `AI_SERVER_ERROR` | 500 | LLM 파이프라인 실패 |
-
-### POST /api/projects/{projectId}/bot/chat
-
-대화형 추천(BOT-03). 후보는 서버가 곧바로 후보 블록으로 생성(BOT-04). 4초 초과 대비 프론트 로딩 표시.
-
-**Request Body:**
-```json
-{ "message": "비 오는 날 실내에서 갈 만한 곳 추천해줘", "mapContext": { "lat": 33.49, "lng": 126.53 } }
-```
+> `mode`: `GENERAL` | `MAP`. `mapContext`는 `mode: MAP`일 때만 필수.
 
 **Response `200`:**
 ```json
@@ -502,7 +516,15 @@ ODsay 열차 시간표(KTX·무궁화 등) → 출발 후보 목록(앞 일정 �
   }
 }
 ```
-> LLM 파이프라인: 질의+컨텍스트(키워드·기간·현재 체인 요약) → 장소 후보 명사 추출 → **카카오 로컬 검색으로 실좌표 검증** → 검증 통과 건만 블록 생성(환각 좌표 차단).
+> GENERAL 모드에서 도구 미사용 시 `candidates: []`.
+
+**Errors:**
+
+| code | HTTP | 상황 |
+|---|---|---|
+| `COMMON400_1` | 400 | `message` 공백/2000자 초과, `mode: MAP`인데 `mapContext` 누락 |
+| `CHATBOT502` | 502 | GMS/LLM 호출 실패 |
+| `CHATBOT500` | 500 | 대화 이력 저장 실패 |
 
 ---
 
@@ -539,10 +561,25 @@ REST로 변경 요청을 보내면, 서버가 seq를 붙여 STOMP로 전파한�
 ```
 
 **op type 목록:**
-`BLOCK_CREATED` / `BLOCK_FIELD_UPDATED` / `BLOCK_MOVED` / `BLOCK_DELETED` / `PROJECT_UPDATED` / `PROJECT_STATUS_CHANGED` / `PROJECT_DELETED` / `BUDGET_HEADCOUNT_CHANGED` / `MEMBER_JOINED` / `MEMBER_LEFT`
+`BLOCK_CREATED` / `BLOCK_FIELD_UPDATED` / `BLOCK_MOVED` / `BLOCK_DELETED` / `PROJECT_UPDATED` / `PROJECT_STATUS_CHANGED` / `PROJECT_DELETED` / `TARGET_BUDGET_CHANGED` / `BUDGET_HEADCOUNT_CHANGED` / `MEMBER_JOINED` / `MEMBER_LEFT`
 
 - `PROJECT_UPDATED`: 기간 축소 시 `movedToPool: [blockId...]` 포함.
 - `PROJECT_DELETED`: 대시보드를 보던 멤버를 그룹 페이지로 리다이렉트.
 - `MEMBER_LEFT`: 멤버 탈퇴 시 나머지 멤버는 이 op로 멤버 목록·정산 인원 갱신.
 
 **순서 보장**: 서버는 프로젝트 단위 락으로 채번~전송을 직렬화하고, 클라이언트는 수신 seq에 갭이 생기면 `GET /api/projects/{id}/ops?afterSeq`로 메꾼다(이중 방어).
+
+### 자기 op 에코 정책
+
+서버는 op를 **구독자 전원에게** 보낸다 — 요청자 본인을 서버가 걸러내지 않는다. 따라서 자기 `clientId`가 실린 op를 어떻게 처리할지는 클라이언트가 결정하며, **op 종류에 따라 다르다.**
+
+| op | 자기 op 처리 | 이유 |
+|---|---|---|
+| `BLOCK_CREATED` / `BLOCK_DELETED` | **스킵** | 낙관적 UI가 이미 추가·제거를 반영했고, 재적용하면 중복 생성·이중 삭제가 된다 |
+| `BLOCK_MOVED` / `BLOCK_FIELD_UPDATED` | **재적용(에코)** | 서버가 확정한 값으로 덮어써야 한다. 스킵하면 낙관적으로 그린 위치·값이 서버 상태와 어긋난 채 남는다 |
+
+**왜 일괄 스킵이 아닌가**: 처음에는 `clientId`로 자기 op를 전부 스킵하는 설계였으나, 동시 드래그 상황에서 보드가 발산하는 버그가 발생했다. 두 사람이 같은 Day의 블록을 연달아 옮기면 각자 자기 이동은 낙관적 값으로만 남고 서버가 정한 최종 순서를 받지 못해, 두 화면이 서로 다른 순서로 굳는다. 이동·필드 갱신만 에코를 허용해 서버 값으로 수렴시키는 것으로 해결했다.
+
+근거와 재현 경로는 `docs/realtime-sync-policy.md` 참조.
+
+> 낙관적 UI를 쓰는 클라이언트는 이 표를 그대로 구현해야 한다. "자기 op는 무시"라고 단순화하면 위 발산 버그가 재발한다.

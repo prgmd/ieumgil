@@ -7,7 +7,7 @@ import jakarta.validation.constraints.Size;
 
 public class GroupReqDTO {
 
-    /** 그룹 생성 요청 (POST /api/v0/groups) */
+    /** 그룹 생성 요청 (POST /api/groups) */
     public record Create(
             @Schema(description = "그룹명 (2~20자)", example = "제주 여행팀")
             @NotBlank(message = "그룹명은 필수입니다.")
@@ -16,7 +16,7 @@ public class GroupReqDTO {
     ) {
     }
 
-    /** 그룹명 수정 요청 (PATCH /api/v0/groups/{groupId}) */
+    /** 그룹명 수정 요청 (PATCH /api/groups/{groupId}) */
     public record UpdateName(
             @Schema(description = "새 그룹명 (2~20자)", example = "제주 여행팀 (수정)")
             @NotBlank(message = "그룹명은 필수입니다.")
@@ -25,7 +25,7 @@ public class GroupReqDTO {
     ) {
     }
 
-    /** 초대 코드로 그룹 입장 요청 (POST /api/v0/groups/join) */
+    /** 초대 코드로 그룹 입장 요청 (POST /api/groups/join) */
     public record Join(
             @Schema(description = "초대 코드 (영대문자·숫자 8자)", example = "ABCD2345")
             @NotBlank(message = "초대 코드는 필수입니다.")
@@ -35,7 +35,7 @@ public class GroupReqDTO {
     }
 
     /**
-     * 그룹 삭제 요청 (DELETE /api/v0/groups/{groupId}).
+     * 그룹 삭제 요청 (DELETE /api/groups/{groupId}).
      * flat 모델이라 누구나 삭제할 수 있어, 오입력 방지용으로 그룹명을 한 번 더 받는다(MY-04).
      */
     public record Delete(
