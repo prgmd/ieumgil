@@ -1,6 +1,9 @@
 package com.ssafy.ieumgil.domain.festival;
 
+import lombok.extern.slf4j.Slf4j;
+
 import java.util.Arrays;
+import java.util.Comparator;
 import java.util.Optional;
 
 /**
@@ -21,6 +24,7 @@ import java.util.Optional;
  * 광주·전남이 데이터가 있는데도 0건을 반환하고 있었다. 코드를 손볼 때는 반드시 수집된
  * 데이터의 {@code l_dong_regn_cd}와 주소를 대조할 것.
  */
+@Slf4j
 public enum RegionCode {
 
     SEOUL("11", "서울"),
@@ -57,12 +61,27 @@ public enum RegionCode {
         return regionName;
     }
 
+    /**
+     * 목적지 문자열에서 시도를 찾는다. 두 지역명이 함께 들어 있으면 <b>먼저 나오는</b> 쪽을 쓴다.
+     *
+     * <p>주소는 넓은 곳부터 쓰므로 앞에 있는 이름이 시도다 — "경기도 광주"는 경기다. 예전처럼
+     * 선언 순서로 {@code findFirst}하면 {@code GWANGJU}가 {@code GYEONGGI}보다 위에 있다는
+     * 이유만으로 전남·광주 축제를 받아왔고, 그 사실이 enum 상수 순서에 숨어 있었다.
+     *
+     * <p>광역명 17개만 본다. "전주"·"강릉"처럼 시·군 이름만 오면 매칭에 실패하는데, 그러면
+     * 축제 tool 자체가 등록되지 않아 사용자는 이유를 알 수 없다. 그래서 흔적을 남긴다.
+     */
     public static Optional<RegionCode> findByName(String destination) {
         if (destination == null || destination.isBlank()) {
             return Optional.empty();
         }
-        return Arrays.stream(values())
+        Optional<RegionCode> matched = Arrays.stream(values())
                 .filter(region -> destination.contains(region.regionName))
-                .findFirst();
+                .min(Comparator.comparingInt((RegionCode region) -> destination.indexOf(region.regionName))
+                        .thenComparingInt(Enum::ordinal));
+        if (matched.isEmpty()) {
+            log.warn("목적지에서 시도를 찾지 못해 축제 추천을 건너뛴다 destination={}", destination);
+        }
+        return matched;
     }
 }

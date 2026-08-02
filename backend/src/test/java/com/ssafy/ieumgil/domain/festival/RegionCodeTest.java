@@ -1,7 +1,12 @@
 package com.ssafy.ieumgil.domain.festival;
 
+import ch.qos.logback.classic.Level;
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.slf4j.LoggerFactory;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -44,5 +49,35 @@ class RegionCodeTest {
         assertThat(RegionCode.findByName("도쿄")).isEmpty();
         assertThat(RegionCode.findByName(null)).isEmpty();
         assertThat(RegionCode.findByName("  ")).isEmpty();
+    }
+
+    @Test
+    @DisplayName("두 지역명이 함께 있으면 앞에 있는(= 더 넓은) 쪽을 고른다 — '경기도 광주'는 경기다")
+    void picksTheLeftmostRegionWhenTwoNamesCollide() {
+        // 주소는 넓은 곳부터 쓴다. 선언 순서로 고르면 '광주'가 '경기'보다 먼저 선언됐다는
+        // 이유만으로 경기도 광주가 전남·광주(코드 12) 축제를 받아왔다.
+        assertThat(RegionCode.findByName("경기도 광주")).contains(RegionCode.GYEONGGI);
+        assertThat(RegionCode.findByName("광주광역시")).contains(RegionCode.GWANGJU);
+        assertThat(RegionCode.findByName("전남 광주")).contains(RegionCode.JEONNAM);
+    }
+
+    @Test
+    @DisplayName("시·군 이름만 오면 매칭에 실패하고 흔적을 남긴다 — 축제 tool이 조용히 빠지면 아무도 모른다")
+    void unmatchedDestinationIsLogged() {
+        Logger logger = (Logger) LoggerFactory.getLogger(RegionCode.class);
+        ListAppender<ILoggingEvent> appender = new ListAppender<>();
+        appender.start();
+        logger.addAppender(appender);
+        try {
+            assertThat(RegionCode.findByName("강릉")).isEmpty();
+        } finally {
+            logger.detachAppender(appender);
+        }
+
+        assertThat(appender.list)
+                .anySatisfy(event -> {
+                    assertThat(event.getLevel()).isEqualTo(Level.WARN);
+                    assertThat(event.getFormattedMessage()).contains("강릉");
+                });
     }
 }

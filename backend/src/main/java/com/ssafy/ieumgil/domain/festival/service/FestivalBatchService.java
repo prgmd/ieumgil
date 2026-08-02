@@ -20,6 +20,15 @@ public class FestivalBatchService {
 
     private static final int PAGE_SIZE = 100;
 
+    /**
+     * 한 번의 동기화가 도는 최대 페이지 수(= 1만 건).
+     *
+     * <p>실제 총건수는 209건(2페이지) 규모라 50배 여유다. 상한이 없으면 TourAPI가 비정상적인
+     * totalCount를 한 번 뱉는 것만으로 배치가 그 수만큼 페이지를 돌고, {@code @Scheduled}는
+     * 기본이 단일 스레드라 그동안 다른 스케줄 작업까지 밀린다.
+     */
+    private static final int MAX_PAGES = 100;
+
     private final TourApiClient tourApiClient;
     private final FestivalRepository festivalRepository;
 
@@ -64,6 +73,11 @@ public class FestivalBatchService {
         }
 
         int pageCount = (expected + PAGE_SIZE - 1) / PAGE_SIZE;
+        if (pageCount > MAX_PAGES) {
+            log.error("TourAPI 총건수가 {}건이라 {}페이지가 필요하다 — 상한 {}페이지까지만 돈다. 응답이 이상한지 확인할 것",
+                    expected, pageCount, MAX_PAGES);
+            pageCount = MAX_PAGES;
+        }
         int collected = 0;
         for (int pageNo = 1; pageNo <= pageCount; pageNo++) {
             collected += collectPage(today, pageNo);

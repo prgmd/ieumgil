@@ -4,8 +4,13 @@ import com.ssafy.ieumgil.domain.festival.client.TourApiClient;
 import com.ssafy.ieumgil.domain.festival.dto.TourApiResponse;
 import com.ssafy.ieumgil.domain.festival.entity.Festival;
 import com.ssafy.ieumgil.domain.festival.repository.FestivalRepository;
+import ch.qos.logback.classic.Level;
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.slf4j.LoggerFactory;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
@@ -178,6 +183,31 @@ class FestivalBatchServiceTest {
         assertThat(result.collected()).isZero();
         assertThat(result.complete()).isFalse();
         verify(tourApiClient, org.mockito.Mockito.never()).searchFestivals(anyString(), anyInt(), anyInt());
+    }
+
+    @Test
+    @DisplayName("총건수가 비정상적으로 크면 상한까지만 돈다 — 스케줄러 스레드를 몇 시간씩 붙잡지 않는다")
+    void absurdTotalCountIsCappedAtMaxPages() {
+        festivalBatchService = new FestivalBatchService(tourApiClient, festivalRepository);
+        when(tourApiClient.fetchTotalCount(anyString())).thenReturn(1_000_000);
+        when(tourApiClient.searchFestivals(anyString(), anyInt(), anyInt())).thenReturn(List.of());
+
+        Logger logger = (Logger) LoggerFactory.getLogger(FestivalBatchService.class);
+        ListAppender<ILoggingEvent> appender = new ListAppender<>();
+        appender.start();
+        logger.addAppender(appender);
+        FestivalBatchService.SyncResult result;
+        try {
+            result = festivalBatchService.syncFestivals();
+        } finally {
+            logger.detachAppender(appender);
+        }
+
+        // 1,000,000건이면 10,000페이지다. 상한(100페이지)까지만 돌아야 한다.
+        verify(tourApiClient, times(100)).searchFestivals(anyString(), anyInt(), anyInt());
+        assertThat(result.complete()).isFalse();
+        // 조용히 잘리면 다음에 또 같은 일이 난다 — 에러로 드러나야 한다
+        assertThat(appender.list).anySatisfy(event -> assertThat(event.getLevel()).isEqualTo(Level.ERROR));
     }
 
     private List<TourApiResponse.Item> page(int size) {
