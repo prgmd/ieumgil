@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.ssafy.ieumgil.domain.chatbot.dto.ChatbotReqDTO;
 import com.ssafy.ieumgil.domain.chatbot.dto.ChatbotResDTO;
 import com.ssafy.ieumgil.domain.chatbot.service.ChatbotCommandService;
+import com.ssafy.ieumgil.global.apiPayload.CustomResponse;
 import com.ssafy.ieumgil.global.security.jwt.JwtProvider;
 import com.ssafy.ieumgil.domain.chatbot.ChatbotMode;
 import org.junit.jupiter.api.DisplayName;
@@ -60,6 +61,36 @@ class ChatbotControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.isSuccess").value(true))
                 .andExpect(jsonPath("$.result.reply").value("안녕하세요"));
+    }
+
+    // 컨트롤러 반환형을 CustomResponse 직접 반환으로 맞출 때(다른 컨트롤러와 동일) 프론트 계약이
+    // 그대로인지 못 박아 두는 자리다 — 상태코드·본문 필드가 하나라도 바뀌면 여기서 깨진다.
+    @Test
+    @DisplayName("응답 계약이 CustomResponse 그대로다 — 200 + isSuccess/code/message/result")
+    void sendMessageResponseKeepsCustomResponseContract() throws Exception {
+        when(chatbotCommandService.sendMessage(eq(1L), any(), any()))
+                .thenReturn(new ChatbotResDTO.MessageResult("안녕하세요", List.of()));
+
+        mockMvc.perform(post("/api/projects/1/chatbot/messages")
+                        .with(authentication(memberAuthentication(1L)))
+                        .contentType("application/json")
+                        .content(objectMapper.writeValueAsString(
+                                new ChatbotReqDTO.SendMessage("안녕", null, null)
+                        )))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.isSuccess").value(true))
+                .andExpect(jsonPath("$.code").value("COMMON200"))
+                .andExpect(jsonPath("$.message").value("요청에 성공했습니다."))
+                .andExpect(jsonPath("$.result.reply").value("안녕하세요"))
+                .andExpect(jsonPath("$.result.candidates").isArray());
+    }
+
+    @Test
+    @DisplayName("다른 컨트롤러와 같이 CustomResponse를 직접 반환한다 — 헤더 조작이 없어 래핑할 근거가 없다")
+    void sendMessageReturnsCustomResponseDirectly() throws NoSuchMethodException {
+        assertThat(ChatbotController.class
+                .getMethod("sendMessage", Long.class, Long.class, ChatbotReqDTO.SendMessage.class)
+                .getReturnType()).isEqualTo(CustomResponse.class);
     }
 
     @Test
