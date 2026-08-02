@@ -8,6 +8,8 @@ import React, {
 import { useParams, useNavigate } from "react-router-dom";
 import { BlockEditForm } from "./components/BlockEditForm";
 import { ChatbotWidget } from "./components/ChatbotWidget";
+import { RemoteCursorLayer } from "./components/RemoteCursorLayer";
+import { hueOf } from "./components/memberColor";
 import {
   DndContext,
   DragOverlay,
@@ -28,7 +30,11 @@ import { CSS } from "@dnd-kit/utilities";
 import { generateKeyBetween } from "fractional-indexing";
 import { AppBar } from "../My/shared/ui/AppBar";
 import { useDashboard } from "../../features/dashboard/hooks/useDashboard";
+import { useProjectOps } from "../../features/dashboard/realtime/useProjectOps";
+import { useVoiceChat } from "../../features/dashboard/voice/useVoiceChat";
+import { createOpSequencer } from "../../features/dashboard/realtime/opSequencer";
 import * as blockApi from "../../features/dashboard/api/dashboardApi";
+import { getClientId } from "../../global/api/clientId";
 import { useGroupDetail } from "../../features/group/hooks/useGroupDetail";
 import { useProjects } from "../../features/group/hooks/useProjects";
 import { useAuthStore } from "../../global/stores/authStore";
@@ -119,6 +125,26 @@ const neighborKeysAround = (finalList, pos, itemsMap) => {
  * 편집(3단계)·이동(5단계)·리사이즈가 공유한다 — 로컬만 밀면 새로고침 때
  * 이웃들이 옛 시각으로 되돌아간다(명세 320행: 시각 재계산 저장은 클라이언트 몫).
  */
+/**
+ * orderKey 정렬 위치에 블록을 삽입한 새 배열 (원격 op 적용용).
+ * 로컬 전용 블록(auto- 등, orderKey 없음)은 비교에서 건너뛴다 — 서버 블록들
+ * 사이의 상대 위치만 orderKey 가 정하고, 로컬 블록은 제자리를 유지한다.
+ * 동점은 id 로 판정한다(ERD: ORDER BY order_key, id).
+ */
+const insertByOrderKey = (list, itemsMap, block) => {
+  const without = list.filter((id) => id !== block.id);
+  const at = without.findIndex((id) => {
+    const other = itemsMap[id];
+    if (!isServerBlock(id) || other?.orderKey == null) return false;
+    if (other.orderKey > block.orderKey) return true;
+    return (
+      other.orderKey === block.orderKey && Number(other.id) > Number(block.id)
+    );
+  });
+  without.splice(at === -1 ? without.length : at, 0, block.id);
+  return without;
+};
+
 const persistShiftedTimes = (chainIds, prevItems, nextItems, excludeId) => {
   const shifted = (chainIds ?? []).filter(
     (id) =>
@@ -223,7 +249,7 @@ const resolveOverlaps = (currentItems, dayChain, dayStartMins, fixedId) => {
  * 모양(리본 노치·보드 아래로 끼워지는 느낌)은 CSS(.day-tab)에서 만들고 여기서는
  * 책갈피에 적히는 세 줄 — Day 번호 / 날짜 / 블록 수 — 만 담는다.
  */
-function DayTab({ label, date, count, isActive, onClick }) {
+function DayTab({ label, date, count, isActive, onClick, viewers = [] }) {
   return (
     <button
       className={`day-tab ${isActive ? "on" : ""}`}
@@ -235,11 +261,45 @@ function DayTab({ label, date, count, isActive, onClick }) {
         <span className="cnt">{count}</span>
       </span>
       {date && <span className="dt-date">{date}</span>}
+      {/* 이 Day 를 지금 보고 있는 멤버들 — 프로필 아바타, 테두리는 커서와 같은
+          멤버 색 (7단계). 이미지가 없으면 닉네임 첫 글자로 대신한다 */}
+      {viewers.length > 0 && (
+        <span
+          className="dt-viewers"
+          title={`보는 중: ${viewers.map((v) => v.name).join(", ")}`}
+        >
+          {viewers.slice(0, 3).map((v) =>
+            v.profileImg?.startsWith("http") ? (
+              <img
+                key={v.id}
+                src={v.profileImg}
+                alt={v.name}
+                style={{ "--vh": hueOf(v.id) }}
+              />
+            ) : (
+              <i key={v.id} style={{ "--vh": hueOf(v.id) }}>
+                {v.name[0]}
+              </i>
+            ),
+          )}
+          {viewers.length > 3 && (
+            <em className="dt-viewers-more">+{viewers.length - 3}</em>
+          )}
+        </span>
+      )}
     </button>
   );
 }
 
-function CardBody({ item, mode, startMins, endMins, isThisResizing, onEdge }) {
+function CardBody({
+  item,
+  mode,
+  startMins,
+  endMins,
+  isThisResizing,
+  onEdge,
+  lockedBy,
+}) {
   const catStyle = catOf(item);
 
   if (mode !== "timeline") {
@@ -250,6 +310,7 @@ function CardBody({ item, mode, startMins, endMins, isThisResizing, onEdge }) {
             {catStyle.nm}
             {item?.sub ? ` · ${item.sub}` : ""}
           </span>
+          {lockedBy && <span className="lock-badge">✎ {lockedBy}</span>}
           <span className="grip">⠿</span>
         </div>
         {/* 💡 연필 아이콘 삭제, 글씨 두께만 강조 */}
@@ -273,6 +334,7 @@ function CardBody({ item, mode, startMins, endMins, isThisResizing, onEdge }) {
           {item?.sub ? ` · ${item.sub}` : ""}
         </span>
         {item?.auto && <span className="auto-badge">자동</span>}
+        {lockedBy && <span className="lock-badge">✎ {lockedBy} 편집 중</span>}
         <span>
           <span className="nm">{item?.name}</span>{" "}
           <span className="nm-sub">{item?.detail}</span>
@@ -327,7 +389,7 @@ function BlockEditBadge({ onEdit }) {
   );
 }
 
-function PoolCard({ id, item, onEditBlock }) {
+function PoolCard({ id, item, onEditBlock, lockedBy }) {
   const {
     attributes,
     listeners,
@@ -356,7 +418,13 @@ function PoolCard({ id, item, onEditBlock }) {
       // 💡 박스 전체 영역에 클릭 이벤트 연결
       onClick={() => onEditBlock && onEditBlock(id)}
     >
-      <CardBody id={id} item={item} mode="pool" onEditBlock={onEditBlock} />
+      <CardBody
+        id={id}
+        item={item}
+        mode="pool"
+        onEditBlock={onEditBlock}
+        lockedBy={lockedBy}
+      />
       <BlockEditBadge onEdit={onEditBlock && (() => onEditBlock(id))} />
     </div>
   );
@@ -372,6 +440,7 @@ function TimelineCard({
   dayStartMins,
   boundTop,
   onEditBlock,
+  lockedBy,
 }) {
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
     id,
@@ -427,6 +496,7 @@ function TimelineCard({
           isThisResizing={isThisResizing}
           onEdge={handleEdgeClick}
           onEditBlock={onEditBlock}
+          lockedBy={lockedBy}
         />
         {!isThisResizing && (
           <BlockEditBadge onEdit={onEditBlock && (() => onEditBlock(id))} />
@@ -545,13 +615,48 @@ export function DashboardPage() {
   // 새로고침하면 서버 상태로 되돌아간다(로컬 편집은 아직 휘발).
   const {
     project,
+    members: serverMembers,
     items: serverItems,
     chains: serverChains,
     pool: serverPool,
     status,
     error,
     reload,
+    lastSeq,
   } = useDashboard(projectId);
+
+  // ── 실시간 op 파이프라인: 수신(useProjectOps) → 순서 보장(시퀀서) → 화면 적용 ──
+  // 시퀀서·적용 함수는 아래(상태 선언 이후)에 정의되고, 여기서는 수신만 물린다.
+  // presence(접속·편집 배지)는 seq 없는 휘발 정보라 시퀀서를 거치지 않고 바로 적용한다.
+  const sequencerRef = useRef(null);
+  const applyRemoteOpRef = useRef(() => {});
+  const applyPresenceRef = useRef(() => {});
+  const pendingRemoteOpsRef = useRef([]);
+  const interactingRef = useRef(false);
+  // 커서 위치 수신은 대시보드 상태를 거치지 않고 RemoteCursorLayer(타임라인·페이지
+  // 두 장)로 직행한다 — 초당 수십 건이 보드 전체를 리렌더하지 않도록 성능을 격리.
+  // 어느 레이어 소관인지는 각 레이어가 메시지의 area 로 스스로 판단한다.
+  const tlCursorHandlerRef = useRef(() => {});
+  const pageCursorHandlerRef = useRef(() => {});
+  const registerTlCursorHandler = useCallback((fn) => {
+    tlCursorHandlerRef.current = fn;
+  }, []);
+  const registerPageCursorHandler = useCallback((fn) => {
+    pageCursorHandlerRef.current = fn;
+  }, []);
+  const applyCursorRef = useRef(() => {});
+  // 보이스 시그널도 ref 우회 — 훅(useVoiceChat)이 아래에서 핸들러를 등록한다
+  const voiceSignalRef = useRef(() => {});
+  const registerVoiceSignalHandler = useCallback((fn) => {
+    voiceSignalRef.current = fn;
+  }, []);
+
+  const { sendCursor, sendVoiceSignal } = useProjectOps(projectId, {
+    onOp: (op) => sequencerRef.current?.push(op),
+    onPresence: (msg) => applyPresenceRef.current(msg),
+    onCursor: (msg) => applyCursorRef.current(msg),
+    onVoiceSignal: (msg) => voiceSignalRef.current(msg),
+  });
 
   // 상단바(개인 페이지 › 그룹명 › 프로젝트명)의 그룹명·멤버 아바타는 그룹 상세에서,
   // 접속자 표시는 로그인 사용자에서 얻는다. 프로젝트 데이터(이름·기간·예산)의
@@ -586,6 +691,118 @@ export function DashboardPage() {
   const [items, setItems] = useState({});
   const [chains, setChains] = useState({});
   const [pool, setPool] = useState([]);
+
+  // ── 함께 있는 느낌 (6단계) ───────────────────────────
+  // members: 스냅샷이 시드하고 MEMBER_JOINED/LEFT op 가 갱신한다 (상단바 아바타).
+  // onlineIds: 시드는 members[].online, 이후는 PRESENCE 메시지 — 초록 점의 진실.
+  // detailLocks: blockId → 락 소유 memberId. DETAIL_LOCK 메시지로만 갱신되는 휘발
+  //   정보라 새로고침하면 기존 락은 다음 획득/해제 전까지 안 보인다(advisory 라 감수).
+  const [boardMembers, setBoardMembers] = useState([]);
+  const [onlineIds, setOnlineIds] = useState(() => new Set());
+  const [detailLocks, setDetailLocks] = useState({});
+  // "누가 어느 Day 를 보는 중인가" (Day 탭 점 표시, 7단계) — 커서 메시지의 dayNo 로
+  // 유지된다. Day 가 바뀔 때만 setState 하므로 초당 수십 건의 커서 트래픽이 보드
+  // 리렌더로 이어지지 않는다 — 커서 위치는 레이어 소관, 여기는 Day 만.
+  const [viewingDays, setViewingDays] = useState({}); // actorId → dayNo
+  const cursorLastSeenRef = useRef({}); // actorId → ts (하트비트 만료 판정)
+
+  const applyPresenceMessage = (msg) => {
+    if (msg?.type === "PRESENCE") {
+      setOnlineIds((prev) => {
+        if (prev.has(msg.memberId) === !!msg.online) return prev; // 변화 없음
+        const next = new Set(prev);
+        if (msg.online) next.add(msg.memberId);
+        else next.delete(msg.memberId);
+        return next;
+      });
+      // 락 만료(TTL)는 브로드캐스트가 없다 — 편집자가 해제 없이 사라지면(브라우저
+      // 강제 종료 등) 배지가 남는다. 이탈 신호를 만료의 근사로 삼아 그의 배지를
+      // 걷는다. 실제 락도 하트비트가 끊겨 30초 내 만료된다.
+      if (!msg.online) {
+        setDetailLocks((prev) => {
+          const entries = Object.entries(prev).filter(
+            ([, holder]) => holder !== msg.memberId,
+          );
+          return entries.length === Object.keys(prev).length
+            ? prev
+            : Object.fromEntries(entries);
+        });
+        // Day 탭의 "보는 중" 점도 함께 걷는다 — 하트비트 만료(12초)보다 빠르다
+        setViewingDays((prev) => {
+          if (!(msg.memberId in prev)) return prev;
+          const next = { ...prev };
+          delete next[msg.memberId];
+          return next;
+        });
+      }
+    } else if (msg?.type === "DETAIL_LOCK") {
+      setDetailLocks((prev) => {
+        if (msg.locked) return { ...prev, [msg.blockId]: msg.memberId };
+        // 해제는 소유자 것만 지운다 — 늦게 도착한 옛 소유자의 해제가
+        // 새 소유자의 배지를 지우면 안 된다
+        if (prev[msg.blockId] !== msg.memberId) return prev;
+        const next = { ...prev };
+        delete next[msg.blockId];
+        return next;
+      });
+    }
+  };
+  useEffect(() => {
+    applyPresenceRef.current = applyPresenceMessage;
+  });
+
+  // ── 보이스 (풀 메시 P2P) — 대시보드 입장 = 연결, 로스터 = presence ──
+  const voice = useVoiceChat({
+    myId: currentUser?.id,
+    onlineIds,
+    sendVoiceSignal,
+    registerSignalHandler: registerVoiceSignalHandler,
+  });
+
+  // ── 커서 메시지 라우팅 — 위치는 두 레이어로, dayNo 는 viewingDays 로 ──
+  // 모든 커서 메시지에 발신자가 보는 dayNo 가 실려 온다(마우스가 멈춰 있어도
+  // 5초 주기 view 하트비트가 유지).
+  const applyCursorMessage = (msg) => {
+    if (msg?.actorId == null) return;
+    tlCursorHandlerRef.current(msg);
+    pageCursorHandlerRef.current(msg);
+    // 내 Day 는 표시하지 않는다 — 내가 보는 탭이 곧 내 위치다
+    if (msg.actorId === currentUser?.id) return;
+    if (msg.dayNo == null) return;
+    cursorLastSeenRef.current[msg.actorId] = Date.now();
+    setViewingDays((prev) =>
+      prev[msg.actorId] === msg.dayNo
+        ? prev
+        : { ...prev, [msg.actorId]: msg.dayNo },
+    );
+  };
+  useEffect(() => {
+    applyCursorRef.current = applyCursorMessage;
+  });
+
+  // 하트비트(5초)가 두 번 유실되면 떠난 것으로 본다 — 잔점 방지
+  useEffect(() => {
+    const timer = setInterval(() => {
+      const now = Date.now();
+      setViewingDays((prev) => {
+        const alive = Object.keys(prev).filter(
+          (id) => now - (cursorLastSeenRef.current[id] ?? 0) < 12_000,
+        );
+        return alive.length === Object.keys(prev).length
+          ? prev
+          : Object.fromEntries(alive.map((id) => [id, prev[id]]));
+      });
+    }, 5000);
+    return () => clearInterval(timer);
+  }, []);
+
+  // 내가 보는 Day 를 알린다 — Day 전환 즉시 + 5초 주기(마우스가 안 움직여도 유지)
+  useEffect(() => {
+    const dayNo = dayNoOf(activeDay);
+    sendCursor({ area: "view", dayNo });
+    const timer = setInterval(() => sendCursor({ area: "view", dayNo }), 5000);
+    return () => clearInterval(timer);
+  }, [activeDay, sendCursor]);
 
   // 기간이 줄어 사라진 Day 에 남아 있던 블록은 버리지 않고 후보 목록으로 되돌린다 —
   // 서버가 PATCH 응답의 movedToPool 로 알려주는 것과 같은 규칙이다.
@@ -825,6 +1042,15 @@ export function DashboardPage() {
     setItems(serverItems);
     setChains(serverChains);
     setPool(serverPool);
+
+    // 멤버·접속 상태의 시드 — 이후는 MEMBER_JOINED/LEFT op 와 PRESENCE 메시지가
+    // 이어받는다. 스냅샷의 online 이 실값(서버 PresenceRegistry)이라 그대로 믿는다.
+    setBoardMembers(serverMembers);
+    setOnlineIds(
+      new Set(
+        serverMembers.filter((m) => m.online).map((m) => m.memberId),
+      ),
+    );
 
     // Day 시작 시각은 09:00 고정 — 버튼으로만 바뀐다(로컬 값이라 새로고침 시 초기화).
     // 단 09:00 이전에 시작하는 블록이 있으면 타임라인 위로 잘려 안 보이므로,
@@ -1175,15 +1401,227 @@ export function DashboardPage() {
   const timelineDOMRef = useRef(null);
   const poolDOMRef = useRef(null);
   const trashDOMRef = useRef(null);
+  const pageDOMRef = useRef(null); // 페이지 좌표 커서(area:"page")의 기준 박스
   const activeDragRef = useRef(null);
   const dragRegionRef = useRef(null);
 
-  // 리사이즈 종료(전역 click) 시 최신 items 를 읽기 위한 latest-ref —
-  // 리사이즈 effect 는 items 를 의존성에 두지 않아 클로저가 stale 하다.
+  // 최신 items 를 읽기 위한 latest-ref — 리사이즈 종료 시점과 원격 op 적용이 쓴다.
+  // 원격 적용은 한 tick 에 여러 op 를 연달아 처리할 수 있어(시퀀서 drain), 커밋 전에도
+  // 서로의 결과를 보도록 적용 함수가 이 ref 를 직접 갱신하며 진행한다.
   const itemsRef = useRef(items);
   useEffect(() => {
     itemsRef.current = items;
   });
+
+  // ── 원격 op 적용 ─────────────────────────────────────
+  // 원격 블록을 dayNo·orderKey 가 가리키는 자리로 배치한다 (생성·이동 공용).
+  // 시각(startMins)은 여기서 계산하지 않는다 — 보낸 클라이언트가 position 직후
+  // fields 로 시각을 저장하므로 후속 op 가 바로 따라와 채운다(대개 같은 drain 배치).
+  const placeRemoteBlock = (block) => {
+    const targetDay = block.dayNo == null ? null : `d${block.dayNo}`;
+
+    setPool((prev) => {
+      const without = prev.filter((id) => id !== block.id);
+      return targetDay === null
+        ? insertByOrderKey(without, itemsRef.current, block)
+        : without;
+    });
+    setChains((prev) => {
+      const next = {};
+      let placed = false;
+      for (const [day, chain] of Object.entries(prev)) {
+        const without = chain.filter((id) => id !== block.id);
+        if (day === targetDay) {
+          next[day] = insertByOrderKey(without, itemsRef.current, block);
+          placed = true;
+        } else {
+          next[day] = without;
+        }
+      }
+      if (targetDay !== null && !placed) {
+        // 아직 로컬에 없는 Day(기간 변경 경합) — 칸을 만들어 데이터를 잃지 않는다
+        next[targetDay] = [block.id];
+      }
+      return next;
+    });
+  };
+
+  /**
+   * 시퀀서가 순서를 맞춰 넘겨준 op 를 화면에 반영한다.
+   * 시퀀서는 커서 전진을 위해 자기 op 까지 전부 넘긴다(자기 op 도 seq 를 소비하므로
+   * 걸러서 받으면 갭으로 오인한다). 자기 op 를 적용할지는 op 종류별로 여기서 정한다 —
+   * 명세(§X-Client-Id)는 낙관 중복 적용을 막으려 일괄 스킵을 권하지만, 그러면
+   * 동시 편집에서 마지막 편집자의 화면만 남의 값으로 굳는다. 아래 own 주석 참조.
+   */
+  const applyOpToBoard = (op) => {
+    // 자기 op 를 통째로 버리면 동시 편집에서 "마지막에 놓은 사람"이 진다 —
+    // 남의 op 를 내 낙관 상태 위에 덮은 뒤 내 echo 를 스킵하면 남의 값이 최종으로
+    // 남는다(서버 DB 는 마지막 쓰기인 내 값인데 화면만 어긋난다).
+    // 시퀀서가 seq 순서로 넘겨주고 seq 순서 = 서버가 쓴 순서이므로, 마지막 쓰기가
+    // 이기는 op(이동·필드 갱신)는 자기 것도 그대로 적용해 제 위치를 재확정한다.
+    // 재적용이 해로운 op 만 아래에서 개별로 스킵한다.
+    const own = op.clientId === getClientId();
+
+    const payload = op.payload ?? {};
+    switch (op.type) {
+      case "BLOCK_CREATED": {
+        // 자기 생성만은 스킵한다 — POST 응답이 임시 id 를 서버 id 로 바꾸는
+        // (adoptServerId) 사이에 echo 가 끼어들면 같은 블록이 두 벌 들어간다.
+        if (own) break;
+        const block = blockApi.toUiBlock(payload.block);
+        itemsRef.current = { ...itemsRef.current, [block.id]: block };
+        setItems((prev) => ({ ...prev, [block.id]: block }));
+        placeRemoteBlock(block);
+        break;
+      }
+      case "BLOCK_FIELD_UPDATED": {
+        // 자기 op 도 적용한다 — 서버가 스테일 필드를 payload 에서 빼고 보내므로
+        // (명세: "적용된 필드만 포함") seq 순서대로 덮으면 서버 최종값과 같아진다.
+        // 블록의 화면상 y 위치는 startMins 라서, 이게 빠지면 이동을 재확정해도
+        // 시각은 남의 값 그대로 남는다.
+        const id = payload.blockId;
+        const base = itemsRef.current[id];
+        if (!base) break; // 모르는 블록(이미 삭제 등) — 무시
+        const patch = blockApi.serverFieldsToUiPatch(payload.fields);
+        const updated = { ...base, ...patch };
+        itemsRef.current = { ...itemsRef.current, [id]: updated };
+        setItems((prev) => (prev[id] ? { ...prev, [id]: updated } : prev));
+        break;
+      }
+      case "BLOCK_MOVED": {
+        // 자기 op 도 적용한다 — 이동은 마지막 쓰기가 이긴다. 남이 먼저 옮긴 op 에
+        // 덮인 자리를 자기 echo 가 제 위치로 되돌려 놓는 것이 이 재적용의 목적이다.
+        const base = itemsRef.current[payload.blockId];
+        if (!base) {
+          if (own) break; // 내가 옮긴 뒤 지운 블록 — 재시드할 이유가 없다
+          reload(); // 모르는 블록의 이동 — 로컬이 어긋난 상태라 재시드가 정직하다
+          break;
+        }
+        const moved = {
+          ...base,
+          dayNo: payload.dayNo ?? null,
+          orderKey: payload.orderKey,
+        };
+        itemsRef.current = { ...itemsRef.current, [moved.id]: moved };
+        setItems((prev) => (prev[moved.id] ? { ...prev, [moved.id]: moved } : prev));
+        placeRemoteBlock(moved);
+        break;
+      }
+      case "BLOCK_DELETED": {
+        // 자기 삭제는 이미 로컬에서 제거됐다 — 재적용하면 아래 "다른 멤버가
+        // 삭제했어요" 토스트가 자기 삭제에 뜬다.
+        if (own) break;
+        const id = payload.blockId;
+        const next = { ...itemsRef.current };
+        delete next[id];
+        itemsRef.current = next;
+        setItems((prev) => {
+          const n = { ...prev };
+          delete n[id];
+          return n;
+        });
+        setPool((prev) => prev.filter((x) => x !== id));
+        setChains((prev) => {
+          const n = { ...prev };
+          Object.keys(n).forEach((day) => {
+            n[day] = n[day].filter((x) => x !== id);
+          });
+          return n;
+        });
+        if (editingBlockId === id) {
+          setEditingBlockId(null);
+          showToast("편집 중이던 블록을 다른 멤버가 삭제했어요");
+        }
+        break;
+      }
+      case "TARGET_BUDGET_CHANGED":
+        if (own) break; // 디바운스 중인 로컬 ± 입력과 싸운다
+        setTargetBudget(payload.targetBudget ?? 0);
+        break;
+      case "PROJECT_UPDATED":
+        if (own) break; // 자기 변경으로 보드 전체를 재시드할 이유가 없다
+        // 이름·기간·movedToPool — Day 탭 수 등 훅 소유 파생에 걸쳐 있어 재시드가 정확하다
+        reload();
+        break;
+      case "PROJECT_DELETED":
+        showToast("이 프로젝트가 삭제됐어요.");
+        navigate(`/groups/${groupId}`, { replace: true });
+        break;
+      case "MEMBER_JOINED":
+        // 그룹의 모든 프로젝트 토픽에 발행된다 — 상단바 아바타 목록 갱신.
+        // own(자기 가입)도 중복 가드가 있어 재적용이 무해하다.
+        setBoardMembers((prev) =>
+          prev.some((m) => m.memberId === payload.memberId)
+            ? prev
+            : [
+                ...prev,
+                {
+                  memberId: payload.memberId,
+                  nickname: payload.nickname,
+                  profileImg: payload.profileImg || null,
+                  online: false, // 접속하면 PRESENCE 가 알려준다
+                },
+              ],
+        );
+        break;
+      case "MEMBER_LEFT":
+        setBoardMembers((prev) =>
+          prev.filter((m) => m.memberId !== payload.memberId),
+        );
+        setOnlineIds((prev) => {
+          if (!prev.has(payload.memberId)) return prev;
+          const next = new Set(prev);
+          next.delete(payload.memberId);
+          return next;
+        });
+        break;
+      default:
+        // PROJECT_STATUS_CHANGED·BUDGET_HEADCOUNT_CHANGED —
+        // 표시 UI 가 없어 seq 만 소비한다 (전방 호환: 모르는 타입도 여기로)
+        break;
+    }
+  };
+
+  // 적용 함수는 렌더마다 새로 만들어지므로 latest-ref 로 시퀀서에 노출한다
+  useEffect(() => {
+    applyRemoteOpRef.current = applyOpToBoard;
+  });
+
+  // 시퀀서 수명 — 프로젝트마다 하나. 드래그·리사이즈 중에는 pending 큐로 우회한다.
+  useEffect(() => {
+    if (!Number.isInteger(projectId)) return;
+    const sequencer = createOpSequencer({
+      fetchOpsAfter: (afterSeq) => blockApi.fetchOpsAfter(projectId, afterSeq),
+      apply: (op) => {
+        if (interactingRef.current) pendingRemoteOpsRef.current.push(op);
+        else applyRemoteOpRef.current(op);
+      },
+    });
+    sequencerRef.current = sequencer;
+    return () => {
+      sequencer.dispose();
+      sequencerRef.current = null;
+    };
+  }, [projectId]);
+
+  // 스냅샷 (재)시드마다 커서를 스냅샷의 lastSeq 로 리셋 — 그 이하 op 는 이미
+  // 스냅샷에 반영돼 있고, 그보다 앞서 수신돼 버퍼에 쌓인 op 는 이때 순서대로 적용된다
+  useEffect(() => {
+    if (status !== "loaded") return;
+    sequencerRef.current?.reset(lastSeq);
+  }, [status, serverItems, lastSeq]);
+
+  // 드래그·리사이즈 중에는 원격 적용을 미룬다 — 조작 중 체인이 발밑에서 바뀌면
+  // 드롭 계산이 꼬이고 잡고 있던 블록이 순간이동한다. 끝나는 즉시 밀린 것을 반영한다.
+  useEffect(() => {
+    const interacting = activeId != null || resizingState != null;
+    interactingRef.current = interacting;
+    if (!interacting && pendingRemoteOpsRef.current.length > 0) {
+      const ops = pendingRemoteOpsRef.current;
+      pendingRemoteOpsRef.current = [];
+      ops.forEach((op) => applyRemoteOpRef.current(op));
+    }
+  }, [activeId, resizingState]);
 
   const handleSaveBlock = async (form) => {
     const targetId = editingBlockId;
@@ -1256,16 +1694,16 @@ export function DashboardPage() {
     const changed = {};
     for (const [local, server] of [
       ["name", "name"],
-      ["sub", "subCategory"],
-      ["address", "address"],
       ["detail", "detail"],
       ["dur", "durationMin"],
       ["cost", "budget"],
     ]) {
       if (merged[local] !== base[local]) changed[server] = merged[local];
     }
-    // category 는 보내지 않는다 — 서버 LWW 화이트리스트에 없어 BLOCK400_2 로
-    // 배치 전체가 거부된다(2026-07-31 실측). 기존 블록의 카테고리는 폼에서 잠근다.
+    // category·subCategory·address 는 보내지 않는다 — 서버 LWW 화이트리스트
+    // (LWW_FIELDS: name·budget·durationMin·detail·startTime·endTime·isTimeFixed·
+    // vehicleFlag·transportMeta)에 없어 BLOCK400_2 로 배치 전체가 거부된다.
+    // 셋 다 "생성 시에만" 정하는 값으로 폼에서 잠갔다.
 
     // 소요시간이 바뀌면 종료 시각도 함께 맞춘다 — ERD 불변식:
     // 시각이 둘 다 있으면 end_time − start_time == duration_min
@@ -1386,6 +1824,45 @@ export function DashboardPage() {
     }
     setEditingBlockId(null);
   };
+
+  // ── 편집 락 수명 = 편집 모달 수명 (6단계, advisory) ──
+  // 모달을 열면 획득 → 10초 주기 하트비트(TTL 30초) → 닫으면 해제.
+  // 락은 편집을 막지 않는다(서버도 안 막는다) — 다른 멤버 화면에 "편집 중" 배지를
+  // 띄우는 신호일 뿐이다. 획득 실패·요청 실패 모두 편집을 계속하게 둔다.
+  useEffect(() => {
+    if (!editingBlockId || !isServerBlock(editingBlockId)) return undefined;
+    const blockId = editingBlockId;
+    let heartbeatTimer = null;
+    let acquired = false;
+    let cancelled = false;
+
+    blockApi
+      .acquireDetailLock(blockId)
+      .then((r) => {
+        if (cancelled) {
+          // 응답 전에 모달이 닫혔다 — 방금 얻은 락을 바로 되돌려 준다
+          if (r?.acquired) blockApi.releaseDetailLock(blockId).catch(() => {});
+          return;
+        }
+        if (r?.acquired) {
+          acquired = true;
+          heartbeatTimer = setInterval(() => {
+            blockApi.heartbeatDetailLock(blockId).catch(() => {});
+          }, 10_000);
+        } else if (r?.holder != null) {
+          // 남이 잡고 있다 — 배지 상태에 직접 반영한다. 락이 내 구독 이전부터
+          // 있었으면 DETAIL_LOCK 메시지를 받은 적이 없어 이 경로가 유일한 단서다.
+          setDetailLocks((prev) => ({ ...prev, [blockId]: r.holder }));
+        }
+      })
+      .catch(() => {});
+
+    return () => {
+      cancelled = true;
+      if (heartbeatTimer) clearInterval(heartbeatTimer);
+      if (acquired) blockApi.releaseDetailLock(blockId).catch(() => {});
+    };
+  }, [editingBlockId]);
 
   useEffect(() => {
     dragRegionRef.current = dragPreview?.region;
@@ -1914,6 +2391,48 @@ export function DashboardPage() {
   const timeSlots = [];
   for (let t = timelineStart; t <= timelineEnd; t += 30) timeSlots.push(t);
 
+  // ── 라이브 커서 송신 (7단계) — 명세의 50ms 스로틀, 대시보드 전역 ──
+  // 타임라인 위에서는 "가로 비율 + 분(시각)"(area:"tl") — 상대와 내 스크롤·시작
+  // 시각이 달라도 같은 시간 위치에 그려진다. 그 밖(후보·사이드 등)에서는 페이지
+  // 비율 좌표(area:"page") — 창 크기가 달라도 대략 같은 자리를 가리킨다.
+  const lastCursorSendRef = useRef(0);
+  const handlePageCursorMove = (e) => {
+    const now = Date.now();
+    if (now - lastCursorSendRef.current < 50) return;
+    lastCursorSendRef.current = now;
+    const dayNo = dayNoOf(activeDay);
+
+    const tlEl = timelineDOMRef.current;
+    const tlRect = tlEl?.getBoundingClientRect();
+    const inTimeline =
+      !!tlRect &&
+      e.clientX >= tlRect.left &&
+      e.clientX <= tlRect.right &&
+      e.clientY >= tlRect.top &&
+      e.clientY <= tlRect.bottom;
+
+    if (inTimeline) {
+      sendCursor({
+        area: "tl",
+        x: (e.clientX - tlRect.left - TL_PAD_LEFT) / (tlRect.width - TL_PAD_LEFT),
+        y:
+          timelineStart +
+          (e.clientY - tlRect.top + tlEl.scrollTop - TL_PAD_TOP) / PX,
+        dayNo,
+      });
+      return;
+    }
+
+    const pageRect = pageDOMRef.current?.getBoundingClientRect();
+    if (!pageRect) return;
+    sendCursor({
+      area: "page",
+      x: (e.clientX - pageRect.left) / pageRect.width,
+      y: (e.clientY - pageRect.top) / pageRect.height,
+      dayNo,
+    });
+  };
+
   // 💡 드래그 중인 임시 아이템 정의 (검색 패널에서 드래그할 경우 임시 객체를 만들어 보여줌)
   let draggedItem = null;
   if (activeId) {
@@ -1975,6 +2494,34 @@ export function DashboardPage() {
     })
     .filter(Boolean);
 
+  // 편집 배지에 쓸 이름 — 락 소유자가 멤버 목록에 없으면(탈퇴 직후 등) 뭉뚱그린다
+  const nicknameOf = (memberId) =>
+    boardMembers.find((m) => m.memberId === memberId)?.nickname ?? "다른 멤버";
+  // 남이 잡은 락만 배지가 된다 — 내 락(내 다른 탭 포함, memberId 기준)은 표시하지 않는다
+  const lockBadgeOf = (blockId) => {
+    const holder = detailLocks[blockId];
+    return holder != null && holder !== currentUser?.id
+      ? nicknameOf(holder)
+      : null;
+  };
+
+  // Day 탭에 찍을 "이 Day 를 보는 중" 멤버들 (커서 하트비트 기반).
+  // 프로필 이미지까지 실어 탭에 아바타로 띄운다 — 테두리는 커서와 같은 멤버 색.
+  const dayViewersOf = (dayKey) => {
+    const dayNo = dayNoOf(dayKey);
+    return Object.entries(viewingDays)
+      .filter(([, d]) => d === dayNo)
+      .map(([id]) => {
+        const memberId = Number(id);
+        const member = boardMembers.find((m) => m.memberId === memberId);
+        return {
+          id: memberId,
+          name: member?.nickname ?? "다른 멤버",
+          profileImg: member?.profileImg ?? null,
+        };
+      });
+  };
+
   // 스냅샷이 시드되기 전(로딩 중)에는 보드를 그리지 않는다.
   // 에러일 때는 위 effect 가 그룹 페이지로 되돌린다.
   // dayStart 는 조건에 넣지 않는다 — 기간 미정 프로젝트는 dayKeys(기본 4일)가
@@ -2003,10 +2550,10 @@ export function DashboardPage() {
           { label: group?.name ?? "그룹", to: `/groups/${groupId}` },
           { label: project?.name ?? "여행 대시보드" },
         ]}
-        members={group?.members ?? []}
-        // 실시간 접속 정보가 아직 없어 지금은 나만 활동 중으로 표시된다.
-        // WebSocket 이 붙으면 접속자 id 목록을 그대로 여기에 넣으면 된다.
-        activeMemberIds={currentUser?.id ? [currentUser.id] : []}
+        // 프로젝트 멤버(스냅샷 시드 + MEMBER_JOINED/LEFT 갱신)와 실시간 접속
+        // 상태(PRESENCE) — 초록 점이 진짜 "지금 보는 중"을 뜻하게 됐다(6단계)
+        members={boardMembers}
+        activeMemberIds={Array.from(onlineIds)}
       />
 
       {/* 모드 전환 바 + 보드를 한 껍데기(.dash-shell) 안에 두어 경계 없이 이어 보이게 한다.
@@ -2056,7 +2603,16 @@ export function DashboardPage() {
             onDragEnd={handleDragEnd}
             onDragCancel={handleDragCancel}
           >
-            <div className="dashboard-page dash-body">
+            <div
+              className="dashboard-page dash-body"
+              ref={pageDOMRef}
+              onMouseMove={handlePageCursorMove}
+              // 대시보드를 벗어나면(상단바 등) 상대 화면의 내 커서를 걷는다.
+              // Day 탭 점은 유지된다 — 아직 이 Day 를 보는 중이므로.
+              onMouseLeave={() =>
+                sendCursor({ area: "leave", dayNo: dayNoOf(activeDay) })
+              }
+            >
               <div className="daycol">
                 {dayKeys.map((day, i) => (
                   <DayTab
@@ -2066,6 +2622,7 @@ export function DashboardPage() {
                     count={(chains[day] || []).length}
                     isActive={activeDay === day}
                     onClick={() => setActiveDay(day)}
+                    viewers={dayViewersOf(day)}
                   />
                 ))}
               </div>
@@ -2243,6 +2800,7 @@ export function DashboardPage() {
                                 dayStartMins={timelineStart}
                                 boundTop={boundTop}
                                 onEditBlock={setEditingBlockId}
+                                lockedBy={lockBadgeOf(data.id)}
                               />
                             )}
 
@@ -2291,6 +2849,20 @@ export function DashboardPage() {
                         </div>
                       )}
                     </div>
+
+                    {/* 다른 멤버들의 라이브 커서(타임라인 정밀 좌표) — 카드 위에 뜨되
+                        클릭은 통과시킨다(pointer-events: none). 상태는 레이어가 자체 보유 */}
+                    <RemoteCursorLayer
+                      mode="tl"
+                      register={registerTlCursorHandler}
+                      myId={currentUser?.id}
+                      activeDayNo={dayNoOf(activeDay)}
+                      timelineStart={timelineStart}
+                      px={PX}
+                      padTop={TL_PAD_TOP}
+                      padLeft={TL_PAD_LEFT}
+                      nicknameOf={nicknameOf}
+                    />
                   </div>
                 </div>
 
@@ -2324,6 +2896,7 @@ export function DashboardPage() {
                             id={id}
                             item={items[id]}
                             onEditBlock={setEditingBlockId}
+                            lockedBy={lockBadgeOf(id)}
                           />
                         ))}
                       </SortableContext>
@@ -2510,6 +3083,15 @@ export function DashboardPage() {
                   )
                 ) : null}
               </DragOverlay>
+
+              {/* 타임라인 밖(후보·사이드 등)의 라이브 커서 — 페이지 비율 좌표.
+                  Day 무관 영역이라 상대가 다른 Day 를 봐도 그린다 */}
+              <RemoteCursorLayer
+                mode="page"
+                register={registerPageCursorHandler}
+                myId={currentUser?.id}
+                nicknameOf={nicknameOf}
+              />
             </div>
           </DndContext>
         ) : (
@@ -2535,6 +3117,7 @@ export function DashboardPage() {
                 ? ""
                 : `Day ${dayNum} · ${fmtTime(sMins)} - ${fmtTime(eMins)}`;
 
+            const lockedByName = lockBadgeOf(editingBlockId);
             return (
               <BlockEditForm
                 initialData={item}
@@ -2542,6 +3125,13 @@ export function DashboardPage() {
                 // 서버가 category 필드 갱신을 지원하지 않는다(BLOCK400_2) —
                 // 카테고리는 생성 시에만 정할 수 있다
                 categoryLocked={!isTempId(editingBlockId)}
+                // advisory 락 — 편집을 막지 않고 동시 편집 사실만 알린다.
+                // 세부 내용(detail)은 마지막 저장이 통째로 이기므로 겹치면 유실될 수 있다.
+                lockNotice={
+                  lockedByName
+                    ? `✎ ${lockedByName} 님도 이 블록을 편집하고 있어요`
+                    : ""
+                }
                 onSave={handleSaveBlock}
                 onCancel={handleCancelEdit}
               />
@@ -2549,6 +3139,49 @@ export function DashboardPage() {
           })()}
         </div>
       )}
+
+      {/* 보이스 위젯 — 화면 하단 중앙 고정(스크롤·모드 무관). 입장하면 자동
+          연결(권한 거부 시 듣기 전용)이고, 버튼은 송신(마이크)·수신(스피커)만
+          끄고 켠다 — 연결 자체는 대시보드를 떠날 때까지 유지된다 */}
+      <div className="voice-dock">
+        <button
+          type="button"
+          className={`voice-mic ${voice.micOn && !voice.listenOnly ? "on" : "off"}`}
+          onClick={voice.toggleMic}
+          disabled={voice.listenOnly}
+          title={
+            voice.listenOnly
+              ? "마이크 권한이 거부되어 듣기만 가능해요"
+              : voice.micOn
+                ? "마이크 끄기"
+                : "마이크 켜기"
+          }
+        >
+          {voice.listenOnly ? "🎧" : voice.micOn ? "🎤" : "🔇"}
+        </button>
+        {/* 전체 음소거 ↔ 전체 듣기 — 상대 소리만 끈다(내 목소리는 계속 나감) */}
+        <button
+          type="button"
+          className={`voice-mic ${voice.speakerOn ? "on" : "off"}`}
+          onClick={voice.toggleSpeaker}
+          title={
+            voice.speakerOn
+              ? "전체 음소거 — 모두의 소리 끄기"
+              : "전체 듣기 — 다시 듣기"
+          }
+        >
+          {voice.speakerOn ? "🔊" : "🔈"}
+        </button>
+        <span className="voice-status">
+          {!voice.joined
+            ? "음성 연결 중..."
+            : voice.listenOnly
+              ? `듣기 전용 · ${voice.connectedCount}명`
+              : voice.connectedCount > 0
+                ? `음성 연결됨 · ${voice.connectedCount}명`
+                : "혼자 있어요"}
+        </span>
+      </div>
 
       {viewMode === "edit" && <ChatbotWidget />}
     </>

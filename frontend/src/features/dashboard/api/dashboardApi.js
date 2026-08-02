@@ -63,8 +63,11 @@ export function minsToTime(mins) {
 
 // ── 블록 모델 변환 ────────────────────────────────────
 
-/** 서버 블록 → 화면 블록. 화면이 아직 안 쓰는 필드(orderKey·lat 등)도 함께 실어 둔다. */
-function toUiBlock(b) {
+/**
+ * 서버 블록 → 화면 블록. 화면이 아직 안 쓰는 필드(orderKey·lat 등)도 함께 실어 둔다.
+ * 스냅샷의 blocks 와 BLOCK_CREATED op 의 payload.block 이 같은 모양이라 양쪽이 공유한다.
+ */
+export function toUiBlock(b) {
   return {
     id: b.blockId,
     dayNo: b.dayNo, // null = 후보(POOL)
@@ -119,6 +122,48 @@ function toCreatePayload(block) {
   };
 }
 
+/**
+ * BLOCK_FIELD_UPDATED op 의 payload.fields(서버 필드명·서버 값) → 화면 블록 패치.
+ * 모르는 필드는 조용히 무시한다 — 서버가 필드를 추가해도 구버전 화면이 깨지지 않는다.
+ */
+export function serverFieldsToUiPatch(fields) {
+  const patch = {};
+  for (const [field, value] of Object.entries(fields ?? {})) {
+    switch (field) {
+      case "name":
+        patch.name = value;
+        break;
+      case "detail":
+        patch.detail = value;
+        break;
+      case "budget":
+        patch.cost = value ?? 0;
+        break;
+      case "durationMin":
+        patch.dur = value;
+        break;
+      case "startTime":
+        patch.startMins = timeToMins(value);
+        break;
+      case "endTime":
+        patch.endMins = timeToMins(value);
+        break;
+      case "isTimeFixed":
+        patch.isTimeFixed = value;
+        break;
+      case "vehicleFlag":
+        patch.vehicleFlag = value;
+        break;
+      case "transportMeta":
+        patch.transportMeta = value;
+        break;
+      default:
+        break;
+    }
+  }
+  return patch;
+}
+
 // ── 스냅샷 ───────────────────────────────────────────
 
 /**
@@ -136,6 +181,59 @@ export async function fetchSnapshot(projectId) {
       members: result.members ?? [],
       lastSeq: result.lastSeq ?? 0,
     };
+  } catch (error) {
+    unwrapError(error);
+  }
+}
+
+/**
+ * 유실 op 재전송 — 시퀀서의 갭 복구용. afterSeq 초과분을 seq 순서로 돌려주며,
+ * 저장 전문 그대로라 실시간 수신분과 형태가 완전히 같다.
+ * @returns {Promise<Array<{seq, type, actorId, clientId, payload}>>}
+ */
+export async function fetchOpsAfter(projectId, afterSeq) {
+  try {
+    const { data } = await axiosInstance.get(`/projects/${projectId}/ops`, {
+      params: { afterSeq },
+    });
+    return unwrap(data) ?? [];
+  } catch (error) {
+    unwrapError(error);
+  }
+}
+
+// ── 세부 내용 편집 락 (advisory) ─────────────────────
+// Redis SET NX + TTL 30s. 서버가 detail 쓰기를 막지는 않는다 — 편집 배지용이다.
+// 락 상태 변화(획득·해제)는 presence 토픽에 DETAIL_LOCK 메시지로 전파된다.
+
+/**
+ * 편집 락 획득. 실패해도 편집을 막지 않는다(advisory) — holder 를 배지에 쓴다.
+ * @returns {Promise<{acquired: boolean, holder: number|null, ttlRemaining: number}>}
+ */
+export async function acquireDetailLock(blockId) {
+  try {
+    const { data } = await axiosInstance.post(`/blocks/${blockId}/detail-lock`);
+    return unwrap(data);
+  } catch (error) {
+    unwrapError(error);
+  }
+}
+
+/** 락 TTL 연장 — 10초 주기, 소유자만 가능(비소유 하트비트 = BLOCK409). */
+export async function heartbeatDetailLock(blockId) {
+  try {
+    const { data } = await axiosInstance.put(`/blocks/${blockId}/detail-lock`);
+    return unwrap(data);
+  } catch (error) {
+    unwrapError(error);
+  }
+}
+
+/** 락 해제 — 멱등(만료 직후 해제 요청도 에러가 아니다). */
+export async function releaseDetailLock(blockId) {
+  try {
+    const { data } = await axiosInstance.delete(`/blocks/${blockId}/detail-lock`);
+    return unwrap(data);
   } catch (error) {
     unwrapError(error);
   }
