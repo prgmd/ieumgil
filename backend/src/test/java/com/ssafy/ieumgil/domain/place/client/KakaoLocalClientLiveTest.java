@@ -4,6 +4,9 @@ import com.ssafy.ieumgil.domain.place.dto.KakaoAddressResponse;
 import com.ssafy.ieumgil.domain.place.dto.KakaoDirectionsResponse;
 import com.ssafy.ieumgil.domain.place.dto.KakaoPlaceResponse;
 import com.ssafy.ieumgil.domain.place.dto.KakaoWalkingRouteResponse;
+import com.ssafy.ieumgil.domain.place.dto.PlaceResDTO;
+import com.ssafy.ieumgil.domain.place.service.PlaceQueryService;
+import com.ssafy.ieumgil.domain.place.service.PlaceQueryServiceImpl;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Test;
@@ -82,7 +85,9 @@ class KakaoLocalClientLiveTest {
 
 		assertThat(result).isPresent();
 		assertThat(result.get().totalDistance()).isGreaterThan(0);
-		assertThat(result.get().totalTime()).isGreaterThan(0);
+		// totalTime은 초다. ">0"만 보던 예전 assert는 초를 분으로 착각한 버그를 그대로 통과시켰다.
+		// 해운대 인근 500m 남짓이면 도보 몇 분 — 초 값이라면 세 자리, 분 값이라면 한 자리다.
+		assertThat(result.get().totalTime()).isBetween(60, 2 * 3600);
 	}
 
 	@Test
@@ -95,7 +100,26 @@ class KakaoLocalClientLiveTest {
 		assertThat(result).isPresent();
 		assertThat(result.get().fare().taxi()).isGreaterThan(0);
 		assertThat(result.get().distance()).isGreaterThan(0);
-		assertThat(result.get().duration()).isGreaterThan(0);
+		// duration은 초다. 부산역→해운대 약 15km면 20~40분(1200~2400초)이므로 아래 범위 안이어야 한다.
+		// 분 단위였다면 30 안팎이라 하한(120)에 걸린다.
+		assertThat(result.get().duration()).isBetween(120, 2 * 3600);
+	}
+
+	@Test
+	void routeDurationReachingTheChatbotIsMinutesInASaneRange() throws IOException {
+		PlaceQueryService placeQueryService = new PlaceQueryServiceImpl(liveClient());
+
+		Optional<PlaceResDTO.TaxiRoute> taxi =
+				placeQueryService.getTaxiRoute(BUSAN_STATION_LAT, BUSAN_STATION_LNG, HAEUNDAE_LAT, HAEUNDAE_LNG);
+		Optional<PlaceResDTO.WalkingRoute> walk =
+				placeQueryService.getWalkingRoute(HAEUNDAE_LAT, HAEUNDAE_LNG, HAEUNDAE_NEAR_LAT, HAEUNDAE_NEAR_LNG);
+
+		// 챗봇이 실제로 모델에게 넘기는 값. 시내 이동이 120분을 넘으면 단위가 틀린 것이다
+		// (초를 그대로 흘리던 시절에는 여기가 1217처럼 나왔다).
+		assertThat(taxi).isPresent();
+		assertThat(taxi.get().durationMin()).isBetween(1, 120);
+		assertThat(walk).isPresent();
+		assertThat(walk.get().durationMin()).isBetween(1, 120);
 	}
 
 	private KakaoLocalClient liveClient() throws IOException {

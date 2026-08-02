@@ -37,7 +37,7 @@ public class TaxiRouteTool {
             }
             return placeQueryService.getTaxiRoute(
                             start.get().lat(), start.get().lng(), end.get().lat(), end.get().lng())
-                    .map(r -> TaxiRouteResult.of(start.get().name(), end.get().name(), r.fare(), r.distance(), r.duration()))
+                    .map(r -> TaxiRouteResult.of(start.get().name(), end.get().name(), r.fare(), r.distance(), r.durationMin()))
                     .orElseGet(() -> TaxiRouteResult.empty(startPlaceName, endPlaceName));
         } catch (RuntimeException e) {
             log.warn("taxi route tool call failed: {} -> {}", startPlaceName, endPlaceName, e);

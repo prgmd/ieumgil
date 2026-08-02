@@ -37,7 +37,7 @@ public class WalkingRouteTool {
             }
             return placeQueryService.getWalkingRoute(
                             start.get().lat(), start.get().lng(), end.get().lat(), end.get().lng())
-                    .map(r -> WalkingRouteResult.of(start.get().name(), end.get().name(), r.distance(), r.duration()))
+                    .map(r -> WalkingRouteResult.of(start.get().name(), end.get().name(), r.distance(), r.durationMin()))
                     .orElseGet(() -> WalkingRouteResult.empty(startPlaceName, endPlaceName));
         } catch (RuntimeException e) {
             log.warn("walking route tool call failed: {} -> {}", startPlaceName, endPlaceName, e);

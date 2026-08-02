@@ -18,9 +18,11 @@ public class PlaceResDTO {
     public record Address(String address, String roadAddress) {
     }
 
-    public record WalkingRoute(int distance, int duration) {
+    /** 소요시간은 <b>분</b>이다 — 카카오 응답의 초를 {@code PlaceQueryServiceImpl}에서 변환해 담는다. */
+    public record WalkingRoute(int distance, int durationMin) {
     }
 
-    public record TaxiRoute(int fare, int distance, int duration) {
+    /** 소요시간은 <b>분</b>이다 — 카카오 응답의 초를 {@code PlaceQueryServiceImpl}에서 변환해 담는다. */
+    public record TaxiRoute(int fare, int distance, int durationMin) {
     }
 }

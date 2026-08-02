@@ -6,6 +6,7 @@ import com.ssafy.ieumgil.domain.place.dto.KakaoDirectionsResponse;
 import com.ssafy.ieumgil.domain.place.dto.KakaoPlaceResponse;
 import com.ssafy.ieumgil.domain.place.dto.KakaoWalkingRouteResponse;
 import com.ssafy.ieumgil.domain.place.dto.PlaceResDTO;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
@@ -88,7 +89,8 @@ class PlaceQueryServiceImplTest {
     }
 
     @Test
-    void getWalkingRouteMapsDistanceAndTime() {
+    @DisplayName("도보 totalTime은 초다 — 분으로 바꿔 담는다")
+    void getWalkingRouteConvertsSecondsToMinutes() {
         placeQueryService = new PlaceQueryServiceImpl(kakaoLocalClient);
         KakaoWalkingRouteResponse.Properties properties =
                 new KakaoWalkingRouteResponse.Properties(4025, 3914, "https://map.kakao.com/route/walk/example");
@@ -98,7 +100,21 @@ class PlaceQueryServiceImplTest {
 
         assertThat(result).isPresent();
         assertThat(result.get().distance()).isEqualTo(4025);
-        assertThat(result.get().duration()).isEqualTo(3914);
+        // 3914초 = 65.2분 → 올림 66분. 그대로 두면 챗봇이 "도보 3914분"이라고 답한다.
+        assertThat(result.get().durationMin()).isEqualTo(66);
+    }
+
+    @Test
+    @DisplayName("1분 미만도 0분이 아니라 1분으로 올린다")
+    void durationIsRoundedUpToAtLeastOneMinute() {
+        placeQueryService = new PlaceQueryServiceImpl(kakaoLocalClient);
+        when(kakaoLocalClient.getWalkingRoute(33.4581, 126.9425, 33.46, 126.94))
+                .thenReturn(Optional.of(new KakaoWalkingRouteResponse.Properties(40, 59, "https://map.kakao.com")));
+
+        Optional<PlaceResDTO.WalkingRoute> result = placeQueryService.getWalkingRoute(33.4581, 126.9425, 33.46, 126.94);
+
+        assertThat(result).isPresent();
+        assertThat(result.get().durationMin()).isEqualTo(1);
     }
 
     @Test
@@ -112,7 +128,8 @@ class PlaceQueryServiceImplTest {
     }
 
     @Test
-    void getTaxiRouteMapsFareDistanceDuration() {
+    @DisplayName("택시 duration도 초다 — 분으로 바꿔 담는다")
+    void getTaxiRouteConvertsSecondsToMinutes() {
         placeQueryService = new PlaceQueryServiceImpl(kakaoLocalClient);
         KakaoDirectionsResponse.Summary summary = new KakaoDirectionsResponse.Summary(
                 new KakaoDirectionsResponse.Fare(13200, 0), 8647, 1672);
@@ -125,7 +142,8 @@ class PlaceQueryServiceImplTest {
         assertThat(result).isPresent();
         assertThat(result.get().fare()).isEqualTo(13200);
         assertThat(result.get().distance()).isEqualTo(8647);
-        assertThat(result.get().duration()).isEqualTo(1672);
+        // 1672초 = 27.9분 → 올림 28분
+        assertThat(result.get().durationMin()).isEqualTo(28);
     }
 
     @Test
