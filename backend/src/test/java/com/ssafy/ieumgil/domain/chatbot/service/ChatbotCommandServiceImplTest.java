@@ -1,5 +1,9 @@
 package com.ssafy.ieumgil.domain.chatbot.service;
 
+import ch.qos.logback.classic.Level;
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
 import com.ssafy.ieumgil.domain.chatbot.ChatbotMode;
 import com.ssafy.ieumgil.domain.chatbot.dto.ChatbotReqDTO;
 import com.ssafy.ieumgil.domain.chatbot.dto.ChatbotResDTO;
@@ -34,6 +38,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.slf4j.LoggerFactory;
 import org.springframework.ai.chat.messages.AssistantMessage;
 import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.ai.chat.model.ChatResponse;
@@ -140,6 +145,33 @@ class ChatbotCommandServiceImplTest {
 
         assertThatThrownBy(() -> chatbotCommandService.sendMessage(1L, 1L, new ChatbotReqDTO.SendMessage("안녕", null, null)))
                 .isInstanceOf(ChatbotException.class);
+    }
+
+    @Test
+    @DisplayName("GMS 실패 원인을 로그에 남긴다 — 401·429·파싱 오류·tool 예외가 전부 같은 한 줄이 되면 운영에서 추적이 안 된다")
+    void gmsFailureLogsTheCause() {
+        when(chatHistoryStore.loadHistory(1L, 1L)).thenReturn(List.of());
+        when(projectRepository.findByIdAndDeletedAtIsNull(1L)).thenReturn(Optional.empty());
+        when(chatModel.call(any(Prompt.class))).thenThrow(new RuntimeException("401 Unauthorized"));
+
+        Logger logger = (Logger) LoggerFactory.getLogger(ChatbotCommandServiceImpl.class);
+        ListAppender<ILoggingEvent> appender = new ListAppender<>();
+        appender.start();
+        logger.addAppender(appender);
+        try {
+            assertThatThrownBy(() -> chatbotCommandService.sendMessage(
+                    1L, 1L, new ChatbotReqDTO.SendMessage("안녕", null, null)))
+                    .isInstanceOf(ChatbotException.class);
+        } finally {
+            logger.detachAppender(appender);
+        }
+
+        assertThat(appender.list).anySatisfy(event -> {
+            assertThat(event.getLevel()).isEqualTo(Level.ERROR);
+            // 스택까지 남아야 진짜 원인을 볼 수 있다
+            assertThat(event.getThrowableProxy()).isNotNull();
+            assertThat(event.getThrowableProxy().getMessage()).contains("401");
+        });
     }
 
     @Test

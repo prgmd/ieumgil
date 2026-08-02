@@ -13,6 +13,10 @@ spring:
       connect-timeout: 5s
       read-timeout: 15s
   ai:
+    retry:
+      # 기본값 10회(지수 백오프)는 과하다 — 실패한 GMS 호출 하나가 요청 스레드를 몇 분씩 붙잡는다.
+      # 일시 장애는 2~3회면 대개 넘어가고, 그 이상은 재시도가 아니라 장애다.
+      max-attempts: 3
     anthropic:
       api-key: ${GMS_API_KEY:}
       base-url: https://gms.ssafy.io/gmsapi/api.anthropic.com

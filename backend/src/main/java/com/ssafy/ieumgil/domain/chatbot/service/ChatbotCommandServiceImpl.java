@@ -27,6 +27,7 @@ import com.ssafy.ieumgil.domain.place.service.PlaceQueryService;
 import com.ssafy.ieumgil.domain.project.entity.Project;
 import com.ssafy.ieumgil.domain.project.repository.ProjectRepository;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.messages.AssistantMessage;
 import org.springframework.ai.chat.messages.Message;
@@ -40,6 +41,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class ChatbotCommandServiceImpl implements ChatbotCommandService {
@@ -180,6 +182,9 @@ public class ChatbotCommandServiceImpl implements ChatbotCommandService {
                     .call()
                     .content();
         } catch (RuntimeException e) {
+            // 사용자에게 나가는 예외는 그대로 두되(응답 계약), 원인은 스택까지 남긴다 —
+            // 401·429·응답 파싱 실패·tool 내부 예외가 전부 이 한 줄로 뭉개지면 운영 중 원인을 못 찾는다.
+            log.error("GMS 호출 실패", e);
             throw new ChatbotException(ChatbotErrorCode.GMS_CALL_FAILED);
         }
     }
