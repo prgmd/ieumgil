@@ -115,4 +115,33 @@ class KakaoLocalClientLiveTest {
 		}
 		return props.getProperty(name);
 	}
+
+	@Test
+	void rectSearchActuallyConstrainsResultsToTheBox() throws IOException {
+		KakaoLocalClient client = liveClient();
+		// 해운대 주변 좁은 사각 범위
+		double swLat = 35.155, swLng = 129.155, neLat = 35.165, neLng = 129.170;
+
+		List<KakaoPlaceResponse.Document> inBox = client.searchByKeywordInRect("카페", swLat, swLng, neLat, neLng);
+
+		assertThat(inBox).isNotEmpty();
+		// rect는 정렬 힌트가 아니라 실제 범위 제한이다. 다만 2026-08-02 라이브 확인 결과
+		// 경계를 아주 살짝 넘는 결과가 소량 섞인다(위 박스에서 북동 위도를 0.0002·0.00002 초과한
+		// 2건, 약 20m). 카카오가 내부적으로 격자·반올림을 쓰는 것으로 보인다.
+		// "보이는 범위 추천" 용도로는 무해하지만 "엄격히 범위 내"를 가정하는 코드를 쓰면 안 된다.
+		// 파라미터 순서(minX,minY,maxX,maxY)가 틀리면 예외가 아니라 0건이 오므로 isNotEmpty가 그 방어도 겸한다.
+		double tolerance = 0.001;
+		assertThat(inBox).allSatisfy(doc -> {
+			assertThat(Double.parseDouble(doc.x())).isBetween(swLng - tolerance, neLng + tolerance);
+			assertThat(Double.parseDouble(doc.y())).isBetween(swLat - tolerance, neLat + tolerance);
+		});
+
+		// 대조군: 범위 없이 같은 질의를 하면 박스 밖 결과가 섞인다(= 위 제한이 우연이 아님)
+		List<KakaoPlaceResponse.Document> unbounded = client.searchByKeyword("카페", null, null);
+		assertThat(unbounded).anySatisfy(doc -> {
+			double x = Double.parseDouble(doc.x());
+			double y = Double.parseDouble(doc.y());
+			assertThat(x < swLng || x > neLng || y < swLat || y > neLat).isTrue();
+		});
+	}
 }

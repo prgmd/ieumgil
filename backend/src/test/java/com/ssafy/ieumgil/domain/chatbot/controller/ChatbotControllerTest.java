@@ -5,6 +5,9 @@ import com.ssafy.ieumgil.domain.chatbot.dto.ChatbotReqDTO;
 import com.ssafy.ieumgil.domain.chatbot.dto.ChatbotResDTO;
 import com.ssafy.ieumgil.domain.chatbot.service.ChatbotCommandService;
 import com.ssafy.ieumgil.global.security.jwt.JwtProvider;
+import com.ssafy.ieumgil.domain.chatbot.ChatbotMode;
+import org.junit.jupiter.api.DisplayName;
+import org.mockito.ArgumentCaptor;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
@@ -16,8 +19,10 @@ import org.springframework.test.web.servlet.MockMvc;
 
 import java.util.List;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.authentication;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -71,5 +76,54 @@ class ChatbotControllerTest {
     private UsernamePasswordAuthenticationToken memberAuthentication(Long memberId) {
         return new UsernamePasswordAuthenticationToken(
                 memberId, null, List.of(new SimpleGrantedAuthority("ROLE_USER")));
+    }
+
+    @Test
+    @DisplayName("MAP 모드 요청의 mode·mapContext가 JSON에서 그대로 역직렬화된다")
+    void mapModeRequestDeserializesModeAndViewport() throws Exception {
+        when(chatbotCommandService.sendMessage(eq(1L), any(), any()))
+                .thenReturn(new ChatbotResDTO.MessageResult("이 근처 카페예요", List.of()));
+
+        mockMvc.perform(post("/api/projects/1/chatbot/messages")
+                        .with(authentication(memberAuthentication(1L)))
+                        .contentType("application/json")
+                        .content("""
+                                {
+                                  "message": "카페 추천해줘",
+                                  "mode": "MAP",
+                                  "mapContext": {
+                                    "swLat": 33.44, "swLng": 126.93,
+                                    "neLat": 33.47, "neLng": 126.95
+                                  }
+                                }
+                                """))
+                .andExpect(status().isOk());
+
+        ArgumentCaptor<ChatbotReqDTO.SendMessage> captor =
+                ArgumentCaptor.forClass(ChatbotReqDTO.SendMessage.class);
+        verify(chatbotCommandService).sendMessage(eq(1L), any(), captor.capture());
+        ChatbotReqDTO.SendMessage sent = captor.getValue();
+        assertThat(sent.modeOrDefault()).isEqualTo(ChatbotMode.MAP);
+        assertThat(sent.mapContext().swLat()).isEqualTo(33.44);
+        assertThat(sent.mapContext().neLng()).isEqualTo(126.95);
+    }
+
+    @Test
+    @DisplayName("뷰포트 좌표가 위경도 범위를 벗어나면 400 — 애노테이션 검증이 실제로 걸린다")
+    void outOfRangeViewportReturns400() throws Exception {
+        mockMvc.perform(post("/api/projects/1/chatbot/messages")
+                        .with(authentication(memberAuthentication(1L)))
+                        .contentType("application/json")
+                        .content("""
+                                {
+                                  "message": "카페 추천해줘",
+                                  "mode": "MAP",
+                                  "mapContext": {
+                                    "swLat": 991.0, "swLng": 126.93,
+                                    "neLat": 33.47, "neLng": 126.95
+                                  }
+                                }
+                                """))
+                .andExpect(status().isBadRequest());
     }
 }

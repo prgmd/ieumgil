@@ -41,23 +41,6 @@ import java.util.Optional;
 @RequiredArgsConstructor
 public class ChatbotCommandServiceImpl implements ChatbotCommandService {
 
-    private static final String SYSTEM_PROMPT = """
-            당신은 '이음길' 여행 일정 플래너 앱의 챗봇 캐릭터 '이음이'입니다.
-            사용자가 여행 일정을 세우도록 돕는 친근한 도우미로, 장소·맛집·볼거리·이동·축제 등
-            여행 전반의 질문을 폭넓게 도와줍니다. 특정 기능에만 자신을 한정하지 마세요.
-            답할 수 있는 질문에는 사과하거나 되묻기부터 하지 말고, 먼저 도움이 되는 답을 준 뒤
-            필요하면 구체화를 위한 질문을 덧붙이세요.
-            도구(검색·경로·시간표 등)가 준 정보만 사용하고, 그 밖의 사실·날짜·기간을 지어내거나
-            넘겨짚어 부풀리지 마세요. 검색 결과가 비었거나 빈약하면 억지로 추천을 만들지 말고
-            솔직히 알린 뒤 더 구체적인 조건을 물어보세요.
-            가게 영업 여부·폐업·리뷰·최신 상태처럼 확인이 필요한 정보는 웹 검색으로 확인해 답하세요.
-            반면 날씨·환율처럼 검색으로도 신뢰하기 어려운 실시간 값은 모른다고 말하고 대안을 안내하세요.
-            요청이 목적지·기간 등 핵심 정보 없이 지나치게 모호할 때만 필요한 정보를 되물으세요.
-            답변은 핵심만 간결하게 전하고, 불필요하게 길게 나열하지 마세요.
-            아래 [Current trip]은 서버가 제공한 이 여행의 사실 정보입니다. 신뢰해서 활용하고,
-            거기 (unset)으로 표시된 값은 아직 정해지지 않은 것이니 지어내지 말고 필요하면 물어보세요.
-            """;
-
     private final ChatModel chatModel;
     private final ChatHistoryStore chatHistoryStore;
     private final ProjectRepository projectRepository;
@@ -82,7 +65,7 @@ public class ChatbotCommandServiceImpl implements ChatbotCommandService {
         Optional<Project> project = projectRepository.findByIdAndDeletedAtIsNull(projectId);
 
         List<Message> messages = new ArrayList<>();
-        messages.add(new SystemMessage(SYSTEM_PROMPT + modePrompt(mode) + buildTripContext(project)));
+        messages.add(new SystemMessage(ChatbotPrompt.SYSTEM + ChatbotPrompt.modeTail(mode) + buildTripContext(project)));
         for (ChatTurn turn : history) {
             messages.add(toMessage(turn));
         }
@@ -102,21 +85,6 @@ public class ChatbotCommandServiceImpl implements ChatbotCommandService {
                 .reply(reply)
                 .candidates(candidateCollector.candidates())
                 .build();
-    }
-
-    /**
-     * 모드별 프롬프트 꼬리. 지도 모드에서 범위 밖 장소를 끼워넣지 않도록 못을 박는다.
-     * 마지막 문장이 중요하다 — 좁은 범위에서 결과가 0건일 때 억지로 지어내는 것을 막는다.
-     */
-    private String modePrompt(ChatbotMode mode) {
-        if (mode != ChatbotMode.MAP) {
-            return "";
-        }
-        return """
-                지금은 지도 기반 추천 모드입니다. 사용자가 보고 있는 지도 범위 안의 장소만 추천하세요.
-                그 범위 밖 장소나 학습 지식으로 아는 장소를 끼워넣지 마세요.
-                범위 안에 마땅한 결과가 없으면 없다고 알리고 지도를 옮기거나 넓혀 보라고 안내하세요.
-                """;
     }
 
     /**

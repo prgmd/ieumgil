@@ -12,6 +12,10 @@ import com.ssafy.ieumgil.domain.chatbot.tool.WalkingRouteTool;
 import com.ssafy.ieumgil.domain.festival.RegionCode;
 import com.ssafy.ieumgil.domain.festival.entity.Festival;
 import com.ssafy.ieumgil.domain.festival.service.FestivalQueryService;
+import com.ssafy.ieumgil.domain.chatbot.ChatbotMode;
+import com.ssafy.ieumgil.domain.chatbot.service.ChatbotPrompt;
+import com.ssafy.ieumgil.domain.chatbot.service.TripContextBuilder;
+import com.ssafy.ieumgil.domain.project.entity.Project;
 import com.ssafy.ieumgil.domain.place.dto.PlaceResDTO;
 import com.ssafy.ieumgil.domain.place.service.PlaceQueryService;
 import com.ssafy.ieumgil.domain.transit.dto.TransitScheduleResDTO;
@@ -67,19 +71,6 @@ import static org.mockito.Mockito.when;
  */
 @Tag("live")
 class ChatbotToolCallingRegressionTest {
-
-	private static final String SYSTEM_PROMPT = """
-			당신은 '이음길' 여행 일정 플래너 앱의 챗봇 캐릭터 '이음이'입니다.
-			사용자가 여행 일정을 세우도록 돕는 친근한 도우미로, 장소·맛집·볼거리·이동·축제 등
-			여행 전반의 질문을 폭넓게 도와줍니다. 특정 기능에만 자신을 한정하지 마세요.
-			답할 수 있는 질문에는 사과하거나 되묻기부터 하지 말고, 먼저 도움이 되는 답을 준 뒤
-			필요하면 구체화를 위한 질문을 덧붙이세요.
-			도구(검색·경로·시간표 등)가 준 정보만 사용하고, 그 밖의 사실·날짜·기간을 지어내거나
-			넘겨짚어 부풀리지 마세요. 검색 결과가 비었거나 빈약하면 억지로 추천을 만들지 말고
-			솔직히 알린 뒤 더 구체적인 조건을 물어보세요.
-			날씨·환율·실시간 정보처럼 확인할 수 없는 것은 모른다고 말하고 대안을 안내하세요.
-			요청이 목적지·기간 등 핵심 정보 없이 지나치게 모호할 때만 필요한 정보를 되물으세요.
-			답변은 핵심만 간결하게 전하고, 불필요하게 길게 나열하지 마세요.""";
 
 	private static final String DESTINATION = "부산";
 	private static final LocalDate TRIP_START = LocalDate.of(2026, 10, 1);
@@ -208,7 +199,12 @@ class ChatbotToolCallingRegressionTest {
 		ToolMocks mocks = cannedMocks();
 		Object[] tools = buildFullToolSet(mocks);
 
-		Prompt prompt = new Prompt(List.of(new SystemMessage(SYSTEM_PROMPT), new UserMessage(userText)));
+		// 프로덕션과 같은 프롬프트를 쓴다. 예전엔 이 파일이 프롬프트를 복사해 들고 있어서
+		// 프로덕션 프롬프트를 바꿔도 이 회귀 테스트가 영향을 검증하지 못했다.
+		String systemPrompt = ChatbotPrompt.SYSTEM
+				+ ChatbotPrompt.modeTail(ChatbotMode.GENERAL)
+				+ TripContextBuilder.build(regressionProject(), 4);
+		Prompt prompt = new Prompt(List.of(new SystemMessage(systemPrompt), new UserMessage(userText)));
 		ChatClient.builder(buildGmsChatModel(apiKey)).build()
 				.prompt(prompt)
 				.tools(tools)
@@ -216,6 +212,16 @@ class ChatbotToolCallingRegressionTest {
 				.content();
 
 		return mocks;
+	}
+
+	/** 실제 서비스가 주입하는 것과 같은 여행 메타데이터를 만든다 */
+	private Project regressionProject() {
+		return Project.builder()
+				.destination(DESTINATION)
+				.startDate(TRIP_START)
+				.endDate(TRIP_END)
+				.budgetHeadcount(4)
+				.build();
 	}
 
 	/** 모든 다운스트림이 유효한 canned 결과를 반환하도록 스텁 — tool이 실 API 없이 완결되게 한다. */
