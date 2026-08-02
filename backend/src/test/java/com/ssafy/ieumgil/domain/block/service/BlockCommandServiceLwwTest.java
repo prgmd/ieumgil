@@ -1,6 +1,7 @@
 package com.ssafy.ieumgil.domain.block.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.ssafy.ieumgil.domain.block.converter.BlockConverter;
 import com.ssafy.ieumgil.domain.block.dto.BlockReqDTO;
 import com.ssafy.ieumgil.domain.block.dto.BlockResDTO;
 import com.ssafy.ieumgil.domain.block.entity.Block;
@@ -162,10 +163,24 @@ class BlockCommandServiceLwwTest {
         BlockReqDTO.Create request = new BlockReqDTO.Create(
                 BlockCategory.SPOT, "성산일출봉", null, null, null, null,
                 null, null, null, null, null, null, null, null, null,
-                BlockSource.MANUAL, null);
+                BlockSource.MANUAL, null, null);
 
         assertThatThrownBy(() -> service.createBlock(1L, 1L, null, request))
                 .isInstanceOf(CustomException.class)
                 .extracting("code").isEqualTo(BlockErrorCode.COORDINATE_REQUIRED);
+    }
+
+    @Test
+    @DisplayName("생성 요청의 detail이 저장된다 — 챗봇 축제 후보의 개최 기간처럼 생성 시점에 아는 정보를 담는다")
+    void createPersistsDetail() {
+        BlockReqDTO.Create request = new BlockReqDTO.Create(
+                BlockCategory.SPOT, "부산 불꽃축제", null, null,
+                new java.math.BigDecimal("35.15"), new java.math.BigDecimal("129.11"),
+                null, null, null, null, null, null, null, null, null,
+                BlockSource.BOT, null, "개최 기간: 2026-10-04 ~ 2026-10-14");
+
+        Block block = BlockConverter.toBlock(null, null, "a0", request);
+
+        assertThat(block.getDetail()).isEqualTo("개최 기간: 2026-10-04 ~ 2026-10-14");
     }
 }

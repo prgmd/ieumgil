@@ -77,7 +77,11 @@ public class BlockReqDTO {
             BlockSource source,
 
             @Schema(description = "교통 블록 전용 메타")
-            Map<String, Object> transportMeta
+            Map<String, Object> transportMeta,
+
+            @Schema(description = "세부 내용. 생성 시점에 아는 정보를 담는다", example = "개최 기간: 2026-10-04 ~ 2026-10-14")
+            @Size(max = 500, message = "세부 내용은 500자 이하여야 합니다.")
+            String detail
     ) {
     }
 

@@ -7,6 +7,7 @@ import com.ssafy.ieumgil.domain.chatbot.exception.ChatbotException;
 import com.ssafy.ieumgil.domain.chatbot.repository.ChatHistoryStore;
 import com.ssafy.ieumgil.domain.chatbot.repository.ChatTurn;
 import com.ssafy.ieumgil.domain.chatbot.tool.BusScheduleTool;
+import com.ssafy.ieumgil.domain.chatbot.tool.CandidateCollector;
 import com.ssafy.ieumgil.domain.chatbot.tool.FestivalRecommendationTool;
 import com.ssafy.ieumgil.domain.chatbot.tool.FlightScheduleTool;
 import com.ssafy.ieumgil.domain.chatbot.tool.KakaoPlaceCoordinateResolver;
@@ -79,8 +80,9 @@ public class ChatbotCommandServiceImpl implements ChatbotCommandService {
         }
         messages.add(new UserMessage(request.message()));
 
-        Optional<FestivalRecommendationTool> festivalTool = resolveFestivalTool(project);
-        List<Object> kakaoTools = resolveKakaoTools(project);
+        CandidateCollector candidateCollector = new CandidateCollector();
+        Optional<FestivalRecommendationTool> festivalTool = resolveFestivalTool(project, candidateCollector);
+        List<Object> kakaoTools = resolveKakaoTools(project, candidateCollector);
         String reply = callGms(messages, festivalTool, kakaoTools);
 
         chatHistoryStore.appendExchange(
@@ -92,6 +94,7 @@ public class ChatbotCommandServiceImpl implements ChatbotCommandService {
 
         return ChatbotResDTO.MessageResult.builder()
                 .reply(reply)
+                .candidates(candidateCollector.candidates())
                 .build();
     }
 
@@ -120,24 +123,26 @@ public class ChatbotCommandServiceImpl implements ChatbotCommandService {
     }
 
     /** 프로젝트 목적지·기간이 지역코드로 해석 가능할 때만 축제 추천 툴을 만든다. 실패해도 예외 없이 빈 Optional. */
-    Optional<FestivalRecommendationTool> resolveFestivalTool(Optional<Project> loadedProject) {
+    Optional<FestivalRecommendationTool> resolveFestivalTool(Optional<Project> loadedProject,
+                                                            CandidateCollector candidateCollector) {
         return loadedProject
                 .filter(project -> project.getStartDate() != null && project.getEndDate() != null)
                 .flatMap(project -> RegionCode.findByName(project.getDestination())
                         .map(regionCode -> new FestivalRecommendationTool(
-                                regionCode, project.getStartDate(), project.getEndDate(), festivalQueryService
+                                regionCode, project.getStartDate(), project.getEndDate(),
+                                festivalQueryService, candidateCollector
                         )));
     }
 
     /** 프로젝트 목적지가 있을 때만 카카오 tool 3개(장소검색/도보/택시)를 만든다. 목적지 없으면 빈 리스트. */
-    List<Object> resolveKakaoTools(Optional<Project> loadedProject) {
+    List<Object> resolveKakaoTools(Optional<Project> loadedProject, CandidateCollector candidateCollector) {
         return loadedProject
                 .map(Project::getDestination)
                 .filter(destination -> destination != null && !destination.isBlank())
                 .map(destination -> {
                     KakaoPlaceCoordinateResolver resolver = new KakaoPlaceCoordinateResolver(placeQueryService);
                     return List.<Object>of(
-                            new KakaoPlaceSearchTool(destination, placeQueryService),
+                            new KakaoPlaceSearchTool(destination, placeQueryService, candidateCollector),
                             new WalkingRouteTool(destination, placeQueryService, resolver),
                             new TaxiRouteTool(destination, placeQueryService, resolver)
                     );

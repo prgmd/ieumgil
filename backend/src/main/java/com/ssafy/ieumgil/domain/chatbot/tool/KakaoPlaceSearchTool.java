@@ -1,5 +1,6 @@
 package com.ssafy.ieumgil.domain.chatbot.tool;
 
+import com.ssafy.ieumgil.domain.place.dto.PlaceResDTO;
 import com.ssafy.ieumgil.domain.place.service.PlaceQueryService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.tool.annotation.Tool;
@@ -11,10 +12,13 @@ public class KakaoPlaceSearchTool {
 
     private final String destination;
     private final PlaceQueryService placeQueryService;
+    private final CandidateCollector candidateCollector;
 
-    public KakaoPlaceSearchTool(String destination, PlaceQueryService placeQueryService) {
+    public KakaoPlaceSearchTool(String destination, PlaceQueryService placeQueryService,
+                                CandidateCollector candidateCollector) {
         this.destination = destination;
         this.placeQueryService = placeQueryService;
+        this.candidateCollector = candidateCollector;
     }
 
     @Tool(description = """
@@ -25,7 +29,10 @@ public class KakaoPlaceSearchTool {
     public List<PlaceSearchSummary> searchPlaces(String keyword) {
         try {
             String query = destination + " " + keyword;
-            return placeQueryService.searchPlaces(query, null, null).stream()
+            List<PlaceResDTO.Place> places = placeQueryService.searchPlaces(query, null, null);
+            // 모델에는 좌표를 넘기지 않으므로(요약만), 블록 생성용 원본은 수집기가 따로 보관한다
+            places.forEach(candidateCollector::addPlace);
+            return places.stream()
                     .map(PlaceSearchSummary::from)
                     .toList();
         } catch (RuntimeException e) {

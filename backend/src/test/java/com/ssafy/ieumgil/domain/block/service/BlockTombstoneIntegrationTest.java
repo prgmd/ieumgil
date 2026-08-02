@@ -41,7 +41,7 @@ class BlockTombstoneIntegrationTest extends IntegrationTestSupport {
         blockId = blockCommandService.createBlock(user.getId(), project.getId(), null,
                 new BlockReqDTO.Create(BlockCategory.ETC, "삭제 대상", null, "a0", null, null,
                         null, null, null, null, null, null, null, null, null,
-                        BlockSource.MANUAL, null))
+                        BlockSource.MANUAL, null, null))
                 .blockId();
     }
 

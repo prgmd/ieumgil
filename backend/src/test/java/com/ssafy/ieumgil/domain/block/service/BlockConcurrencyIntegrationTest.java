@@ -45,7 +45,7 @@ class BlockConcurrencyIntegrationTest extends IntegrationTestSupport {
         long blockId = blockCommandService.createBlock(user.getId(), project.getId(), null,
                 new BlockReqDTO.Create(BlockCategory.ETC, "동시성 대상", 1, "a0", null, null,
                         null, null, null, null, null, null, null, null, null,
-                        BlockSource.MANUAL, null))
+                        BlockSource.MANUAL, null, null))
                 .blockId();
 
         Map<String, Object> changes = Map.of(

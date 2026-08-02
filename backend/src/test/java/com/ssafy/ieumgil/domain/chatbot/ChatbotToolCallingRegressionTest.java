@@ -5,6 +5,7 @@ import com.ssafy.ieumgil.domain.chatbot.tool.FlightScheduleTool;
 import com.ssafy.ieumgil.domain.chatbot.tool.KakaoPlaceCoordinateResolver;
 import com.ssafy.ieumgil.domain.chatbot.tool.KakaoPlaceSearchTool;
 import com.ssafy.ieumgil.domain.chatbot.tool.BusScheduleTool;
+import com.ssafy.ieumgil.domain.chatbot.tool.CandidateCollector;
 import com.ssafy.ieumgil.domain.chatbot.tool.TaxiRouteTool;
 import com.ssafy.ieumgil.domain.chatbot.tool.TrainScheduleTool;
 import com.ssafy.ieumgil.domain.chatbot.tool.WalkingRouteTool;
@@ -270,14 +271,14 @@ class ChatbotToolCallingRegressionTest {
 	private Object[] buildFullToolSet(ToolMocks mocks) {
 		KakaoPlaceCoordinateResolver resolver = new KakaoPlaceCoordinateResolver(mocks.placeQueryService);
 		return new Object[]{
-				new KakaoPlaceSearchTool(DESTINATION, mocks.placeQueryService),
+				new KakaoPlaceSearchTool(DESTINATION, mocks.placeQueryService, new CandidateCollector()),
 				new WalkingRouteTool(DESTINATION, mocks.placeQueryService, resolver),
 				new TaxiRouteTool(DESTINATION, mocks.placeQueryService, resolver),
 				new TrainScheduleTool(mocks.trainScheduleProvider),
 				new BusScheduleTool(mocks.busScheduleProvider),
 				new FlightScheduleTool(mocks.flightScheduleProvider),
 				new FestivalRecommendationTool(
-						RegionCode.findByName(DESTINATION).orElseThrow(), TRIP_START, TRIP_END, mocks.festivalQueryService)
+						RegionCode.findByName(DESTINATION).orElseThrow(), TRIP_START, TRIP_END, mocks.festivalQueryService, new CandidateCollector())
 		};
 	}
 

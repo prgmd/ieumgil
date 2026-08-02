@@ -3,6 +3,7 @@ package com.ssafy.ieumgil.domain.chatbot.tool;
 import com.ssafy.ieumgil.domain.festival.RegionCode;
 import com.ssafy.ieumgil.domain.festival.entity.Festival;
 import com.ssafy.ieumgil.domain.festival.service.FestivalQueryService;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
@@ -40,8 +41,7 @@ class FestivalRecommendationToolTest {
                 .thenReturn(List.of(festival));
 
         FestivalRecommendationTool tool = new FestivalRecommendationTool(
-                RegionCode.JEJU, start, end, festivalQueryService
-        );
+                RegionCode.JEJU, start, end, festivalQueryService, new CandidateCollector());
 
         FestivalRecommendationResult result = tool.findFestivalsForCurrentTrip();
 
@@ -80,8 +80,7 @@ class FestivalRecommendationToolTest {
                 .thenReturn(List.of());
 
         FestivalRecommendationTool tool = new FestivalRecommendationTool(
-                RegionCode.SEOUL, start, end, festivalQueryService
-        );
+                RegionCode.SEOUL, start, end, festivalQueryService, new CandidateCollector());
 
         assertThat(tool.findFestivalsForCurrentTrip().festivals()).isEmpty();
     }
@@ -94,8 +93,7 @@ class FestivalRecommendationToolTest {
                 .thenThrow(new RuntimeException("db down"));
 
         FestivalRecommendationTool tool = new FestivalRecommendationTool(
-                RegionCode.SEOUL, start, end, festivalQueryService
-        );
+                RegionCode.SEOUL, start, end, festivalQueryService, new CandidateCollector());
 
         FestivalRecommendationResult result = tool.findFestivalsForCurrentTrip();
 
@@ -125,13 +123,34 @@ class FestivalRecommendationToolTest {
                 .thenReturn(festivals);
 
         FestivalRecommendationTool tool = new FestivalRecommendationTool(
-                RegionCode.JEJU, start, end, festivalQueryService
-        );
+                RegionCode.JEJU, start, end, festivalQueryService, new CandidateCollector());
 
         List<FestivalSummary> result = tool.findFestivalsForCurrentTrip().festivals();
 
         assertThat(result).hasSize(10);
         assertThat(result).isSortedAccordingTo((a, b) -> a.eventStartDate().compareTo(b.eventStartDate()));
         assertThat(result.get(0).eventStartDate()).isEqualTo(start.plusDays(1).toString());
+    }
+
+    @Test
+    @DisplayName("조회된 축제가 수집기에 담긴다 — 응답 candidates[]의 원천이다")
+    void festivalsAreCollectedAsCandidates() {
+        LocalDate start = LocalDate.of(2026, 8, 10);
+        LocalDate end = LocalDate.of(2026, 8, 13);
+        Festival festival = Festival.builder()
+                .contentId("555").title("제주 불빛축제").category("EV01")
+                .lDongRegnCd("50").addr("제주 제주시")
+                .lat(33.5).lng(126.5)
+                .eventStartDate(start).eventEndDate(end)
+                .build();
+        when(festivalQueryService.findByRegionAndDateRange("50", start, end)).thenReturn(List.of(festival));
+        CandidateCollector collector = new CandidateCollector();
+        FestivalRecommendationTool tool = new FestivalRecommendationTool(
+                RegionCode.JEJU, start, end, festivalQueryService, collector);
+
+        tool.findFestivalsForCurrentTrip();
+
+        assertThat(collector.candidates()).hasSize(1);
+        assertThat(collector.candidates().get(0).placeId()).isEqualTo("555");
     }
 }

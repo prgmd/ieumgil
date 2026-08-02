@@ -46,7 +46,7 @@ class OpPipelineIntegrationTest extends IntegrationTestSupport {
         return blockCommandService.createBlock(user.getId(), project.getId(), null,
                 new BlockReqDTO.Create(BlockCategory.ETC, name, 1, null, null, null,
                         null, null, null, null, null, null, null, null, null,
-                        BlockSource.MANUAL, null))
+                        BlockSource.MANUAL, null, null))
                 .seq();
     }
 
@@ -133,7 +133,7 @@ class OpPipelineIntegrationTest extends IntegrationTestSupport {
         long blockId = blockCommandService.createBlock(user.getId(), project.getId(), null,
                 new BlockReqDTO.Create(BlockCategory.ETC, "이동 대상", 1, "a0", null, null,
                         null, null, null, null, null, null, null, null, null,
-                        BlockSource.MANUAL, null))
+                        BlockSource.MANUAL, null, null))
                 .blockId();
 
         // 배경: JSONB 스냅샷 딥카피가 Long→Integer로 되살아나 INSERT 직후 매번

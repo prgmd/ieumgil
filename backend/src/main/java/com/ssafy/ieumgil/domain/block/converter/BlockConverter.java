@@ -26,7 +26,7 @@ public class BlockConverter {
                 .name(request.name())
                 .startTime(request.startTime())
                 .endTime(request.endTime())
-                .detail(null)
+                .detail(request.detail())
                 .lat(request.lat())
                 .lng(request.lng())
                 .placeId(request.placeId())

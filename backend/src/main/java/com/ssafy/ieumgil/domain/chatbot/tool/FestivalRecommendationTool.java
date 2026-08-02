@@ -17,13 +17,16 @@ public class FestivalRecommendationTool {
     private final LocalDate tripStartDate;
     private final LocalDate tripEndDate;
     private final FestivalQueryService festivalQueryService;
+    private final CandidateCollector candidateCollector;
 
     public FestivalRecommendationTool(RegionCode regionCode, LocalDate tripStartDate, LocalDate tripEndDate,
-                                       FestivalQueryService festivalQueryService) {
+                                       FestivalQueryService festivalQueryService,
+                                       CandidateCollector candidateCollector) {
         this.regionCode = regionCode;
         this.tripStartDate = tripStartDate;
         this.tripEndDate = tripEndDate;
         this.festivalQueryService = festivalQueryService;
+        this.candidateCollector = candidateCollector;
     }
 
     @Tool(description = """
@@ -35,11 +38,15 @@ public class FestivalRecommendationTool {
             """)
     public FestivalRecommendationResult findFestivalsForCurrentTrip() {
         try {
-            List<FestivalSummary> festivals = festivalQueryService
+            List<Festival> found = festivalQueryService
                     .findByRegionAndDateRange(regionCode.code(), tripStartDate, tripEndDate)
                     .stream()
                     .sorted(Comparator.comparing(Festival::getEventStartDate))
                     .limit(10)
+                    .toList();
+            // 모델에는 좌표를 넘기지 않으므로(요약만), 블록 생성용 원본은 수집기가 따로 보관한다
+            found.forEach(candidateCollector::addFestival);
+            List<FestivalSummary> festivals = found.stream()
                     .map(f -> FestivalSummary.from(f, tripStartDate, tripEndDate))
                     .toList();
             return new FestivalRecommendationResult(regionCode.regionName(), festivals);

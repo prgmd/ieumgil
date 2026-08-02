@@ -44,7 +44,7 @@ class ChatbotControllerTest {
 
     @Test
     void sendMessageReturnsOkWithReply() throws Exception {
-        when(chatbotCommandService.sendMessage(eq(1L), any(), any())).thenReturn(new ChatbotResDTO.MessageResult("안녕하세요"));
+        when(chatbotCommandService.sendMessage(eq(1L), any(), any())).thenReturn(new ChatbotResDTO.MessageResult("안녕하세요", List.of()));
 
         mockMvc.perform(post("/api/projects/1/chatbot/messages")
                         .with(authentication(memberAuthentication(1L)))

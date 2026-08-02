@@ -1,5 +1,7 @@
 package com.ssafy.ieumgil.domain.chatbot.controller;
 
+import java.util.List;
+
 import com.ssafy.ieumgil.domain.chatbot.dto.ChatbotResDTO;
 import com.ssafy.ieumgil.domain.chatbot.service.ChatbotCommandService;
 import com.ssafy.ieumgil.domain.project.entity.Project;
@@ -91,7 +93,7 @@ class ChatbotAuthorizationIntegrationTest extends IntegrationTestSupport {
     @DisplayName("멤버는 정상적으로 챗봇을 쓸 수 있다 — 인가가 과하게 막지 않는지")
     void memberCanSendMessage() throws Exception {
         when(chatbotCommandService.sendMessage(eq(projectId), eq(member.getId()), any()))
-                .thenReturn(new ChatbotResDTO.MessageResult("안녕하세요"));
+                .thenReturn(new ChatbotResDTO.MessageResult("안녕하세요", List.of()));
 
         mockMvc.perform(post("/api/projects/{projectId}/chatbot/messages", projectId)
                         .header("Authorization", bearer(member))
