@@ -31,6 +31,7 @@ import { generateKeyBetween } from "fractional-indexing";
 import { AppBar } from "../My/shared/ui/AppBar";
 import { useDashboard } from "../../features/dashboard/hooks/useDashboard";
 import { useProjectOps } from "../../features/dashboard/realtime/useProjectOps";
+import { useVoiceChat } from "../../features/dashboard/voice/useVoiceChat";
 import { createOpSequencer } from "../../features/dashboard/realtime/opSequencer";
 import * as blockApi from "../../features/dashboard/api/dashboardApi";
 import { getClientId } from "../../global/api/clientId";
@@ -644,11 +645,17 @@ export function DashboardPage() {
     pageCursorHandlerRef.current = fn;
   }, []);
   const applyCursorRef = useRef(() => {});
+  // 보이스 시그널도 ref 우회 — 훅(useVoiceChat)이 아래에서 핸들러를 등록한다
+  const voiceSignalRef = useRef(() => {});
+  const registerVoiceSignalHandler = useCallback((fn) => {
+    voiceSignalRef.current = fn;
+  }, []);
 
-  const { sendCursor } = useProjectOps(projectId, {
+  const { sendCursor, sendVoiceSignal } = useProjectOps(projectId, {
     onOp: (op) => sequencerRef.current?.push(op),
     onPresence: (msg) => applyPresenceRef.current(msg),
     onCursor: (msg) => applyCursorRef.current(msg),
+    onVoiceSignal: (msg) => voiceSignalRef.current(msg),
   });
 
   // 상단바(개인 페이지 › 그룹명 › 프로젝트명)의 그룹명·멤버 아바타는 그룹 상세에서,
@@ -742,6 +749,14 @@ export function DashboardPage() {
   };
   useEffect(() => {
     applyPresenceRef.current = applyPresenceMessage;
+  });
+
+  // ── 보이스 (풀 메시 P2P) — 대시보드 입장 = 연결, 로스터 = presence ──
+  const voice = useVoiceChat({
+    myId: currentUser?.id,
+    onlineIds,
+    sendVoiceSignal,
+    registerSignalHandler: registerVoiceSignalHandler,
   });
 
   // ── 커서 메시지 라우팅 — 위치는 두 레이어로, dayNo 는 viewingDays 로 ──
@@ -3124,6 +3139,49 @@ export function DashboardPage() {
           })()}
         </div>
       )}
+
+      {/* 보이스 위젯 — 화면 하단 중앙 고정(스크롤·모드 무관). 입장하면 자동
+          연결(권한 거부 시 듣기 전용)이고, 버튼은 송신(마이크)·수신(스피커)만
+          끄고 켠다 — 연결 자체는 대시보드를 떠날 때까지 유지된다 */}
+      <div className="voice-dock">
+        <button
+          type="button"
+          className={`voice-mic ${voice.micOn && !voice.listenOnly ? "on" : "off"}`}
+          onClick={voice.toggleMic}
+          disabled={voice.listenOnly}
+          title={
+            voice.listenOnly
+              ? "마이크 권한이 거부되어 듣기만 가능해요"
+              : voice.micOn
+                ? "마이크 끄기"
+                : "마이크 켜기"
+          }
+        >
+          {voice.listenOnly ? "🎧" : voice.micOn ? "🎤" : "🔇"}
+        </button>
+        {/* 전체 음소거 ↔ 전체 듣기 — 상대 소리만 끈다(내 목소리는 계속 나감) */}
+        <button
+          type="button"
+          className={`voice-mic ${voice.speakerOn ? "on" : "off"}`}
+          onClick={voice.toggleSpeaker}
+          title={
+            voice.speakerOn
+              ? "전체 음소거 — 모두의 소리 끄기"
+              : "전체 듣기 — 다시 듣기"
+          }
+        >
+          {voice.speakerOn ? "🔊" : "🔈"}
+        </button>
+        <span className="voice-status">
+          {!voice.joined
+            ? "음성 연결 중..."
+            : voice.listenOnly
+              ? `듣기 전용 · ${voice.connectedCount}명`
+              : voice.connectedCount > 0
+                ? `음성 연결됨 · ${voice.connectedCount}명`
+                : "혼자 있어요"}
+        </span>
+      </div>
 
       {viewMode === "edit" && <ChatbotWidget />}
     </>

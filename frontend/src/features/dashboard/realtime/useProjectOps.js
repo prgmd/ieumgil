@@ -31,18 +31,28 @@ import { getClientId } from "../../../global/api/clientId";
  * 서버(RealtimeRelayController)가 actorId 만 붙여 /topic/.../cursor 로 릴레이한다.
  * DB 미저장·seq 없음. 자기 커서 스킵은 수신 측이 actorId 로 판단한다(clientId 아님).
  *
+ * 보이스 시그널링(WebRTC)도 같은 연결을 쓴다 — SEND /app/project/{id}/voice/signal
+ * 에 { type, targetMemberId, payload } 를 보내면 서버(RealtimeRelayController)가
+ * fromMemberId·projectId 를 붙여 대상 멤버의 /user/queue/voice 로만 중계한다.
+ * 개인 큐는 Spring 이 Principal 기준으로 라우팅하므로 남의 시그널을 엿볼 수 없다.
+ *
  * @param {number} projectId
  * @param {{
  *   onOp?: (op: object, meta: { own: boolean }) => void,
  *   onPresence?: (msg: object) => void,
  *   onCursor?: (msg: { actorId: number, x: number, y: number, dayNo: number|null }) => void,
+ *   onVoiceSignal?: (msg: { type: string, fromMemberId: number, payload: object }) => void,
  * }} [options]
  * @returns {{
  *   status: "connecting" | "connected" | "disconnected",
  *   sendCursor: (payload: { x?: number, y?: number, dayNo: number|null }) => void,
+ *   sendVoiceSignal: (targetMemberId: number, type: string, payload?: object) => void,
  * }}
  */
-export function useProjectOps(projectId, { onOp, onPresence, onCursor } = {}) {
+export function useProjectOps(
+  projectId,
+  { onOp, onPresence, onCursor, onVoiceSignal } = {},
+) {
   const isValidId = Number.isInteger(projectId);
   const [status, setStatus] = useState("connecting");
   const clientRef = useRef(null);
@@ -51,10 +61,12 @@ export function useProjectOps(projectId, { onOp, onPresence, onCursor } = {}) {
   const onOpRef = useRef(onOp);
   const onPresenceRef = useRef(onPresence);
   const onCursorRef = useRef(onCursor);
+  const onVoiceSignalRef = useRef(onVoiceSignal);
   useEffect(() => {
     onOpRef.current = onOp;
     onPresenceRef.current = onPresence;
     onCursorRef.current = onCursor;
+    onVoiceSignalRef.current = onVoiceSignal;
   });
 
   /**
@@ -68,6 +80,22 @@ export function useProjectOps(projectId, { onOp, onPresence, onCursor } = {}) {
       client.publish({
         destination: `/app/project/${projectId}/cursor`,
         body: JSON.stringify(payload),
+      });
+    },
+    [projectId],
+  );
+
+  /**
+   * WebRTC 시그널 발행 — 서버가 targetMemberId 의 개인 큐로만 중계한다.
+   * 미연결이면 버린다 — 유실은 보이스 훅의 주기 재시도(재-OFFER)가 흡수한다.
+   */
+  const sendVoiceSignal = useCallback(
+    (targetMemberId, type, payload) => {
+      const client = clientRef.current;
+      if (!client?.connected) return;
+      client.publish({
+        destination: `/app/project/${projectId}/voice/signal`,
+        body: JSON.stringify({ type, targetMemberId, payload }),
       });
     },
     [projectId],
@@ -89,6 +117,12 @@ export function useProjectOps(projectId, { onOp, onPresence, onCursor } = {}) {
       },
       onConnect: () => {
         setStatus("connected");
+        // 보이스 개인 큐를 "메인 토픽보다 먼저" 구독한다 — 내 온라인 presence 는
+        // 메인 토픽 구독 순간 방송되고, 그걸 본 기존 멤버가 즉시 OFFER 를 보낸다.
+        // 큐 구독이 늦으면 그 첫 OFFER 가 유실된다(Simple Broker 는 저장 안 함).
+        client.subscribe(`/user/queue/voice`, (message) => {
+          onVoiceSignalRef.current?.(JSON.parse(message.body));
+        });
         client.subscribe(`/topic/project/${projectId}`, (message) => {
           const op = JSON.parse(message.body);
           const own = op.clientId === getClientId();
@@ -127,5 +161,5 @@ export function useProjectOps(projectId, { onOp, onPresence, onCursor } = {}) {
     };
   }, [projectId, isValidId]);
 
-  return { status, sendCursor };
+  return { status, sendCursor, sendVoiceSignal };
 }
