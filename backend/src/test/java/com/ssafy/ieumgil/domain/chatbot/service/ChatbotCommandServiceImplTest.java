@@ -8,6 +8,7 @@ import com.ssafy.ieumgil.domain.chatbot.repository.ChatHistoryStore;
 import com.ssafy.ieumgil.domain.chatbot.repository.ChatTurn;
 import com.ssafy.ieumgil.domain.chatbot.tool.BusScheduleTool;
 import com.ssafy.ieumgil.domain.chatbot.tool.CandidateCollector;
+import com.ssafy.ieumgil.domain.chatbot.tool.RequestScopedBoard;
 import com.ssafy.ieumgil.domain.chatbot.tool.FestivalRecommendationTool;
 import com.ssafy.ieumgil.domain.chatbot.tool.FlightScheduleTool;
 import com.ssafy.ieumgil.domain.chatbot.tool.KakaoPlaceSearchTool;
@@ -72,6 +73,9 @@ class ChatbotCommandServiceImplTest {
     private GroupMemberRepository groupMemberRepository;
 
     @Mock
+    private com.ssafy.ieumgil.domain.block.repository.BlockRepository blockRepository;
+
+    @Mock
     private FestivalQueryService festivalQueryService;
 
     @Mock
@@ -91,7 +95,7 @@ class ChatbotCommandServiceImplTest {
     @BeforeEach
     void setUp() {
         chatbotCommandService = new ChatbotCommandServiceImpl(
-                chatModel, chatHistoryStore, projectRepository, groupMemberRepository,
+                chatModel, chatHistoryStore, projectRepository, groupMemberRepository, blockRepository,
                 festivalQueryService, placeQueryService,
                 new TrainScheduleTool(trainScheduleProvider),
                 new BusScheduleTool(busScheduleProvider),
@@ -206,7 +210,7 @@ class ChatbotCommandServiceImplTest {
                 .containsExactlyInAnyOrder(
                         "searchPlaces", "getWalkingRoute", "getTaxiRoute",
                         "getTrainSchedule", "getBusSchedule", "getFlightSchedule",
-                        "findFestivalsForCurrentTrip"
+                        "findFestivalsForCurrentTrip", "getCurrentPlan"
                 );
     }
 
@@ -297,7 +301,7 @@ class ChatbotCommandServiceImplTest {
     @Test
     void resolvesKakaoToolsWhenDestinationPresent() {
         Project project = Project.builder().destination("제주도").build();
-        List<Object> tools = chatbotCommandService.resolveKakaoTools(Optional.of(project), new CandidateCollector());
+        List<Object> tools = chatbotCommandService.resolveKakaoTools(new RequestScopedBoard(() -> java.util.List.of()), Optional.of(project), new CandidateCollector());
 
         assertThat(tools).hasSize(3);
         assertThat(tools.get(0)).isInstanceOf(KakaoPlaceSearchTool.class);
@@ -308,12 +312,12 @@ class ChatbotCommandServiceImplTest {
     @Test
     void skipsKakaoToolsWhenDestinationBlank() {
         Project project = Project.builder().destination(null).build();
-        assertThat(chatbotCommandService.resolveKakaoTools(Optional.of(project), new CandidateCollector())).isEmpty();
+        assertThat(chatbotCommandService.resolveKakaoTools(new RequestScopedBoard(() -> java.util.List.of()), Optional.of(project), new CandidateCollector())).isEmpty();
     }
 
     @Test
     void skipsKakaoToolsWhenProjectNotFound() {
-        assertThat(chatbotCommandService.resolveKakaoTools(Optional.empty(), new CandidateCollector())).isEmpty();
+        assertThat(chatbotCommandService.resolveKakaoTools(new RequestScopedBoard(() -> java.util.List.of()), Optional.empty(), new CandidateCollector())).isEmpty();
     }
 
     @Test
@@ -331,7 +335,7 @@ class ChatbotCommandServiceImplTest {
         assertThat(options.getToolCallbacks())
                 .extracting(tc -> tc.getToolDefinition().name())
                 .containsExactlyInAnyOrder("searchPlaces", "getWalkingRoute", "getTaxiRoute",
-                        "getTrainSchedule", "getBusSchedule", "getFlightSchedule");
+                        "getTrainSchedule", "getBusSchedule", "getFlightSchedule", "getCurrentPlan");
     }
 
     @Test
@@ -471,5 +475,63 @@ class ChatbotCommandServiceImplTest {
                 .extracting(tc -> tc.getToolDefinition().name())
                 .contains("searchPlaces")
                 .doesNotContain("searchPlacesInView");
+    }
+
+    @Test
+    @DisplayName("GENERAL 모드는 보드 조회 tool을 등록한다 — 일정을 참조하는 질문에 답할 수 있어야 한다")
+    void generalModeRegistersBoardTool() {
+        when(chatHistoryStore.loadHistory(1L, 1L)).thenReturn(List.of());
+        Project project = Project.builder().destination("제주도").budgetHeadcount(4).build();
+        when(projectRepository.findByIdAndDeletedAtIsNull(1L)).thenReturn(Optional.of(project));
+        when(chatModel.call(any(Prompt.class))).thenReturn(canned("답변"));
+
+        chatbotCommandService.sendMessage(1L, 1L, new ChatbotReqDTO.SendMessage("내 일정 어때?", null, null));
+
+        ArgumentCaptor<Prompt> promptCaptor = ArgumentCaptor.forClass(Prompt.class);
+        verify(chatModel).call(promptCaptor.capture());
+        ToolCallingChatOptions options = (ToolCallingChatOptions) promptCaptor.getValue().getOptions();
+        assertThat(options.getToolCallbacks())
+                .extracting(tc -> tc.getToolDefinition().name())
+                .contains("getCurrentPlan");
+    }
+
+    @Test
+    @DisplayName("MAP 모드는 보드 tool을 등록하지 않는다 — 뷰포트 장소검색 하나만 남긴다")
+    void mapModeDoesNotRegisterBoardTool() {
+        when(chatHistoryStore.loadHistory(1L, 1L)).thenReturn(List.of());
+        when(projectRepository.findByIdAndDeletedAtIsNull(1L)).thenReturn(Optional.empty());
+        when(chatModel.call(any(Prompt.class))).thenReturn(canned("답변"));
+
+        chatbotCommandService.sendMessage(
+                1L, 1L, new ChatbotReqDTO.SendMessage("카페", ChatbotMode.MAP, VIEWPORT));
+
+        ArgumentCaptor<Prompt> promptCaptor = ArgumentCaptor.forClass(Prompt.class);
+        verify(chatModel).call(promptCaptor.capture());
+        ToolCallingChatOptions options = (ToolCallingChatOptions) promptCaptor.getValue().getOptions();
+        assertThat(options.getToolCallbacks())
+                .extracting(tc -> tc.getToolDefinition().name())
+                .doesNotContain("getCurrentPlan");
+    }
+
+    @Test
+    @DisplayName("목표 예산이 프롬프트에 주입된다 — 보드에서 지출 합계를 알아도 비교 대상이 없으면 반쪽이다")
+    void targetBudgetIsInjectedIntoPrompt() {
+        when(chatHistoryStore.loadHistory(1L, 1L)).thenReturn(List.of());
+        Project project = Project.builder()
+                .destination("제주도").budgetHeadcount(4).targetBudget(300000)
+                .build();
+        when(projectRepository.findByIdAndDeletedAtIsNull(1L)).thenReturn(Optional.of(project));
+        when(chatModel.call(any(Prompt.class))).thenReturn(canned("답변"));
+
+        chatbotCommandService.sendMessage(1L, 1L, new ChatbotReqDTO.SendMessage("예산 어때?", null, null));
+
+        ArgumentCaptor<Prompt> promptCaptor = ArgumentCaptor.forClass(Prompt.class);
+        verify(chatModel).call(promptCaptor.capture());
+        String systemText = promptCaptor.getValue().getInstructions().stream()
+                .filter(SystemMessage.class::isInstance)
+                .map(Message::getText)
+                .findFirst()
+                .orElseThrow();
+        assertThat(systemText).contains("targetBudget: 300000");
     }
 }

@@ -3,6 +3,7 @@ package com.ssafy.ieumgil.domain.chatbot;
 import com.ssafy.ieumgil.domain.chatbot.service.ChatbotPrompt;
 import com.ssafy.ieumgil.domain.chatbot.service.TripContextBuilder;
 import com.ssafy.ieumgil.domain.chatbot.tool.CandidateCollector;
+import com.ssafy.ieumgil.domain.chatbot.tool.KakaoPlaceCoordinateResolver;
 import com.ssafy.ieumgil.domain.chatbot.tool.KakaoPlaceSearchTool;
 import com.ssafy.ieumgil.domain.place.dto.PlaceResDTO;
 import com.ssafy.ieumgil.domain.place.service.PlaceQueryService;
@@ -94,7 +95,7 @@ class LocalSpecialtyRecommendationLiveTest {
                 .prompt(new Prompt(List.of(
                         new SystemMessage(systemPrompt),
                         new UserMessage("전주에서 꼭 먹어야하는 음식이 뭐야? 그 음식 먹을 수 있는 식당 추천해줘."))))
-                .tools(new KakaoPlaceSearchTool("전주", placeQueryService, collector))
+                .tools(new KakaoPlaceSearchTool("전주", placeQueryService, collector, new KakaoPlaceCoordinateResolver(placeQueryService)))
                 .call()
                 .content();
 

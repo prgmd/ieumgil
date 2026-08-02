@@ -8,12 +8,15 @@ import com.ssafy.ieumgil.domain.chatbot.exception.ChatbotErrorCode;
 import com.ssafy.ieumgil.domain.chatbot.exception.ChatbotException;
 import com.ssafy.ieumgil.domain.chatbot.repository.ChatHistoryStore;
 import com.ssafy.ieumgil.domain.chatbot.repository.ChatTurn;
+import com.ssafy.ieumgil.domain.block.repository.BlockRepository;
+import com.ssafy.ieumgil.domain.chatbot.tool.BoardTool;
 import com.ssafy.ieumgil.domain.chatbot.tool.BusScheduleTool;
 import com.ssafy.ieumgil.domain.chatbot.tool.CandidateCollector;
 import com.ssafy.ieumgil.domain.chatbot.tool.FestivalRecommendationTool;
 import com.ssafy.ieumgil.domain.chatbot.tool.FlightScheduleTool;
 import com.ssafy.ieumgil.domain.chatbot.tool.KakaoPlaceCoordinateResolver;
 import com.ssafy.ieumgil.domain.chatbot.tool.KakaoPlaceSearchTool;
+import com.ssafy.ieumgil.domain.chatbot.tool.RequestScopedBoard;
 import com.ssafy.ieumgil.domain.chatbot.tool.TaxiRouteTool;
 import com.ssafy.ieumgil.domain.chatbot.tool.TrainScheduleTool;
 import com.ssafy.ieumgil.domain.chatbot.tool.WalkingRouteTool;
@@ -45,6 +48,7 @@ public class ChatbotCommandServiceImpl implements ChatbotCommandService {
     private final ChatHistoryStore chatHistoryStore;
     private final ProjectRepository projectRepository;
     private final GroupMemberRepository groupMemberRepository;
+    private final BlockRepository blockRepository;
     private final FestivalQueryService festivalQueryService;
     private final PlaceQueryService placeQueryService;
     private final TrainScheduleTool trainScheduleTool;
@@ -72,7 +76,9 @@ public class ChatbotCommandServiceImpl implements ChatbotCommandService {
         messages.add(new UserMessage(request.message()));
 
         CandidateCollector candidateCollector = new CandidateCollector();
-        String reply = callGms(messages, resolveTools(mode, request, project, candidateCollector));
+        // 보드를 쓰는 곳이 둘(보드 tool·좌표 리졸버)이라 공급자를 하나로 공유해 쿼리를 한 번으로 묶는다
+        RequestScopedBoard board = new RequestScopedBoard(() -> blockRepository.findChain(projectId));
+        String reply = callGms(messages, resolveTools(board, mode, request, project, candidateCollector));
 
         chatHistoryStore.appendExchange(
                 projectId,
@@ -124,14 +130,17 @@ public class ChatbotCommandServiceImpl implements ChatbotCommandService {
     }
 
     /** 프로젝트 목적지가 있을 때만 카카오 tool 3개(장소검색/도보/택시)를 만든다. 목적지 없으면 빈 리스트. */
-    List<Object> resolveKakaoTools(Optional<Project> loadedProject, CandidateCollector candidateCollector) {
+    List<Object> resolveKakaoTools(RequestScopedBoard board, Optional<Project> loadedProject,
+                                   CandidateCollector candidateCollector) {
         return loadedProject
                 .map(Project::getDestination)
                 .filter(destination -> destination != null && !destination.isBlank())
                 .map(destination -> {
-                    KakaoPlaceCoordinateResolver resolver = new KakaoPlaceCoordinateResolver(placeQueryService);
+                    // 보드 우선 좌표 해석 — 지연 조회라 경로 tool이 실제로 불릴 때만 쿼리가 나간다
+                    KakaoPlaceCoordinateResolver resolver =
+                            new KakaoPlaceCoordinateResolver(placeQueryService, board);
                     return List.<Object>of(
-                            new KakaoPlaceSearchTool(destination, placeQueryService, candidateCollector),
+                            new KakaoPlaceSearchTool(destination, placeQueryService, candidateCollector, resolver),
                             new WalkingRouteTool(destination, placeQueryService, resolver),
                             new TaxiRouteTool(destination, placeQueryService, resolver)
                     );
@@ -146,13 +155,16 @@ public class ChatbotCommandServiceImpl implements ChatbotCommandService {
      * "지도에 보이는 범위에서 장소를 고른다"는 흐름과 무관하고, 노출 tool이 적을수록
      * 모델의 선택 정확도가 올라간다.
      */
-    private List<Object> resolveTools(ChatbotMode mode, ChatbotReqDTO.SendMessage request,
+    private List<Object> resolveTools(RequestScopedBoard board, ChatbotMode mode,
+                                      ChatbotReqDTO.SendMessage request,
                                       Optional<Project> project, CandidateCollector candidateCollector) {
         if (mode == ChatbotMode.MAP) {
             return List.of(new ViewportPlaceSearchTool(request.mapContext(), placeQueryService, candidateCollector));
         }
 
-        List<Object> tools = new ArrayList<>(resolveKakaoTools(project, candidateCollector));
+        List<Object> tools = new ArrayList<>(resolveKakaoTools(board, project, candidateCollector));
+        // 보드 조회는 프로젝트가 있을 때만 의미가 있다 — 카카오·축제 tool과 같은 조건부 등록이다
+        project.ifPresent(p -> tools.add(new BoardTool(board)));
         tools.add(trainScheduleTool);
         tools.add(busScheduleTool);
         tools.add(flightScheduleTool);

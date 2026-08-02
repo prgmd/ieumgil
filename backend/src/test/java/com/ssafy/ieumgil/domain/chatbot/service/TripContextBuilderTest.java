@@ -116,4 +116,14 @@ class TripContextBuilderTest {
 
         assertThat(TripContextBuilder.build(project, null)).isEmpty();
     }
+
+    @Test
+    @DisplayName("목표 예산이 있으면 담고, 없으면 줄을 넣지 않는다")
+    void includesTargetBudgetOnlyWhenSet() {
+        Project withBudget = Project.builder().destination("제주").targetBudget(300000).build();
+        Project without = Project.builder().destination("제주").build();
+
+        assertThat(TripContextBuilder.build(withBudget, 4)).contains("targetBudget: 300000");
+        assertThat(TripContextBuilder.build(without, 4)).doesNotContain("targetBudget");
+    }
 }

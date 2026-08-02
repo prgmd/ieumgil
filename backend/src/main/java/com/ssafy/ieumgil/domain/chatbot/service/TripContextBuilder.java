@@ -45,6 +45,11 @@ public final class TripContextBuilder {
             block.append("transport: ").append(toTransportLabel(transportPref)).append('\n');
         }
 
+        Integer targetBudget = project.getTargetBudget();
+        if (targetBudget != null) {
+            block.append("targetBudget: ").append(targetBudget).append('\n');
+        }
+
         List<String> keywords = project.getKeywords();
         if (keywords != null && !keywords.isEmpty()) {
             block.append("keywords: ").append(String.join(", ", keywords)).append('\n');

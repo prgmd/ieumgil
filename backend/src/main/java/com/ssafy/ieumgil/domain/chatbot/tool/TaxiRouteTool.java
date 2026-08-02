@@ -26,6 +26,7 @@ public class TaxiRouteTool {
             The start/end names in the response are the place names that were actually searched and matched, so if a match looks different from what the user said, ask for confirmation in your answer.
             If found is false, no taxi route was found.
             This tool only finds places within the current project's destination (the destination is automatically prepended to the place name) — for intercity/interregional long-distance travel (e.g. "from Seoul to Busan"), use the train/bus/flight schedule tools instead of this one.
+            If it reports that the route was not found, say so plainly. Never estimate the distance, duration, or fare yourself — a straight-line guess is not the travel figure the user asked for.
             """)
     public TaxiRouteResult getTaxiRoute(String startPlaceName, String endPlaceName) {
         try {

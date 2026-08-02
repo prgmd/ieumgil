@@ -277,7 +277,7 @@ class ChatbotToolCallingRegressionTest {
 	private Object[] buildFullToolSet(ToolMocks mocks) {
 		KakaoPlaceCoordinateResolver resolver = new KakaoPlaceCoordinateResolver(mocks.placeQueryService);
 		return new Object[]{
-				new KakaoPlaceSearchTool(DESTINATION, mocks.placeQueryService, new CandidateCollector()),
+				new KakaoPlaceSearchTool(DESTINATION, mocks.placeQueryService, new CandidateCollector(), new KakaoPlaceCoordinateResolver(mocks.placeQueryService)),
 				new WalkingRouteTool(DESTINATION, mocks.placeQueryService, resolver),
 				new TaxiRouteTool(DESTINATION, mocks.placeQueryService, resolver),
 				new TrainScheduleTool(mocks.trainScheduleProvider),
