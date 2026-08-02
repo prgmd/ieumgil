@@ -65,6 +65,7 @@ class BoardToolTest {
 
         BoardSummary summary = tool.getCurrentPlan();
 
+        assertThat(summary.available()).isTrue();
         assertThat(summary.days()).isEmpty();
         assertThat(summary.pool()).isEmpty();
     }
@@ -85,14 +86,25 @@ class BoardToolTest {
     }
 
     @Test
-    @DisplayName("조회가 실패해도 대화는 계속된다 — 빈 결과로 떨어뜨린다")
-    void repositoryFailureDegradesToEmptyBoard() {
+    @DisplayName("조회가 실패해도 대화는 계속된다 — 빈 결과로 떨어뜨리되 available=false로 구분한다")
+    void repositoryFailureDegradesToUnavailableBoard() {
         when(blockRepository.findChain(12L)).thenThrow(new RuntimeException("db down"));
         BoardTool tool = new BoardTool(new RequestScopedBoard(() -> blockRepository.findChain(12L)));
 
         BoardSummary summary = tool.getCurrentPlan();
 
+        // 빈 보드와 같은 모양이면 모델이 "아직 아무것도 없으시네요"라고 단언한다 — 사용자에겐 일정이 사라진 것으로 보인다
+        assertThat(summary.available()).isFalse();
         assertThat(summary.days()).isEmpty();
         assertThat(summary.pool()).isEmpty();
+    }
+
+    @Test
+    @DisplayName("설명이 available=false(조회 실패)와 빈 보드를 구분하도록 지시한다")
+    void descriptionDistinguishesUnavailableFromEmpty() throws NoSuchMethodException {
+        String description = BoardTool.class.getMethod("getCurrentPlan")
+                .getAnnotation(org.springframework.ai.tool.annotation.Tool.class).description();
+
+        assertThat(description).contains("available");
     }
 }

@@ -82,11 +82,15 @@ class FestivalRecommendationToolTest {
         FestivalRecommendationTool tool = new FestivalRecommendationTool(
                 RegionCode.SEOUL, start, end, festivalQueryService, new CandidateCollector());
 
-        assertThat(tool.findFestivalsForCurrentTrip().festivals()).isEmpty();
+        FestivalRecommendationResult result = tool.findFestivalsForCurrentTrip();
+
+        assertThat(result.available()).isTrue();
+        assertThat(result.festivals()).isEmpty();
     }
 
     @Test
-    void returnsEmptyListInsteadOfThrowingWhenQueryFails() {
+    @DisplayName("조회가 실패하면 빈 목록으로 떨어뜨리되 available=false로 구분한다")
+    void returnsUnavailableInsteadOfThrowingWhenQueryFails() {
         LocalDate start = LocalDate.of(2026, 8, 1);
         LocalDate end = LocalDate.of(2026, 8, 3);
         when(festivalQueryService.findByRegionAndDateRange(any(), any(), any()))
@@ -97,8 +101,19 @@ class FestivalRecommendationToolTest {
 
         FestivalRecommendationResult result = tool.findFestivalsForCurrentTrip();
 
+        // "행사가 없다"와 "지금 못 찾는다"가 같은 모양이면 모델이 없다고 단언한다
+        assertThat(result.available()).isFalse();
         assertThat(result.festivals()).isEmpty();
         assertThat(result.regionName()).isEqualTo("서울");
+    }
+
+    @Test
+    @DisplayName("설명이 available=false(조회 실패)와 '행사 없음'을 구분하도록 지시한다")
+    void descriptionDistinguishesUnavailableFromNoFestivals() throws NoSuchMethodException {
+        String description = FestivalRecommendationTool.class.getMethod("findFestivalsForCurrentTrip")
+                .getAnnotation(org.springframework.ai.tool.annotation.Tool.class).description();
+
+        assertThat(description).contains("available");
     }
 
     @Test

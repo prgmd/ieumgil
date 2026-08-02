@@ -18,8 +18,13 @@ import java.util.TreeMap;
  * <p>담지 않는 것: {@code detail}(최대 500자로 토큰만 먹고 대화에 거의 쓰이지 않는다),
  * {@code address}·{@code placeId}(좌표가 있으면 불필요), 사람 정보(마지막 수정자는 컬럼
  * 자체가 없고 작성자는 챗봇에 물을 값어치가 낮다).
+ *
+ * <p>{@code available}은 "지금 보드를 못 읽었다"를 "보드가 비어 있다"와 구분하려고 둔다.
+ * 둘이 같은 모양이면 DB가 잠깐 흔들린 순간 모델이 "아직 아무것도 안 넣으셨네요"라고 단언하고,
+ * 사용자에겐 일정이 사라진 것으로 보인다. route tool의 {@code found}와 같은 취지다.
  */
 public record BoardSummary(
+        boolean available,
         List<DayPlan> days,
         List<BoardBlock> pool
 ) {
@@ -39,6 +44,11 @@ public record BoardSummary(
             Double lat,
             Double lng
     ) {
+    }
+
+    /** 보드를 읽지 못했을 때 — 빈 보드와 같은 모양이 되지 않도록 available=false로 내려간다. */
+    public static BoardSummary unavailable() {
+        return new BoardSummary(false, List.of(), List.of());
     }
 
     /**
@@ -61,7 +71,7 @@ public record BoardSummary(
         List<DayPlan> days = new ArrayList<>();
         byDay.forEach((dayNo, dayBlocks) -> days.add(new DayPlan(dayNo, toBoardBlocks(dayBlocks))));
 
-        return new BoardSummary(List.copyOf(days), toBoardBlocks(poolBlocks));
+        return new BoardSummary(true, List.copyOf(days), toBoardBlocks(poolBlocks));
     }
 
     private static List<BoardBlock> toBoardBlocks(List<Block> blocks) {
