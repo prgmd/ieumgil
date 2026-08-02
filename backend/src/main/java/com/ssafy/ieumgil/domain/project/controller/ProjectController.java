@@ -34,7 +34,7 @@ import java.util.Map;
 /**
  * 프로젝트는 경로가 두 갈래다 —
  * 목록·생성은 그룹 하위(/groups/{groupId}/projects), 수정·삭제는 단독(/projects/{projectId}).
- * 그래서 공통 접두사를 /api/v0까지만 두고 메서드에서 나머지를 적는다.
+ * 그래서 공통 접두사를 /api까지만 두고 메서드에서 나머지를 적는다.
  */
 @RestController
 @Validated
@@ -135,5 +135,17 @@ public class ProjectController {
             @RequestHeader(value = CLIENT_ID_HEADER, required = false) String clientId,
             @Valid @RequestBody ProjectReqDTO.UpdateHeadcount request) {
         return CustomResponse.onSuccess(projectCommandService.changeBudgetHeadcount(userId, projectId, clientId, request));
+    }
+
+    @GroupMember(GroupMember.Source.PROJECT_ID)
+    @PatchMapping("/projects/{projectId}/budget")
+    @Operation(summary = "총 예산 변경", description = "프로젝트 전체 목표 예산을 변경합니다. null을 보내면 예산 미설정으로 초기화됩니다.")
+    public CustomResponse<ProjectResDTO.BudgetChanged> updateBudget(
+            @Parameter(hidden = true) @AuthenticationPrincipal Long userId,
+            @PathVariable Long projectId,
+            @RequestHeader(value = CLIENT_ID_HEADER, required = false) String clientId,
+            @Valid @RequestBody ProjectReqDTO.UpdateBudget request
+    ) {
+        return CustomResponse.onSuccess(projectCommandService.updateBudget(userId, projectId, clientId, request));
     }
 }

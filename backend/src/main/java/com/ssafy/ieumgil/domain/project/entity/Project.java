@@ -120,6 +120,11 @@ public class Project extends BaseTimeEntity {
         this.budgetHeadcount = headcount;
     }
 
+    /** 총 예산 변경. null = "예산 미설정으로 초기화"라는 명시적 의도 */
+    public void updateBudget(Integer budget) {
+        this.targetBudget = budget;
+    }
+
     /** 이름·기간 부분 수정. null인 인자는 건드리지 않는다(PATCH 시맨틱) */
     public void updateInfo(String name, LocalDate startDate, LocalDate endDate) {
         if (name != null) {

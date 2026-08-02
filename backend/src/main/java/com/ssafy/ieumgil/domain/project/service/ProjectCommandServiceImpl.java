@@ -125,6 +125,24 @@ public class ProjectCommandServiceImpl implements ProjectCommandService {
                 .build();
     }
 
+    /** 총 예산 변경. null이면 예산 미설정으로 초기화한다 */
+    @Override
+    public ProjectResDTO.BudgetChanged updateBudget(Long userId, Long projectId, String clientId,
+                                                    ProjectReqDTO.UpdateBudget request) {
+        Project project = getProject(projectId);
+
+        project.updateBudget(request.targetBudget());
+
+        Map<String, Object> payload = new HashMap<>();
+        payload.put("projectId", projectId);
+        payload.put("targetBudget", project.getTargetBudget());   // null 그대로 — 예산 해제 신호
+        opPublisher.publish(projectId, userId, clientId, "TARGET_BUDGET_CHANGED", payload);
+
+        return ProjectResDTO.BudgetChanged.builder()
+                .targetBudget(project.getTargetBudget())
+                .build();
+    }
+
     // ----- 공통 -----
 
     /**

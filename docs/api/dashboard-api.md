@@ -11,7 +11,7 @@
 - **응답 래퍼 `CustomResponse`**: `{ "isSuccess", "code", "message", "result" }`. (인증API.md 참조)
 - **인증 헤더**: 모든 REST 엔드포인트 `Authorization: Bearer {accessToken}` 필요. WS는 CONNECT 헤더로 검증.
 - **멤버십 검증**: 프로젝트가 속한 그룹의 멤버만 접근(REST AOP `@GroupMember` + WS `ChannelInterceptor`). 비멤버는 `403`(REST) / 프레임 거부(WS).
-- **X-Client-Id**: 변경 요청 헤더에 브라우저 탭 UUID를 실어 보내면, 요청자 본인은 브로드캐스트 op에서 clientId로 자기 op를 스킵(낙관적 UI 중복 적용 방지).
+- **X-Client-Id**: 변경 요청 헤더에 브라우저 탭 UUID를 실어 보낸다. 서버는 이 값을 op에 그대로 실어 브로드캐스트하며(수신자 제외 없이 전원 발송), **자기 op를 어떻게 처리할지는 클라이언트가 op 종류별로 판단한다** — 아래 "자기 op 에코 정책" 참조.
 - **범위 구분**: 프로젝트 카드 목록·생성·이름/기간 수정·삭제는 [개인·그룹 페이지API.md](개인·그룹%20페이지API.md) 참조.
 
 ---
@@ -25,6 +25,7 @@
 | GET | `/api/projects/{projectId}` | 대시보드 스냅샷 (최초 로딩·재연결 재로딩) | Yes |
 | GET | `/api/projects/{projectId}/ops?afterSeq={n}` | 유실 op 재전송 (재연결·seq 갭) | Yes |
 | PATCH | `/api/projects/{projectId}/status` | `PLANNING↔DONE` 양방향 전환 | Yes |
+| PATCH | `/api/projects/{projectId}/budget` | 프로젝트 목표 예산(총액) 변경 | Yes |
 | PATCH | `/api/projects/{projectId}/budget-headcount` | 정산 인원(1인당 표시용) 지정/동기화 | Yes |
 
 ### 블록
@@ -122,8 +123,8 @@
 
 | code | HTTP | 상황 |
 |---|---|---|
-| `FORBIDDEN` | 403 | 그룹 멤버가 아님 |
-| `NOT_FOUND` | 404 | 프로젝트 없음/삭제됨 |
+| `GROUP403` | 403 | 그룹 멤버가 아님 |
+| `PROJECT404` | 404 | 프로젝트 없음/삭제됨 |
 
 ---
 
@@ -181,7 +182,34 @@
 
 | code | HTTP | 상황 |
 |---|---|---|
-| `VALIDATION_ERROR` | 400 | status가 PLANNING/DONE 이외 |
+| `COMMON400_1` | 400 | status가 PLANNING/DONE 이외 |
+
+---
+
+### PATCH /api/projects/{projectId}/budget
+
+프로젝트 전체 목표 예산 변경(BGT-02). `TARGET_BUDGET_CHANGED` op 브로드캐스트.
+
+**Request Body:**
+```json
+{ "targetBudget": 100000 }
+```
+
+| 필드 | 타입 | 필수 | 설명 |
+|---|---|---|---|
+| `targetBudget` | int | N | 목표 예산(총액, 0 이상). **null이면 예산 미설정으로 초기화** — 값 누락이 아니라 명시적 의도로 취급한다 |
+
+**Response `200`:**
+```json
+{
+  "isSuccess": true,
+  "code": "COMMON200",
+  "message": "목표 예산이 변경되었습니다.",
+  "result": { "targetBudget": 100000 }
+}
+```
+
+> 블록의 `budget`(실제 지출 항목)과 다른 값이다. 이쪽은 "얼마까지 쓸 것인가"이고, 블록 `budget` 합계가 "얼마를 쓰기로 했는가"다.
 
 ---
 
@@ -212,7 +240,7 @@
 
 ## 상세 명세 — 블록
 
-> 모든 성공 변경은 서버가 seq를 붙여 `/topic/project/{id}`로 브로드캐스트한다. 요청 헤더 `X-Client-Id`로 요청자 본인은 스킵.
+> 모든 성공 변경은 서버가 seq를 붙여 `/topic/project/{id}`로 브로드캐스트한다. 요청자 본인에게도 발송되며, 처리 방식은 "자기 op 에코 정책"을 따른다.
 
 ### POST /api/projects/{projectId}/blocks
 
@@ -272,8 +300,9 @@
 
 | code | HTTP | 상황 |
 |---|---|---|
-| `VALIDATION_ERROR` | 400 | 장소성 카테고리 lat/lng 누락, vehicleFlag를 ETC 외 카테고리에 지정 |
-| `FORBIDDEN` | 403 | 그룹 멤버가 아님 |
+| `BLOCK400` | 400 | 장소성 카테고리 lat/lng 누락 |
+| `BLOCK400_1` | 400 | vehicleFlag를 ETC 외 카테고리에 지정 |
+| `GROUP403` | 403 | 그룹 멤버가 아님 |
 
 ---
 
@@ -338,7 +367,7 @@
 
 | code | HTTP | 상황 |
 |---|---|---|
-| `GONE` | 410 | 이미 삭제된 블록에 대한 지연 op |
+| `BLOCK410` | 410 | 이미 삭제된 블록에 대한 지연 op |
 
 ---
 
@@ -493,8 +522,9 @@ ODsay 열차 시간표(KTX·무궁화 등) → 출발 후보 목록(앞 일정 �
 
 | code | HTTP | 상황 |
 |---|---|---|
-| `VALIDATION_ERROR` | 400 | `message` 공백/2000자 초과, `mode: MAP`인데 `mapContext` 누락 |
-| `AI_SERVER_ERROR` | 500 | LLM 파이프라인 실패 |
+| `COMMON400_1` | 400 | `message` 공백/2000자 초과, `mode: MAP`인데 `mapContext` 누락 |
+| `CHATBOT502` | 502 | GMS/LLM 호출 실패 |
+| `CHATBOT500` | 500 | 대화 이력 저장 실패 |
 
 ---
 
@@ -531,10 +561,25 @@ REST로 변경 요청을 보내면, 서버가 seq를 붙여 STOMP로 전파한�
 ```
 
 **op type 목록:**
-`BLOCK_CREATED` / `BLOCK_FIELD_UPDATED` / `BLOCK_MOVED` / `BLOCK_DELETED` / `PROJECT_UPDATED` / `PROJECT_STATUS_CHANGED` / `PROJECT_DELETED` / `BUDGET_HEADCOUNT_CHANGED` / `MEMBER_JOINED` / `MEMBER_LEFT`
+`BLOCK_CREATED` / `BLOCK_FIELD_UPDATED` / `BLOCK_MOVED` / `BLOCK_DELETED` / `PROJECT_UPDATED` / `PROJECT_STATUS_CHANGED` / `PROJECT_DELETED` / `TARGET_BUDGET_CHANGED` / `BUDGET_HEADCOUNT_CHANGED` / `MEMBER_JOINED` / `MEMBER_LEFT`
 
 - `PROJECT_UPDATED`: 기간 축소 시 `movedToPool: [blockId...]` 포함.
 - `PROJECT_DELETED`: 대시보드를 보던 멤버를 그룹 페이지로 리다이렉트.
 - `MEMBER_LEFT`: 멤버 탈퇴 시 나머지 멤버는 이 op로 멤버 목록·정산 인원 갱신.
 
 **순서 보장**: 서버는 프로젝트 단위 락으로 채번~전송을 직렬화하고, 클라이언트는 수신 seq에 갭이 생기면 `GET /api/projects/{id}/ops?afterSeq`로 메꾼다(이중 방어).
+
+### 자기 op 에코 정책
+
+서버는 op를 **구독자 전원에게** 보낸다 — 요청자 본인을 서버가 걸러내지 않는다. 따라서 자기 `clientId`가 실린 op를 어떻게 처리할지는 클라이언트가 결정하며, **op 종류에 따라 다르다.**
+
+| op | 자기 op 처리 | 이유 |
+|---|---|---|
+| `BLOCK_CREATED` / `BLOCK_DELETED` | **스킵** | 낙관적 UI가 이미 추가·제거를 반영했고, 재적용하면 중복 생성·이중 삭제가 된다 |
+| `BLOCK_MOVED` / `BLOCK_FIELD_UPDATED` | **재적용(에코)** | 서버가 확정한 값으로 덮어써야 한다. 스킵하면 낙관적으로 그린 위치·값이 서버 상태와 어긋난 채 남는다 |
+
+**왜 일괄 스킵이 아닌가**: 처음에는 `clientId`로 자기 op를 전부 스킵하는 설계였으나, 동시 드래그 상황에서 보드가 발산하는 버그가 발생했다. 두 사람이 같은 Day의 블록을 연달아 옮기면 각자 자기 이동은 낙관적 값으로만 남고 서버가 정한 최종 순서를 받지 못해, 두 화면이 서로 다른 순서로 굳는다. 이동·필드 갱신만 에코를 허용해 서버 값으로 수렴시키는 것으로 해결했다.
+
+근거와 재현 경로는 `docs/realtime-sync-policy.md` 참조.
+
+> 낙관적 UI를 쓰는 클라이언트는 이 표를 그대로 구현해야 한다. "자기 op는 무시"라고 단순화하면 위 발산 버그가 재발한다.

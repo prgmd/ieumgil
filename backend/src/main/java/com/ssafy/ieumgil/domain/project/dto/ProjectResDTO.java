@@ -93,4 +93,11 @@ public class ProjectResDTO {
             long lastSeq
     ) {
     }
+
+    /** 총 예산 변경 응답. 예산 미설정으로 초기화하면 targetBudget은 null */
+    @Builder
+    public record BudgetChanged(
+            Integer targetBudget
+    ) {
+    }
 }

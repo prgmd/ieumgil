@@ -14,4 +14,6 @@ public interface ProjectCommandService {
     ProjectResDTO.StatusChanged changeStatus(Long userId, Long projectId, String clientId, ProjectReqDTO.UpdateStatus request);
 
     ProjectResDTO.HeadcountChanged changeBudgetHeadcount(Long userId, Long projectId, String clientId, ProjectReqDTO.UpdateHeadcount request);
+
+    ProjectResDTO.BudgetChanged updateBudget(Long userId, Long projectId, String clientId, ProjectReqDTO.UpdateBudget request);
 }

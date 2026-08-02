@@ -104,6 +104,32 @@ class ProjectBoardIntegrationTest extends IntegrationTestSupport {
     }
 
     @Test
+    @DisplayName("총 예산 변경 — 값이 반영되고, 명시적 null은 예산 미설정으로 초기화되며 op에도 null이 실린다")
+    void updateBudgetAppliesValueAndNullClearsIt() {
+        User user = seedUser();
+        Project project = seedProjectWithDates(user, LocalDate.of(2026, 8, 10), LocalDate.of(2026, 8, 12));
+
+        ProjectResDTO.BudgetChanged changed = projectCommandService.updateBudget(
+                user.getId(), project.getId(), null, new ProjectReqDTO.UpdateBudget(300000));
+        assertThat(changed.targetBudget()).isEqualTo(300000);
+        assertThat(projectRepository.findById(project.getId()).orElseThrow().getTargetBudget()).isEqualTo(300000);
+
+        // null = "예산 미설정으로 초기화" — 이 시맨틱이 바뀌면 여기서 깨진다
+        ProjectResDTO.BudgetChanged cleared = projectCommandService.updateBudget(
+                user.getId(), project.getId(), null, new ProjectReqDTO.UpdateBudget(null));
+        assertThat(cleared.targetBudget()).isNull();
+        assertThat(projectRepository.findById(project.getId()).orElseThrow().getTargetBudget()).isNull();
+
+        List<Map<String, Object>> ops = activityLogRepository.findOpsAfter(project.getId(), 0);
+        Map<String, Object> lastOp = ops.get(ops.size() - 1);
+        assertThat(lastOp.get("type")).isEqualTo("TARGET_BUDGET_CHANGED");
+        @SuppressWarnings("unchecked")
+        Map<String, Object> payload = (Map<String, Object>) lastOp.get("payload");
+        assertThat(payload).containsKey("targetBudget");
+        assertThat(payload.get("targetBudget")).isNull();
+    }
+
+    @Test
     @DisplayName("기간 축소여도 범위 밖 블록이 없으면 movedToPool은 빈 목록이다")
     void noBlocksMovedWhenAllInRange() {
         User user = seedUser();

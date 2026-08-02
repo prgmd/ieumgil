@@ -7,7 +7,7 @@ import java.util.List;
 
 public class GroupResDTO {
 
-    /** 그룹 생성 응답 (POST /api/v0/groups) */
+    /** 그룹 생성 응답 (POST /api/groups) */
     @Builder
     public record Created(
             Long groupId,
@@ -17,7 +17,7 @@ public class GroupResDTO {
     ) {
     }
 
-    /** 그룹명 수정 응답 (PATCH /api/v0/groups/{groupId}) */
+    /** 그룹명 수정 응답 (PATCH /api/groups/{groupId}) */
     @Builder
     public record Updated(
             Long groupId,
@@ -26,7 +26,7 @@ public class GroupResDTO {
     }
 
     /**
-     * 내 그룹 목록의 한 칸 (GET /api/v0/groups).
+     * 내 그룹 목록의 한 칸 (GET /api/groups).
      * tripCount는 완료 여부와 무관한 전체 프로젝트 수.
      */
     @Builder
@@ -39,7 +39,7 @@ public class GroupResDTO {
     ) {
     }
 
-    /** 아바타 표시용 멤버 요약. 상세는 GET /api/v0/groups/{groupId}/members 사용 */
+    /** 아바타 표시용 멤버 요약. 상세는 GET /api/groups/{groupId}/members 사용 */
     @Builder
     public record MemberAvatar(
             Long memberId,
@@ -48,7 +48,7 @@ public class GroupResDTO {
     ) {
     }
 
-    /** 그룹 입장 응답 (POST /api/v0/groups/join) */
+    /** 그룹 입장 응답 (POST /api/groups/join) */
     @Builder
     public record Joined(
             Long groupId,
@@ -56,7 +56,7 @@ public class GroupResDTO {
     ) {
     }
 
-    /** 멤버 목록 + 초대 코드 응답 (GET /api/v0/groups/{groupId}/members) */
+    /** 멤버 목록 + 초대 코드 응답 (GET /api/groups/{groupId}/members) */
     @Builder
     public record MemberList(
             String inviteCode,
@@ -78,7 +78,7 @@ public class GroupResDTO {
     ) {
     }
 
-    /** 초대 코드 재발급 응답 (POST /api/v0/groups/{groupId}/invite-code) */
+    /** 초대 코드 재발급 응답 (POST /api/groups/{groupId}/invite-code) */
     @Builder
     public record InviteCode(
             String inviteCode,
