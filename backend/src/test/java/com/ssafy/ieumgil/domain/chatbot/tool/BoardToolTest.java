@@ -70,6 +70,21 @@ class BoardToolTest {
     }
 
     @Test
+    @DisplayName("보드 설명은 route tool에 이름을 넘기라고 해야 한다 — 좌표를 넘기라고 하면 실패한다")
+    void descriptionHandsOffPlaceNamesNotCoordinates() throws NoSuchMethodException {
+        // route tool의 시그니처는 이름 두 개다. 설명이 좌표를 넘기라고 지시하면 모델이
+        // "33.45,126.94"를 장소명으로 카카오에 검색해 쓰레기 결과가 나온다.
+        assertThat(TaxiRouteTool.class.getMethod("getTaxiRoute", String.class, String.class)).isNotNull();
+        assertThat(WalkingRouteTool.class.getMethod("getWalkingRoute", String.class, String.class)).isNotNull();
+
+        String description = BoardTool.class.getMethod("getCurrentPlan")
+                .getAnnotation(org.springframework.ai.tool.annotation.Tool.class).description();
+
+        assertThat(description).doesNotContain("coordinates");
+        assertThat(description).contains("name");
+    }
+
+    @Test
     @DisplayName("조회가 실패해도 대화는 계속된다 — 빈 결과로 떨어뜨린다")
     void repositoryFailureDegradesToEmptyBoard() {
         when(blockRepository.findChain(12L)).thenThrow(new RuntimeException("db down"));

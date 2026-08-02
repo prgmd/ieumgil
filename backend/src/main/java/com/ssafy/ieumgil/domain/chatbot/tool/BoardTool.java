@@ -29,7 +29,7 @@ public class BoardTool {
     @Tool(description = """
             Call this whenever the user's question depends on what is already in their itinerary — for example "how is my plan so far", "what did I put on day 2", "is day 1 too packed", "what's in my candidate list", "how much have I budgeted", or any request that refers to a block by position such as "the 2nd stop".
             It takes no input: it automatically reads the current project's board. So call it directly and immediately — never ask the user to tell you their itinerary.
-            Returns the confirmed itinerary grouped by day (each block numbered from 1 within its day) plus the candidate pool that is not placed on any day yet. Each block carries its coordinates, so when the user asks about travel between blocks, take the coordinates from here and pass them to the walking or taxi route tool instead of searching for the place by name again.
+            Returns the confirmed itinerary grouped by day (each block numbered from 1 within its day) plus the candidate pool that is not placed on any day yet. When the user asks about travel between blocks, pass each block's name exactly as it appears here to the walking or taxi route tool — those tools take place names, not numbers, and they resolve a board block by its name.
             An empty result means the user has not added anything yet — say so rather than guessing what might be in the plan.
             """)
     public BoardSummary getCurrentPlan() {
