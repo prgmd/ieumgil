@@ -14,6 +14,7 @@ import com.ssafy.ieumgil.domain.chatbot.tool.KakaoPlaceSearchTool;
 import com.ssafy.ieumgil.domain.chatbot.tool.TaxiRouteTool;
 import com.ssafy.ieumgil.domain.chatbot.tool.TrainScheduleTool;
 import com.ssafy.ieumgil.domain.chatbot.tool.WalkingRouteTool;
+import com.ssafy.ieumgil.domain.group.repository.GroupMemberRepository;
 import com.ssafy.ieumgil.domain.festival.RegionCode;
 import com.ssafy.ieumgil.domain.festival.service.FestivalQueryService;
 import com.ssafy.ieumgil.domain.place.service.PlaceQueryService;
@@ -50,11 +51,14 @@ public class ChatbotCommandServiceImpl implements ChatbotCommandService {
             반면 날씨·환율처럼 검색으로도 신뢰하기 어려운 실시간 값은 모른다고 말하고 대안을 안내하세요.
             요청이 목적지·기간 등 핵심 정보 없이 지나치게 모호할 때만 필요한 정보를 되물으세요.
             답변은 핵심만 간결하게 전하고, 불필요하게 길게 나열하지 마세요.
+            아래 [Current trip]은 서버가 제공한 이 여행의 사실 정보입니다. 신뢰해서 활용하고,
+            거기 (unset)으로 표시된 값은 아직 정해지지 않은 것이니 지어내지 말고 필요하면 물어보세요.
             """;
 
     private final ChatModel chatModel;
     private final ChatHistoryStore chatHistoryStore;
     private final ProjectRepository projectRepository;
+    private final GroupMemberRepository groupMemberRepository;
     private final FestivalQueryService festivalQueryService;
     private final PlaceQueryService placeQueryService;
     private final TrainScheduleTool trainScheduleTool;
@@ -65,15 +69,18 @@ public class ChatbotCommandServiceImpl implements ChatbotCommandService {
     public ChatbotResDTO.MessageResult sendMessage(Long projectId, Long memberId, ChatbotReqDTO.SendMessage request) {
         List<ChatTurn> history = chatHistoryStore.loadHistory(projectId, memberId);
 
+        // 메타데이터 주입과 tool 구성이 같은 로드를 공유한다 — 예전엔 resolver 둘이 각자 조회해 쿼리가 두 번 나갔다
+        Optional<Project> project = projectRepository.findByIdAndDeletedAtIsNull(projectId);
+
         List<Message> messages = new ArrayList<>();
-        messages.add(new SystemMessage(SYSTEM_PROMPT));
+        messages.add(new SystemMessage(SYSTEM_PROMPT + buildTripContext(project)));
         for (ChatTurn turn : history) {
             messages.add(toMessage(turn));
         }
         messages.add(new UserMessage(request.message()));
 
-        Optional<FestivalRecommendationTool> festivalTool = resolveFestivalTool(projectId);
-        List<Object> kakaoTools = resolveKakaoTools(projectId);
+        Optional<FestivalRecommendationTool> festivalTool = resolveFestivalTool(project);
+        List<Object> kakaoTools = resolveKakaoTools(project);
         String reply = callGms(messages, festivalTool, kakaoTools);
 
         chatHistoryStore.appendExchange(
@@ -88,9 +95,33 @@ public class ChatbotCommandServiceImpl implements ChatbotCommandService {
                 .build();
     }
 
+    /**
+     * 여행 메타데이터를 시스템 프롬프트 꼬리로 만든다 (BOT-03 컨텍스트).
+     * 프로젝트를 못 찾으면 빈 문자열 — 채팅 자체는 계속 되어야 한다.
+     */
+    private String buildTripContext(Optional<Project> project) {
+        return project
+                .map(p -> TripContextBuilder.build(p, resolveHeadcount(p)))
+                .orElse("");
+    }
+
+    /**
+     * 정산 인원(BGT-03). budgetHeadcount가 지정돼 있으면 그 값을 쓰고, null이면 그룹 멤버 수로 폴백한다.
+     * 지정돼 있을 때 count 쿼리를 아예 안 나가게 하는 것이 의도다.
+     */
+    private Integer resolveHeadcount(Project project) {
+        if (project.getBudgetHeadcount() != null) {
+            return project.getBudgetHeadcount();
+        }
+        if (project.getTravelGroup() == null || project.getTravelGroup().getId() == null) {
+            return null;
+        }
+        return (int) groupMemberRepository.countMembers(project.getTravelGroup().getId());
+    }
+
     /** 프로젝트 목적지·기간이 지역코드로 해석 가능할 때만 축제 추천 툴을 만든다. 실패해도 예외 없이 빈 Optional. */
-    Optional<FestivalRecommendationTool> resolveFestivalTool(Long projectId) {
-        return projectRepository.findByIdAndDeletedAtIsNull(projectId)
+    Optional<FestivalRecommendationTool> resolveFestivalTool(Optional<Project> loadedProject) {
+        return loadedProject
                 .filter(project -> project.getStartDate() != null && project.getEndDate() != null)
                 .flatMap(project -> RegionCode.findByName(project.getDestination())
                         .map(regionCode -> new FestivalRecommendationTool(
@@ -99,8 +130,8 @@ public class ChatbotCommandServiceImpl implements ChatbotCommandService {
     }
 
     /** 프로젝트 목적지가 있을 때만 카카오 tool 3개(장소검색/도보/택시)를 만든다. 목적지 없으면 빈 리스트. */
-    List<Object> resolveKakaoTools(Long projectId) {
-        return projectRepository.findByIdAndDeletedAtIsNull(projectId)
+    List<Object> resolveKakaoTools(Optional<Project> loadedProject) {
+        return loadedProject
                 .map(Project::getDestination)
                 .filter(destination -> destination != null && !destination.isBlank())
                 .map(destination -> {
