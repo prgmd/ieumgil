@@ -46,8 +46,6 @@ class FestivalRecommendationToolTest {
         FestivalRecommendationResult result = tool.findFestivalsForCurrentTrip();
 
         assertThat(result.regionName()).isEqualTo("제주");
-        assertThat(result.tripStartDate()).isEqualTo(start.toString());
-        assertThat(result.tripEndDate()).isEqualTo(end.toString());
         assertThat(result.festivals()).hasSize(1);
         assertThat(result.festivals().get(0).title()).isEqualTo("제주 불빛축제");
         assertThat(result.festivals().get(0).category()).isEqualTo("축제");
@@ -69,7 +67,7 @@ class FestivalRecommendationToolTest {
                 .eventEndDate(end)
                 .build();
 
-        FestivalSummary summary = FestivalSummary.from(festival);
+        FestivalSummary summary = FestivalSummary.from(festival, start, end);
 
         assertThat(summary.category()).isEqualTo("행사");
     }

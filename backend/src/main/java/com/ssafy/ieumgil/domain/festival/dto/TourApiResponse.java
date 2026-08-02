@@ -9,7 +9,8 @@ public record TourApiResponse(Response response) {
     public record Response(Body body) {
     }
 
-    public record Body(Items items) {
+    /** totalCount는 배치가 몇 페이지를 돌아야 하는지 판단하는 근거다 — 없으면 덜 긁고도 성공처럼 끝난다. */
+    public record Body(Items items, Integer totalCount) {
     }
 
     public record Items(List<Item> item) {

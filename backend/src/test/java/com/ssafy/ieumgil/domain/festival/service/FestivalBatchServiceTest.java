@@ -4,6 +4,7 @@ import com.ssafy.ieumgil.domain.festival.client.TourApiClient;
 import com.ssafy.ieumgil.domain.festival.dto.TourApiResponse;
 import com.ssafy.ieumgil.domain.festival.entity.Festival;
 import com.ssafy.ieumgil.domain.festival.repository.FestivalRepository;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
@@ -42,6 +43,7 @@ class FestivalBatchServiceTest {
         TourApiResponse.Item item = new TourApiResponse.Item(
                 "new-1", "새 축제", "서울 강동구", "", "127.13", "37.55",
                 "20260801", "20260803", "http://image", "11", "140", "EV01");
+        when(tourApiClient.fetchTotalCount(anyString())).thenReturn(1);
         when(tourApiClient.searchFestivals(anyString(), anyInt(), anyInt())).thenReturn(List.of(item));
         when(festivalRepository.findByContentId("new-1")).thenReturn(Optional.empty());
 
@@ -70,6 +72,7 @@ class FestivalBatchServiceTest {
                 .lat(37.0).lng(127.0)
                 .eventStartDate(LocalDate.of(2026, 8, 1)).eventEndDate(LocalDate.of(2026, 8, 3))
                 .build();
+        when(tourApiClient.fetchTotalCount(anyString())).thenReturn(1);
         when(tourApiClient.searchFestivals(anyString(), anyInt(), anyInt())).thenReturn(List.of(item));
         when(festivalRepository.findByContentId("existing-1")).thenReturn(Optional.of(existing));
 
@@ -92,6 +95,7 @@ class FestivalBatchServiceTest {
         List<TourApiResponse.Item> secondPage = List.of(new TourApiResponse.Item(
                 "page2-1", "축제 101", "주소", "", "127.0", "37.0",
                 "20260801", "20260803", "http://image", "11", "140", "EV01"));
+        when(tourApiClient.fetchTotalCount(anyString())).thenReturn(150);
         when(tourApiClient.searchFestivals(anyString(), eq(1), eq(100))).thenReturn(firstPage);
         when(tourApiClient.searchFestivals(anyString(), eq(2), eq(100))).thenReturn(secondPage);
         when(festivalRepository.findByContentId(anyString())).thenReturn(Optional.empty());
@@ -113,6 +117,7 @@ class FestivalBatchServiceTest {
                 "good-1", "정상 축제", "주소", "", "127.0", "37.0",
                 "20260801", "20260803", "http://image", "11", "140", "EV01");
         List<TourApiResponse.Item> page = new ArrayList<>(List.of(malformed, valid));
+        when(tourApiClient.fetchTotalCount(anyString())).thenReturn(page.size());
         when(tourApiClient.searchFestivals(anyString(), anyInt(), anyInt())).thenReturn(page);
         when(festivalRepository.findByContentId(anyString())).thenReturn(Optional.empty());
 
@@ -121,5 +126,67 @@ class FestivalBatchServiceTest {
         ArgumentCaptor<Festival> captor = ArgumentCaptor.forClass(Festival.class);
         verify(festivalRepository).save(captor.capture());
         assertThat(captor.getValue().getContentId()).isEqualTo("good-1");
+    }
+
+    @Test
+    @DisplayName("총건수 기준으로 페이지 수를 정하고 끝까지 돈다")
+    void paginatesByTotalCount() {
+        festivalBatchService = new FestivalBatchService(tourApiClient, festivalRepository);
+        when(tourApiClient.fetchTotalCount(anyString())).thenReturn(209);
+        when(tourApiClient.searchFestivals(anyString(), anyInt(), anyInt()))
+                .thenAnswer(inv -> page(100));
+        when(festivalRepository.findByContentId(anyString())).thenReturn(Optional.empty());
+
+        FestivalBatchService.SyncResult result = festivalBatchService.syncFestivals();
+
+        // 209건이면 100씩 3페이지
+        verify(tourApiClient).searchFestivals(anyString(), eq(1), eq(100));
+        verify(tourApiClient).searchFestivals(anyString(), eq(2), eq(100));
+        verify(tourApiClient).searchFestivals(anyString(), eq(3), eq(100));
+        assertThat(result.expected()).isEqualTo(209);
+    }
+
+    @Test
+    @DisplayName("한 페이지 조회가 실패해도 나머지 페이지를 계속 수집한다 — 예전엔 배치 전체가 조용히 중단됐다")
+    void pageFailureDoesNotAbortWholeRun() {
+        festivalBatchService = new FestivalBatchService(tourApiClient, festivalRepository);
+        when(tourApiClient.fetchTotalCount(anyString())).thenReturn(250);
+        when(tourApiClient.searchFestivals(anyString(), eq(1), eq(100))).thenReturn(page(100));
+        when(tourApiClient.searchFestivals(anyString(), eq(2), eq(100)))
+                .thenThrow(new RuntimeException("일시 장애"));
+        when(tourApiClient.searchFestivals(anyString(), eq(3), eq(100))).thenReturn(page(50));
+        when(festivalRepository.findByContentId(anyString())).thenReturn(Optional.empty());
+
+        FestivalBatchService.SyncResult result = festivalBatchService.syncFestivals();
+
+        // 2페이지가 죽어도 3페이지는 수집된다
+        verify(tourApiClient).searchFestivals(anyString(), eq(3), eq(100));
+        assertThat(result.collected()).isEqualTo(150);
+        assertThat(result.expected()).isEqualTo(250);
+        // 부족하게 끝났음을 결과로 알 수 있어야 한다 — 예전엔 "N건 수집" 로그만 남아 아무도 몰랐다
+        assertThat(result.complete()).isFalse();
+    }
+
+    @Test
+    @DisplayName("총건수를 못 구하면 수집하지 않는다 — 덜 긁고 성공처럼 끝내지 않는다")
+    void unknownTotalCountSkipsRun() {
+        festivalBatchService = new FestivalBatchService(tourApiClient, festivalRepository);
+        when(tourApiClient.fetchTotalCount(anyString())).thenThrow(new RuntimeException("장애"));
+
+        FestivalBatchService.SyncResult result = festivalBatchService.syncFestivals();
+
+        assertThat(result.collected()).isZero();
+        assertThat(result.complete()).isFalse();
+        verify(tourApiClient, org.mockito.Mockito.never()).searchFestivals(anyString(), anyInt(), anyInt());
+    }
+
+    private List<TourApiResponse.Item> page(int size) {
+        List<TourApiResponse.Item> items = new ArrayList<>();
+        for (int i = 0; i < size; i++) {
+            items.add(new TourApiResponse.Item(
+                    "c" + java.util.UUID.randomUUID(), "축제", "서울시", "", "127.0", "37.5",
+                    "20261001", "20261003", null, "11", "11110", "EV01"));
+        }
+        return items;
     }
 }

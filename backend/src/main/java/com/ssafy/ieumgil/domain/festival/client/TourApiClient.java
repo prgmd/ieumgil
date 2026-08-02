@@ -26,7 +26,21 @@ public class TourApiClient {
         this.restClient = builder.build();
     }
 
+    /** 총건수만 확인한다(1건만 요청). 배치가 돌아야 할 페이지 수를 정하는 데 쓴다. */
+    public int fetchTotalCount(String eventStartDate) {
+        TourApiResponse.Body body = fetchBody(eventStartDate, 1, 1);
+        return body == null || body.totalCount() == null ? 0 : body.totalCount();
+    }
+
     public List<TourApiResponse.Item> searchFestivals(String eventStartDate, int pageNo, int numOfRows) {
+        TourApiResponse.Body body = fetchBody(eventStartDate, pageNo, numOfRows);
+        if (body == null || body.items() == null || body.items().item() == null) {
+            return List.of();
+        }
+        return body.items().item();
+    }
+
+    private TourApiResponse.Body fetchBody(String eventStartDate, int pageNo, int numOfRows) {
         try {
             // RestClient의 기본 UriBuilder는 쿼리 파라미터 값 안의 '/'를 인코딩하지 않는다 —
             // serviceKey(디코딩된 원본)에 '/'가 섞여 있으면 그대로 나가서 data.go.kr이 401을 낸다.
@@ -44,22 +58,10 @@ public class TourApiClient {
                     .uri(uri)
                     .retrieve()
                     .body(TourApiResponse.class);
-            if (response == null) {
-                return List.of();
+            if (response == null || response.response() == null) {
+                return null;
             }
-            var responseWrapper = response.response();
-            if (responseWrapper == null) {
-                return List.of();
-            }
-            var body = responseWrapper.body();
-            if (body == null) {
-                return List.of();
-            }
-            var items = body.items();
-            if (items == null) {
-                return List.of();
-            }
-            return items.item();
+            return response.response().body();
         } catch (RestClientException | IllegalArgumentException e) {
             log.warn("투어API 축제 조회 실패: {}", e.getMessage());
             throw new FestivalException(FestivalErrorCode.TOUR_API_CALL_FAILED);

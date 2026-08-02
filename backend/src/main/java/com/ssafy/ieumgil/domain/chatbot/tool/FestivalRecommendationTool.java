@@ -30,7 +30,8 @@ public class FestivalRecommendationTool {
             Call this whenever the user asks for things to do, festivals, events, or activities to enjoy during their trip. This is the main tool for "what can I do / what's happening" style requests, even if the user does not literally say "festival".
             It takes no input: it automatically uses the current project's saved destination and travel dates. So call it directly and immediately — never ask the user for the destination or travel dates first.
             Do NOT call it for requests about restaurants, cafes, lodging, or transportation — those are not festivals/events.
-            Returns the festivals/events for the current project's destination and travel period, along with the region name and period used; if the user asked about a different region, note the result may differ.
+            Returns the festivals/events for the current project's destination and travel period, along with the region name used; if the user asked about a different region, note the result may differ.
+            Each item carries "tripOverlap": the exact dates on which that event actually overlaps the trip, already computed by the server. Report it as given. Never judge or describe how well an event fits the trip dates yourself — an event may overlap only a single day, so wording like "runs throughout your trip" or "fits your dates perfectly" is wrong unless tripOverlap literally says so.
             """)
     public FestivalRecommendationResult findFestivalsForCurrentTrip() {
         try {
@@ -39,16 +40,12 @@ public class FestivalRecommendationTool {
                     .stream()
                     .sorted(Comparator.comparing(Festival::getEventStartDate))
                     .limit(10)
-                    .map(FestivalSummary::from)
+                    .map(f -> FestivalSummary.from(f, tripStartDate, tripEndDate))
                     .toList();
-            return new FestivalRecommendationResult(
-                    regionCode.regionName(), tripStartDate.toString(), tripEndDate.toString(), festivals
-            );
+            return new FestivalRecommendationResult(regionCode.regionName(), festivals);
         } catch (RuntimeException e) {
             log.warn("festival tool call failed for region={}", regionCode, e);
-            return new FestivalRecommendationResult(
-                    regionCode.regionName(), tripStartDate.toString(), tripEndDate.toString(), List.of()
-            );
+            return new FestivalRecommendationResult(regionCode.regionName(), List.of());
         }
     }
 }
