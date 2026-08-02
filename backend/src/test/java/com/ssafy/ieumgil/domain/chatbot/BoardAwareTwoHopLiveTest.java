@@ -118,8 +118,10 @@ class BoardAwareTwoHopLiveTest {
         verify(blockRepository).findChain(12L);
         // 2) 택시 경로를 조회했다 — 두 번째 홉이 성립했다
         verify(placeQueryService).getTaxiRoute(anyDouble(), anyDouble(), anyDouble(), anyDouble());
-        // 3) 보드가 준 좌표를 썼다 — 이름으로 카카오를 재검색했다면 설계 의도가 무너진 것이다
-        verify(placeQueryService, never()).searchPlaces(anyString(), anyDouble(), anyDouble());
+        // 3) 보드가 준 좌표를 썼다 — 이름으로 카카오를 재검색했다면 설계 의도가 무너진 것이다.
+        //    폴백은 searchPlaces(query, null, null)로 나가므로 anyDouble()은 null과 매칭되지 않는다.
+        //    좌표 자리에는 null까지 받는 any()를 써야 검증이 실제로 걸린다.
+        verify(placeQueryService, never()).searchPlaces(anyString(), any(), any());
         // 4) 조회한 값이 답변에 실렸다
         assertThat(reply).containsAnyOf("9,800", "9800");
     }
