@@ -50,7 +50,7 @@ class ChatbotControllerTest {
                         .with(authentication(memberAuthentication(1L)))
                         .contentType("application/json")
                         .content(objectMapper.writeValueAsString(
-                                new ChatbotReqDTO.SendMessage("안녕")
+                                new ChatbotReqDTO.SendMessage("안녕", null)
                         )))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.isSuccess").value(true))
@@ -63,7 +63,7 @@ class ChatbotControllerTest {
                         .with(authentication(memberAuthentication(1L)))
                         .contentType("application/json")
                         .content(objectMapper.writeValueAsString(
-                                new ChatbotReqDTO.SendMessage("")
+                                new ChatbotReqDTO.SendMessage("", null)
                         )))
                 .andExpect(status().isBadRequest());
     }
