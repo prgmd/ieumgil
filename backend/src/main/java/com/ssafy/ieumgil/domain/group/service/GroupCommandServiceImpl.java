@@ -14,6 +14,7 @@ import com.ssafy.ieumgil.domain.user.exception.UserErrorCode;
 import com.ssafy.ieumgil.domain.user.repository.UserRepository;
 import com.ssafy.ieumgil.global.exception.CustomException;
 import com.ssafy.ieumgil.global.realtime.OpPublisher;
+import com.ssafy.ieumgil.global.websocket.WsSessionRegistry;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -41,6 +42,7 @@ public class GroupCommandServiceImpl implements GroupCommandService {
     private final InviteCodeGenerator inviteCodeGenerator;
     private final ProjectRepository projectRepository;
     private final OpPublisher opPublisher;
+    private final WsSessionRegistry wsSessionRegistry;
 
     /**
      * 그룹 생성 (GRP-01). 그룹 저장과 생성자를 첫 멤버로 등록하는 작업이
@@ -130,6 +132,10 @@ public class GroupCommandServiceImpl implements GroupCommandService {
         if (lastMember) {
             travelGroupRepository.deleteById(groupId);
         }
+
+        // 열려 있는 WS를 끊지 않으면 REST가 403이 된 뒤에도 블록 편집·커서·보이스를
+        // 계속 실시간으로 받는다 — 인가 캐시가 세션에 남아 있어 재검증도 일어나지 않는다.
+        wsSessionRegistry.disconnect(userId);
 
         return GroupConverter.toLeft(lastMember);
     }
