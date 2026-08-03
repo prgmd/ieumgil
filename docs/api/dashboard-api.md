@@ -711,10 +711,11 @@ REST로 변경 요청을 보내면, 서버가 seq를 붙여 STOMP로 전파한�
 | SUB `/topic/project/{id}/presence` | S→C | 접속/이탈/편집 배지(=텍스트 락 상태) |
 | SUB `/topic/project/{id}/cursor` | S→C | 라이브 커서 |
 | SEND `/app/project/{id}/cursor` | C→S | `{x, y, dayNo}` 50ms 스로틀 — DB 미저장, 릴레이 |
-| SEND `/app/project/{id}/voice/signal` | C→S | WebRTC 시그널링 `{type: OFFER\|ANSWER\|ICE, targetMemberId, payload}` |
+| SEND `/app/project/{id}/voice/signal` | C→S | WebRTC 시그널링 `{type: OFFER\|ANSWER\|ICE, targetMemberId, payload}` — **대상 멤버십 검증 후 중계**(비멤버면 조용히 폐기) |
 | SUB `/user/queue/voice` | S→C | 시그널 개인 수신(`convertAndSendToUser`) |
 
 > **SUBSCRIBE 인가(필수 보안 요건)**: CONNECT의 JWT 검증은 "로그인 사용자"까지만 거른다. `ChannelInterceptor`에서 SUBSCRIBE·`/app` SEND destination의 projectId를 파싱 → 그룹 멤버십 검증 → 실패 시 거부. 통과한 projectId는 세션 어트리뷰트에 캐시(고빈도 프레임 DB 조회 회피).
+> **voice 시그널 대상 검증**: destination 인가는 *보내는 쪽*만 본다. payload의 `targetMemberId`가 해당 프로젝트의 멤버인지 서버가 따로 확인하고, 아니면 전달하지 않는다(warn 로그만 남김 — 발신자에게 오류를 돌려주면 멤버 존재 여부를 캐볼 수 있다). 이 검증이 없으면 임의 memberId로 OFFER를 보내 피해자 마이크를 여는 경로가 열리며, 클라이언트를 우회한 직접 STOMP 전송이 가능하므로 프론트 수정만으로는 막을 수 없다. 시그널은 연결 수립 때만 오가는 저빈도 프레임이라 매번 조회해도 커서와 달리 비용 문제가 없다.
 > **탈퇴 시 세션 강제 종료**: memberId→WS 세션 레지스트리를 유지하고, 탈퇴 처리 시 해당 세션을 disconnect + 캐시 무효화.
 
 ### op 포맷

@@ -1,7 +1,5 @@
 package com.ssafy.ieumgil.global.websocket;
 
-import com.ssafy.ieumgil.domain.group.repository.GroupMemberRepository;
-import com.ssafy.ieumgil.domain.project.repository.ProjectRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.messaging.Message;
@@ -45,8 +43,7 @@ public class StompAuthInterceptor implements ChannelInterceptor {
     private static final String AUTHORIZED_PROJECTS_ATTR = "authorizedProjectIds";
 
     private final JwtProvider jwtProvider;
-    private final ProjectRepository projectRepository;
-    private final GroupMemberRepository groupMemberRepository;
+    private final ProjectMembership projectMembership;
 
     @Override
     public Message<?> preSend(Message<?> message, MessageChannel channel) {
@@ -103,10 +100,7 @@ public class StompAuthInterceptor implements ChannelInterceptor {
             return;   // 캐시 히트 — DB 조회 없음
         }
 
-        Long groupId = projectRepository.findByIdAndDeletedAtIsNull(projectId)
-                .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 프로젝트: " + projectId))
-                .getTravelGroup().getId();
-        if (!groupMemberRepository.existsMembership(groupId, userId)) {
+        if (!projectMembership.isMember(projectId, userId)) {
             log.warn("WS 인가 거부: user={} project={} (비멤버)", userId, projectId);
             throw new IllegalArgumentException("그룹 멤버가 아닙니다.");
         }
