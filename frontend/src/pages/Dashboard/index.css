@@ -803,13 +803,7 @@
 }
 
 /* ── 후보 및 휴지통 영역 ───────────────────────────────────── */
-.pool-row {
-  display: flex;
-  gap: 16px;
-  align-items: stretch;
-}
 .pool-sec {
-  flex: 1;
   min-width: 0;
   background: var(--bg2, #fdfbf7);
   border: 1px solid var(--border1, #e3dfd8);
@@ -865,49 +859,48 @@
 }
 /* (예전에 있던 `.pool-head span:last-child` 규칙은 지웠다 —
    안내 문구 스타일은 위의 .pool-hint 가 쥔다) */
+/* 후보 목록 — 한 줄에 정확히 5개. 카드 폭을 고정하고 flex-wrap 으로 흘리면
+   남는 폭에 따라 4개만 들어가고 5번째가 다음 줄로 떨어진다. 열 개수를 그리드가
+   쥐고 카드가 폭을 따라가게 하면 보드가 넓든 좁든 5개 배치가 유지된다.
+   minmax(0, 1fr) 의 0 은 긴 이름이 열을 밀어내지 못하게 막는 최소폭이다. */
 .pool {
   position: relative;
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 12px;
   min-height: 150px;
   padding-bottom: 20px;
 }
-.trash-zone {
-  width: 140px;
-  flex-shrink: 0;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 12px;
-  padding: 20px;
-  text-align: center;
-  border: 2px dashed var(--border1, #e3dfd8);
-  border-radius: 20px;
-  background: var(--bg2, #fdfbf7);
-  color: var(--ink3);
-  font-weight: 600;
-  transition: all 0.2s;
+/* ── 보드 밖 삭제 경고 ──────────────────────────────────────
+   전용 휴지통 영역을 없앤 대신, 후보 목록·타임라인 밖으로 블록을 끌고 가면
+   경고 배너를 띄운다. 화면 전체를 물들이지는 않는다 — 배너 하나로 충분하고,
+   보드가 빨개지면 정작 끌고 있는 블록이 안 보인다. */
+.discard-warning {
+  position: fixed;
+  inset: 0;
+  z-index: 995;
+  /* 이걸 빼면 드래그 중 포인터를 가로채 드롭이 통째로 깨진다 */
+  pointer-events: none;
 }
-.trash-ico {
-  display: block;
-  font-size: 32px;
-}
-.trash-text {
-  display: block;
-  line-height: 1.4;
-}
-.trash-zone.dragging {
-  border-color: #d1bfae;
-  background: #fffdf8;
-  color: #a39281;
-}
-.trash-zone.dropover {
-  border-color: #d64a4a;
-  background: #fff5f5;
-  color: #d64a4a;
-  transform: scale(1.02);
+/* 반투명이라 뒤가 비쳐 보인다 — 배너에 가린 보드를 확인하면서 놓을 수 있다.
+   blur 를 얹어야 배경이 복잡해도 글자가 읽힌다. */
+.discard-warning-label {
+  position: absolute;
+  left: 50%;
+  top: 40px;
+  transform: translateX(-50%);
+  padding: 22px 44px;
+  border-radius: 999px;
+  background: rgba(214, 74, 74, 0.72);
+  border: 2px solid rgba(255, 255, 255, 0.45);
+  backdrop-filter: blur(3px);
+  color: #fff;
+  font-size: 22px;
+  font-weight: bold;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+  text-shadow: 0 1px 3px rgba(90, 20, 20, 0.5);
+  box-shadow: 0 10px 30px rgba(61, 43, 34, 0.28);
 }
 
 /* 블럭(카드) 공통 디자인 */
@@ -927,7 +920,7 @@
   filter: brightness(0.97);
 }
 .pcard {
-  width: 150px;
+  /* 폭은 .pool 그리드의 열이 정한다 — 여기서 고정하면 5열이 깨진다 */
   cursor: pointer; /* 카드 전체가 수정 클릭 영역 (끌기도 그대로 된다) */
   position: relative; /* 수정 표시(.blk-op) 기준 */
 }
@@ -938,6 +931,11 @@
 .pcard.is-overlay,
 .card.is-overlay {
   cursor: grabbing;
+}
+/* 복제본은 그리드 밖(DragOverlay)에 떠 있어 열 폭을 물려받지 못한다 —
+   폭을 직접 줘야 원본과 비슷한 크기로 끌린다 */
+.pcard.is-overlay {
+  width: 200px;
 }
 .card.is-overlay {
   width: 320px;

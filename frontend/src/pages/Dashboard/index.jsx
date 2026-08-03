@@ -1462,7 +1462,6 @@ export function DashboardPage() {
 
   const timelineDOMRef = useRef(null);
   const poolDOMRef = useRef(null);
-  const trashDOMRef = useRef(null);
   const pageDOMRef = useRef(null); // 페이지 좌표 커서(area:"page")의 기준 박스
   const activeDragRef = useRef(null);
   const dragRegionRef = useRef(null);
@@ -1986,15 +1985,6 @@ export function DashboardPage() {
     [setPoolDroppable],
   );
 
-  const { setNodeRef: setTrashDroppable } = useDroppable({ id: "trashArea" });
-  const setTrashRef = useCallback(
-    (node) => {
-      trashDOMRef.current = node;
-      setTrashDroppable(node);
-    },
-    [setTrashDroppable],
-  );
-
   const handleResizeStart = useCallback(
     (id, direction, startY, startDur, originalStartMins, boundTop) => {
       setResizingState({
@@ -2148,23 +2138,14 @@ export function DashboardPage() {
 
       const poolRect = poolDOMRef.current?.getBoundingClientRect();
       const tlRect = timelineDOMRef.current?.getBoundingClientRect();
-      const trashRect = trashDOMRef.current?.getBoundingClientRect();
 
-      const isOverTrash =
-        !!trashRect &&
-        centerX >= trashRect.left &&
-        centerX <= trashRect.right &&
-        centerY >= trashRect.top &&
-        centerY <= trashRect.bottom;
       const isOverPool =
-        !isOverTrash &&
         !!poolRect &&
         centerX >= poolRect.left &&
         centerX <= poolRect.right &&
         centerY >= poolRect.top &&
         centerY <= poolRect.bottom;
       const isOverTimeline =
-        !isOverTrash &&
         !isOverPool &&
         !!tlRect &&
         centerX >= tlRect.left &&
@@ -2172,7 +2153,6 @@ export function DashboardPage() {
         centerY >= tlRect.top &&
         centerY <= tlRect.bottom;
 
-      if (isOverTrash) return { region: "trash" };
       if (isOverPool) {
         let insertIndex = pool.filter((id) => id !== activeIdLocal).length;
         if (poolDOMRef.current) {
@@ -2229,7 +2209,12 @@ export function DashboardPage() {
         );
         return { region: "timeline", dropMins, dur };
       }
-      return { region: null };
+
+      // 후보 목록·타임라인 어느 쪽도 아니면 "보드 밖" — 놓으면 삭제다.
+      // 별도 휴지통 영역 대신 이 판정을 쓴다(후보 목록이 그만큼 넓어진다).
+      // 단 검색 결과는 아직 블록이 아니라 지울 대상이 없다 — 그냥 취소한다.
+      if (active.data?.current?.from === "search") return { region: null };
+      return { region: "discard" };
     },
     [pool, activeDay, items, dayStart],
   );
@@ -2359,8 +2344,9 @@ export function DashboardPage() {
     }
 
     // 기존 풀/타임라인 내의 이동 처리 로직 유지
-    if (target.region === "trash") {
-      // async 삭제(서버 왕복 포함)는 별도 함수로 — 드래그 핸들러는 동기로 끝낸다
+    if (target.region === "discard") {
+      // 보드 밖에 놓았다 = 삭제. async 삭제(서버 왕복 포함)는 별도 함수로 —
+      // 드래그 핸들러는 동기로 끝낸다
       handleDeleteBlock(activeIdLocal);
       return;
     }
@@ -2999,60 +2985,40 @@ export function DashboardPage() {
                   </div>
                 </div>
 
-                <div className="pool-row">
-                  <div
-                    className={`pool-sec ${dragPreview?.region === "pool" ? "dropover" : ""}`}
-                    ref={setPoolRef}
-                  >
-                    <div className="pool-head">
-                      <div>
-                        <b>후보 목록</b> <span className="n">{pool.length}</span>
-                        <span className="pool-hint">
-                          자유롭게 끌어다 놓고 빼세요
-                        </span>
-                      </div>
-                      <button
-                        className="pool-add-btn"
-                        onClick={handleCreateCustomBlock}
-                      >
-                        + 커스텀 블록 만들기
-                      </button>
+                <div
+                  className={`pool-sec ${dragPreview?.region === "pool" ? "dropover" : ""}`}
+                  ref={setPoolRef}
+                >
+                  <div className="pool-head">
+                    <div>
+                      <b>후보 목록</b> <span className="n">{pool.length}</span>
+                      <span className="pool-hint">
+                        자유롭게 끌어다 놓고 빼세요 · 범위 밖에 놓으면 삭제
+                      </span>
                     </div>
-                    <div className="pool">
-                      <SortableContext
-                        items={pool}
-                        strategy={rectSortingStrategy}
-                      >
-                        {pool.map((id) => (
-                          <PoolCard
-                            key={id}
-                            id={id}
-                            item={items[id]}
-                            onEditBlock={setEditingBlockId}
-                            lockedBy={lockBadgeOf(id)}
-                            editor={editorBadgeOf(id)}
-                          />
-                        ))}
-                      </SortableContext>
-                      {dragPreview?.region === "pool" && !isDraggingFromPool && (
-                        <div className="pool-dropzone" />
-                      )}
-                    </div>
+                    <button
+                      className="pool-add-btn"
+                      onClick={handleCreateCustomBlock}
+                    >
+                      + 커스텀 블록 만들기
+                    </button>
                   </div>
-
-                  <div
-                    ref={setTrashRef}
-                    className={`trash-zone ${activeId ? "dragging" : ""} ${dragPreview?.region === "trash" ? "dropover" : ""}`}
-                  >
-                    {/* 개인 페이지의 삭제 버튼과 같은 휴지통 글리프(🗑)를 쓴다 */}
-                    <span className="trash-ico">🗑</span>
-                    <span className="trash-text">
-                      여기로 블럭을
-                      <br />
-                      끌어다 놓으면
-                      <br />
-                      삭제됩니다
-                    </span>
+                  <div className="pool">
+                    <SortableContext items={pool} strategy={rectSortingStrategy}>
+                      {pool.map((id) => (
+                        <PoolCard
+                          key={id}
+                          id={id}
+                          item={items[id]}
+                          onEditBlock={setEditingBlockId}
+                          lockedBy={lockBadgeOf(id)}
+                          editor={editorBadgeOf(id)}
+                        />
+                      ))}
+                    </SortableContext>
+                    {dragPreview?.region === "pool" && !isDraggingFromPool && (
+                      <div className="pool-dropzone" />
+                    )}
                   </div>
                 </div>
               </div>
@@ -3203,6 +3169,19 @@ export function DashboardPage() {
                   </div>
                 </div>
               </div>
+
+              {/* 보드 밖 경고 — 후보 목록·타임라인 어느 쪽도 아닌 곳에 블록을
+                  끌고 갔을 때 화면 가장자리에 빨간 테두리를 두르고, 여기서 놓으면
+                  삭제된다고 알린다. 별도 휴지통 영역을 없앤 대신의 안전장치라
+                  눈에 확 띄어야 한다. pointer-events 를 먹으면 드래그가 끊기므로
+                  반드시 통과시킨다. */}
+              {dragPreview?.region === "discard" && (
+                <div className="discard-warning" aria-hidden="true">
+                  <div className="discard-warning-label">
+                    🗑 범위 밖에 놓으면 삭제됩니다
+                  </div>
+                </div>
+              )}
 
               {/* 💡 끌려다니는 마우스 오버레이 부분 업데이트 */}
               <DragOverlay>
