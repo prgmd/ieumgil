@@ -25,10 +25,24 @@ public class PublicTransitQueryServiceImpl implements PublicTransitQueryService 
             throw new TransitException(TransitErrorCode.UNSUPPORTED_MODE);
         }
 
-        OdsayRouteResponse.Path path = odsayClient
+        return odsayClient
                 .searchPublicTransitRoute(startLat, startLng, endLat, endLng, mode)
+                .map(this::toRoute)
                 .orElseThrow(() -> new TransitException(TransitErrorCode.ROUTE_NOT_FOUND));
+    }
 
+    @Override
+    public TransitResDTO.Route getCombinedRoute(
+            double startLat, double startLng, double endLat, double endLng) {
+        // OdsayClient는 BUS/SUBWAY가 아닌 mode에 SearchPathType=0(통합)을 쓴다.
+        return odsayClient
+                .searchPublicTransitRoute(startLat, startLng, endLat, endLng, "TRANSIT")
+                .map(this::toRoute)
+                .orElseThrow(() -> new TransitException(TransitErrorCode.ROUTE_NOT_FOUND));
+    }
+
+    // getRoute/getCombinedRoute는 mode 결정 방식만 다를 뿐 ODsay 응답 구조는 동일하므로 매핑을 공통화한다.
+    private TransitResDTO.Route toRoute(OdsayRouteResponse.Path path) {
         OdsayRouteResponse.Info info = path.info();
         return TransitResDTO.Route.builder()
                 .durationMin(info.totalTime())

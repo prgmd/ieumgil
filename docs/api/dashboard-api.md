@@ -8,11 +8,11 @@
 
 ## 공통 규약
 
-- **응답 래퍼 `CustomResponse`**: `{ "isSuccess", "code", "message", "result" }`. (인증API.md 참조)
+- **응답 래퍼 `CustomResponse`**: `{ "isSuccess", "code", "message", "result" }`. ([auth-api.md](auth-api.md) 참조)
 - **인증 헤더**: 모든 REST 엔드포인트 `Authorization: Bearer {accessToken}` 필요. WS는 CONNECT 헤더로 검증.
 - **멤버십 검증**: 프로젝트가 속한 그룹의 멤버만 접근(REST AOP `@GroupMember` + WS `ChannelInterceptor`). 비멤버는 `403`(REST) / 프레임 거부(WS).
 - **X-Client-Id**: 변경 요청 헤더에 브라우저 탭 UUID를 실어 보낸다. 서버는 이 값을 op에 그대로 실어 브로드캐스트하며(수신자 제외 없이 전원 발송), **자기 op를 어떻게 처리할지는 클라이언트가 op 종류별로 판단한다** — 아래 "자기 op 에코 정책" 참조.
-- **범위 구분**: 프로젝트 카드 목록·생성·이름/기간 수정·삭제는 [개인·그룹 페이지API.md](개인·그룹%20페이지API.md) 참조.
+- **범위 구분**: 프로젝트 카드 목록·생성·이름/기간 수정·삭제는 [my-group-api.md](my-group-api.md) 참조.
 
 ---
 
@@ -33,6 +33,7 @@
 | Method | Path | 설명 | Auth |
 |---|---|---|---|
 | POST | `/api/projects/{projectId}/blocks` | 블록 생성 (지도/직접/교통) | Yes |
+| POST | `/api/projects/{projectId}/transit-candidates` | 체인 구간별 교통수단 후보 일괄 계산 | Yes |
 | PATCH | `/api/blocks/{blockId}/fields` | 필드 단위 LWW 배치 갱신 | Yes |
 | PATCH | `/api/blocks/{blockId}/position` | 블록 이동 (체인 재정렬/후보↔체인) | Yes |
 | DELETE | `/api/blocks/{blockId}` | 블록 소프트 삭제 (tombstone) | Yes |
@@ -48,7 +49,7 @@
 | GET | `/api/places/address?lat=&lng=` | coord2address 역지오코딩 | Yes |
 | GET | `/api/transit/route?sx=&sy=&ex=&ey=&mode=` | 길찾기 소요 시간·요금 | Yes |
 | GET | `/api/trains?dep=&arr=&after=` | KTX 시간표 출발 후보 | Yes |
-| GET | `/api/stations?query=` | 역명 자동완성 | Yes |
+| GET | `/api/stations?type=&query=` | 역/터미널 이름검색 | Yes |
 
 ### 챗봇
 
@@ -398,6 +399,117 @@
 
 ---
 
+## 상세 명세 — 교통 후보
+
+### POST /api/projects/{projectId}/transit-candidates
+
+체인 순서의 블록 id 목록을 받아 연속 구간마다 이동수단 후보를 계산한다(BLK-04/BLK-10). **블록을 생성하지 않는다** — 순수 계산 결과만 반환하며, 사용자가 후보 중 하나를 고르면 프론트가 별도로 `POST /api/projects/{projectId}/blocks`를 호출해야 실제 교통 블록이 생긴다(아래 매핑표 참조).
+
+**Request Body:**
+```json
+{ "blockIds": [101, 105, 107] }
+```
+
+| 필드 | 타입 | 필수 | 설명 |
+|---|---|---|---|
+| `blockIds` | array\<long\> | Y | 구간을 만들 블록 id, 체인 순서대로. 최대 30개(초과 시 `400`) |
+
+> 서버가 인접 쌍으로 구간을 만든다 — `[101,105,107]`이면 `(101,105)`,`(105,107)` 두 구간.
+> `blockIds`가 0~1개면 만들 구간이 없으므로 **`segments: []`를 200으로 반환한다(400이 아니다)** — 단, 그 1개가 이 프로젝트에 실재하고 좌표를 가진 유효한 블록일 때다. 구간 생성 전에 요청에 포함된 **모든** 블록의 존재·좌표를 먼저 검사하므로, blockIds가 1개뿐이라도 그 블록이 없거나 좌표가 없으면 여전히 `400`이다.
+> 같은 id가 연속으로 오면(예: `[101,101,105]`) 그 쌍만 건너뛴다 — 이동이 없다고 보고 구간을 만들지 않는다. 단, 이 경우도 좌표 검사는 두 id 모두에 대해 먼저 이뤄진다(예: `[101,101]`에서 101에 좌표가 없으면 구간이 0개여도 `TRANSIT400_2`).
+
+**Response `200`:**
+```json
+{
+  "isSuccess": true,
+  "code": "COMMON200",
+  "message": "요청에 성공했습니다.",
+  "result": {
+    "segments": [
+      {
+        "fromBlockId": 101,
+        "toBlockId": 105,
+        "defaultMode": "TRANSIT",
+        "candidates": [
+          { "mode": "TRANSIT", "label": "대중교통", "available": true, "durationMin": 42, "fare": 1400, "fareConfidence": "CONFIRMED", "intervalMin": 13, "distanceM": null },
+          { "mode": "TAXI", "label": "택시", "available": true, "durationMin": 15, "fare": 12000, "fareConfidence": "CONFIRMED", "intervalMin": null, "distanceM": 8200 },
+          { "mode": "WALK", "label": "도보", "available": false, "durationMin": null, "fare": null, "fareConfidence": null, "intervalMin": null, "distanceM": null }
+        ]
+      }
+    ]
+  }
+}
+```
+
+| 필드 | 타입 | 설명 |
+|---|---|---|
+| `segments[].fromBlockId` / `toBlockId` | long | 구간의 출발/도착 블록 id |
+| `segments[].defaultMode` | enum \| null | 후보 중 기본값(조회에 성공한 첫 수단, 우선순위순). **그 구간의 모든 조회가 실패하면 null**이다 |
+| `segments[].candidates[].mode` | enum | `TRANSIT`\|`TAXI`\|`CAR`\|`WALK` — 아래 참조 |
+| `.label` | string | 한글 표시명(`대중교통`\|`택시`\|`자차`\|`도보`) |
+| `.available` | bool | **조회 실패 여부만** 나타낸다. 아래 콜아웃 참조 |
+| `.durationMin` / `.fare` / `.fareConfidence` / `.intervalMin` / `.distanceM` | - | `available:false`면 전부 `null`. 수단별로 비는 필드가 아래 표처럼 갈린다 |
+
+**수단마다 비는 필드가 다르다** (`available:true`인데도 `null`인 경우 — 프론트엔드가 그 항목만 숨기면 된다)
+
+| 필드 | `TRANSIT` | `TAXI` | `CAR` | `WALK` |
+|---|---|---|---|---|
+| `durationMin` | ○ | ○ | ○ | ○ |
+| `fare` | ○ | ○ | ○ | ○ (항상 `0`) |
+| `intervalMin`(배차간격) | ○ | **null** | **null** | **null** |
+| `distanceM` | **null** | ○ | ○ | ○ |
+
+`distanceM`이 대중교통에서 `null`인 이유는 **ODsay 응답에 거리가 없어서**다. 우리가 담지 않은 것이 아니라 받은 적이 없다. 직선거리로 채우지 않는다 — 다른 수단의 `distanceM`은 실제 경로 거리(도로/보행)이므로, 대중교통만 직선거리를 넣으면 의미가 달라져 사용자가 카드를 나란히 비교할 때 왜곡된다.
+
+`distanceM`은 **외부 API가 준 실제 경로 거리(미터)**이고 직선거리가 아니다. 실측 예: 서울시청→강남역이 직선 8,785m인데 `distanceM`은 10,327m다(도로를 따라가므로). 자차 연료비도 이 값으로 계산하므로 직선거리를 쓰면 기름값이 15%가량 싸게 나온다.
+
+> 서버 내부에서 쓰는 직선거리(하버사인)는 300m·2km 임계를 판정해 **외부 API를 부를지 말지** 정하는 용도이며 응답에 나가지 않는다.
+
+**`TransitMode`:**
+
+| 값 | 한글 | 비고 |
+|---|---|---|
+| `TRANSIT` | 대중교통 | 버스+지하철 통합 조회(ODsay). 사용자가 고르는 단위는 "대중교통이냐 택시냐"이지 "버스냐 지하철이냐"가 아니라서 따로 내지 않는다 |
+| `TAXI` | 택시 | 카카오모빌리티 Directions API 실측 요금 |
+| `CAR` | 자차 | 통행료(카카오 실측) + 연료비(추정) 합산 |
+| `WALK` | 도보 | 카카오 도보 길찾기 API. **요금 자체가 없어 `fare`는 항상 `0`**(API가 준 실측값이 아니라 하드코딩) |
+
+`fareConfidence`는 `CONFIRMED`(요금 산정에 가정이 섞이지 않은 값 — `TRANSIT`/`TAXI`는 외부 API 실측 요금, `WALK`은 요금이 없어 고정된 `0`) 또는 `ESTIMATE`(가정이 들어간 추정치)다. `CAR`는 통행료는 실측이지만 연료비가 추정(연비 가정값 사용)이라 항상 `ESTIMATE`로 표시된다.
+
+`CAR`의 연료비는 `거리 ÷ 연비 가정값(12km/L) × 유가`다. 유가는 오피넷 전국 평균 휘발유가를 하루 한 번(+ 서버 기동 직후) 받아 메모리에 캐시해 쓰고, `OPINET_API_KEY`가 없거나 조회에 실패하면 상수 유가로 대체한다 — 어느 쪽이든 응답 형태는 같고 `fareConfidence`도 `ESTIMATE` 그대로다(연비 가정이 이미 추정이라 유가 출처가 신뢰도를 바꾸지 않는다).
+
+> **`available: false`는 조회 실패 전용이다.** 직선거리 2km 초과로 후보에서 제외된 도보는 `candidates` 목록에 **아예 나타나지 않는다.** `available:false`인 항목과 목록에 없는 항목을 같은 의미로 취급하면 프론트가 "도보가 왜 회색인가 — 먼 것인가 API가 죽은 것인가"를 구분할 수 없다.
+>
+> **`defaultMode`는 null일 수 있다** — 그 구간의 모든 후보 조회가 실패했을 때다. 프론트는 그 구간만 비워 두고 안내한다.
+>
+> **기본 선택과 후보 포함 여부는 서로 다른 질문이다 — 임계값 두 개가 각각 답한다.**
+> - 직선거리 **300m 미만**: 대중교통·택시를 물을 거리가 아니므로 호출 자체를 생략하고 도보만 후보로 낸다.
+> - 직선거리 **300m~2km**: 프로젝트의 `TransportPref`가 정한 수단(`CAR`→자차, `PUBLIC`/미지정→대중교통)이 **기본값(`defaultMode`)이자 후보 1순위**이고 택시가 항상 따라붙으며, **도보도 후보로 함께 나온다**(기본은 아니다).
+> - 직선거리 **2km 초과**: 도보가 후보에서 빠진다. 기본 수단은 여전히 `TransportPref` 기준으로 정해진다.
+> - 즉 **300m는 "기본 수단이 무엇인가"를, 2km는 "도보를 후보 목록에 넣을지"를 각각 결정**한다 — 300m~2km 구간에서 두 답이 겹쳐 선호 수단과 도보가 함께 후보로 나가는 것이 정상이다.
+
+**후보 → 블록 필드 매핑** (프론트가 후보 선택 즉시 `POST /api/projects/{projectId}/blocks`를 호출할 때 쓴다. `transportMeta`는 자유 형식 객체라 아래 키는 백엔드가 강제하는 스키마가 아니라 프론트-백엔드 간 관례다):
+
+| 후보 필드 | 블록 필드 |
+|---|---|
+| `durationMin` | `durationMin` |
+| `fare` | `budget` |
+| `label` | `subCategory` |
+| `mode`·`fare`·`fareConfidence`·`intervalMin` | `transportMeta`에 담고 `generated: true` 추가 |
+| (고정) | `category: TRANSPORT` |
+
+**Errors:**
+
+| code | HTTP | 상황 |
+|---|---|---|
+| `COMMON400_1` | 400 | `blockIds` 누락 또는 30개 초과(`@NotNull`/`@Size` 검증 실패) |
+| `PROJECT404` | 404 | 존재하지 않는 프로젝트 |
+| `TRANSIT400_1` | 400 | `blockIds` 중 존재하지 않거나 이 프로젝트 소속이 아닌 블록이 있음(없는 id와 남의 프로젝트 블록을 구분해 응답하지 않는다 — id를 넣어보는 것만으로 남의 블록 존재 여부를 알아내는 것을 막기 위해서다) |
+| `TRANSIT400_2` | 400 | 요청에 포함된 블록 중 하나라도 좌표(`lat`/`lng`)가 없음(예: `ETC`) — 구간의 끝점 여부와 무관하게 **요청 전체**를 검사한다 |
+| `GROUP403` | 403 | 그룹 멤버가 아님 |
+
+---
+
 ## 상세 명세 — 외부 연동 프록시
 
 > API 키를 서버에 은닉하기 위한 프록시. 외부 API 실패·쿼터 초과 시 서비스 레이어에서 폴백.
@@ -430,7 +542,7 @@ coord2address 역지오코딩(MAP-04 핀 지정).
 
 ### GET /api/transit/route
 
-길찾기 소요 시간·요금(BLK-04). **mode는 클라이언트가 확정해 전송** — 서버는 차량 이용 상태를 판정하지 않음.
+길찾기 소요 시간·요금(BLK-04). **대중교통 전용 엔드포인트다** — `mode`는 `BUS`\|`SUBWAY`만 지원한다. 도보·택시·자차를 포함한 통합 조회는 `POST /api/projects/{projectId}/transit-candidates`(위 "상세 명세 — 교통 후보" 참조)가 대신 제공한다.
 
 **Query Params:**
 
@@ -438,7 +550,7 @@ coord2address 역지오코딩(MAP-04 핀 지정).
 |---|---|---|
 | `sx` / `sy` | Y | 출발 경도/위도 |
 | `ex` / `ey` | Y | 도착 경도/위도 |
-| `mode` | Y | `BUS`\|`SUBWAY`\|`WALK`\|`TAXI`\|`CAR` |
+| `mode` | Y | `BUS`\|`SUBWAY` |
 
 **Response `200`:**
 ```json
@@ -449,11 +561,17 @@ coord2address 역지오코딩(MAP-04 핀 지정).
   "result": { "durationMin": 42, "fare": 1400, "intervalMin": 13, "estimated": false, "fareConfidence": "CONFIRMED" }
 }
 ```
-> `intervalMin`은 BUS/SUBWAY 전용 확장 필드로 ODsay의 `totalIntervalTime`(환승 구간 배차간격 합, 분)이며 WALK/TAXI/CAR에는 없다(향후 그 모드들이 붙을 때 `null`).
-> - `BUS`/`SUBWAY`: ODsay. 실패·경로없음 시 하버사인 추정 없이 즉시 실패(대중교통은 정류장 배치·환승 구조상 직선거리 추정이 부정확해 의미 없다고 판단) — `502`(API 실패) 또는 `404`(경로 없음)를 반환하며 프론트는 곧장 수동 입력으로 전환한다.
-> - `CAR`: v1은 하버사인 × 평균속도(시내 30·시외 60km/h) 산식, `estimated: true`, 비용 수동(`fareConfidence: ESTIMATE`).
-> - `TAXI`: 서버 산식(기본 4,800원 + km당 1,000원), `fareConfidence: ESTIMATE`.
-> **요금 신뢰도**: 지하철·버스·기차 → `CONFIRMED`, 항공·택시·자차 → `ESTIMATE`. UI는 ESTIMATE에 "약 ~원 (변동 가능)" + "확정 예약 전 실제 사이트에서 확인" 안내.
+> `intervalMin`은 ODsay의 `totalIntervalTime`(환승 구간 배차간격 합, 분)이다.
+> 실패·경로없음 시 하버사인 추정 없이 즉시 실패(대중교통은 정류장 배치·환승 구조상 직선거리 추정이 부정확해 의미 없다고 판단) — `502`(API 실패) 또는 `404`(경로 없음)를 반환하며 프론트는 곧장 수동 입력으로 전환한다.
+> `fareConfidence`는 이 엔드포인트에서 항상 `CONFIRMED`다(ODsay 실측). `ESTIMATE`는 자차 연료비처럼 가정이 들어간 값에 쓰며, 교통 후보 API(`CAR`)에서만 나타난다.
+
+**Errors:**
+
+| code | HTTP | 상황 |
+|---|---|---|
+| `TRANSIT400` | 400 | `mode`가 `BUS`/`SUBWAY`가 아님 |
+| `TRANSIT404` | 404 | 해당 구간의 대중교통 경로를 찾을 수 없음 |
+| `TRANSIT502` | 502 | ODsay API 응답 실패 |
 
 ### GET /api/trains
 

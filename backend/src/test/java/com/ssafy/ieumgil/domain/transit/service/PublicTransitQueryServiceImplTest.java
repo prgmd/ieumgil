@@ -5,6 +5,7 @@ import com.ssafy.ieumgil.domain.transit.dto.OdsayRouteResponse;
 import com.ssafy.ieumgil.domain.transit.dto.TransitResDTO;
 import com.ssafy.ieumgil.domain.transit.exception.TransitErrorCode;
 import com.ssafy.ieumgil.domain.transit.exception.TransitException;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
@@ -14,6 +15,9 @@ import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.anyDouble;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -73,5 +77,31 @@ class PublicTransitQueryServiceImplTest {
                 service.getRoute(37.4979, 127.0276, 37.5665, 127.1054, "WALK"))
                 .isInstanceOf(TransitException.class)
                 .hasFieldOrPropertyWithValue("code", TransitErrorCode.UNSUPPORTED_MODE);
+    }
+
+    @Test
+    @DisplayName("통합 대중교통 조회는 버스·지하철을 함께 고려한 경로를 돌려준다")
+    void combinedRouteUsesIntegratedSearchType() {
+        // Info(totalTime, payment, totalIntervalTime) / Path(pathType, info)
+        OdsayRouteResponse.Info info = new OdsayRouteResponse.Info(25, 1400, 8);
+        given(odsayClient.searchPublicTransitRoute(37.5, 127.0, 37.6, 127.1, "TRANSIT"))
+                .willReturn(Optional.of(new OdsayRouteResponse.Path(0, info)));
+
+        TransitResDTO.Route route = service.getCombinedRoute(37.5, 127.0, 37.6, 127.1);
+
+        assertThat(route.durationMin()).isEqualTo(25);
+        assertThat(route.fare()).isEqualTo(1400);
+        assertThat(route.intervalMin()).isEqualTo(8);
+        assertThat(route.fareConfidence()).isEqualTo(TransitResDTO.FareConfidence.CONFIRMED);
+    }
+
+    @Test
+    @DisplayName("경로가 없으면 ROUTE_NOT_FOUND다 — 기존 getRoute와 같은 계약")
+    void combinedRouteThrowsWhenNotFound() {
+        given(odsayClient.searchPublicTransitRoute(anyDouble(), anyDouble(), anyDouble(), anyDouble(), anyString()))
+                .willReturn(Optional.empty());
+
+        assertThatThrownBy(() -> service.getCombinedRoute(37.5, 127.0, 37.6, 127.1))
+                .isInstanceOf(TransitException.class);
     }
 }

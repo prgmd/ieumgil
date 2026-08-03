@@ -53,6 +53,7 @@ public class PlaceQueryServiceImpl implements PlaceQueryService {
         return kakaoLocalClient.getDrivingRoute(startLat, startLng, endLat, endLng)
                 .map(s -> new PlaceResDTO.TaxiRoute(
                         s.fare() != null ? s.fare().taxi() : 0,
+                        s.fare() != null ? s.fare().toll() : 0,
                         s.distance(),
                         toMinutes(s.duration())));
     }

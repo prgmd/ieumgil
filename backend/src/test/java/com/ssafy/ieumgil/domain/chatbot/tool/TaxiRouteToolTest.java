@@ -47,7 +47,7 @@ class TaxiRouteToolTest {
         when(resolver.resolve("제주도", "숙소")).thenReturn(Optional.of(start));
         when(resolver.resolve("제주도", "공항")).thenReturn(Optional.of(end));
         when(placeQueryService.getTaxiRoute(33.1, 126.1, 33.5, 126.5))
-                .thenReturn(Optional.of(new PlaceResDTO.TaxiRoute(35000, 42000, 40)));
+                .thenReturn(Optional.of(new PlaceResDTO.TaxiRoute(35000, 0, 42000, 40)));
 
         TaxiRouteResult result = tool.getTaxiRoute("숙소", "공항");
 
