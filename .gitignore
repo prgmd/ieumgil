@@ -1,0 +1,12 @@
+# 의존성 — 어느 위치에서든 node_modules 는 커밋하지 않는다
+# (과거에 루트에서 npm install 이 실행돼 루트 node_modules 일부가 커밋된 사고의 재발 방지.
+#  루트에는 package.json 을 두지 않는다 — 프론트 의존성은 frontend/ 에서만 설치할 것)
+node_modules/
+
+# 루트에 실수로 생기는 npm 흔적 (frontend/ 밖에서 npm install 을 실행한 경우)
+/package.json
+/package-lock.json
+
+# 로컬 환경·로그
+*.local
+npm-debug.log*
