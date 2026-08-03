@@ -582,7 +582,6 @@ function ReadModeView({ chains, items, dayKeys, project }) {
     <div className="dash-body read-view">
       {dayKeys.map((day, index) => {
         const chain = chains[day] || [];
-        if (chain.length === 0) return null;
         return (
           <div key={day} className="rv-day">
             <h2 className="rv-day-title">
@@ -592,6 +591,11 @@ function ReadModeView({ chains, items, dayKeys, project }) {
               </span>
             </h2>
 
+            {/* 빈 Day 도 생략하지 않는다(RO-02) — 건너뛰면 Day 번호가 끊겨
+                "아직 안 짠 날"과 "없는 날"을 구분할 수 없다 */}
+            {chain.length === 0 ? (
+              <p className="rv-day-empty">일정 없음</p>
+            ) : (
             <div className="rv-list">
               <div className="rv-line" />
               {chain.map((id) => {
@@ -632,6 +636,7 @@ function ReadModeView({ chains, items, dayKeys, project }) {
                 );
               })}
             </div>
+            )}
           </div>
         );
       })}
@@ -1075,8 +1080,11 @@ export function DashboardPage() {
     }
   };
 
-  const totalBudget = Object.values(items).reduce(
-    (sum, item) => sum + (item.cost || 0),
+  // 예산은 체인에 배치된 블록만 센다(명세) — 후보(POOL)는 아직 계획이 아니라
+  // 검토 중인 카드라서, 합산에 넣으면 "쓸지 말지 모르는 돈"이 예산을 잠식한다.
+  const placedIds = Object.values(chains).flat();
+  const totalBudget = placedIds.reduce(
+    (sum, id) => sum + (items[id]?.cost || 0),
     0,
   );
   const [targetBudget, setTargetBudget] = useState(0);
@@ -1187,13 +1195,17 @@ export function DashboardPage() {
         ? totalBudget || 1
         : targetBudget;
 
+    // 총액(totalBudget)과 같은 기준 — 체인에 배치된 블록만 (후보는 계획이 아니다)
     const sumByCat = {};
-    Object.values(items).forEach((item) => {
-      const cost = item?.cost || 0;
-      if (cost <= 0) return;
-      const cat = catKeyOf(item);
-      sumByCat[cat] = (sumByCat[cat] ?? 0) + cost;
-    });
+    Object.values(chains)
+      .flat()
+      .forEach((id) => {
+        const item = items[id];
+        const cost = item?.cost || 0;
+        if (cost <= 0) return;
+        const cat = catKeyOf(item);
+        sumByCat[cat] = (sumByCat[cat] ?? 0) + cost;
+      });
 
     return Object.keys(CAT_COLORS)
       .filter((cat) => sumByCat[cat] > 0)
@@ -1206,7 +1218,7 @@ export function DashboardPage() {
         shareOfTotal:
           totalBudget > 0 ? (sumByCat[cat] / totalBudget) * 100 : 0,
       }));
-  }, [items, targetBudget, totalBudget, remainingBudget]);
+  }, [items, chains, targetBudget, totalBudget, remainingBudget]);
 
   // 저장 실패 시 롤백 — "어디서 왔는지"를 복원하는 대신 서버 진실로 보드를
   // 다시 시드한다. 5.5단계 이후엔 교통 블록까지 전부 서버에 있으므로
@@ -3134,7 +3146,7 @@ export function DashboardPage() {
                     <div>
                       <b>후보 목록</b> <span className="n">{pool.length}</span>
                       <span className="pool-hint">
-                        자유롭게 끌어다 놓고 빼세요 · 범위 밖에 놓으면 삭제
+                        끌어다 놓아 보관하세요 · 범위 밖에 놓으면 삭제
                       </span>
                     </div>
                     <button
@@ -3159,6 +3171,15 @@ export function DashboardPage() {
                     </SortableContext>
                     {dragPreview?.region === "pool" && !isDraggingFromPool && (
                       <div className="pool-dropzone" />
+                    )}
+                    {/* 빈 상태 — 어디서 채우는지(챗봇·지도 검색)를 함께 안내한다.
+                        드래그로 놓으려는 중에는 드롭존이 대신 보이므로 숨긴다 */}
+                    {pool.length === 0 && dragPreview?.region !== "pool" && (
+                      <div className="pool-empty">
+                        아직 보관한 블록이 없어요 — 오른쪽 <b>지도 검색</b>이나{" "}
+                        <b>챗봇 이음이</b>의 추천을 끌어다 여기에 보관하고,{" "}
+                        <b>+ 커스텀 블록</b>으로 직접 만들 수도 있어요.
+                      </div>
                     )}
                   </div>
                 </div>
