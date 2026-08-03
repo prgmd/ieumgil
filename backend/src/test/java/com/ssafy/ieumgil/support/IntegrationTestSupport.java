@@ -39,6 +39,10 @@ import java.util.concurrent.ThreadLocalRandom;
         "jwt.secret=test-only-jwt-secret-test-only-jwt-secret-0123456789",
         "oauth.kakao.client-id=test-client-id",
         "oauth.kakao.redirect-uri=http://localhost/oauth/test",
+        // 오피넷 유가 provider는 기동 직후(ApplicationReadyEvent) 실제 API를 부른다. 테스트
+        // 컨텍스트에서도 그 이벤트가 발생하므로, .env에 키가 있는 개발 PC에서는 테스트를 돌릴 때마다
+        // 실호출이 나간다. 키를 비워 상수 유가 provider로 떨어뜨려 테스트를 네트워크에서 떼어 놓는다.
+        "opinet.api-key=",
 })
 public abstract class IntegrationTestSupport {
 
