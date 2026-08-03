@@ -3163,12 +3163,13 @@ export function DashboardPage() {
           {voice.speakerOn ? "🔊" : "🔈"}
         </button>
         <span className="voice-status">
+          {/* 인원은 나를 포함해 센다 — 나+A+B 면 3명 */}
           {!voice.joined
             ? "음성 연결 중..."
             : voice.listenOnly
-              ? `듣기 전용 · ${voice.connectedCount}명`
+              ? `듣기 전용 · ${voice.connectedCount + 1}명`
               : voice.connectedCount > 0
-                ? `음성 연결됨 · ${voice.connectedCount}명`
+                ? `음성 연결됨 · ${voice.connectedCount + 1}명`
                 : "혼자 있어요"}
         </span>
       </div>
