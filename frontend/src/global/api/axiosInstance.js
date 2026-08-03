@@ -1,5 +1,6 @@
 import axios from "axios";
 import { tokenStorage } from "../util/tokenStorage";
+import { getClientId } from "./clientId";
 
 /**
  * 전역 Axios 인스턴스
@@ -39,14 +40,23 @@ const axiosInstance = axios.create({
 
 /* ------------------------------------------------------------------ *
  * 요청 인터셉터: accessToken 을 Authorization 헤더에 자동 삽입
+ * + 변경 요청에는 X-Client-Id(탭 UUID) 첨부
  * ------------------------------------------------------------------ */
+
+// 브로드캐스트에서 자기 op 를 스킵하기 위한 헤더(dashboard-api.md 공통 규약).
+// 대시보드 외 엔드포인트는 이 헤더를 무시하므로 변경 메서드 전체에 일괄 첨부한다 —
+// 빠뜨리면 에러 없이 자기 변경이 이중 적용되는, 원인 찾기 어려운 종류의 버그가 된다.
+const MUTATING_METHODS = new Set(["post", "put", "patch", "delete"]);
+
 axiosInstance.interceptors.request.use(
   (config) => {
     const accessToken = tokenStorage.getAccessToken();
     if (accessToken) {
       config.headers.Authorization = `Bearer ${accessToken}`;
     }
-    config.headers["X-Client-Id"] = CLIENT_ID;
+    if (MUTATING_METHODS.has(config.method)) {
+      config.headers["X-Client-Id"] = getClientId();
+    }
     return config;
   },
   (error) => Promise.reject(error),

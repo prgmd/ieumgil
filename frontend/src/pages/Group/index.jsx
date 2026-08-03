@@ -6,6 +6,7 @@ import { useProjects } from '../../features/group/hooks/useProjects';
 import { useToastStore } from '../../global/stores/toastStore';
 import LeaveGroupModal from './components/LeaveGroupModal';
 import CreateProjectModal from './components/CreateProjectModal';
+import EditProjectModal from './components/EditProjectModal';
 import DeleteProjectModal from './components/DeleteProjectModal';
 import { AppBar } from '../My/shared/ui/AppBar';
 import { Avatar } from '../My/shared/ui/Avatar';
@@ -18,13 +19,17 @@ export function GroupPage() {
   const groupId = Number(useParams().groupId);
   
   // groupId만 들고 들어오므로 그룹·프로젝트를 URL 파라미터로 직접 조회한다.
-  const { group, status, reissueInviteCode, leaveGroup } = useGroupDetail(groupId);
-  const { projects, createProject, deleteProject } = useProjects(groupId);
+  const { group, status, reissueInviteCode, renameGroup, leaveGroup } =
+    useGroupDetail(groupId);
+  const { projects, createProject, updateProject, deleteProject } = useProjects(groupId);
   const showToast = useToastStore((s) => s.show);
   const navigate = useNavigate();
 
   const [leaveOpen, setLeaveOpen] = useState(false);
+  const [renaming, setRenaming] = useState(false); // 그룹명 인라인 수정 중인지
+  const [nameDraft, setNameDraft] = useState('');
   const [createProjectOpen, setCreateProjectOpen] = useState(false);
+  const [editProjectTarget, setEditProjectTarget] = useState(null);
   const [deleteProjectTarget, setDeleteProjectTarget] = useState(null);
 
   async function handleCopyCode() {
@@ -33,6 +38,24 @@ export function GroupPage() {
       showToast('초대 코드가 복사됐어요 🔗');
     } catch {
       showToast('복사에 실패했어요 — 코드를 직접 선택해 복사해주세요.');
+    }
+  }
+
+  // 개인 페이지의 그룹 카드와 같은 인라인 수정 규칙 — 빈 값이면 조용히 취소한다.
+  function startRename() {
+    setNameDraft(group.name);
+    setRenaming(true);
+  }
+
+  async function commitRename() {
+    const trimmed = nameDraft.trim();
+    setRenaming(false);
+    if (!trimmed || trimmed === group.name) return;
+    try {
+      await renameGroup(trimmed);
+      showToast('그룹명이 수정됐어요 ✓');
+    } catch {
+      showToast('그룹명은 2~20자로 입력해주세요.');
     }
   }
 
@@ -57,7 +80,30 @@ export function GroupPage() {
       <div className="group-grid">
         <div>
           <div className="sec-head">
-            <h2>{group.name}</h2>
+            {/* 그룹명도 이 화면에서 바로 수정한다 — 상단바·대시보드 경로에 함께 반영된다 */}
+            {renaming ? (
+              <input
+                className="rename-input sec-rename"
+                value={nameDraft}
+                autoFocus
+                maxLength={20}
+                onChange={(e) => setNameDraft(e.target.value)}
+                onBlur={commitRename}
+                onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()}
+              />
+            ) : (
+              <h2 className="sec-title">
+                {group.name}
+                <button
+                  type="button"
+                  className="sec-op"
+                  title="그룹명 수정"
+                  onClick={startRename}
+                >
+                  ✎
+                </button>
+              </h2>
+            )}
             <span>프로젝트를 눌러 대시보드로</span>
             <span className="right">
               <button className="btn btn-acc" onClick={() => setCreateProjectOpen(true)}>
@@ -84,10 +130,22 @@ export function GroupPage() {
                       {done ? '완료 — 편집 가능' : '계획 중'}
                     </span>
                   </div>
-                  {/* flat 모델 — 완료 여부와 무관하게 모든 멤버가 삭제할 수 있다 */}
+                  {/* flat 모델 — 완료 여부와 무관하게 모든 멤버가 수정·삭제할 수 있다.
+                      아이콘·hover 노출 규칙은 개인 페이지의 그룹 카드(.g-card .ops)와 같다. */}
                   <div className="ops">
                     <button
                       className="op"
+                      title="프로젝트 수정"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setEditProjectTarget(p);
+                      }}
+                    >
+                      ✎
+                    </button>
+                    <button
+                      className="op"
+                      title="프로젝트 삭제"
                       onClick={(e) => {
                         e.stopPropagation();
                         setDeleteProjectTarget(p);
@@ -147,6 +205,17 @@ export function GroupPage() {
         onCreate={createProject}
         onClose={() => setCreateProjectOpen(false)}
       />
+      {/* 열려 있을 때만 마운트한다 — 다른 프로젝트의 ✎ 를 누르면 폼이 그 프로젝트
+          값으로 새로 잡히도록(key) 하기 위함 */}
+      {editProjectTarget && (
+        <EditProjectModal
+          key={editProjectTarget.projectId}
+          open
+          project={editProjectTarget}
+          onUpdate={updateProject}
+          onClose={() => setEditProjectTarget(null)}
+        />
+      )}
       <DeleteProjectModal
         open={!!deleteProjectTarget}
         project={deleteProjectTarget}

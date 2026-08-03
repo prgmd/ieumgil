@@ -3,7 +3,9 @@
   left: 50%;
   bottom: 32px;
   transform: translate(-50%, 12px);
-  z-index: 1000;
+  /* 토스트는 항상 최상위 — 모달 오버레이(대시보드 9999)보다 위여야
+     "저장 실패" 같은 안내가 모달에 가려지지 않는다 */
+  z-index: 20000;
 
   max-width: min(90vw, 420px);
   padding: 12px 20px;

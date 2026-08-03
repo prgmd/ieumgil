@@ -18,6 +18,14 @@ export default defineConfig(({ mode }) => {
           target: env.VITE_API_PROXY_TARGET || 'http://localhost:8080',
           changeOrigin: true,
         },
+        // STOMP WebSocket(실시간 협업). ws: true 가 핵심 — 없으면 Upgrade 요청이
+        // 일반 HTTP 로 중계되다 실패한다. REST 와 같은 오리진을 유지해서
+        // 배포(nginx 리버스 프록시) 구성과 개발 환경이 같은 모양이 된다.
+        '/ws': {
+          target: env.VITE_API_PROXY_TARGET || 'http://localhost:8080',
+          changeOrigin: true,
+          ws: true,
+        },
       },
     },
   }
