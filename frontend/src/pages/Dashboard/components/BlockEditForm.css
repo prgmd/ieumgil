@@ -71,6 +71,52 @@
   color: #555;
 }
 
+/* ── 주소 입력 ─────────────────────────────────────────────
+   입력칸 + [주소 검색] 버튼 한 줄. 입력칸이 남는 폭을 다 먹고
+   (min-width:0 이 있어야 긴 주소가 버튼을 밀어내지 않는다) 버튼은 제 폭만 쓴다. */
+.bef-addr {
+  display: flex;
+  gap: 8px;
+  align-items: stretch;
+}
+.bef-addr .bef-input {
+  flex: 1;
+  min-width: 0;
+}
+.bef-addr-btn {
+  flex-shrink: 0;
+  padding: 0 16px;
+  border: none;
+  border-radius: 10px;
+  background: #7c5443;
+  color: #fff;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: bold;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+.bef-addr-btn:hover:not(:disabled) {
+  background: #6a4536;
+}
+.bef-addr-btn:disabled {
+  background: #c9beb2;
+  cursor: default;
+}
+
+/* 좌표를 잡았는지 알려주는 한 줄 — 저장을 눌러서야 알게 되면 늦다 */
+.bef-addr-hint {
+  margin: 6px 0 0;
+  font-size: 12px;
+}
+.bef-addr-hint.is-ok {
+  color: #3e8e63;
+}
+.bef-addr-hint.is-warn {
+  color: #9c3b3b;
+}
+
 .bef-foot {
   display: flex;
   justify-content: space-between;
