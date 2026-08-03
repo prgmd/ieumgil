@@ -104,6 +104,22 @@ const TRANSIT_MODE_META = {
   WALK: { ico: "🚶", nm: "도보" },
 };
 
+/**
+ * 겹침 해소 결과가 자정(24:00)을 넘는지 — 정책 A: 넘치는 변경은 만들기 전에 막는다.
+ * 서버 시각이 "HH:mm" 문자열이라 24시 이후는 존재할 수 없고(BLOCK400_3),
+ * 조용히 잘라내면(클램프) 종료−시작=소요시간 불변식이 깨진다. 그래서 거부가 정답.
+ */
+const chainOverflowsMidnight = (chainIds, itemsMap) =>
+  (chainIds ?? []).some((id) => {
+    const item = itemsMap[id];
+    return (
+      item?.startMins != null && item.startMins + (item.dur || 0) > DAY_END
+    );
+  });
+
+const MIDNIGHT_BLOCK_MSG =
+  "이대로면 일정이 24시를 넘어요 — 소요 시간을 줄이거나 다음 날로 옮겨주세요.";
+
 // 후보 칩·행에 함께 표시할 요금 문구 — 추정치는 "약 "을 붙인다
 const transitFareText = (c) =>
   (c.fare || 0) > 0
@@ -1322,7 +1338,6 @@ export function DashboardPage() {
   const confirmBulkTransit = useCallback(
     async () => {
       const picker = bulkTransitPicker;
-      setBulkTransitPicker(null);
       if (!picker) return;
       const { dayKey, choices } = picker;
 
@@ -1333,7 +1348,10 @@ export function DashboardPage() {
         (id) => !items[id]?.auto && isServerBlock(id),
       );
       const oldAutoIds = chain.filter((id) => items[id]?.auto);
-      if (realIds.length < 2) return;
+      if (realIds.length < 2) {
+        setBulkTransitPicker(null);
+        return;
+      }
 
       setIsGeneratingTransport(true);
       try {
@@ -1370,7 +1388,10 @@ export function DashboardPage() {
           }
         });
         // 만들 것도, 지울 것도 없으면 보드를 건드리지 않는다
-        if (createdLocalIds.length === 0 && oldAutoIds.length === 0) return;
+        if (createdLocalIds.length === 0 && oldAutoIds.length === 0) {
+          setBulkTransitPicker(null);
+          return;
+        }
 
         const { newItems: resolvedItems, newChain } = resolveOverlaps(
           newItems,
@@ -1378,6 +1399,16 @@ export function DashboardPage() {
           dayStart[dayKey] ?? 540,
           null,
         );
+
+        // 자정 초과면 적용하지 않는다(정책 A). 모달은 열어 둔다 —
+        // 구간을 "제외"하거나 더 빠른 수단으로 바꿔 바로 다시 시도할 수 있게.
+        if (chainOverflowsMidnight(newChain, resolvedItems)) {
+          showToast(
+            "이대로 추가하면 일정이 24시를 넘어요 — 일부 구간을 제외하거나 더 빠른 수단을 골라주세요.",
+          );
+          return;
+        }
+        setBulkTransitPicker(null);
 
         // 낙관 적용
         setItems(resolvedItems);
@@ -1450,6 +1481,7 @@ export function DashboardPage() {
       dayStart,
       projectId,
       rollbackToServer,
+      showToast,
     ],
   );
 
@@ -1546,6 +1578,12 @@ export function DashboardPage() {
           dayStart[dayKey] ?? 540,
           null,
         );
+
+        // 자정 초과면 만들지 않는다(정책 A) — 보드를 건드리기 전이라 알림만
+        if (chainOverflowsMidnight(newChain, resolvedItems)) {
+          showToast(MIDNIGHT_BLOCK_MSG);
+          return;
+        }
 
         // 낙관 적용
         setItems(resolvedItems);
@@ -1941,6 +1979,21 @@ export function DashboardPage() {
       return;
     }
 
+    // 소요시간 증가가 이웃을 자정 밖으로 밀어내면 저장 자체를 막는다(정책 A).
+    // PATCH 전에 판정해야 한다 — 보낸 뒤 알면 서버와 화면이 어긋난다.
+    if (changed.durationMin != null && chains[activeDay]?.includes(targetId)) {
+      const predicted = resolveOverlaps(
+        { ...items, [targetId]: merged },
+        chains[activeDay],
+        dayStart[activeDay] ?? 540,
+        targetId,
+      );
+      if (chainOverflowsMidnight(predicted.newChain, predicted.newItems)) {
+        showToast(MIDNIGHT_BLOCK_MSG);
+        return; // 모달을 열어 둔다 — 소요를 줄여 다시 저장할 수 있게
+      }
+    }
+
     try {
       const result = await blockApi.updateBlockFields(targetId, changed);
       // 1인 모드에서 applied:false(스테일)는 나올 수 없다 — 나오면 그 자체가 조사 대상
@@ -2223,7 +2276,7 @@ export function DashboardPage() {
           resizingState.originalStartMins + resizingState.startDur - newStart;
       }
 
-      setItems(() => {
+      setItems((prev) => {
         const updatedSnapshot = {
           ...resizingState.originalItems,
           [resizingState.id]: {
@@ -2234,12 +2287,14 @@ export function DashboardPage() {
               : {}),
           },
         };
-        const { newItems } = resolveOverlaps(
+        const { newItems, newChain } = resolveOverlaps(
           updatedSnapshot,
           chains[activeDay],
           dayStart[activeDay] ?? 540,
           resizingState.id,
         );
+        // 자정을 넘기는 이동량은 무시한다(정책 A) — 리사이즈가 자정 벽에서 멈춘다
+        if (chainOverflowsMidnight(newChain, newItems)) return prev;
         return newItems;
       });
     };
@@ -2579,6 +2634,13 @@ export function DashboardPage() {
         dayStart[activeDay] ?? 540,
         activeIdLocal,
       );
+
+      // 놓는 블록은 자정 안이어도 밀려나는 이웃이 자정을 넘을 수 있다 —
+      // 그 드롭은 통째로 거부한다(정책 A). 보드를 안 건드렸으니 제자리 복귀.
+      if (chainOverflowsMidnight(newChain, newItems)) {
+        showToast(MIDNIGHT_BLOCK_MSG);
+        return;
+      }
 
       // 낙관 적용
       setItems(newItems);
