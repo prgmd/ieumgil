@@ -231,6 +231,8 @@ public class TransitCandidateServiceImpl implements TransitCandidateService {
                 case TAXI -> taxiCandidate(driving);
                 case CAR -> carCandidate(driving);
                 case WALK -> walkCandidate(leg);
+                // modesFor()는 시내 구간에서 이 넷만 넘긴다 — 시외 수단은 여기 닿지 않는다.
+                case TRAIN, EXPRESS_BUS, AIR -> throw new IllegalStateException("시내 구간에 시외 수단: " + mode);
             });
         }
         return candidates;
