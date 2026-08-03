@@ -1,6 +1,7 @@
 package com.ssafy.ieumgil.domain.transit.service;
 
 import com.ssafy.ieumgil.domain.transit.dto.OdsayRouteResponse;
+import com.ssafy.ieumgil.domain.transit.dto.TransitLegResDTO;
 import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
@@ -96,25 +97,11 @@ public class TransitRouteSelector {
         StringBuilder sb = new StringBuilder();
         for (OdsayRouteResponse.SubPath sub : path.subPath()) {
             sb.append(sub.trafficType()).append('|')
-              .append(laneNameOf(sub)).append('|')
+              .append(TransitLegResDTO.lineNameOf(sub)).append('|')
               .append(sub.startName()).append('>')
               .append(sub.endName()).append(';');
         }
         return sb.toString();
-    }
-
-    static String laneNameOf(OdsayRouteResponse.SubPath sub) {
-        if (sub.lane() == null || sub.lane().isEmpty()) {
-            return "";
-        }
-        OdsayRouteResponse.Lane lane = sub.lane().get(0);
-        if (lane.name() != null) {
-            return lane.name();
-        }
-        if (lane.busNo() != null) {
-            return lane.busNo();
-        }
-        return lane.airline() == null ? "" : lane.airline();
     }
 
     private static int nullToZero(Integer value) {
