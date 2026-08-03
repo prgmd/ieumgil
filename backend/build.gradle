@@ -70,5 +70,13 @@ dependencies {
 }
 
 tasks.named('test') {
-	useJUnitPlatform()
+	useJUnitPlatform {
+		// 실 외부 API를 호출하는 테스트(@Tag("live"))는 기본 실행에서 제외한다.
+		// GMS는 크레딧을, 카카오·ODsay·TourAPI는 일일 쿼터를 소모하므로
+		// 넓은 패턴(예: --tests "...chatbot.*")에 딸려 도는 것을 막는다.
+		// 필요할 때만: ./gradlew test -PincludeLive
+		if (!project.hasProperty('includeLive')) {
+			excludeTags 'live'
+		}
+	}
 }

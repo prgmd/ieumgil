@@ -27,6 +27,15 @@ public class PlaceQueryServiceImpl implements PlaceQueryService {
     }
 
     @Override
+    public List<PlaceResDTO.Place> searchPlacesInRect(String query, double swLat, double swLng,
+                                                     double neLat, double neLng) {
+        return kakaoLocalClient.searchByKeywordInRect(query, swLat, swLng, neLat, neLng).stream()
+                .limit(MAX_RESULTS)
+                .map(this::toPlace)
+                .toList();
+    }
+
+    @Override
     public Optional<PlaceResDTO.Address> reverseGeocode(double lat, double lng) {
         return kakaoLocalClient.coord2Address(lat, lng).map(this::toAddress);
     }
@@ -35,7 +44,7 @@ public class PlaceQueryServiceImpl implements PlaceQueryService {
     public Optional<PlaceResDTO.WalkingRoute> getWalkingRoute(
             double startLat, double startLng, double endLat, double endLng) {
         return kakaoLocalClient.getWalkingRoute(startLat, startLng, endLat, endLng)
-                .map(r -> new PlaceResDTO.WalkingRoute(r.totalDistance(), r.totalTime()));
+                .map(r -> new PlaceResDTO.WalkingRoute(r.totalDistance(), toMinutes(r.totalTime())));
     }
 
     @Override
@@ -45,7 +54,20 @@ public class PlaceQueryServiceImpl implements PlaceQueryService {
                 .map(s -> new PlaceResDTO.TaxiRoute(
                         s.fare() != null ? s.fare().taxi() : 0,
                         s.distance(),
-                        s.duration()));
+                        toMinutes(s.duration())));
+    }
+
+    /**
+     * 카카오 길찾기의 소요시간(초) → 분.
+     *
+     * <p>초/분 변환은 <b>여기 한 곳</b>에서만 한다. 카카오 응답 DTO는 API 원본 그대로 초를 담고,
+     * 도메인 DTO({@code PlaceResDTO})부터는 분이다 — 챗봇 tool·블록의 {@code durationMin}과 단위를
+     * 맞추기 위함이다. 변환을 tool마다 두면 나중에 한쪽만 지워져도 조용히 틀린다.
+     *
+     * <p>올림인 이유: 59초를 "0분"이라 답하는 것보다 "1분"이 낫다.
+     */
+    private static int toMinutes(int seconds) {
+        return (seconds + 59) / 60;
     }
 
     private PlaceResDTO.Place toPlace(KakaoPlaceResponse.Document d) {

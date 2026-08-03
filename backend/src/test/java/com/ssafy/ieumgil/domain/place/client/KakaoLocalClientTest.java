@@ -239,4 +239,21 @@ class KakaoLocalClientTest {
         assertThatThrownBy(() -> kakaoLocalClient.getDrivingRoute(37.5326, 127.0246, 37.5013, 127.0396))
                 .isInstanceOf(PlaceException.class);
     }
+
+    @Test
+    void searchByKeywordInRectSendsRectAsMinXMinYMaxXMaxY() {
+        // 카카오 rect 순서는 minX,minY,maxX,maxY = 남서 경도,남서 위도,북동 경도,북동 위도.
+        // 순서가 틀리면 결과가 0건으로 조용히 비므로 조립 순서를 고정한다(라이브로 확인한 형식).
+        server.expect(requestTo("https://dapi.kakao.com/v2/local/search/keyword.json"
+                        + "?query=%EC%B9%B4%ED%8E%98&rect=126.93,33.44,126.95,33.47"))
+                .andExpect(method(GET))
+                .andExpect(header("Authorization", "KakaoAK test-key"))
+                .andRespond(withSuccess(KEYWORD_RESPONSE, MediaType.APPLICATION_JSON));
+
+        List<KakaoPlaceResponse.Document> result = kakaoLocalClient.searchByKeywordInRect(
+                "카페", 33.44, 126.93, 33.47, 126.95);
+
+        assertThat(result).hasSize(1);
+        assertThat(result.get(0).id()).isEqualTo("26338954");
+    }
 }
