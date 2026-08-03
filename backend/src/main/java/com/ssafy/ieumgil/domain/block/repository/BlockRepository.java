@@ -8,10 +8,19 @@ import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 
 public interface BlockRepository extends JpaRepository<Block, Long> {
+
+    /**
+     * id 목록으로 살아있는 블록을 조회한다. 프로젝트 조건을 함께 걸어 소유권까지 확인한다.
+     *
+     * <p>교통 후보 계산이 이걸 쓴다 — 남의 프로젝트 블록 id를 섞어 보내 좌표를 알아내는 것을
+     * 막아야 하는데, 컨트롤러 인가는 "이 프로젝트 멤버인가"까지만 본다.
+     */
+    List<Block> findAllByIdInAndProject_IdAndDeletedAtIsNull(Collection<Long> ids, Long projectId);
 
     /**
      * 프로젝트의 살아있는 블록 전체 — 스냅샷용.
