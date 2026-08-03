@@ -33,6 +33,7 @@ import { useDashboard } from "../../features/dashboard/hooks/useDashboard";
 import { useProjectOps } from "../../features/dashboard/realtime/useProjectOps";
 import { useVoiceChat } from "../../features/dashboard/voice/useVoiceChat";
 import { createOpSequencer } from "../../features/dashboard/realtime/opSequencer";
+import { ensureKakaoMaps } from "../../features/dashboard/map/addressLookup";
 import * as blockApi from "../../features/dashboard/api/dashboardApi";
 import { getClientId } from "../../global/api/clientId";
 import { useGroupDetail } from "../../features/group/hooks/useGroupDetail";
@@ -911,31 +912,22 @@ export function DashboardPage() {
       return;
     }
 
-    const bind = () => {
-      window.kakao.maps.load(() => {
-        const newMap = new window.kakao.maps.Map(container, {
-          center: new window.kakao.maps.LatLng(33.450701, 126.570667),
-          level: 7,
-        });
-        setMap(newMap);
+    // SDK 로딩(중복 삽입·로딩 중 대기)은 addressLookup 이 맡는다 — 블록 상세의
+    // 주소 검색도 같은 SDK 를 쓰므로 로더가 두 벌이면 서로의 <script> 를 기다리다 엇갈린다.
+    ensureKakaoMaps()
+      .then((maps) => {
+        // 늦게 도착했는데 그 사이 컨테이너가 떨어져 나갔으면 버린다
+        if (!container.isConnected) return;
+        setMap(
+          new maps.Map(container, {
+            center: new maps.LatLng(33.450701, 126.570667),
+            level: 7,
+          }),
+        );
+      })
+      .catch(() => {
+        // 지도는 보조 기능이라 실패해도 보드는 그대로 쓴다 (회색 박스로 남는다)
       });
-    };
-
-    const existing = document.getElementById("kakao-map-script");
-    if (existing) {
-      // 스크립트 태그는 있는데 아직 로딩 중일 수 있다 — 그때는 load 를 기다린다
-      if (window.kakao?.maps) bind();
-      else existing.addEventListener("load", bind, { once: true });
-      return;
-    }
-
-    const script = document.createElement("script");
-    script.id = "kakao-map-script";
-    // 💡 autoload=false 파라미터가 반드시 있어야 리액트와 충돌하지 않습니다!
-    script.src = `https://dapi.kakao.com/v2/maps/sdk.js?appkey=71b94eabee0913242230da390f4d20f2&autoload=false&libraries=services`;
-    script.async = true;
-    script.onload = bind;
-    document.head.appendChild(script);
   }, []);
 
   // 지도 패널이 사이드 폭을 그대로 쓰게 되면서(빈 공간 활용) 창 크기에 따라 실제
@@ -1853,6 +1845,11 @@ export function DashboardPage() {
       cat: blockApi.CAT_FROM_SERVER[form.category] ?? base.cat,
       sub: form.subCategory,
       address: form.address,
+      // 좌표는 주소 검색(도로명 주소 → 카카오 지오코딩)이 채워 준다. 장소성
+      // 카테고리(SPOT·FOOD·STAY)는 서버가 lat/lng 를 필수로 보므로(BLOCK400)
+      // 여기서 흘려버리면 커스텀 블록 생성이 통째로 거절된다.
+      lat: form.lat ?? base.lat ?? null,
+      lng: form.lng ?? base.lng ?? null,
       detail: form.detail,
       dur: form.durationMin ? Number(form.durationMin) : base.dur,
       cost: form.budget ? Number(form.budget) : base.cost,
