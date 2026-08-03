@@ -95,6 +95,20 @@ const catFromKakaoGroup = (code) => {
 // "d3" → 3 (서버 dayNo)
 const dayNoOf = (dayKey) => Number(String(dayKey).replace("d", ""));
 
+// 이동수단 코드 → 표시용 아이콘·이름 (label 이 비어 올 때의 폴백)
+const TRANSIT_MODE_META = {
+  TRANSIT: { ico: "🚌", nm: "대중교통" },
+  TAXI: { ico: "🚕", nm: "택시" },
+  CAR: { ico: "🚗", nm: "자가용" },
+  WALK: { ico: "🚶", nm: "도보" },
+};
+
+// 후보 칩·행에 함께 표시할 요금 문구 — 추정치는 "약 "을 붙인다
+const transitFareText = (c) =>
+  (c.fare || 0) > 0
+    ? `${c.fareConfidence === "ESTIMATE" ? "약 " : ""}${c.fare.toLocaleString()}원`
+    : "무료";
+
 /**
  * 최종 목록에서 pos 위치 블록의 양옆 orderKey 경계를 찾는다.
  * auto- 같은 로컬 전용 블록은 서버에 없어 orderKey 가 없으므로 건너뛰고
@@ -1202,13 +1216,6 @@ export function DashboardPage() {
       }));
   }, [items, targetBudget, totalBudget, remainingBudget]);
 
-  // 임시 목업 — 6단계에서 GET /api/transit/route 로 교체한다(BUS/SUBWAY만 구현됨).
-  // 인자(출발/도착 블록)는 그때 다시 받는다.
-  const fetchTransitInfo = useCallback(async () => {
-    await new Promise((resolve) => setTimeout(resolve, 120));
-    return { mode: "이동", dur: 20, cost: 0 };
-  }, []);
-
   // 저장 실패 시 롤백 — "어디서 왔는지"를 복원하는 대신 서버 진실로 보드를
   // 다시 시드한다. 5.5단계 이후엔 교통 블록까지 전부 서버에 있으므로
   // reload 로 잃는 것이 없다.
@@ -1242,27 +1249,90 @@ export function DashboardPage() {
     });
   }, []);
 
+  // ── Day 전체 자동 생성 = 두 단계: ① 전 구간 후보 조회 → 통합 모달,
+  //    ② 구간별 선택 적용 → 일괄 생성 ──
+  // choices: "from-to" → 선택한 후보(null = 그 구간 제외)
+  const [bulkTransitPicker, setBulkTransitPicker] = useState(null); // {dayKey, segments, choices}
+
   const regenerateAutoTransport = useCallback(
     async (dayKey) => {
+      if (isGeneratingTransport || bulkTransitPicker) return;
       const chain = chains[dayKey] || [];
-      const realIds = chain.filter((id) => !items[id]?.auto);
-      // 재생성 = 이 Day 의 기존 자동 생성분을 지우고 새로 만든다.
-      // 삭제 대상은 체인 소속으로 한정한다 — 팀원이 직접 만든 교통 블록(auto 아님)은
-      // 건드리지 않는다(그룹 자산 보호).
+      // 서버 계산 대상 = 체인의 실블록(서버 id 보유)만. 저장 중(임시 id)·자동 생성분 제외
+      const realIds = chain.filter(
+        (id) => !items[id]?.auto && isServerBlock(id),
+      );
+      if (realIds.length < 2) return;
+
+      setIsGeneratingTransport(true);
+      try {
+        // 모든 연속 구간의 후보를 한 번의 호출로 받는다.
+        // 서버는 블록을 만들지 않는다 — 생성은 모달에서 적용을 눌러야(confirmBulkTransit).
+        const { segments = [] } = await blockApi.calculateTransitCandidates(
+          projectId,
+          realIds,
+        );
+        if (!segments.some((s) => s.candidates?.some((c) => c.available))) {
+          showToast("이동 가능한 경로를 찾지 못했어요.");
+          return;
+        }
+        // 구간별 초기 선택 = 서버 추천(defaultMode) → 첫 이용 가능 후보 → 제외(null)
+        const choices = {};
+        segments.forEach((s) => {
+          choices[`${s.fromBlockId}-${s.toBlockId}`] =
+            s.candidates?.find(
+              (c) => c.mode === s.defaultMode && c.available,
+            ) ??
+            s.candidates?.find((c) => c.available) ??
+            null;
+        });
+        setBulkTransitPicker({ dayKey, segments, choices });
+      } catch (e) {
+        showToast(
+          e?.message ?? "이동수단을 계산하지 못했어요. 잠시 후 다시 시도해주세요.",
+        );
+      } finally {
+        setIsGeneratingTransport(false);
+      }
+    },
+    [
+      isGeneratingTransport,
+      bulkTransitPicker,
+      chains,
+      items,
+      projectId,
+      showToast,
+    ],
+  );
+
+  // 통합 모달에서 구간 하나의 선택을 바꾼다 (cand = null 이면 그 구간 제외)
+  const setBulkChoice = (pairKey, cand) => {
+    setBulkTransitPicker((prev) =>
+      prev ? { ...prev, choices: { ...prev.choices, [pairKey]: cand } } : prev,
+    );
+  };
+
+  // "적용" — 구간별 선택대로 이 Day 의 교통 블록을 일괄 재생성한다.
+  // 재생성 = 기존 자동 생성분을 지우고 새로 만든다. 삭제 대상은 체인 소속으로
+  // 한정한다 — 팀원이 직접 만든 교통 블록(auto 아님)은 건드리지 않는다.
+  const confirmBulkTransit = useCallback(
+    async () => {
+      const picker = bulkTransitPicker;
+      setBulkTransitPicker(null);
+      if (!picker) return;
+      const { dayKey, choices } = picker;
+
+      // 모달이 열린 사이 체인이 바뀌었을 수 있다(협업) — 지금 체인을 기준으로
+      // 다시 훑고, 더 이상 인접하지 않은 구간의 선택은 자연히 버려진다(pair 키 불일치)
+      const chain = chains[dayKey] || [];
+      const realIds = chain.filter(
+        (id) => !items[id]?.auto && isServerBlock(id),
+      );
       const oldAutoIds = chain.filter((id) => items[id]?.auto);
       if (realIds.length < 2) return;
 
       setIsGeneratingTransport(true);
       try {
-        const segments = [];
-        for (let i = 0; i < realIds.length - 1; i++) {
-          const info = await fetchTransitInfo(
-            items[realIds[i]],
-            items[realIds[i + 1]],
-          );
-          segments.push(info);
-        }
-
         let newItems = { ...items };
         oldAutoIds.forEach((id) => delete newItems[id]);
 
@@ -1271,7 +1341,13 @@ export function DashboardPage() {
         realIds.forEach((id, i) => {
           rebuilt.push(id);
           if (i < realIds.length - 1) {
-            const info = segments[i];
+            const chosen = choices[`${id}-${realIds[i + 1]}`];
+            if (!chosen?.available) return; // 제외했거나 모르는 구간 — 만들지 않는다
+            const info = {
+              mode: chosen.label || chosen.mode,
+              dur: Math.max(10, chosen.durationMin || 10),
+              cost: chosen.fare || 0,
+            };
             const newId = `auto-${dayKey}-${id}-${i}`;
             newItems[newId] = {
               id: newId,
@@ -1289,6 +1365,8 @@ export function DashboardPage() {
             createdLocalIds.push(newId);
           }
         });
+        // 만들 것도, 지울 것도 없으면 보드를 건드리지 않는다
+        if (createdLocalIds.length === 0 && oldAutoIds.length === 0) return;
 
         const { newItems: resolvedItems, newChain } = resolveOverlaps(
           newItems,
@@ -1361,20 +1439,86 @@ export function DashboardPage() {
         setIsGeneratingTransport(false);
       }
     },
-    [chains, items, fetchTransitInfo, dayStart, projectId, rollbackToServer],
+    [
+      bulkTransitPicker,
+      chains,
+      items,
+      dayStart,
+      projectId,
+      rollbackToServer,
+    ],
   );
+
+  // ── 구간 "이동 추가" = 두 단계: ① 후보 조회 → 선택 모달, ② 선택 → 블록 생성 ──
+  // 어떤 수단으로 갈지는 사용자가 고른다 — 서버 추천(defaultMode)은 표시만 한다.
+  const [transitPicker, setTransitPicker] = useState(null); // {dayKey, currentId, nextId, defaultMode, candidates}
 
   const handleAddSingleTransport = useCallback(
     async (dayKey, currentId, nextId) => {
-      if (isGeneratingTransport) return;
+      if (isGeneratingTransport || transitPicker) return;
 
-      const currentChain = [...(chains[dayKey] || [])];
-      const insertIdx = currentChain.indexOf(currentId);
-      if (insertIdx === -1) return; // 체인에 없는 블록 뒤에는 만들 수 없다
+      if (!(chains[dayKey] || []).includes(currentId)) return; // 체인에 없는 블록
+      // 서버 계산은 서버 블록 id 로만 가능하다 — 저장 중(임시 id)이면 잠시 뒤에
+      if (!isServerBlock(currentId) || !isServerBlock(nextId)) {
+        showToast("블록 저장이 끝난 뒤 다시 시도해주세요.");
+        return;
+      }
 
       setIsGeneratingTransport(true);
       try {
-        const info = await fetchTransitInfo(items[currentId], items[nextId]);
+        // 두 블록 사이 한 구간만 계산 — blockIds 에 그 둘만 넘긴다
+        const { segments = [] } = await blockApi.calculateTransitCandidates(
+          projectId,
+          [currentId, nextId],
+        );
+        const candidates = segments[0]?.candidates ?? [];
+        if (!candidates.some((c) => c.available)) {
+          showToast("두 장소 사이의 경로를 찾지 못했어요.");
+          return;
+        }
+        // 생성하지 않고 선택 모달을 연다 — 생성은 confirmTransitChoice 가 한다
+        setTransitPicker({
+          dayKey,
+          currentId,
+          nextId,
+          defaultMode: segments[0].defaultMode,
+          candidates,
+        });
+      } catch (e) {
+        showToast(
+          e?.message ?? "이동수단을 계산하지 못했어요. 잠시 후 다시 시도해주세요.",
+        );
+      } finally {
+        setIsGeneratingTransport(false);
+      }
+    },
+    [isGeneratingTransport, transitPicker, chains, projectId, showToast],
+  );
+
+  // 선택 모달에서 수단을 고르면 그 구간에 교통 블록을 만든다 (기존 5.5단계 경로)
+  const confirmTransitChoice = useCallback(
+    async (chosen) => {
+      const picker = transitPicker;
+      setTransitPicker(null);
+      if (!picker || !chosen?.available) return;
+
+      const { dayKey, currentId } = picker;
+      const currentChain = [...(chains[dayKey] || [])];
+      const insertIdx = currentChain.indexOf(currentId);
+      // 모달이 열린 사이 체인이 바뀌었을 수 있다(협업) — 자리가 사라졌으면 중단
+      if (insertIdx === -1 || items[currentId]?.startMins == null) {
+        showToast("구간이 바뀌어 추가하지 못했어요. 다시 시도해주세요.");
+        return;
+      }
+
+      const info = {
+        mode: chosen.label || chosen.mode,
+        dur: Math.max(10, chosen.durationMin || 10), // 10분 미만은 카드가 안 잡힌다
+        cost: chosen.fare || 0,
+      };
+
+      setIsGeneratingTransport(true);
+      try {
         const newId = `auto-${dayKey}-${currentId}-${Date.now()}`;
 
         let newItems = { ...items };
@@ -1450,13 +1594,13 @@ export function DashboardPage() {
       }
     },
     [
-      isGeneratingTransport,
+      transitPicker,
       items,
       chains,
       dayStart,
-      fetchTransitInfo,
       projectId,
       rollbackToServer,
+      showToast,
     ],
   );
 
@@ -3280,6 +3424,167 @@ export function DashboardPage() {
               />
             );
           })()}
+        </div>
+      )}
+
+      {/* 이동수단 자동 생성(통합) — Day 전 구간의 후보를 한 모달에서 고르고
+          "적용"하면 일괄 생성된다 (confirmBulkTransit) */}
+      {bulkTransitPicker && (
+        <div className="blk-modal-ov" onClick={() => setBulkTransitPicker(null)}>
+          <div
+            className="transit-picker tp-bulk"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 className="tp-title">이동수단 자동 생성</h3>
+            <p className="tp-route">
+              구간마다 이동수단을 고르세요 — 기본값은 추천 수단이에요.
+            </p>
+            <div className="tp-seg-list">
+              {bulkTransitPicker.segments.map((s) => {
+                const pairKey = `${s.fromBlockId}-${s.toBlockId}`;
+                const chosen = bulkTransitPicker.choices[pairKey];
+                const routable = s.candidates?.some((c) => c.available);
+                return (
+                  <div key={pairKey} className="tp-seg">
+                    <div className="tp-seg-route">
+                      {items[s.fromBlockId]?.name ?? "?"} →{" "}
+                      {items[s.toBlockId]?.name ?? "?"}
+                      {!routable && (
+                        <em className="tp-seg-none">경로 없음</em>
+                      )}
+                    </div>
+                    {routable && (
+                      <div className="tp-chips">
+                        {s.candidates.map((c) => {
+                          const meta = TRANSIT_MODE_META[c.mode] ?? {
+                            ico: "🚏",
+                            nm: c.mode,
+                          };
+                          return (
+                            <button
+                              key={c.mode}
+                              type="button"
+                              className={`tp-chip ${chosen?.mode === c.mode ? "on" : ""}`}
+                              disabled={!c.available}
+                              title={
+                                c.available
+                                  ? `${c.durationMin}분 · ${transitFareText(c)}${c.intervalMin ? ` · 배차 ~${c.intervalMin}분` : ""}`
+                                  : "이용 불가"
+                              }
+                              onClick={() => setBulkChoice(pairKey, c)}
+                            >
+                              {meta.ico} {c.label || meta.nm}
+                              {c.available && (
+                                <span className="tp-chip-meta">
+                                  {c.durationMin}분
+                                </span>
+                              )}
+                              {c.mode === s.defaultMode && c.available && (
+                                <em className="tp-reco">추천</em>
+                              )}
+                            </button>
+                          );
+                        })}
+                        <button
+                          type="button"
+                          className={`tp-chip tp-chip-skip ${chosen === null ? "on" : ""}`}
+                          onClick={() => setBulkChoice(pairKey, null)}
+                        >
+                          제외
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+            <div className="tp-actions">
+              <button
+                type="button"
+                className="tp-cancel"
+                onClick={() => setBulkTransitPicker(null)}
+              >
+                취소
+              </button>
+              <button
+                type="button"
+                className="tp-apply"
+                onClick={confirmBulkTransit}
+              >
+                {
+                  Object.values(bulkTransitPicker.choices).filter(Boolean)
+                    .length
+                }
+                개 구간 적용
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 이동수단 선택 — 구간 버튼이 후보를 받아 오면 열린다. 고른 수단으로
+          그 자리에 교통 블록이 생성된다 (confirmTransitChoice) */}
+      {transitPicker && (
+        <div className="blk-modal-ov" onClick={() => setTransitPicker(null)}>
+          <div className="transit-picker" onClick={(e) => e.stopPropagation()}>
+            <h3 className="tp-title">이동수단 선택</h3>
+            <p className="tp-route">
+              {items[transitPicker.currentId]?.name ?? "출발지"} →{" "}
+              {items[transitPicker.nextId]?.name ?? "도착지"}
+            </p>
+            <div className="tp-list">
+              {transitPicker.candidates.map((c) => {
+                const meta = TRANSIT_MODE_META[c.mode] ?? {
+                  ico: "🚏",
+                  nm: c.mode,
+                };
+                const fareText =
+                  (c.fare || 0) > 0
+                    ? `${c.fareConfidence === "ESTIMATE" ? "약 " : ""}${c.fare.toLocaleString()}원`
+                    : "무료";
+                return (
+                  <button
+                    key={c.mode}
+                    type="button"
+                    className="tp-item"
+                    disabled={!c.available}
+                    onClick={() => confirmTransitChoice(c)}
+                  >
+                    <span className="tp-ico">{meta.ico}</span>
+                    <span className="tp-main">
+                      <span className="tp-name">
+                        <b>{c.label || meta.nm}</b>
+                        {c.mode === transitPicker.defaultMode && (
+                          <em className="tp-reco">추천</em>
+                        )}
+                      </span>
+                      <span className="tp-meta">
+                        {c.available
+                          ? [
+                              `${c.durationMin}분`,
+                              fareText,
+                              c.intervalMin ? `배차 ~${c.intervalMin}분` : null,
+                              c.distanceM
+                                ? `${(c.distanceM / 1000).toFixed(1)}km`
+                                : null,
+                            ]
+                              .filter(Boolean)
+                              .join(" · ")
+                          : "이용 불가"}
+                      </span>
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+            <button
+              type="button"
+              className="tp-cancel"
+              onClick={() => setTransitPicker(null)}
+            >
+              취소
+            </button>
+          </div>
         </div>
       )}
 

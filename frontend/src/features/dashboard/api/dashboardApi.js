@@ -232,6 +232,35 @@ export async function sendChatbotMessage(
   }
 }
 
+// ── 교통 후보 ────────────────────────────────────────
+
+/**
+ * 교통 후보 일괄 계산 — 체인 순서의 블록 id 를 받아 "연속 구간마다" 이동수단
+ * 후보를 돌려준다. 두 블록 사이만 원하면 그 둘만, 전체 추천이면 체인 전체를 넘긴다.
+ * ⚠️ 서버는 블록을 생성하지 않는다 — 교통 블록 생성·저장은 기존대로 클라이언트 몫.
+ *
+ * @param {number[]} blockIds 체인 순서의 서버 블록 id (최대 30개)
+ * @returns {Promise<{segments: Array<{
+ *   fromBlockId, toBlockId,
+ *   defaultMode: "TRANSIT"|"TAXI"|"CAR"|"WALK",
+ *   candidates: Array<{mode, label, available, durationMin, fare,
+ *                      fareConfidence: "CONFIRMED"|"ESTIMATE", intervalMin, distanceM}>
+ * }>}>}
+ */
+export async function calculateTransitCandidates(projectId, blockIds) {
+  try {
+    const { data } = await axiosInstance.post(
+      `/projects/${projectId}/transit-candidates`,
+      { blockIds },
+      // 외부 경로 API 를 여러 구간 조회할 수 있어 전역 기본(10초)보다 넉넉히
+      { timeout: 30000 },
+    );
+    return unwrap(data);
+  } catch (error) {
+    unwrapError(error);
+  }
+}
+
 // ── 세부 내용 편집 락 (advisory) ─────────────────────
 // Redis SET NX + TTL 30s. 서버가 detail 쓰기를 막지는 않는다 — 편집 배지용이다.
 // 락 상태 변화(획득·해제)는 presence 토픽에 DETAIL_LOCK 메시지로 전파된다.
