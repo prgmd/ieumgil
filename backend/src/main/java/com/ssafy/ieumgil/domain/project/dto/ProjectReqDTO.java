@@ -1,5 +1,6 @@
 package com.ssafy.ieumgil.domain.project.dto;
 
+import com.ssafy.ieumgil.domain.project.entity.ProjectStatus;
 import com.ssafy.ieumgil.domain.project.entity.TransportPref;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.NotBlank;
@@ -12,7 +13,7 @@ import java.time.LocalDate;
 
 public class ProjectReqDTO {
 
-    /** 프로젝트 생성 요청 (POST /api/v0/groups/{groupId}/projects) */
+    /** 프로젝트 생성 요청 (POST /api/groups/{groupId}/projects) */
     public record Create(
             @Schema(description = "프로젝트 이름", example = "제주 3박 4일")
             @NotBlank(message = "프로젝트 이름은 필수입니다.")
@@ -46,7 +47,7 @@ public class ProjectReqDTO {
     ) {
     }
 
-    /** 프로젝트 이름·기간 수정 요청 (PATCH /api/v0/projects/{projectId}). 보낸 필드만 바뀐다 */
+    /** 프로젝트 이름·기간 수정 요청 (PATCH /api/projects/{projectId}). 보낸 필드만 바뀐다 */
     public record Update(
             @Schema(description = "프로젝트 이름", example = "제주 4박 5일")
             @Size(min = 1, max = 100, message = "프로젝트 이름은 1~100자여야 합니다.")
@@ -57,6 +58,36 @@ public class ProjectReqDTO {
 
             @Schema(description = "종료일", example = "2026-08-14")
             LocalDate endDate
+    ) {
+    }
+
+    /** 상태 전환 요청 (PATCH /projects/{projectId}/status). PLANNING↔DONE 양방향 */
+    public record UpdateStatus(
+            @Schema(description = "전환할 상태", example = "DONE")
+            @NotNull(message = "status는 필수입니다.")
+            ProjectStatus status
+    ) {
+    }
+
+    /**
+     * 정산 인원 요청 (PATCH /projects/{projectId}/budget-headcount).
+     * headcount null = "그룹 멤버 수 연동으로 복귀" — 값 누락이 아니라 명시적 의도다(BGT-03).
+     */
+    public record UpdateHeadcount(
+            @Schema(description = "정산 인원. null이면 그룹 멤버 수 연동 복귀", example = "4")
+            @Positive(message = "정산 인원은 1명 이상이어야 합니다.")
+            Integer headcount
+    ) {
+    }
+
+    /**
+     * 총 예산 변경 요청 (PATCH /projects/{projectId}/budget).
+     * targetBudget null = "예산 미설정으로 초기화" — 값 누락이 아니라 명시적 의도다.
+     */
+    public record UpdateBudget(
+            @Schema(description = "변경할 목표 예산(전체 총액). null이면 예산 미설정으로 초기화", example = "100000")
+            @PositiveOrZero(message = "목표 예산은 0 이상이어야 합니다.")
+            Integer targetBudget
     ) {
     }
 }

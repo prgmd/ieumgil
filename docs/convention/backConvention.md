@@ -29,7 +29,7 @@
 
 ```java
 @RestController
-@RequestMapping("/api/v1/users")
+@RequestMapping("/api/users")
 @RequiredArgsConstructor
 public class UserController {
 
@@ -186,7 +186,7 @@ public class UserQueryServiceImpl implements UserQueryService {
 ## 10. Controller
 
 - 메소드는 camelCase를 사용할 것
-- RequestMapping에 버전 표시 할것 (처음은 v0로 합시다)
+- RequestMapping에 버전 prefix를 붙이지 않는다 (`/api/...`로 시작)
 - RestfulAPI 원칙을 최대한 지킬 것
 
 ```java

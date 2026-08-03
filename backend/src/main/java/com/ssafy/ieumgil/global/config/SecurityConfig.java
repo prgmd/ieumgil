@@ -32,6 +32,16 @@ public class SecurityConfig {
             "/api/auth/login/**", "/api/auth/refresh"
     };
 
+    /**
+     * WS 핸드셰이크(HTTP Upgrade)는 HTTP 레벨에서 연다 — 브라우저 WebSocket API는
+     * 커스텀 헤더를 실을 수 없어 여기서 JWT를 검사할 방법이 없다.
+     * 실제 인증·인가는 STOMP CONNECT/SUBSCRIBE에서 StompAuthInterceptor가 수행한다.
+     * (핸드셰이크만 통과할 뿐, CONNECT에 유효 토큰이 없으면 연결이 거부된다)
+     */
+    private static final String[] WEBSOCKET_PATHS = {
+            "/ws", "/ws/**"
+    };
+
     private final JwtAuthenticationFilter jwtAuthenticationFilter;
     private final JwtAuthenticationEntryPoint jwtAuthenticationEntryPoint;
 
@@ -46,6 +56,7 @@ public class SecurityConfig {
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers(SWAGGER_PATHS).permitAll()
                         .requestMatchers(AUTH_WHITELIST).permitAll()
+                        .requestMatchers(WEBSOCKET_PATHS).permitAll()
                         .anyRequest().authenticated())
                 .exceptionHandling(e -> e.authenticationEntryPoint(jwtAuthenticationEntryPoint))
                 .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);

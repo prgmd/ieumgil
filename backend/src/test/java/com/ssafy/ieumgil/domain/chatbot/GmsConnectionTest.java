@@ -1,5 +1,6 @@
 package com.ssafy.ieumgil.domain.chatbot;
 
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Test;
 import org.springframework.ai.anthropic.AnthropicChatModel;
@@ -14,6 +15,7 @@ import java.util.Properties;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+@Tag("live")
 class GmsConnectionTest {
 
 	@Test
