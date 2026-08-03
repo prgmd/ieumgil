@@ -7,9 +7,13 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.messaging.simp.config.ChannelRegistration;
 import org.springframework.messaging.simp.config.MessageBrokerRegistry;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskScheduler;
+import org.springframework.web.socket.CloseStatus;
+import org.springframework.web.socket.WebSocketSession;
 import org.springframework.web.socket.config.annotation.EnableWebSocketMessageBroker;
 import org.springframework.web.socket.config.annotation.StompEndpointRegistry;
 import org.springframework.web.socket.config.annotation.WebSocketMessageBrokerConfigurer;
+import org.springframework.web.socket.config.annotation.WebSocketTransportRegistration;
+import org.springframework.web.socket.handler.WebSocketHandlerDecorator;
 
 import java.util.List;
 
@@ -34,6 +38,7 @@ import java.util.List;
 public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
 
     private final StompAuthInterceptor stompAuthInterceptor;
+    private final WsSessionRegistry sessionRegistry;
 
     @Value("${cors.allowed-origins:http://localhost:5173}")
     private List<String> allowedOrigins;
@@ -60,6 +65,30 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
     public void configureClientInboundChannel(ChannelRegistration registration) {
         // CONNECT 인증 + SUBSCRIBE/SEND 인가 — STOMP 프레임은 서블릿 필터를 타지 않으므로 필수
         registration.interceptors(stompAuthInterceptor);
+    }
+
+    /**
+     * 전송 세션을 레지스트리에 넘겨 탈퇴 시 강제 종료가 가능하게 한다(GRP-09).
+     *
+     * <p>STOMP 계층에는 세션 id만 있고 실제 소켓이 없어서 여기서 붙잡아야 한다. 인가 캐시만
+     * 비우는 방식으로는 이미 성립한 구독을 끊지 못한다 — 브로커의 푸시는 인바운드 인터셉터를
+     * 타지 않기 때문이다.
+     */
+    @Override
+    public void configureWebSocketTransport(WebSocketTransportRegistration registration) {
+        registration.addDecoratorFactory(handler -> new WebSocketHandlerDecorator(handler) {
+            @Override
+            public void afterConnectionEstablished(WebSocketSession session) throws Exception {
+                sessionRegistry.bindTransport(session);
+                super.afterConnectionEstablished(session);
+            }
+
+            @Override
+            public void afterConnectionClosed(WebSocketSession session, CloseStatus status) throws Exception {
+                sessionRegistry.unbindTransport(session.getId());
+                super.afterConnectionClosed(session, status);
+            }
+        });
     }
 
     @Bean

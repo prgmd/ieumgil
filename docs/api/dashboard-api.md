@@ -705,17 +705,20 @@ REST로 변경 요청을 보내면, 서버가 seq를 붙여 STOMP로 전파한�
 
 | 채널 | 방향 | 용도 |
 |---|---|---|
-| `CONNECT` (헤더 `Authorization`) | C→S | JWT 검증, 세션에 memberId 바인딩 |
-| `SUBSCRIBE` | C→S | **destination 인가** — projectId 파싱 후 그룹 멤버십 검증, 실패 시 프레임 거부 |
+| `CONNECT` (헤더 `Authorization`) | C→S | JWT 검증, 세션에 memberId + **토큰 만료 시각** 바인딩 |
+| `SUBSCRIBE` | C→S | **토큰 만료 확인 → destination 인가** — projectId 파싱 후 그룹 멤버십 검증, 실패 시 프레임 거부 |
 | SUB `/topic/project/{id}` | S→C | 블록·프로젝트·멤버 변경 op (seq 포함) |
 | SUB `/topic/project/{id}/presence` | S→C | 접속/이탈/편집 배지(=텍스트 락 상태) |
 | SUB `/topic/project/{id}/cursor` | S→C | 라이브 커서 |
 | SEND `/app/project/{id}/cursor` | C→S | `{x, y, dayNo}` 50ms 스로틀 — DB 미저장, 릴레이 |
-| SEND `/app/project/{id}/voice/signal` | C→S | WebRTC 시그널링 `{type: OFFER\|ANSWER\|ICE, targetMemberId, payload}` |
+| SEND `/app/project/{id}/voice/signal` | C→S | WebRTC 시그널링 `{type: OFFER\|ANSWER\|ICE, targetMemberId, payload}` — **대상 멤버십 검증 후 중계**(비멤버면 조용히 폐기) |
 | SUB `/user/queue/voice` | S→C | 시그널 개인 수신(`convertAndSendToUser`) |
 
 > **SUBSCRIBE 인가(필수 보안 요건)**: CONNECT의 JWT 검증은 "로그인 사용자"까지만 거른다. `ChannelInterceptor`에서 SUBSCRIBE·`/app` SEND destination의 projectId를 파싱 → 그룹 멤버십 검증 → 실패 시 거부. 통과한 projectId는 세션 어트리뷰트에 캐시(고빈도 프레임 DB 조회 회피).
-> **탈퇴 시 세션 강제 종료**: memberId→WS 세션 레지스트리를 유지하고, 탈퇴 처리 시 해당 세션을 disconnect + 캐시 무효화.
+> **voice 시그널 대상 검증**: destination 인가는 *보내는 쪽*만 본다. payload의 `targetMemberId`가 해당 프로젝트의 멤버인지 서버가 따로 확인하고, 아니면 전달하지 않는다(warn 로그만 남김 — 발신자에게 오류를 돌려주면 멤버 존재 여부를 캐볼 수 있다). 이 검증이 없으면 임의 memberId로 OFFER를 보내 피해자 마이크를 여는 경로가 열리며, 클라이언트를 우회한 직접 STOMP 전송이 가능하므로 프론트 수정만으로는 막을 수 없다. 시그널은 연결 수립 때만 오가는 저빈도 프레임이라 매번 조회해도 커서와 달리 비용 문제가 없다.
+> **토큰 만료 (GRP-09)**: CONNECT 이후 프레임에는 토큰이 실리지 않는다. CONNECT 때 access 토큰의 `exp`를 세션 어트리뷰트에 남기고 SUBSCRIBE/SEND마다 확인해, 만료 뒤의 프레임은 거부한다(연결도 함께 끊긴다). 이것이 없으면 유효 토큰으로 한 번 연결한 세션은 만료·로그아웃과 무관하게 영원히 유효하다.
+> 남는 틈: 이미 성립한 구독은 브로커가 직접 밀어주므로 인바운드 인터셉터를 타지 않는다. 즉 *완전히 유휴한* 뷰어는 만료 후에도 수신이 이어지고, 프레임을 하나라도 보내는 순간 끊긴다. 활성 사용자는 즉시 차단된다.
+> **탈퇴 시 세션 강제 종료 (GRP-09)**: `WsSessionRegistry`가 memberId→세션 매핑과 **전송 세션(WebSocketSession)** 을 함께 들고 있다가, 그룹 탈퇴(`leaveGroup`)·회원 탈퇴(`withdraw`) 시 그 멤버의 모든 세션을 `CloseStatus.POLICY_VIOLATION`으로 닫는다. 인가 캐시만 비우는 방식으로는 부족하다 — 브로커의 푸시는 인터셉터를 타지 않으므로 이미 성립한 구독이 그대로 살아 있다. 탈퇴하지 않은 다른 그룹의 세션까지 끊기지만, 클라이언트가 곧바로 재연결하며 다시 인가받으므로 기능 손실은 없다.
 
 ### op 포맷
 
