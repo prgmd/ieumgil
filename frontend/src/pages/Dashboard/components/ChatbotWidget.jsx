@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useDraggable } from "@dnd-kit/core";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm"; // 표·취소선 등 GFM 확장 — 표는 기본 문법에 없다
 import { sendChatbotMessage } from "../../../features/dashboard/api/dashboardApi";
 import "./ChatbotWidget.css";
 
@@ -181,7 +183,35 @@ export function ChatbotWidget({ projectId, getMapBounds }) {
                 <div
                   className={`cbw-bubble ${m.role === "user" ? "is-user" : ""} ${m.role === "error" ? "is-error" : ""}`}
                 >
-                  {m.text}
+                  {/* 봇 응답은 마크다운(목록·강조 등)으로 온다 — raw HTML 은
+                      react-markdown 기본값이 걸러 주므로 그대로 안전하다 */}
+                  {m.role === "bot" ? (
+                    <div className="cbw-md">
+                      <ReactMarkdown
+                        remarkPlugins={[remarkGfm]}
+                        components={{
+                          // 링크(지도보기 등)는 새 탭 — 같은 탭에서 열리면
+                          // 대시보드를 벗어나 실시간 연결·대화가 끊긴다.
+                          // node 는 react-markdown 내부용이라 DOM 에 새면 안 된다
+                          a: (props) => {
+                            const rest = { ...props };
+                            delete rest.node;
+                            return (
+                              <a
+                                {...rest}
+                                target="_blank"
+                                rel="noreferrer noopener"
+                              />
+                            );
+                          },
+                        }}
+                      >
+                        {m.text}
+                      </ReactMarkdown>
+                    </div>
+                  ) : (
+                    m.text
+                  )}
                 </div>
                 {m.candidates?.length > 0 && (
                   <div className="cbw-cands">
