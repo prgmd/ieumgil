@@ -114,7 +114,7 @@
 | **음성 통신** | WebRTC (P2P 통신, 최대 6인 동시 지원) |
 | **인프라 환경** | Amazon EC2, Docker |
 | **인증 및 보안** | Social OAuth 2.0 (Kakao, Naver), JWT |
-| **외부 연동 API** | Kakao Maps SDK, Kakao Local API, ODsay 대중교통 길찾기 API, TAGO(국가교통정보) 기차 시간표 조회, LLM API |
+| **외부 연동 API** | Kakao Maps SDK, Kakao Local API, Kakao Mobility(도보·차량 길찾기), ODsay(대중교통 길찾기 + 기차·버스·항공 시간표), TourAPI(지역 축제), 오피넷(유가), LLM API |
 
 ## 9. 팀 구성
 

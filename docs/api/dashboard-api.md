@@ -8,11 +8,11 @@
 
 ## 공통 규약
 
-- **응답 래퍼 `CustomResponse`**: `{ "isSuccess", "code", "message", "result" }`. (인증API.md 참조)
+- **응답 래퍼 `CustomResponse`**: `{ "isSuccess", "code", "message", "result" }`. ([auth-api.md](auth-api.md) 참조)
 - **인증 헤더**: 모든 REST 엔드포인트 `Authorization: Bearer {accessToken}` 필요. WS는 CONNECT 헤더로 검증.
 - **멤버십 검증**: 프로젝트가 속한 그룹의 멤버만 접근(REST AOP `@GroupMember` + WS `ChannelInterceptor`). 비멤버는 `403`(REST) / 프레임 거부(WS).
 - **X-Client-Id**: 변경 요청 헤더에 브라우저 탭 UUID를 실어 보낸다. 서버는 이 값을 op에 그대로 실어 브로드캐스트하며(수신자 제외 없이 전원 발송), **자기 op를 어떻게 처리할지는 클라이언트가 op 종류별로 판단한다** — 아래 "자기 op 에코 정책" 참조.
-- **범위 구분**: 프로젝트 카드 목록·생성·이름/기간 수정·삭제는 [개인·그룹 페이지API.md](개인·그룹%20페이지API.md) 참조.
+- **범위 구분**: 프로젝트 카드 목록·생성·이름/기간 수정·삭제는 [my-group-api.md](my-group-api.md) 참조.
 
 ---
 
@@ -49,7 +49,7 @@
 | GET | `/api/places/address?lat=&lng=` | coord2address 역지오코딩 | Yes |
 | GET | `/api/transit/route?sx=&sy=&ex=&ey=&mode=` | 길찾기 소요 시간·요금 | Yes |
 | GET | `/api/trains?dep=&arr=&after=` | KTX 시간표 출발 후보 | Yes |
-| GET | `/api/stations?query=` | 역명 자동완성 | Yes |
+| GET | `/api/stations?type=&query=` | 역/터미널 이름검색 | Yes |
 
 ### 챗봇
 

@@ -300,17 +300,17 @@ erDiagram
 | 컬럼 | 타입 | 제약 | 설명 |
 |---|---|---|---|
 | id | BIGINT | PK, IDENTITY | 식별자 |
-| content_id | VARCHAR(64) | UNIQUE, NOT NULL | TourAPI `contentid` — 배치 upsert 기준키 |
+| content_id | VARCHAR(255) | UNIQUE, NOT NULL | TourAPI `contentid` — 배치 upsert 기준키 |
 | title | VARCHAR(255) | NOT NULL | 축제/행사명 |
-| category | VARCHAR(10) | NOT NULL | `EV01`(축제) / `EV02`(공연) / `EV03`(행사) |
-| l_dong_regn_cd | VARCHAR(10) | NULL | 법정동 광역코드 — **지역 필터링은 이 컬럼 기준**(아래 참고) |
-| l_dong_signgu_cd | VARCHAR(10) | NULL | 법정동 시군구코드 |
+| category | VARCHAR(255) | NOT NULL | `EV01`(축제) / `EV02`(공연) / `EV03`(행사) |
+| l_dong_regn_cd | VARCHAR(255) | NULL | 법정동 광역코드 — **지역 필터링은 이 컬럼 기준**(아래 참고) |
+| l_dong_signgu_cd | VARCHAR(255) | NULL | 법정동 시군구코드 |
 | addr | VARCHAR(255) | NULL | 주소(`addr1`+`addr2`) |
 | lat | DOUBLE PRECISION | NULL | 위도 |
 | lng | DOUBLE PRECISION | NULL | 경도 |
 | event_start_date | DATE | NOT NULL | 행사 시작일 |
 | event_end_date | DATE | NOT NULL | 행사 종료일 |
-| first_image | VARCHAR(512) | NULL | 대표 이미지 URL |
+| first_image | VARCHAR(255) | NULL | 대표 이미지 URL |
 | created_at | TIMESTAMPTZ | NOT NULL, DEFAULT NOW | 최초 수집 시점 |
 | updated_at | TIMESTAMPTZ | NOT NULL | 마지막 배치 갱신 시점 |
 
