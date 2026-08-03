@@ -119,6 +119,24 @@
   color: var(--ink3, #8a776a);
   white-space: nowrap;
 }
+/* 접기 화살표 — 컨트롤과 급이 다른 보조 버튼이라 투명하게 */
+.voice-fold {
+  border: none;
+  background: none;
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1;
+  padding: 4px 2px;
+  color: var(--ink3, #8a776a);
+}
+.voice-fold:hover {
+  color: var(--ink1, #3d2b22);
+}
+/* 접힌 상태 — 원형 버튼 하나 크기로 줄어든다 */
+.voice-dock.is-folded {
+  padding: 4px;
+  border-radius: 50%;
+}
 
 .mode-switch {
   display: flex;

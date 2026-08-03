@@ -673,6 +673,7 @@ export function DashboardPage() {
   const dayKeys = useMemo(() => dayKeysOf(project), [project]);
 
   const [viewMode, setViewMode] = useState("edit");
+  const [voiceDockOpen, setVoiceDockOpen] = useState(true); // 보이스 위젯 접기/펼치기
   const [dateEditOpen, setDateEditOpen] = useState(false); // 날짜 캘린더 열림 여부
   const [selectedDay, setActiveDay] = useState("d1");
   // 기간이 줄어 보고 있던 Day 가 사라지면 첫째 날을 본다 — 상태를 되돌리지 않고
@@ -3132,46 +3133,72 @@ export function DashboardPage() {
 
       {/* 보이스 위젯 — 화면 하단 중앙 고정(스크롤·모드 무관). 입장하면 자동
           연결(권한 거부 시 듣기 전용)이고, 버튼은 송신(마이크)·수신(스피커)만
-          끄고 켠다 — 연결 자체는 대시보드를 떠날 때까지 유지된다 */}
-      <div className="voice-dock">
-        <button
-          type="button"
-          className={`voice-mic ${voice.micOn && !voice.listenOnly ? "on" : "off"}`}
-          onClick={voice.toggleMic}
-          disabled={voice.listenOnly}
-          title={
-            voice.listenOnly
-              ? "마이크 권한이 거부되어 듣기만 가능해요"
-              : voice.micOn
-                ? "마이크 끄기"
-                : "마이크 켜기"
-          }
-        >
-          {voice.listenOnly ? "🎧" : voice.micOn ? "🎤" : "🔇"}
-        </button>
-        {/* 전체 음소거 ↔ 전체 듣기 — 상대 소리만 끈다(내 목소리는 계속 나감) */}
-        <button
-          type="button"
-          className={`voice-mic ${voice.speakerOn ? "on" : "off"}`}
-          onClick={voice.toggleSpeaker}
-          title={
-            voice.speakerOn
-              ? "전체 음소거 — 모두의 소리 끄기"
-              : "전체 듣기 — 다시 듣기"
-          }
-        >
-          {voice.speakerOn ? "🔊" : "🔈"}
-        </button>
-        <span className="voice-status">
-          {/* 인원은 나를 포함해 센다 — 나+A+B 면 3명 */}
-          {!voice.joined
-            ? "음성 연결 중..."
-            : voice.listenOnly
-              ? `듣기 전용 · ${voice.connectedCount + 1}명`
-              : voice.connectedCount > 0
-                ? `음성 연결됨 · ${voice.connectedCount + 1}명`
-                : "혼자 있어요"}
-        </span>
+          끄고 켠다 — 연결 자체는 대시보드를 떠날 때까지 유지된다.
+          접으면 마이크 상태 아이콘만 남는다(연결·음소거 상태는 그대로). */}
+      <div className={`voice-dock ${voiceDockOpen ? "" : "is-folded"}`}>
+        {voiceDockOpen ? (
+          <>
+            <button
+              type="button"
+              className={`voice-mic ${voice.micOn && !voice.listenOnly ? "on" : "off"}`}
+              onClick={voice.toggleMic}
+              disabled={voice.listenOnly}
+              title={
+                voice.listenOnly
+                  ? "마이크 권한이 거부되어 듣기만 가능해요"
+                  : voice.micOn
+                    ? "마이크 끄기"
+                    : "마이크 켜기"
+              }
+            >
+              {voice.listenOnly ? "🎧" : voice.micOn ? "🎤" : "🔇"}
+            </button>
+            {/* 전체 음소거 ↔ 전체 듣기 — 상대 소리만 끈다(내 목소리는 계속 나감) */}
+            <button
+              type="button"
+              className={`voice-mic ${voice.speakerOn ? "on" : "off"}`}
+              onClick={voice.toggleSpeaker}
+              title={
+                voice.speakerOn
+                  ? "전체 음소거 — 모두의 소리 끄기"
+                  : "전체 듣기 — 다시 듣기"
+              }
+            >
+              {voice.speakerOn ? "🔊" : "🔈"}
+            </button>
+            <span className="voice-status">
+              {/* 인원은 나를 포함해 센다 — 나+A+B 면 3명 */}
+              {!voice.joined
+                ? "음성 연결 중..."
+                : voice.listenOnly
+                  ? `듣기 전용 · ${voice.connectedCount + 1}명`
+                  : voice.connectedCount > 0
+                    ? `음성 연결됨 · ${voice.connectedCount + 1}명`
+                    : "혼자 있어요"}
+            </span>
+            <button
+              type="button"
+              className="voice-fold"
+              onClick={() => setVoiceDockOpen(false)}
+              title="음성 위젯 접기"
+              aria-label="음성 위젯 접기"
+            >
+              ⌄
+            </button>
+          </>
+        ) : (
+          // 접힌 상태 — 현재 마이크 상태를 아이콘으로 보여주는 원형 버튼 하나.
+          // 누르면 다시 펼쳐진다 (마이크 토글이 아니다 — 실수 송출 방지)
+          <button
+            type="button"
+            className={`voice-mic ${voice.micOn && !voice.listenOnly ? "on" : "off"}`}
+            onClick={() => setVoiceDockOpen(true)}
+            title="음성 위젯 펼치기"
+            aria-label="음성 위젯 펼치기"
+          >
+            {voice.listenOnly ? "🎧" : voice.micOn ? "🎤" : "🔇"}
+          </button>
+        )}
       </div>
 
       {viewMode === "edit" && <ChatbotWidget />}

@@ -48,7 +48,9 @@ export function useVoiceChat({
 }) {
   const [joined, setJoined] = useState(false); // 마이크 확보(또는 듣기 전용 확정) 완료
   const [listenOnly, setListenOnly] = useState(false);
-  const [micOn, setMicOn] = useState(true);
+  // 입장 기본값: 마이크 꺼짐 — 자동 연결이라 본인이 모르는 새 소리가 나가면 안 된다.
+  // 스피커(speakerOn)는 켜짐 — 들어오자마자 팀 대화는 들리는 게 자연스럽다.
+  const [micOn, setMicOn] = useState(false);
   // 전체 음소거(출력) — 모든 상대의 소리를 끈다. 연결·수신은 유지되므로 다시 켜면
   // 즉시 들린다. 마이크와 독립 — 귀를 닫아도 내 목소리는 계속 나간다.
   const [speakerOn, setSpeakerOn] = useState(true);
