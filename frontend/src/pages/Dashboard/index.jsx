@@ -695,7 +695,9 @@ export function DashboardPage() {
   const dayKeys = useMemo(() => dayKeysOf(project), [project]);
 
   const [viewMode, setViewMode] = useState("edit");
-  const [voiceDockOpen, setVoiceDockOpen] = useState(true); // 보이스 위젯 접기/펼치기
+  // 보이스 아이콘 펼침 여부. 기본은 접힘 — 평소엔 하단의 작은 타원 토글만 두고,
+  // 누를 때만 마이크·스피커 아이콘이 나온다(보드를 가리지 않게).
+  const [voiceOpen, setVoiceOpen] = useState(false);
   const [dateEditOpen, setDateEditOpen] = useState(false); // 날짜 캘린더 열림 여부
   const [selectedDay, setActiveDay] = useState("d1");
   // 기간이 줄어 보고 있던 Day 가 사라지면 첫째 날을 본다 — 상태를 되돌리지 않고
@@ -792,6 +794,16 @@ export function DashboardPage() {
     sendVoiceSignal,
     registerSignalHandler: registerVoiceSignalHandler,
   });
+
+  // 펼쳐 둔 아이콘은 Esc 로도 접는다
+  useEffect(() => {
+    if (!voiceOpen) return;
+    const onKeyDown = (e) => {
+      if (e.key === "Escape") setVoiceOpen(false);
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [voiceOpen]);
 
   // ── 커서 메시지 라우팅 — 위치는 두 레이어로, dayNo 는 viewingDays 로 ──
   // 모든 커서 메시지에 발신자가 보는 dayNo 가 실려 온다(마우스가 멈춰 있어도
@@ -3292,13 +3304,14 @@ export function DashboardPage() {
         </div>
       )}
 
-      {/* 보이스 위젯 — 화면 하단 중앙 고정(스크롤·모드 무관). 입장하면 자동
-          연결(권한 거부 시 듣기 전용)이고, 버튼은 송신(마이크)·수신(스피커)만
-          끄고 켠다 — 연결 자체는 대시보드를 떠날 때까지 유지된다.
-          접으면 마이크 상태 아이콘만 남는다(연결·음소거 상태는 그대로). */}
-      <div className={`voice-dock ${voiceDockOpen ? "" : "is-folded"}`}>
-        {voiceDockOpen ? (
-          <>
+      {/* 보이스 위젯 — 화면 맨 아래 가장자리에 붙은 탭(Vue DevTools 의 그 탭처럼).
+          평소엔 윗부분만 빼꼼 보이다가 올리면 다 나오고, 누르면 그 위로 마이크·
+          스피커 아이콘이 펼쳐진다. 입장하면 자동 연결(권한 거부 시 듣기 전용)이고,
+          버튼은 송신(마이크)·수신(스피커)만 끄고 켠다 — 접어 둬도 연결은
+          대시보드를 떠날 때까지 유지된다. */}
+      <div className={`voice-bar ${voiceOpen ? "is-open" : ""}`}>
+        {voiceOpen && (
+          <div className="voice-items" role="group" aria-label="음성 채팅 컨트롤">
             <button
               type="button"
               className={`voice-mic ${voice.micOn && !voice.listenOnly ? "on" : "off"}`}
@@ -3337,29 +3350,26 @@ export function DashboardPage() {
                     ? `음성 연결됨 · ${voice.connectedCount + 1}명`
                     : "혼자 있어요"}
             </span>
-            <button
-              type="button"
-              className="voice-fold"
-              onClick={() => setVoiceDockOpen(false)}
-              title="음성 위젯 접기"
-              aria-label="음성 위젯 접기"
-            >
-              ⌄
-            </button>
-          </>
-        ) : (
-          // 접힌 상태 — 현재 마이크 상태를 아이콘으로 보여주는 원형 버튼 하나.
-          // 누르면 다시 펼쳐진다 (마이크 토글이 아니다 — 실수 송출 방지)
-          <button
-            type="button"
-            className={`voice-mic ${voice.micOn && !voice.listenOnly ? "on" : "off"}`}
-            onClick={() => setVoiceDockOpen(true)}
-            title="음성 위젯 펼치기"
-            aria-label="음성 위젯 펼치기"
-          >
-            {voice.listenOnly ? "🎧" : voice.micOn ? "🎤" : "🔇"}
-          </button>
+          </div>
         )}
+
+        {/* 하단 탭 — 접힘/펼침만 한다. 마이크를 토글하지 않는다(접힌 채로 잘못
+            눌러 목소리가 나가는 사고 방지). 접었을 때는 마이크 상태와 인원수를
+            여기서 읽는다 — 아이콘이 사라져도 상태는 알아야 한다. */}
+        <button
+          type="button"
+          className="voice-tab"
+          onClick={() => setVoiceOpen((open) => !open)}
+          aria-expanded={voiceOpen}
+          title={voiceOpen ? "음성 컨트롤 접기" : "음성 컨트롤 펼치기"}
+          aria-label={voiceOpen ? "음성 컨트롤 접기" : "음성 컨트롤 펼치기"}
+        >
+          <span>{voice.listenOnly ? "🎧" : voice.micOn ? "🎤" : "🔇"}</span>
+          {voice.joined && <span>{voice.connectedCount + 1}</span>}
+          <span className="voice-tab-caret" aria-hidden="true">
+            {voiceOpen ? "▼" : "▲"}
+          </span>
+        </button>
       </div>
 
     </>
