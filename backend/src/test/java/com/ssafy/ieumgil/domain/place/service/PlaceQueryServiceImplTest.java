@@ -147,6 +147,22 @@ class PlaceQueryServiceImplTest {
     }
 
     @Test
+    @DisplayName("택시 경로에 통행료가 함께 실린다 — 자차 요금 계산에 필요하다")
+    void taxiRouteCarriesToll() {
+        placeQueryService = new PlaceQueryServiceImpl(kakaoLocalClient);
+        KakaoDirectionsResponse.Summary summary = new KakaoDirectionsResponse.Summary(
+                new KakaoDirectionsResponse.Fare(8900, 2400), 8647, 1672);
+        when(kakaoLocalClient.getDrivingRoute(37.5326, 127.0246, 37.5013, 127.0396))
+                .thenReturn(Optional.of(summary));
+
+        Optional<PlaceResDTO.TaxiRoute> result =
+                placeQueryService.getTaxiRoute(37.5326, 127.0246, 37.5013, 127.0396);
+
+        assertThat(result).isPresent();
+        assertThat(result.get().toll()).isEqualTo(2400);
+    }
+
+    @Test
     void getTaxiRouteWithNoRouteReturnsEmpty() {
         placeQueryService = new PlaceQueryServiceImpl(kakaoLocalClient);
         when(kakaoLocalClient.getDrivingRoute(37.5326, 127.0246, 37.5013, 127.0396))

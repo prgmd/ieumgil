@@ -86,7 +86,7 @@ class BoardAwareTwoHopLiveTest {
 
         PlaceQueryService placeQueryService = mock(PlaceQueryService.class);
         when(placeQueryService.getTaxiRoute(anyDouble(), anyDouble(), anyDouble(), anyDouble()))
-                .thenReturn(Optional.of(new PlaceResDTO.TaxiRoute(9800, 7200, 15)));
+                .thenReturn(Optional.of(new PlaceResDTO.TaxiRoute(9800, 0, 7200, 15)));
 
         Project project = Project.builder()
                 .destination("제주")

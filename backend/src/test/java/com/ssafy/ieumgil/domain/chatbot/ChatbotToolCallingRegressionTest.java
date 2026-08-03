@@ -240,7 +240,7 @@ class ChatbotToolCallingRegressionTest {
 		when(mocks.placeQueryService.getWalkingRoute(anyDouble(), anyDouble(), anyDouble(), anyDouble()))
 				.thenReturn(Optional.of(new PlaceResDTO.WalkingRoute(1200, 900)));
 		when(mocks.placeQueryService.getTaxiRoute(anyDouble(), anyDouble(), anyDouble(), anyDouble()))
-				.thenReturn(Optional.of(new PlaceResDTO.TaxiRoute(6800, 3200, 600)));
+				.thenReturn(Optional.of(new PlaceResDTO.TaxiRoute(6800, 0, 3200, 600)));
 
 		Festival festival = Festival.builder()
 				.contentId("100")
