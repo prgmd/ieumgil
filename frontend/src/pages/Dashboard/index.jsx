@@ -1114,20 +1114,36 @@ export function DashboardPage() {
     showToast(error?.message ?? "프로젝트를 열 수 없어요.");
     navigate(`/groups/${groupId}`, { replace: true });
   }, [status, error, groupId, navigate, showToast]);
-  // 목표 예산 저장은 디바운스한다 — ± 버튼 연타(만원 단위)를 요청 1건으로 모은다.
+  // 목표 예산 저장은 디바운스한다 — ± 버튼 연타(십만원 단위)를 요청 1건으로 모은다.
   // 타이머가 언마운트 후에 발화해도 요청은 그대로 나간다(마지막 조작 유실 방지).
+  // ± 버튼과 직접 입력이 같은 경로(commitTargetBudget)를 탄다.
   const targetBudgetTimerRef = useRef(null);
-  const handleTargetBudgetChange = (amount) => {
-
-    const next = Math.max(0, targetBudget + amount); // 0원 밑으로는 안 내려가게 방지
+  const commitTargetBudget = (value) => {
+    const next = Math.max(0, value); // 0원 밑으로는 안 내려가게 방지
     setTargetBudget(next);
 
     clearTimeout(targetBudgetTimerRef.current);
     targetBudgetTimerRef.current = setTimeout(() => {
-      blockApi
-        .updateTargetBudget(projectId, next)
-        .catch(rollbackToServer);
+      blockApi.updateTargetBudget(projectId, next).catch(rollbackToServer);
     }, 600);
+  };
+  const handleTargetBudgetChange = (amount) =>
+    commitTargetBudget(targetBudget + amount);
+
+  // 직접 입력 편집 상태 — null 이면 표시 모드, 문자열이면 입력 모드(입력 중 원문 유지)
+  const [budgetDraft, setBudgetDraft] = useState(null);
+  const budgetEditCancelledRef = useRef(false); // Esc 취소가 blur 커밋으로 이어지지 않게
+  const commitBudgetDraft = () => {
+    if (budgetEditCancelledRef.current) {
+      budgetEditCancelledRef.current = false;
+      setBudgetDraft(null);
+      return;
+    }
+    const parsed = Number(budgetDraft);
+    if (budgetDraft !== null && budgetDraft !== "" && Number.isFinite(parsed)) {
+      commitTargetBudget(Math.floor(parsed));
+    }
+    setBudgetDraft(null);
   };
   const budgetPercent =
     targetBudget > 0 ? Math.min(100, (totalBudget / targetBudget) * 100) : 0;
@@ -2989,9 +3005,35 @@ export function DashboardPage() {
                       <button onClick={() => handleTargetBudgetChange(-100000)}>
                         -
                       </button>
-                      <span className="bud-stepper-value">
-                        {targetBudget.toLocaleString()}원
-                      </span>
+                      {/* 금액을 누르면 직접 입력 — Enter/포커스 아웃으로 저장, Esc 취소 */}
+                      {budgetDraft === null ? (
+                        <button
+                          type="button"
+                          className="bud-stepper-value"
+                          title="클릭해서 직접 입력"
+                          onClick={() => setBudgetDraft(String(targetBudget))}
+                        >
+                          {targetBudget.toLocaleString()}원
+                        </button>
+                      ) : (
+                        <input
+                          className="bud-stepper-input"
+                          type="number"
+                          min="0"
+                          step="10000"
+                          autoFocus
+                          value={budgetDraft}
+                          onChange={(e) => setBudgetDraft(e.target.value)}
+                          onBlur={commitBudgetDraft}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") e.currentTarget.blur();
+                            else if (e.key === "Escape") {
+                              budgetEditCancelledRef.current = true;
+                              e.currentTarget.blur();
+                            }
+                          }}
+                        />
+                      )}
                       <button onClick={() => handleTargetBudgetChange(100000)}>
                         +
                       </button>
