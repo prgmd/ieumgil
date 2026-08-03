@@ -389,7 +389,25 @@ function BlockEditBadge({ onEdit }) {
   );
 }
 
-function PoolCard({ id, item, onEditBlock, lockedBy }) {
+/** 블록 좌상단의 "가장 최근 수정자" 아바타 — 테두리는 그 멤버의 커서 색 */
+function BlockEditorBadge({ editor }) {
+  if (!editor) return null;
+  return (
+    <span
+      className="blk-editor"
+      title={`최근 수정 · ${editor.name}`}
+      style={{ "--vh": hueOf(editor.id) }}
+    >
+      {editor.profileImg?.startsWith("http") ? (
+        <img src={editor.profileImg} alt="" />
+      ) : (
+        editor.name[0]
+      )}
+    </span>
+  );
+}
+
+function PoolCard({ id, item, onEditBlock, lockedBy, editor }) {
   const {
     attributes,
     listeners,
@@ -418,6 +436,7 @@ function PoolCard({ id, item, onEditBlock, lockedBy }) {
       // 💡 박스 전체 영역에 클릭 이벤트 연결
       onClick={() => onEditBlock && onEditBlock(id)}
     >
+      <BlockEditorBadge editor={editor} />
       <CardBody
         id={id}
         item={item}
@@ -441,6 +460,7 @@ function TimelineCard({
   boundTop,
   onEditBlock,
   lockedBy,
+  editor,
 }) {
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
     id,
@@ -475,6 +495,8 @@ function TimelineCard({
     >
       <span className="tlab">{fmtTime(startMins)}</span>
       <span className="dot" />
+      {/* 카드(.card)는 overflow:hidden 이라 모서리 배지는 slot 레벨에 둔다 */}
+      <BlockEditorBadge editor={editor} />
       <div
         ref={setNodeRef}
         className={`card ${item?.auto ? "auto-block" : ""}`}
@@ -706,6 +728,17 @@ export function DashboardPage() {
   // 리렌더로 이어지지 않는다 — 커서 위치는 레이어 소관, 여기는 Day 만.
   const [viewingDays, setViewingDays] = useState({}); // actorId → dayNo
   const cursorLastSeenRef = useRef({}); // actorId → ts (하트비트 만료 판정)
+  // 블록별 "가장 최근 수정자" — 블록 op(생성·필드수정·이동)의 actorId 로 기록한다.
+  // 서버에 최근 수정자 칸이 없어(ERD: author_id 뿐) 새로고침하면 비고, 그때는
+  // 작성자(authorId)로 폴백한다 (editorBadgeOf 참조).
+  const [lastEditors, setLastEditors] = useState({}); // blockId → memberId
+
+  const recordBlockEditor = (blockId, memberId) => {
+    if (blockId == null || memberId == null) return;
+    setLastEditors((prev) =>
+      prev[blockId] === memberId ? prev : { ...prev, [blockId]: memberId },
+    );
+  };
 
   const applyPresenceMessage = (msg) => {
     if (msg?.type === "PRESENCE") {
@@ -1466,6 +1499,8 @@ export function DashboardPage() {
     const payload = op.payload ?? {};
     switch (op.type) {
       case "BLOCK_CREATED": {
+        // 수정자 기록은 own 여부와 무관하다 — 화면 반영을 스킵해도 "누가 만들었나"는 남긴다
+        recordBlockEditor(payload.block?.blockId, op.actorId);
         // 자기 생성만은 스킵한다 — POST 응답이 임시 id 를 서버 id 로 바꾸는
         // (adoptServerId) 사이에 echo 가 끼어들면 같은 블록이 두 벌 들어간다.
         if (own) break;
@@ -1476,6 +1511,7 @@ export function DashboardPage() {
         break;
       }
       case "BLOCK_FIELD_UPDATED": {
+        recordBlockEditor(payload.blockId, op.actorId);
         // 자기 op 도 적용한다 — 서버가 스테일 필드를 payload 에서 빼고 보내므로
         // (명세: "적용된 필드만 포함") seq 순서대로 덮으면 서버 최종값과 같아진다.
         // 블록의 화면상 y 위치는 startMins 라서, 이게 빠지면 이동을 재확정해도
@@ -1490,6 +1526,7 @@ export function DashboardPage() {
         break;
       }
       case "BLOCK_MOVED": {
+        recordBlockEditor(payload.blockId, op.actorId);
         // 자기 op 도 적용한다 — 이동은 마지막 쓰기가 이긴다. 남이 먼저 옮긴 op 에
         // 덮인 자리를 자기 echo 가 제 위치로 되돌려 놓는 것이 이 재적용의 목적이다.
         const base = itemsRef.current[payload.blockId];
@@ -1509,6 +1546,13 @@ export function DashboardPage() {
         break;
       }
       case "BLOCK_DELETED": {
+        // 사라진 블록의 수정자 기록도 걷는다 (own 여부 무관)
+        setLastEditors((prev) => {
+          if (!(payload.blockId in prev)) return prev;
+          const next = { ...prev };
+          delete next[payload.blockId];
+          return next;
+        });
         // 자기 삭제는 이미 로컬에서 제거됐다 — 재적용하면 아래 "다른 멤버가
         // 삭제했어요" 토스트가 자기 삭제에 뜬다.
         if (own) break;
@@ -2506,6 +2550,20 @@ export function DashboardPage() {
       : null;
   };
 
+  // 블록 좌상단의 "가장 최근 수정자" 아바타 — 이 세션의 op 기록이 우선이고,
+  // 없으면(새로고침 직후) 작성자로 폴백한다. 멤버 정보가 없으면(탈퇴 등) 감춘다.
+  const editorBadgeOf = (blockId) => {
+    const memberId = lastEditors[blockId] ?? items[blockId]?.authorId;
+    if (memberId == null) return null;
+    const member = boardMembers.find((m) => m.memberId === memberId);
+    if (!member) return null;
+    return {
+      id: memberId,
+      name: member.nickname,
+      profileImg: member.profileImg ?? null,
+    };
+  };
+
   // Day 탭에 찍을 "이 Day 를 보는 중" 멤버들 (커서 하트비트 기반).
   // 프로필 이미지까지 실어 탭에 아바타로 띄운다 — 테두리는 커서와 같은 멤버 색.
   const dayViewersOf = (dayKey) => {
@@ -2792,6 +2850,7 @@ export function DashboardPage() {
                                 boundTop={boundTop}
                                 onEditBlock={setEditingBlockId}
                                 lockedBy={lockBadgeOf(data.id)}
+                                editor={editorBadgeOf(data.id)}
                               />
                             )}
 
@@ -2888,6 +2947,7 @@ export function DashboardPage() {
                             item={items[id]}
                             onEditBlock={setEditingBlockId}
                             lockedBy={lockBadgeOf(id)}
+                            editor={editorBadgeOf(id)}
                           />
                         ))}
                       </SortableContext>
