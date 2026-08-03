@@ -7,6 +7,17 @@ const ICE_SERVERS = [{ urls: "stun:stun.l.google.com:19302" }];
 /** 이 시간 안에 연결이 수립되지 않은 피어는 걷어내고 다시 제안한다(시그널 유실 흡수) */
 const RETRY_MS = 8000;
 
+// 에코 제거·잡음 억제를 명시한다 — 스피커로 대화하면 상대 스피커 소리가 상대
+// 마이크로 재유입되는데(내 목소리가 나에게 돌아옴), 이 제약이 그걸 상쇄한다.
+// 그래도 다인 통화는 이어폰이 정석이다.
+const AUDIO_CONSTRAINTS = {
+  audio: {
+    echoCancellation: true,
+    noiseSuppression: true,
+    autoGainControl: true,
+  },
+};
+
 /**
  * 프로젝트 보이스 채팅 (풀 메시 P2P).
  *
@@ -208,11 +219,17 @@ export function useVoiceChat({
     // Map 객체 자체는 교체되지 않으므로(내용만 변한다) 지금 복사해도 cleanup 시점의
     // 최신 피어 목록과 같은 객체다 — lint(exhaustive-deps)의 ref 지적을 이렇게 푼다
     const peers = peersRef.current;
+    // ⚠️ 취소 판정은 실행마다 갖는 지역 플래그로 한다. 공유 ref(disposedRef)로만
+    // 판정하면 StrictMode 의 이중 마운트에서 두 번째 실행이 ref 를 되돌려, 첫 번째
+    // getUserMedia 의 스트림까지 "유효"로 통과한다 → stop 되지 않는 유령 마이크가
+    // 생기고, 그 트랙을 문 피어에게는 마이크 끄기가 영영 안 먹힌다(실측 버그).
+    let cancelled = false;
 
     navigator.mediaDevices
-      .getUserMedia({ audio: true })
+      .getUserMedia(AUDIO_CONSTRAINTS)
       .then((stream) => {
-        if (disposedRef.current) {
+        // localStreamRef 가 이미 있다면 어떤 경로든 중복 스트림이다 — 즉시 반납
+        if (cancelled || disposedRef.current || localStreamRef.current) {
           stream.getTracks().forEach((t) => t.stop());
           return;
         }
@@ -224,13 +241,14 @@ export function useVoiceChat({
         setJoined(true);
       })
       .catch(() => {
-        if (disposedRef.current) return;
+        if (cancelled || disposedRef.current) return;
         joinedRef.current = true;
         setListenOnly(true);
         setJoined(true);
       });
 
     return () => {
+      cancelled = true;
       disposedRef.current = true;
       joinedRef.current = false;
       for (const id of [...peers.keys()]) closePeer(id);
