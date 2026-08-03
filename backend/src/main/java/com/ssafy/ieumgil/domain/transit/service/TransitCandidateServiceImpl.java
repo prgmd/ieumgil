@@ -273,6 +273,7 @@ public class TransitCandidateServiceImpl implements TransitCandidateService {
                     .fare(route.fare())
                     .fareConfidence(route.fareConfidence())
                     .intervalMin(route.intervalMin())
+                    .distanceM(route.distanceM())
                     .build();
         } catch (RuntimeException e) {
             log.warn("대중교통 경로 조회 실패: leg={}", leg, e);

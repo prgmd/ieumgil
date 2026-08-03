@@ -431,7 +431,7 @@
         "toBlockId": 105,
         "defaultMode": "TRANSIT",
         "candidates": [
-          { "mode": "TRANSIT", "label": "대중교통", "available": true, "durationMin": 42, "fare": 1400, "fareConfidence": "CONFIRMED", "intervalMin": 13, "distanceM": null },
+          { "mode": "TRANSIT", "label": "대중교통", "available": true, "durationMin": 42, "fare": 1400, "fareConfidence": "CONFIRMED", "intervalMin": 13, "distanceM": 9800 },
           { "mode": "TAXI", "label": "택시", "available": true, "durationMin": 15, "fare": 12000, "fareConfidence": "CONFIRMED", "intervalMin": null, "distanceM": 8200 },
           { "mode": "WALK", "label": "도보", "available": false, "durationMin": null, "fare": null, "fareConfidence": null, "intervalMin": null, "distanceM": null }
         ]
@@ -457,9 +457,15 @@
 | `durationMin` | ○ | ○ | ○ | ○ |
 | `fare` | ○ | ○ | ○ | ○ (항상 `0`) |
 | `intervalMin`(배차간격) | ○ | **null** | **null** | **null** |
-| `distanceM` | **null** | ○ | ○ | ○ |
+| `distanceM` | ○ | ○ | ○ | ○ |
 
-`distanceM`이 대중교통에서 `null`인 이유는 **ODsay 응답에 거리가 없어서**다. 우리가 담지 않은 것이 아니라 받은 적이 없다. 직선거리로 채우지 않는다 — 다른 수단의 `distanceM`은 실제 경로 거리(도로/보행)이므로, 대중교통만 직선거리를 넣으면 의미가 달라져 사용자가 카드를 나란히 비교할 때 왜곡된다.
+`distanceM`은 실제 경로 거리다(직선거리가 아니다 — 시청→강남역 직선 8,785m vs 경로 10,327m).
+모든 수단에 채운다: 대중교통은 ODsay `totalDistance`, 자차·택시는 카카오 응답,
+도보는 카카오 도보 경로 거리다.
+
+> 이전 문서는 "대중교통은 ODsay가 거리를 주지 않아 null"이라고 적었으나 오진단이었다.
+> `totalDistance`가 실제로 오며(시청→강남역 12,841 / 서울→부산 402,000), 응답 DTO가
+> 그 필드를 읽지 않아 null이었다.
 
 `distanceM`은 **외부 API가 준 실제 경로 거리(미터)**이고 직선거리가 아니다. 실측 예: 서울시청→강남역이 직선 8,785m인데 `distanceM`은 10,327m다(도로를 따라가므로). 자차 연료비도 이 값으로 계산하므로 직선거리를 쓰면 기름값이 15%가량 싸게 나온다.
 

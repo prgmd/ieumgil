@@ -128,7 +128,9 @@ class TransitCandidateServiceImplTest {
         assertThat(transit.fare()).isEqualTo(1400);
         assertThat(transit.intervalMin()).isEqualTo(8);
         assertThat(transit.label()).isEqualTo(TransitMode.TRANSIT.label());
-        assertThat(transit.distanceM()).isNull();  // TransitResDTO.Route는 거리를 안 준다
+        // 이 목은 distanceM을 stub하지 않아 null일 뿐이다 — 실제 매핑 계약은
+        // 대중교통_후보에_경로_실거리가_담긴다()가 검증한다. 여기서 null을 보는 것은 목 설정 때문이지 계약이 아니다
+        assertThat(transit.distanceM()).isNull();
     }
 
     @Test
@@ -324,6 +326,24 @@ class TransitCandidateServiceImplTest {
         assertThat(result.segments()).isEmpty();
         verifyNoInteractions(publicTransitQueryService);
         verifyNoInteractions(placeQueryService);
+    }
+
+    @Test
+    @DisplayName("대중교통 후보의 distanceM은 ODsay 경로 실거리로 채운다")
+    void 대중교통_후보에_경로_실거리가_담긴다() {
+        givenProject(TransportPref.PUBLIC);
+        given(blockRepository.findAllByIdInAndProject_IdAndDeletedAtIsNull(List.of(1L, 2L), PROJECT_ID))
+                .willReturn(List.of(blockAt(1L, LAT_A, LNG_A), blockAt(2L, LAT_B, LNG_B)));
+        given(publicTransitQueryService.getCombinedRoute(LAT_A, LNG_A, LAT_B, LNG_B))
+                .willReturn(TransitResDTO.Route.builder()
+                        .durationMin(44).fare(1500).intervalMin(9).distanceM(12841)
+                        .fareConfidence(TransitResDTO.FareConfidence.CONFIRMED).build());
+
+        TransitCandidateResDTO.Result result = service.calculate(PROJECT_ID, List.of(1L, 2L));
+
+        TransitCandidateResDTO.Candidate transit = result.segments().get(0).candidates().stream()
+                .filter(c -> c.mode() == TransitMode.TRANSIT).findFirst().orElseThrow();
+        assertThat(transit.distanceM()).isEqualTo(12841);
     }
 
     @Test
