@@ -27,6 +27,8 @@ public class PublicTransitQueryServiceImpl implements PublicTransitQueryService 
 
         return odsayClient
                 .searchPublicTransitRoute(startLat, startLng, endLat, endLng, mode)
+                .stream()
+                .findFirst()
                 .map(this::toRoute)
                 .orElseThrow(() -> new TransitException(TransitErrorCode.ROUTE_NOT_FOUND));
     }
@@ -35,21 +37,29 @@ public class PublicTransitQueryServiceImpl implements PublicTransitQueryService 
     public TransitResDTO.Route getCombinedRoute(
             double startLat, double startLng, double endLat, double endLng) {
         // OdsayClient는 BUS/SUBWAY가 아닌 mode에 SearchPathType=0(통합)을 쓴다.
-        return odsayClient
-                .searchPublicTransitRoute(startLat, startLng, endLat, endLng, "TRANSIT")
+        return odsayClient.searchPublicTransitRoute(startLat, startLng, endLat, endLng, "TRANSIT")
+                .stream()
+                .findFirst()
                 .map(this::toRoute)
                 .orElseThrow(() -> new TransitException(TransitErrorCode.ROUTE_NOT_FOUND));
     }
 
-    // getRoute/getCombinedRoute는 mode 결정 방식만 다를 뿐 ODsay 응답 구조는 동일하므로 매핑을 공통화한다.
+    /**
+     * 요금 필드가 없으면 {@code UNKNOWN}이다. 0으로 채우고 CONFIRMED를 붙이면
+     * "무료"라고 단언하는 셈이 된다 — 실제로 서울→부산 KTX가 그렇게 나갔다.
+     */
     private TransitResDTO.Route toRoute(OdsayRouteResponse.Path path) {
         OdsayRouteResponse.Info info = path.info();
+        Integer fare = info.payment();
         return TransitResDTO.Route.builder()
                 .durationMin(info.totalTime())
-                .fare(info.payment())
+                .fare(fare)
                 .intervalMin(info.totalIntervalTime())
+                .distanceM(info.totalDistance())
                 .estimated(false)
-                .fareConfidence(TransitResDTO.FareConfidence.CONFIRMED)
+                .fareConfidence(fare == null
+                        ? TransitResDTO.FareConfidence.UNKNOWN
+                        : TransitResDTO.FareConfidence.CONFIRMED)
                 .build();
     }
 }
