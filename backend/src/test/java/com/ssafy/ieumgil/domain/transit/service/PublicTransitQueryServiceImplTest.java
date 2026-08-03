@@ -17,6 +17,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.anyDouble;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.when;
 
@@ -149,5 +150,37 @@ class PublicTransitQueryServiceImplTest {
 
         assertThat(route.fare()).isZero();
         assertThat(route.fareConfidence()).isEqualTo(TransitResDTO.FareConfidence.CONFIRMED);
+    }
+
+    @Test
+    @DisplayName("getCombinedRoutes는 ODsay가 준 경로를 전부 반환한다")
+    void 경로_목록을_그대로_반환한다() {
+        OdsayRouteResponse.Path p1 = pathOf(2, 44, 1500);
+        OdsayRouteResponse.Path p2 = pathOf(2, 52, 1250);
+        OdsayRouteResponse.Path p3 = pathOf(1, 48, 1400);
+        given(odsayClient.searchPublicTransitRoute(anyDouble(), anyDouble(), anyDouble(), anyDouble(), eq("TRANSIT")))
+                .willReturn(List.of(p1, p2, p3));
+
+        List<OdsayRouteResponse.Path> paths = service.getCombinedRoutes(37.5666, 126.9784, 37.4979, 127.0276);
+
+        assertThat(paths).hasSize(3);
+        assertThat(paths.get(1).info().totalTime()).isEqualTo(52);
+    }
+
+    @Test
+    @DisplayName("경로가 없으면 ROUTE_NOT_FOUND를 던진다")
+    void 경로가_없으면_예외다() {
+        given(odsayClient.searchPublicTransitRoute(anyDouble(), anyDouble(), anyDouble(), anyDouble(), anyString()))
+                .willReturn(List.of());
+
+        assertThatThrownBy(() -> service.getCombinedRoutes(37.5, 127.0, 37.6, 127.1))
+                .isInstanceOf(TransitException.class);
+    }
+
+    private OdsayRouteResponse.Path pathOf(int pathType, int totalTime, Integer payment) {
+        return new OdsayRouteResponse.Path(
+                pathType,
+                new OdsayRouteResponse.Info(totalTime, payment, 9, 12000, 400, 1, 0, "A", "B"),
+                List.of());
     }
 }

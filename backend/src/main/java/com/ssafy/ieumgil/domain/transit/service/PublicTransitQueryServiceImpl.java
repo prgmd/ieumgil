@@ -8,6 +8,7 @@ import com.ssafy.ieumgil.domain.transit.exception.TransitException;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
+import java.util.List;
 import java.util.Set;
 
 @Service
@@ -42,6 +43,17 @@ public class PublicTransitQueryServiceImpl implements PublicTransitQueryService 
                 .findFirst()
                 .map(this::toRoute)
                 .orElseThrow(() -> new TransitException(TransitErrorCode.ROUTE_NOT_FOUND));
+    }
+
+    @Override
+    public List<OdsayRouteResponse.Path> getCombinedRoutes(
+            double startLat, double startLng, double endLat, double endLng) {
+        List<OdsayRouteResponse.Path> paths =
+                odsayClient.searchPublicTransitRoute(startLat, startLng, endLat, endLng, "TRANSIT");
+        if (paths.isEmpty()) {
+            throw new TransitException(TransitErrorCode.ROUTE_NOT_FOUND);
+        }
+        return paths;
     }
 
     /**
