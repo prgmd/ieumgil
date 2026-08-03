@@ -53,7 +53,14 @@ export function timeToMins(time) {
   return h * 60 + m;
 }
 
-/** 570 → "09:30". null 은 그대로 null */
+/**
+ * 570 → "09:30". null 은 그대로 null.
+ *
+ * 1439(23:59)를 넘는 값은 여기서 자르지 않는다 — 서버가 "HH:mm" 를
+ * java.time.LocalTime(최대 23:59)으로 파싱하므로 "24:00" 이상은 저장할 수 없지만,
+ * 조용히 잘라내면 종료−시작 == 소요시간 불변식이 깨진다. 넘치는 변경은 애초에
+ * 만들어지지 않게 화면에서 막는다(index.jsx 의 chainOverflowsMidnight · DAY_END).
+ */
 export function minsToTime(mins) {
   if (mins == null) return null;
   const h = String(Math.floor(mins / 60)).padStart(2, "0");

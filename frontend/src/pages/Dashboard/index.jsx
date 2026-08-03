@@ -44,7 +44,10 @@ import "./index.css";
 
 const PX = 2.0;
 const SNAP = 10;
-const DAY_END = 1440;
+// 하루의 마지막 시각 = 23:59. 24:00(1440)이 아닌 이유는 서버가 "HH:mm" 를
+// java.time.LocalTime 으로 파싱하는데 그 최대가 23:59 이기 때문이다 —
+// "24:00" 은 저장할 방법이 없어(BLOCK400) 애초에 만들 수 없게 막는다.
+const DAY_END = 1439;
 const TL_PAD_TOP = 20;
 const TL_PAD_LEFT = 70;
 
@@ -105,9 +108,10 @@ const TRANSIT_MODE_META = {
 };
 
 /**
- * 겹침 해소 결과가 자정(24:00)을 넘는지 — 정책 A: 넘치는 변경은 만들기 전에 막는다.
- * 서버 시각이 "HH:mm" 문자열이라 24시 이후는 존재할 수 없고(BLOCK400_3),
- * 조용히 잘라내면(클램프) 종료−시작=소요시간 불변식이 깨진다. 그래서 거부가 정답.
+ * 겹침 해소 결과가 하루의 끝(23:59)을 넘는지 — 정책 A: 넘치는 변경은 만들기 전에 막는다.
+ * 서버 시각이 "HH:mm" 문자열(java.time.LocalTime)이라 23:59 이후는 존재할 수 없고
+ * (BLOCK400_3), 조용히 잘라내면(클램프) 종료−시작=소요시간 불변식이 깨진다.
+ * 그래서 거부가 정답.
  */
 const chainOverflowsMidnight = (chainIds, itemsMap) =>
   (chainIds ?? []).some((id) => {
@@ -118,7 +122,7 @@ const chainOverflowsMidnight = (chainIds, itemsMap) =>
   });
 
 const MIDNIGHT_BLOCK_MSG =
-  "이대로면 일정이 24시를 넘어요 — 소요 시간을 줄이거나 다음 날로 옮겨주세요.";
+  "23:59를 초과합니다 — 소요 시간을 줄이거나 다음 날로 옮겨주세요.";
 
 // 후보 칩·행에 함께 표시할 요금 문구 — 추정치는 "약 "을 붙인다
 const transitFareText = (c) =>
@@ -1404,7 +1408,7 @@ export function DashboardPage() {
         // 구간을 "제외"하거나 더 빠른 수단으로 바꿔 바로 다시 시도할 수 있게.
         if (chainOverflowsMidnight(newChain, resolvedItems)) {
           showToast(
-            "이대로 추가하면 일정이 24시를 넘어요 — 일부 구간을 제외하거나 더 빠른 수단을 골라주세요.",
+            "이대로 추가하면 23:59를 초과합니다 — 일부 구간을 제외하거나 더 빠른 수단을 골라주세요.",
           );
           return;
         }
@@ -2258,6 +2262,8 @@ export function DashboardPage() {
           resizingState.originalStartMins + resizingState.startDur + deltaMins;
         if (tentativeEnd - resizingState.originalStartMins < 10)
           tentativeEnd = resizingState.originalStartMins + 10;
+        // 아래로는 23:59 까지만 늘어난다 — 넘기면 저장할 수 없는 시각이 된다
+        if (tentativeEnd > DAY_END) tentativeEnd = DAY_END;
         newDur = tentativeEnd - resizingState.originalStartMins;
       } else {
         let tentativeStart = resizingState.originalStartMins + deltaMins;
@@ -3492,6 +3498,9 @@ export function DashboardPage() {
                 // 서버가 category 필드 갱신을 지원하지 않는다(BLOCK400_2) —
                 // 카테고리는 생성 시에만 정할 수 있다
                 categoryLocked={!isTempId(editingBlockId)}
+                // 체인에 올라간 블록만 23:59 상한이 있다 — 후보(POOL)는 시각이
+                // 없어서(느슨한 블록) 놓일 때 다시 계산된다
+                maxDurationMin={sMins == null ? null : DAY_END - sMins}
                 // advisory 락 — 편집을 막지 않고 동시 편집 사실만 알린다.
                 // 세부 내용(detail)은 마지막 저장이 통째로 이기므로 겹치면 유실될 수 있다.
                 lockNotice={

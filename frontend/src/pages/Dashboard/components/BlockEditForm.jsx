@@ -16,6 +16,9 @@ export function BlockEditForm({
   timeString,
   categoryLocked = false,
   lockNotice = "",
+  // 이 블록이 23:59 를 넘지 않고 가질 수 있는 최대 소요 시간(= 1439 − 시작 시각).
+  // 시각이 없는 후보(POOL) 블록은 null — 체인에 올릴 때 다시 계산되므로 제한이 없다.
+  maxDurationMin = null,
   onSave,
   onCancel,
 }) {
@@ -87,6 +90,13 @@ export function BlockEditForm({
     const dur = Number(formData.durationMin);
     if (!Number.isInteger(dur) || dur <= 0 || dur % 30 !== 0) {
       setError("소요 시간은 30분 단위로 입력해주세요. (예: 30, 60, 90)");
+      return;
+    }
+    // 하루의 끝(23:59)을 넘기는 일정은 만들 수 없다 — 서버가 그 이후 시각을
+    // 저장하지 못해 "필드 값의 형식이 올바르지 않습니다"로 돌아오는데, 그 메시지로는
+    // 무엇이 잘못됐는지 알 수 없다. 여기서 사유를 그대로 말해 준다.
+    if (maxDurationMin != null && dur > maxDurationMin) {
+      setError(`23:59를 초과합니다. (이 블록은 최대 ${maxDurationMin}분)`);
       return;
     }
 
@@ -249,11 +259,16 @@ export function BlockEditForm({
           />
         </div>
         <div className="bef-col">
-          <label className="bef-label">소요 (분 · 30분 단위)</label>
+          <label className="bef-label">
+            소요 (분 · 30분 단위)
+            {maxDurationMin != null && ` · 23:59까지 최대 ${maxDurationMin}분`}
+          </label>
           <input
             className="bef-input"
             type="number"
             step="30"
+            min="30"
+            max={maxDurationMin ?? undefined}
             name="durationMin"
             value={formData.durationMin}
             onChange={handleChange}
