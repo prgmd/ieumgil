@@ -96,6 +96,8 @@ services:
       # 카카오 디벨로퍼스 앱의 REST API 키(OAuth client-id/secret과 별개)
       KAKAO_REST_API_KEY: ${KAKAO_REST_API_KEY}
       ODSAY_API_KEY: ${ODSAY_API_KEY}
+      # 오피넷 전국 평균 휘발유가(자차 연료비 추정). 비어 있으면 상수 유가로 동작한다
+      OPINET_API_KEY: ${OPINET_API_KEY}
 
     depends_on:
       postgres:
