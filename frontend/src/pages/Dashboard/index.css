@@ -11,7 +11,41 @@
 .dash-shell {
   background: #f4f1ea;
   min-height: calc(100vh - 50px); /* 50px = 상단 앱바 */
-  padding: 18px 0 40px;
+  padding: 14px 0 40px; /* 제목·모드 전환이 상단바로 올라가 툴바 띠가 없다 */
+}
+
+/* 상단바(AppBar extra)에 올라간 대시보드 제목·모드 전환 — 50px 높이에 맞춘 축소판.
+   flex:1 로 남는 폭을 다 차지해, 모드 전환을 오른쪽 끝(활동 배지 왼쪽)으로 민다 */
+.dash-headbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0; /* 제목이 길면 말줄임 — 오른쪽 crew·프로필을 밀지 않는다 */
+  flex: 1;
+}
+.dash-headbar-title {
+  margin: 0;
+  font-size: 16.5px;
+  font-weight: 700;
+  color: var(--ink1, #3d2b22);
+  line-height: 1.2;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 300px;
+}
+.dash-headbar .dash-sub {
+  font-size: 12px;
+  color: var(--ink3, #8a776a);
+  white-space: nowrap;
+}
+.dash-headbar .mode-switch {
+  padding: 3px;
+  margin-left: auto; /* 활동중 배지(crew) 바로 왼쪽까지 민다 */
+}
+.dash-headbar .mode-tab {
+  padding: 5px 13px;
+  font-size: 13px;
 }
 
 /* 전환 바 + 본문이 같은 자를 쓰도록 폭·좌우 여백을 한곳에서 정한다.

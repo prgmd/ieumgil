@@ -2545,54 +2545,44 @@ export function DashboardPage() {
       {/* 개인 페이지 › 그룹명 › 프로젝트명. 그룹·프로젝트를 못 불러온 동안에는
           자리만 지키는 문구를 쓴다(빈 칸이 생기면 경로가 끊겨 보인다). */}
       <AppBar
+        // 마지막 항목(프로젝트명)은 extra 의 제목이 대신한다 — 두 번 보이지 않게
         crumbs={[
           { label: "개인 페이지", to: "/my" },
           { label: group?.name ?? "그룹", to: `/groups/${groupId}` },
-          { label: project?.name ?? "여행 대시보드" },
         ]}
+        // 제목·기간·모드 전환을 상단바에 올린다 — 보드 위 툴바 띠를 없애
+        // 세로 공간을 카드에 돌려주기 위함
+        extra={
+          <div className="dash-headbar">
+            <span className="crumb-sep">›</span>
+            <h1 className="dash-headbar-title">
+              {project?.name ?? "여행 대시보드"}
+            </h1>
+            <div className="mode-switch">
+              <button
+                className={`mode-tab ${viewMode === "edit" ? "on" : ""}`}
+                onClick={() => setViewMode("edit")}
+              >
+                ✎ 편집
+              </button>
+              <button
+                className={`mode-tab ${viewMode === "read" ? "on" : ""}`}
+                onClick={() => setViewMode("read")}
+              >
+                ≡ 읽기
+              </button>
+            </div>
+          </div>
+        }
         // 프로젝트 멤버(스냅샷 시드 + MEMBER_JOINED/LEFT 갱신)와 실시간 접속
         // 상태(PRESENCE) — 초록 점이 진짜 "지금 보는 중"을 뜻하게 됐다(6단계)
         members={boardMembers}
         activeMemberIds={Array.from(onlineIds)}
       />
 
-      {/* 모드 전환 바 + 보드를 한 껍데기(.dash-shell) 안에 두어 경계 없이 이어 보이게 한다.
-          예전에는 전환 바가 자기 배경을 가진 별도 띠였다. */}
+      {/* 제목·기간·모드 전환은 상단바(AppBar extra)로 올라갔다 — 여기는 보드만.
+          툴바 띠가 차지하던 세로 공간만큼 카드들이 위로 올라온다. */}
       <div className="dash-shell">
-        <div className="dash-toolbar">
-          <div className="dash-heading">
-            <h1>{project?.name ?? "여행 대시보드"}</h1>
-            <span className="dash-sub">
-              {[
-                project?.destination,
-                // 시작일 ~ 종료일 (기간이 하루면 물결표 없이 한 날짜만)
-                project?.startDate && project?.endDate
-                  ? dayKeys.length > 1
-                    ? `${dayDate(project, 0, "short")} ~ ${dayDate(project, dayKeys.length - 1, "short")}`
-                    : dayDate(project, 0, "short")
-                  : null,
-                `${dayKeys.length}일`,
-              ]
-                .filter(Boolean)
-                .join(" · ")}
-            </span>
-          </div>
-          <div className="mode-switch">
-            <button
-              className={`mode-tab ${viewMode === "edit" ? "on" : ""}`}
-              onClick={() => setViewMode("edit")}
-            >
-              ✎ 편집
-            </button>
-            <button
-              className={`mode-tab ${viewMode === "read" ? "on" : ""}`}
-              onClick={() => setViewMode("read")}
-            >
-              ≡ 읽기
-            </button>
-          </div>
-        </div>
-
         {viewMode === "edit" ? (
           // 💡 사이드바까지 드래그 기능이 통하도록 DndContext를 가장 상위 껍데기로 이동시켰습니다!
           <DndContext

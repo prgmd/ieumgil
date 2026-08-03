@@ -5,7 +5,7 @@ import { Avatar } from './Avatar';
 import logo from '../../../../assets/img/logo.png';
 
 /** 겹쳐 보여줄 멤버 수 상한 — 넘치면 마지막에 "+N" 칩으로 접는다. */
-const CREW_LIMIT = 5;
+const CREW_LIMIT = 4;
 
 /**
  * 라우트 공통 상단바.
@@ -21,8 +21,11 @@ const CREW_LIMIT = 5;
  * @param {number[]} [activeMemberIds]
  *   지금 활동 중인 멤버 id. 실시간 접속 정보(WebSocket)가 붙으면 그 결과를 그대로
  *   넣어주면 된다 — 로그인 사용자는 이 화면을 보고 있는 당사자라 항상 활동 중으로 본다.
+ * @param {import('react').ReactNode} [extra]
+ *   경로 오른쪽에 이어 붙는 화면별 요소(대시보드의 제목·기간·모드 전환 등).
+ *   넘기지 않으면 아무것도 렌더하지 않아 다른 페이지의 상단바 모양은 그대로다.
  */
-export function AppBar({ crumbs, members = [], activeMemberIds = [] }) {
+export function AppBar({ crumbs, members = [], activeMemberIds = [], extra = null }) {
   const navigate = useNavigate();
   const currentUser = useAuthStore((s) => s.currentUser);
   const logout = useAuthStore((s) => s.logout);
@@ -72,6 +75,8 @@ export function AppBar({ crumbs, members = [], activeMemberIds = [] }) {
           </span>
         ))}
       </div>
+
+      {extra}
 
       {/* 함께 보는 멤버 — 활동 중이면 초록 점, 아니면 회색 점 + 아바타를 흐리게 */}
       {crew.length > 0 && (
