@@ -448,7 +448,22 @@
 | `segments[].candidates[].mode` | enum | `TRANSIT`\|`TAXI`\|`CAR`\|`WALK` — 아래 참조 |
 | `.label` | string | 한글 표시명(`대중교통`\|`택시`\|`자차`\|`도보`) |
 | `.available` | bool | **조회 실패 여부만** 나타낸다. 아래 콜아웃 참조 |
-| `.durationMin` / `.fare` / `.fareConfidence` / `.intervalMin` / `.distanceM` | - | `available:false`면 전부 `null`. `intervalMin`은 `TRANSIT` 전용(배차간격)이라 나머지 수단은 항상 `null` |
+| `.durationMin` / `.fare` / `.fareConfidence` / `.intervalMin` / `.distanceM` | - | `available:false`면 전부 `null`. 수단별로 비는 필드가 아래 표처럼 갈린다 |
+
+**수단마다 비는 필드가 다르다** (`available:true`인데도 `null`인 경우 — 프론트엔드가 그 항목만 숨기면 된다)
+
+| 필드 | `TRANSIT` | `TAXI` | `CAR` | `WALK` |
+|---|---|---|---|---|
+| `durationMin` | ○ | ○ | ○ | ○ |
+| `fare` | ○ | ○ | ○ | ○ (항상 `0`) |
+| `intervalMin`(배차간격) | ○ | **null** | **null** | **null** |
+| `distanceM` | **null** | ○ | ○ | ○ |
+
+`distanceM`이 대중교통에서 `null`인 이유는 **ODsay 응답에 거리가 없어서**다. 우리가 담지 않은 것이 아니라 받은 적이 없다. 직선거리로 채우지 않는다 — 다른 수단의 `distanceM`은 실제 경로 거리(도로/보행)이므로, 대중교통만 직선거리를 넣으면 의미가 달라져 사용자가 카드를 나란히 비교할 때 왜곡된다.
+
+`distanceM`은 **외부 API가 준 실제 경로 거리(미터)**이고 직선거리가 아니다. 실측 예: 서울시청→강남역이 직선 8,785m인데 `distanceM`은 10,327m다(도로를 따라가므로). 자차 연료비도 이 값으로 계산하므로 직선거리를 쓰면 기름값이 15%가량 싸게 나온다.
+
+> 서버 내부에서 쓰는 직선거리(하버사인)는 300m·2km 임계를 판정해 **외부 API를 부를지 말지** 정하는 용도이며 응답에 나가지 않는다.
 
 **`TransitMode`:**
 
