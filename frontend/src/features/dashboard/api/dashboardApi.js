@@ -202,6 +202,36 @@ export async function fetchOpsAfter(projectId, afterSeq) {
   }
 }
 
+// ── 챗봇 ─────────────────────────────────────────────
+
+/**
+ * 챗봇 메시지 전송 — 서버가 GMS(Anthropic Claude)로 중계한다.
+ * 프로젝트+멤버 단위로 최근 대화 히스토리가 서버에 유지된다.
+ *
+ * @param {"GENERAL"|"MAP"} [options.mode] 미지정이면 GENERAL.
+ *        MAP 은 mapContext(지도 뷰포트 남서·북동 좌표)가 필수 — 그 범위 안에서 추천한다.
+ * @returns {Promise<{reply: string, candidates: Array<{
+ *   name, category, lat, lng, address, placeId, source, subCategory,
+ *   eventStartDate, eventEndDate, detail
+ * }>>>} candidates 는 그대로 블록 생성에 넘길 수 있는 형태(추천 없으면 빈 배열)
+ */
+export async function sendChatbotMessage(
+  projectId,
+  { message, mode = "GENERAL", mapContext },
+) {
+  try {
+    const { data } = await axiosInstance.post(
+      `/projects/${projectId}/chatbot/messages`,
+      { message, mode, ...(mapContext ? { mapContext } : {}) },
+      // LLM 응답은 전역 기본(10초)을 넘기기 쉽다 — 이 요청만 넉넉히
+      { timeout: 30000 },
+    );
+    return unwrap(data);
+  } catch (error) {
+    unwrapError(error);
+  }
+}
+
 // ── 세부 내용 편집 락 (advisory) ─────────────────────
 // Redis SET NX + TTL 30s. 서버가 detail 쓰기를 막지는 않는다 — 편집 배지용이다.
 // 락 상태 변화(획득·해제)는 presence 토픽에 DETAIL_LOCK 메시지로 전파된다.

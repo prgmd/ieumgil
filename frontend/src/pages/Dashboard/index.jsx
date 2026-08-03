@@ -1817,6 +1817,20 @@ export function DashboardPage() {
     }
   };
 
+  // MAP 모드 챗봇에 넘길 지도 뷰포트 (남서·북동) — 지도가 아직 없으면 null(위젯이 안내)
+  const getMapBounds = () => {
+    if (!map) return null;
+    const bounds = map.getBounds();
+    const sw = bounds.getSouthWest();
+    const ne = bounds.getNorthEast();
+    return {
+      swLat: sw.getLat(),
+      swLng: sw.getLng(),
+      neLat: ne.getLat(),
+      neLng: ne.getLng(),
+    };
+  };
+
   const handleCreateCustomBlock = () => {
     const newId = `custom-${Date.now()}`;
     const newBlock = {
@@ -2185,9 +2199,10 @@ export function DashboardPage() {
         return { region: "pool", insertIndex };
       }
       if (isOverTimeline) {
-        // 검색 결과는 타임라인에 직접 놓을 수 없다 — 후보(POOL)에 먼저 담는 흐름만
-        // 허용한다. 여기서 끊으면 드롭뿐 아니라 미리보기·하이라이트도 함께 꺼진다.
-        if (active.data?.current?.from === "search") return { region: null };
+        // 검색 결과·챗봇 추천은 타임라인에 직접 놓을 수 없다 — 후보(POOL)에 먼저
+        // 담는 흐름만 허용한다. 여기서 끊으면 드롭뿐 아니라 미리보기·하이라이트도 꺼진다.
+        const from = active.data?.current?.from;
+        if (from === "search" || from === "chatbot") return { region: null };
 
         const relativeY =
           topY - tlRect.top + (timelineDOMRef.current?.scrollTop || 0);
@@ -2234,6 +2249,7 @@ export function DashboardPage() {
     const activeIdLocal = active.id;
     const isFromPool = pool.includes(activeIdLocal);
     const isFromSearch = active.data.current?.from === "search";
+    const isFromChatbot = active.data.current?.from === "chatbot";
     const target = computeDropTarget(active);
 
     setActiveId(null);
@@ -2243,35 +2259,61 @@ export function DashboardPage() {
 
     if (!target || !target.region) return;
 
-    // 💡 1. 검색 결과 항목을 드래그해서 놓았을 때의 처리 — 드롭 = 블록 생성(POST).
-    // 타임라인 직행은 computeDropTarget 이 region: null 로 끊는다 — 검색 블록은
-    // 후보(POOL)에 먼저 담는 흐름만 허용한다.
-    if (isFromSearch) {
+    // 💡 1. 외부 소스(카카오 검색·챗봇 추천)를 드래그해서 놓았을 때 — 드롭 = 블록
+    // 생성(POST). 타임라인 직행은 computeDropTarget 이 region: null 로 끊는다 —
+    // 느슨한 블록은 후보(POOL)에 먼저 담는 흐름만 허용한다.
+    if (isFromSearch || isFromChatbot) {
       if (target.region !== "pool") return;
 
-      const place = active.data.current.place;
-      const newId = `search-${place.id}-${Date.now()}`;
+      let newId;
+      let newBlock;
+      if (isFromSearch) {
+        const place = active.data.current.place;
+        newId = `search-${place.id}-${Date.now()}`;
 
-      // 검색 데이터를 우리 앱의 블록 데이터 구조로 변환.
-      // 카카오 응답은 y=위도, x=경도(문자열) — 좌표·placeId 를 버리면 장소성
-      // 블록의 서버 검증(BLOCK400)에 걸리고 지도 핀도 찍을 수 없다.
-      const newBlock = {
-        id: newId,
-        cat: catFromKakaoGroup(place.category_group_code),
-        sub: place.category_group_name || "검색된 장소",
-        name: place.place_name,
-        address: place.road_address_name || place.address_name,
-        detail: place.phone || "",
-        dur: 60, // 기본 소요시간 1시간
-        startMins: null, // 후보(POOL) 블록은 시각 없는 느슨한 블록
-        endMins: null,
-        cost: 0,
-        lat: Number(place.y),
-        lng: Number(place.x),
-        placeId: String(place.id),
-        source: "KAKAO",
-        auto: false,
-      };
+        // 검색 데이터를 우리 앱의 블록 데이터 구조로 변환.
+        // 카카오 응답은 y=위도, x=경도(문자열) — 좌표·placeId 를 버리면 장소성
+        // 블록의 서버 검증(BLOCK400)에 걸리고 지도 핀도 찍을 수 없다.
+        newBlock = {
+          id: newId,
+          cat: catFromKakaoGroup(place.category_group_code),
+          sub: place.category_group_name || "검색된 장소",
+          name: place.place_name,
+          address: place.road_address_name || place.address_name,
+          detail: place.phone || "",
+          dur: 60, // 기본 소요시간 1시간
+          startMins: null, // 후보(POOL) 블록은 시각 없는 느슨한 블록
+          endMins: null,
+          cost: 0,
+          lat: Number(place.y),
+          lng: Number(place.x),
+          placeId: String(place.id),
+          source: "KAKAO",
+          auto: false,
+        };
+      } else {
+        // 챗봇 추천(Candidate)은 서버 필드명 그대로 온다 — 어댑터 매핑으로 변환.
+        // detail 에 축제 기간 등이 실려 오면 생성 직후 PATCH 로 함께 저장된다.
+        const cand = active.data.current.candidate;
+        newId = `search-bot-${Date.now()}`;
+        newBlock = {
+          id: newId,
+          cat: blockApi.CAT_FROM_SERVER[cand.category] ?? "etc",
+          sub: cand.subCategory || "",
+          name: cand.name,
+          address: cand.address || "",
+          detail: cand.detail || "",
+          dur: 60,
+          startMins: null,
+          endMins: null,
+          cost: 0,
+          lat: cand.lat ?? null,
+          lng: cand.lng ?? null,
+          placeId: cand.placeId != null ? String(cand.placeId) : null,
+          source: cand.source ?? "BOT",
+          auto: false,
+        };
+      }
 
       const insertAt = Math.max(0, Math.min(target.insertIndex, pool.length));
       const nextPool = [...pool];
@@ -2508,13 +2550,26 @@ export function DashboardPage() {
         dur: 60,
         cost: 0,
       };
+    } else if (activeDragMeta?.from === "chatbot") {
+      const cand = activeDragMeta.candidate;
+      draggedItem = {
+        id: activeId,
+        cat: blockApi.CAT_FROM_SERVER[cand.category] ?? "etc",
+        name: cand.name,
+        sub: cand.subCategory,
+        address: cand.address,
+        dur: 60,
+        cost: 0,
+      };
     } else {
       draggedItem = items[activeId];
     }
   }
 
   const isDraggingFromPool = activeId ? pool.includes(activeId) : false;
-  const isDraggingFromSearch = activeDragMeta?.from === "search";
+  // 외부 소스(검색·챗봇) 드래그는 풀 카드 모양의 오버레이로 그린다
+  const isDraggingFromSearch =
+    activeDragMeta?.from === "search" || activeDragMeta?.from === "chatbot";
 
   let displayItems = items;
   let displayChain = chains[activeDay] || [];
@@ -3185,6 +3240,10 @@ export function DashboardPage() {
                 myId={currentUser?.id}
                 nicknameOf={nicknameOf}
               />
+
+              {/* 챗봇 — 추천 카드를 후보 목록으로 드래그해야 하므로 반드시
+                  이 DndContext 안에서 렌더한다 (위치는 fixed 라 화면상 그대로) */}
+              <ChatbotWidget projectId={projectId} getMapBounds={getMapBounds} />
             </div>
           </DndContext>
         ) : (
@@ -3303,7 +3362,6 @@ export function DashboardPage() {
         )}
       </div>
 
-      {viewMode === "edit" && <ChatbotWidget />}
     </>
   );
 }
