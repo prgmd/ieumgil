@@ -111,6 +111,21 @@ const fmtDur = (mins) => {
 
 const catOf = (item) => CAT_COLORS[item?.cat] || CAT_COLORS.etc;
 
+// 카드에 보일 소분류 — 교통 블록은 transportMeta.chosen.label 을 우선한다.
+// 이동 수단 재선택은 transportMeta 만 바꿀 수 있어서(subCategory 는 생성 시 고정,
+// LWW 미지원) sub 를 그대로 쓰면 재선택·새로고침 후 옛 수단명이 남는다.
+const subLabelOf = (item) =>
+  item?.cat === "trans"
+    ? (item?.transportMeta?.chosen?.label ?? item?.sub)
+    : item?.sub;
+
+// 블록에 반영할 소요·비용 — 시외는 고른 출발편의 값이 후보 대표값보다 정확하다
+// (KTX 157분 vs 무궁화 320분처럼 편마다 다르다). 소요 10분 미만은 카드가 안 잡힌다.
+const transitDurOf = (candidate, departure) =>
+  Math.max(10, departure?.durationMin ?? candidate?.durationMin ?? 10);
+const transitCostOf = (candidate, departure) =>
+  departure?.fare ?? departure?.fareOptions?.general ?? candidate?.fare ?? 0;
+
 /**
  * 중복 orderKey 에 견디는 키 생성 (QA: 블록 이동 시 ">=" 오류 픽스).
  * 삭제 복구(원래 키 재사용)·동시 생성 등으로 이웃 블록의 키가 같아질 수 있는데,
@@ -519,7 +534,7 @@ function CardBody({
         <div className="l">
           <span className="cat">
             {catStyle.nm}
-            {item?.sub ? ` · ${item.sub}` : ""}
+            {subLabelOf(item) ? ` · ${subLabelOf(item)}` : ""}
           </span>
           {lockedBy && <span className="lock-badge">✎ {lockedBy}</span>}
           <span className="grip">⠿</span>
@@ -542,7 +557,7 @@ function CardBody({
       <div className="l1">
         <span className="cat">
           {catStyle.nm}
-          {item?.sub ? ` · ${item.sub}` : ""}
+          {subLabelOf(item) ? ` · ${subLabelOf(item)}` : ""}
         </span>
         {item?.auto && <span className="auto-badge">자동</span>}
         {lockedBy && <span className="lock-badge">✎ {lockedBy} 편집 중</span>}
@@ -1794,10 +1809,18 @@ export function DashboardPage() {
       try {
         // 모든 연속 구간의 후보를 한 번의 호출로 받는다.
         // 서버는 블록을 만들지 않는다 — 생성은 모달에서 적용을 눌러야(confirmBulkTransit).
+        // 출발편 기준 시각 = 첫 실블록이 끝나는 시각(= 첫 구간의 출발 시각).
+        // 시각 없는 블록이면 09:00 으로 받친다. (시작 시각 개념이 사라져 dayStart 없음)
+        const firstBlock = items[realIds[0]];
+        const referenceAt = blockApi.minsToTime(
+          firstBlock?.startMins != null
+            ? firstBlock.startMins + (firstBlock.dur || 0)
+            : 540,
+        );
         const { segments = [] } = await blockApi.calculateTransitCandidates(
           projectId,
           realIds,
-          blockApi.minsToTime(dayStart[dayKey] ?? 540),
+          referenceAt,
         );
         if (!segments.some((s) => s.candidates?.some((c) => c.available))) {
           showToast("이동 가능한 경로를 찾지 못했어요.");
@@ -1834,7 +1857,6 @@ export function DashboardPage() {
       items,
       projectId,
       showToast,
-      dayStart,
     ],
   );
 
@@ -1882,8 +1904,8 @@ export function DashboardPage() {
             if (!chosen?.candidate?.available) return; // 제외했거나 모르는 구간 — 만들지 않는다
             const info = {
               mode: chosen.candidate.label || chosen.candidate.mode,
-              dur: Math.max(10, chosen.candidate.durationMin || 10),
-              cost: chosen.candidate.fare || 0,
+              dur: transitDurOf(chosen.candidate, chosen.departure),
+              cost: transitCostOf(chosen.candidate, chosen.departure),
             };
             const newId = `auto-${dayKey}-${id}-${i}`;
             newItems[newId] = {
@@ -2044,11 +2066,18 @@ export function DashboardPage() {
 
       setIsGeneratingTransport(true);
       try {
-        // 두 블록 사이 한 구간만 계산 — blockIds 에 그 둘만 넘긴다
+        // 두 블록 사이 한 구간만 계산 — blockIds 에 그 둘만 넘긴다.
+        // 출발편 기준 시각 = 출발 블록이 끝나는 시각(그때 이동을 시작하니까)
+        const fromBlock = items[currentId];
+        const referenceAt = blockApi.minsToTime(
+          fromBlock?.startMins != null
+            ? fromBlock.startMins + (fromBlock.dur || 0)
+            : 540,
+        );
         const { segments = [] } = await blockApi.calculateTransitCandidates(
           projectId,
           [currentId, nextId],
-          blockApi.minsToTime(dayStart[dayKey] ?? 540),
+          referenceAt,
         );
         const segment = segments[0];
         const candidates = segment?.candidates ?? [];
@@ -2079,7 +2108,7 @@ export function DashboardPage() {
         setIsGeneratingTransport(false);
       }
     },
-    [isGeneratingTransport, transitPicker, chains, projectId, showToast, dayStart],
+    [isGeneratingTransport, transitPicker, chains, items, projectId, showToast],
   );
 
   // 피커에서 다른 후보/편을 고른다 (아직 생성하지 않는다 — confirmTransitChoice 가 한다)
@@ -2089,9 +2118,6 @@ export function DashboardPage() {
         ? { ...prev, chosenCandidate: c, chosenDeparture: c.departures?.[0] ?? null }
         : prev,
     );
-  };
-  const setTransitPickerDeparture = (d) => {
-    setTransitPicker((prev) => (prev ? { ...prev, chosenDeparture: d } : prev));
   };
 
   // 선택 모달에서 "확인"을 누르면 그 구간에 교통 블록을 만든다 (기존 5.5단계 경로)
@@ -2113,8 +2139,8 @@ export function DashboardPage() {
 
       const info = {
         mode: chosen.label || chosen.mode,
-        dur: Math.max(10, chosen.durationMin || 10), // 10분 미만은 카드가 안 잡힌다
-        cost: chosen.fare || 0,
+        dur: transitDurOf(chosen, picker.chosenDeparture),
+        cost: transitCostOf(chosen, picker.chosenDeparture),
       };
 
       setIsGeneratingTransport(true);
@@ -2766,49 +2792,120 @@ export function DashboardPage() {
         : prev,
     );
   };
-  const setReselectDeparture = (d) => {
-    setTransportReselectPicker((prev) =>
-      prev ? { ...prev, chosenDeparture: d } : prev,
-    );
-  };
 
-  // "저장" — 같은 블록의 transportMeta 만 교체한다(재생성 없음, PATCH LWW)
+  // "저장" — 같은 블록에서 선택만 바꾼다(재생성 없음).
+  // transportMeta 뿐 아니라 소요(durationMin)·종료시각·비용(budget)까지 PATCH 해야
+  // 새로고침 후에도 유지된다(예전엔 meta 만 보내 소요·비용이 로컬에만 남았다).
+  // 소요가 바뀌면 이웃이 밀린다 — 저장 경로(handleSaveBlock)와 같은
+  // 겹침 해소 + 자정 분할 + 밀린 이웃 시각 저장을 그대로 태운다.
   const applyReselectTransport = useCallback(async () => {
     const picker = transportReselectPicker;
-    if (!picker || !picker.chosenCandidate?.available) return;
+    const chosen = picker?.chosenCandidate;
+    if (!picker || !chosen?.available) return;
+    const block = items[picker.blockId];
+    if (!block) {
+      setTransportReselectPicker(null);
+      return; // 모달이 열린 사이 삭제됨(협업)
+    }
+
     const newMeta = {
       ...buildTransportMeta(
         // segment 는 원래 스냅샷의 segment 메타를 그대로 유지 — 재조회하지 않으므로
-        // referenceAt 등은 처음 계산 시점 그대로다(편집 모드에서 후보 재조회 안 함).
-        // 이 segment 는 이미 candidates 가 벗겨진 조각(intercity/timetableApplied/
-        // timetableSkipReason/referenceAt)이라 buildTransportMeta 가 유도하는
-        // candidates 는 항상 빈 배열이다 — picker.candidates(원래 스냅샷)로 덮어써야 한다.
-        items[picker.blockId]?.transportMeta?.segment,
-        picker.chosenCandidate,
+        // referenceAt 등은 처음 계산 시점 그대로다. 이 segment 조각에는 candidates 가
+        // 없어 buildTransportMeta 결과가 빈 배열이 되므로 원래 스냅샷으로 덮어쓴다.
+        block.transportMeta?.segment,
+        chosen,
         picker.chosenDeparture,
       ),
       candidates: picker.candidates,
     };
+    const newDur = transitDurOf(chosen, picker.chosenDeparture);
+    const newCost = transitCostOf(chosen, picker.chosenDeparture);
+    const merged = { ...block, dur: newDur, cost: newCost, transportMeta: newMeta };
+
+    // 체인 위 블록이면 소요 변경이 이웃을 민다 — 저장 전에 자정 초과를 판정
+    const dayKey = block.dayNo != null ? `d${block.dayNo}` : null;
+    let spilled = null;
+    if (dayKey && chains[dayKey]?.includes(block.id)) {
+      const { newItems, newChain } = resolveOverlaps(
+        { ...items, [block.id]: merged },
+        chains[dayKey],
+        0,
+        block.id,
+      );
+      spilled = splitOverflowAtMidnight(
+        { ...chains, [dayKey]: newChain },
+        newItems,
+        dayKeys,
+      );
+      if (spilled.blocked) {
+        showToast(LAST_DAY_OVERFLOW_MSG);
+        return; // 모달을 열어 둔다 — 더 빠른 수단을 골라 다시 저장할 수 있게
+      }
+    }
+
     setTransportReselectPicker(null);
+    // 뒤에 열려 있는 편집 폼도 닫는다 — 폼이 옛 소요·비용을 들고 있어서,
+    // 그대로 두면 사용자가 폼 저장을 눌러 방금 바꾼 값을 되돌려버린다
+    setEditingBlockId(null);
     try {
-      await blockApi.updateBlockFields(picker.blockId, { transportMeta: newMeta });
-      setItems((prev) => {
-        if (!prev[picker.blockId]) return prev;
-        return {
-          ...prev,
-          [picker.blockId]: {
-            ...prev[picker.blockId],
-            transportMeta: newMeta,
-            sub: newMeta.chosen?.label ?? prev[picker.blockId].sub,
-            dur: newMeta.chosen?.durationMin ?? prev[picker.blockId].dur,
-            cost: newMeta.chosen?.fare ?? prev[picker.blockId].cost,
-          },
-        };
-      });
+      const fields = {
+        durationMin: newDur,
+        budget: newCost,
+        transportMeta: newMeta,
+      };
+      if (block.startMins != null) {
+        fields.endTime = blockApi.minsToTime(block.startMins + newDur);
+      }
+      await blockApi.updateBlockFields(picker.blockId, fields);
+
+      if (spilled) {
+        const handled = new Set([
+          ...spilled.moved.map((m) => m.id),
+          ...spilled.created.map((c) => c.tempId),
+          ...spilled.trimmed,
+        ]);
+        await persistMidnightSplit(spilled);
+        await Promise.all(
+          [
+            ...new Set([
+              dayKey,
+              ...spilled.moved.map((m) => m.to),
+              ...spilled.created.map((c) => c.to),
+            ]),
+          ].map((day) =>
+            persistShiftedTimes(
+              (spilled.chains[day] ?? []).filter((id) => !handled.has(id)),
+              items,
+              spilled.items,
+              block.id,
+            ),
+          ),
+        );
+        setItems(spilled.items);
+        setChains(spilled.chains);
+        showToast(
+          handled.size > 0
+            ? `이동 수단을 바꿨어요 ✓ ${midnightSplitNotice(spilled)}`
+            : "이동 수단을 바꿨어요 ✓",
+        );
+      } else {
+        setItems((prev) =>
+          prev[block.id] ? { ...prev, [block.id]: merged } : prev,
+        );
+        showToast("이동 수단을 바꿨어요 ✓");
+      }
     } catch (e) {
       showToast(e?.message ?? "저장하지 못했어요. 잠시 후 다시 시도해주세요.");
     }
-  }, [transportReselectPicker, items, showToast]);
+  }, [
+    transportReselectPicker,
+    items,
+    chains,
+    dayKeys,
+    persistMidnightSplit,
+    showToast,
+  ]);
 
   // ── 편집 락 수명 = 편집 모달 수명 (6단계, advisory) ──
   // 모달을 열면 획득 → 10초 주기 하트비트(TTL 30초) → 닫으면 해제.
@@ -4426,7 +4523,15 @@ export function DashboardPage() {
                       ? (transitPicker.chosenDeparture?.name ?? null)
                       : null
                   }
-                  onSelectDeparture={setTransitPickerDeparture}
+                  // 편을 고르면 그 편이 속한 후보도 함께 선택된다 — 선택 안 된
+                  // 후보의 편을 바로 눌렀을 때 후보가 안 바뀌던 문제 방지
+                  onSelectDeparture={(d) =>
+                    setTransitPicker((prev) =>
+                      prev
+                        ? { ...prev, chosenCandidate: c, chosenDeparture: d }
+                        : prev,
+                    )
+                  }
                 />
               ))}
             </div>
@@ -4473,7 +4578,14 @@ export function DashboardPage() {
                       ? (transportReselectPicker.chosenDeparture?.name ?? null)
                       : null
                   }
-                  onSelectDeparture={setReselectDeparture}
+                  // 편 선택 = 그 후보 선택까지 (단일 피커와 같은 이유)
+                  onSelectDeparture={(d) =>
+                    setTransportReselectPicker((prev) =>
+                      prev
+                        ? { ...prev, chosenCandidate: c, chosenDeparture: d }
+                        : prev,
+                    )
+                  }
                 />
               ))}
             </div>

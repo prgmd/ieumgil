@@ -10,6 +10,13 @@
   border-radius: 10px;
   background: #fff;
 }
+/* 선택 모드 — 카드 전체가 클릭 범위라는 걸 커서·호버로 말한다 */
+.tcc.is-clickable {
+  cursor: pointer;
+}
+.tcc.is-clickable:hover {
+  border-color: var(--acc, #9c4a2f);
+}
 .tcc.on {
   border-color: var(--acc, #9c4a2f);
   background: #fdf6ef;

@@ -46,7 +46,16 @@ function DepartureRow({ departure, selected, selectable, onSelect }) {
     <Tag
       type={selectable ? "button" : undefined}
       className={`tcc-departure ${selected ? "on" : ""}`}
-      onClick={selectable ? () => onSelect(departure) : undefined}
+      // 카드 루트 전체가 후보 선택 클릭을 받으므로(아래 참조), 편 클릭이
+      // 루트로 번져 "편 선택 → 후보 재선택으로 편 초기화" 되지 않게 끊는다
+      onClick={
+        selectable
+          ? (e) => {
+              e.stopPropagation();
+              onSelect(departure);
+            }
+          : undefined
+      }
     >
       <span className="tcc-dep-name">
         {departure.name}
@@ -89,14 +98,29 @@ export function TransitCandidateCard({
   const meta = TRANSIT_MODE_META[c.mode] ?? { ico: "🚏", nm: c.mode };
   const selectable = mode === "select";
   const isIntercity = INTERCITY_MODES.has(c.mode);
+  const clickable = selectable && c.available;
 
   return (
-    <div className={`tcc ${selected ? "on" : ""} ${!c.available ? "is-unavailable" : ""}`}>
+    // 선택 모드에선 카드 전체가 클릭 범위다 — 머리줄만 버튼이면 라벨·경로 영역을
+    // 누른 사용자가 "왜 선택이 안 되지"가 된다. 출발편 행만 자기 선택을 위해
+    // 전파를 끊는다(DepartureRow 참조).
+    <div
+      className={`tcc ${selected ? "on" : ""} ${!c.available ? "is-unavailable" : ""} ${clickable ? "is-clickable" : ""}`}
+      onClick={clickable ? () => onSelectCandidate?.(c) : undefined}
+    >
       <button
         type="button"
         className="tcc-head"
         disabled={!selectable || !c.available}
-        onClick={selectable ? () => onSelectCandidate?.(c) : undefined}
+        // 루트가 같은 선택을 처리한다 — 두 번 발화하지 않게 여기서 끊는다
+        onClick={
+          selectable
+            ? (e) => {
+                e.stopPropagation();
+                onSelectCandidate?.(c);
+              }
+            : undefined
+        }
       >
         <span className="tcc-ico">{meta.ico}</span>
         <span className="tcc-name">{c.label || meta.nm}</span>
