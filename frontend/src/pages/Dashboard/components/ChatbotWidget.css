@@ -23,12 +23,17 @@
 .cbw-fab:hover {
   transform: scale(1.05);
 }
+/* 열림 상태 — 같은 자리에서 ✕ 로 바뀐다(로고 버튼이 사라지지 않는다, QA 배치2) */
+.cbw-fab.is-open {
+  background: #8c7b70;
+  font-size: 22px;
+}
 
-/* 펼친 패널 */
+/* 펼친 패널 — 항상 떠 있는 로고 버튼(60px) 위에 얹힌다 */
 .cbw {
   position: fixed;
   right: 30px;
-  bottom: 30px;
+  bottom: 100px;
   z-index: 9999;
   width: 340px;
   display: flex;
@@ -188,10 +193,46 @@
   border-color: #e8c7bf;
   color: #9c3b3b;
 }
-/* 응답 대기 */
+/* 응답 대기 — 점 세 개가 차례로 튀어 "진행 중"임을 보여준다 (QA 배치2) */
 .cbw-bubble.is-typing {
   color: #8a776a;
   font-style: italic;
+}
+.cbw-dots {
+  display: inline-flex;
+  gap: 3px;
+  margin-left: 5px;
+  vertical-align: 1px;
+}
+.cbw-dots i {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: #8a776a;
+  animation: cbw-dot-bounce 1.2s infinite ease-in-out;
+}
+.cbw-dots i:nth-child(2) {
+  animation-delay: 0.15s;
+}
+.cbw-dots i:nth-child(3) {
+  animation-delay: 0.3s;
+}
+@keyframes cbw-dot-bounce {
+  0%,
+  60%,
+  100% {
+    transform: translateY(0);
+    opacity: 0.4;
+  }
+  30% {
+    transform: translateY(-4px);
+    opacity: 1;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .cbw-dots i {
+    animation: none;
+  }
 }
 
 /* 추천 후보 카드 — 봇 말풍선 아래에 붙는다 */

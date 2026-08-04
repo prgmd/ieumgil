@@ -87,9 +87,11 @@ export function BlockEditForm({
       setError("블록 이름을 입력해주세요.");
       return;
     }
+    // 리사이즈(10분 단위)와 같은 단위 — 예전 30분 단위는 리사이즈로 만든 70분
+    // 블록을 모달에서 저장 못 하는 모순이 있었다
     const dur = Number(formData.durationMin);
-    if (!Number.isInteger(dur) || dur <= 0 || dur % 30 !== 0) {
-      setError("소요 시간은 30분 단위로 입력해주세요. (예: 30, 60, 90)");
+    if (!Number.isInteger(dur) || dur <= 0 || dur % 10 !== 0) {
+      setError("소요 시간은 10분 단위로 입력해주세요. (예: 30, 40, 70)");
       return;
     }
     // 하루의 끝(23:59)을 넘기는 일정은 만들 수 없다 — 서버가 그 이후 시각을
@@ -260,14 +262,14 @@ export function BlockEditForm({
         </div>
         <div className="bef-col">
           <label className="bef-label">
-            소요 (분 · 30분 단위)
+            소요 (분 · 10분 단위)
             {maxDurationMin != null && ` · 23:59까지 최대 ${maxDurationMin}분`}
           </label>
           <input
             className="bef-input"
             type="number"
-            step="30"
-            min="30"
+            step="10"
+            min="10"
             max={maxDurationMin ?? undefined}
             name="durationMin"
             value={formData.durationMin}

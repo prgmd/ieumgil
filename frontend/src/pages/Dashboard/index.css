@@ -817,6 +817,21 @@
   gap: 12px;
   margin-bottom: 16px;
 }
+/* 사용 안내 ⓘ 아이콘 — 호버/포커스 시 브라우저 title 툴팁 (QA 배치2) */
+.hint-ico {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-left: 6px;
+  font-size: 13px;
+  color: var(--ink3, #8a776a);
+  cursor: help;
+  vertical-align: 1px;
+}
+.hint-ico:hover {
+  color: var(--acc, #9c4a2f);
+}
+
 .pool-hint {
   margin-left: 8px;
   font-size: 12px;
@@ -1391,6 +1406,27 @@
 }
 
 /* ── 이동수단 선택 모달 — 구간 버튼 → 후보 목록에서 하나 고르면 블록 생성 ── */
+/* 읽기 모드 비용 (QA 배치2) — 전체 합계 배너 + Day 제목 옆 합계 칩 */
+.rv-total {
+  font-size: 14px;
+  color: var(--ink2, #6b5a4e);
+  padding: 4px 2px 12px;
+}
+.rv-total b {
+  color: var(--acc, #9c4a2f);
+  font-size: 16px;
+}
+.rv-day-cost {
+  margin-left: 10px;
+  font-size: 13px;
+  font-weight: bold;
+  color: var(--acc, #9c4a2f);
+  background: rgba(156, 74, 47, 0.08);
+  padding: 2px 9px;
+  border-radius: 10px;
+  vertical-align: 2px;
+}
+
 /* 읽기 모드 빈 Day (RO-02) — Day 를 생략하지 않고 "일정 없음"으로 남긴다 */
 .rv-day-empty {
   margin: 0;

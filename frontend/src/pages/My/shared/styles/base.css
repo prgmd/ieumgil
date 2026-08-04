@@ -8,6 +8,10 @@ body{background:linear-gradient(150deg,#fdf6ea 0%,#f4ecd9 30%,#e2e8d8 65%,#cfe0d
 .btn-acc:hover{background:#833d26}
 .btn-gh{background:#fff;border:1.5px solid var(--line);color:var(--ink)}
 
+/* 노데이터 안내 (QA 배치2) — 목록이 비었을 때 다음 행동을 알려주는 자리 표시 */
+.nodata{padding:26px 18px;border:1.5px dashed rgba(61,43,34,.18);border-radius:12px;text-align:center;font-size:13px;line-height:1.7;color:var(--ink3,#8a776a)}
+.nodata b{color:var(--ink2,#6b5a4e)}
+
 /* 공통 아바타 */
 .mini-av{width:30px;height:30px;border-radius:50%;color:#fff;display:flex;align-items:center;justify-content:center;font-weight:500;font-size:12.5px;object-fit:cover}
 

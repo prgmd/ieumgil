@@ -112,6 +112,13 @@ export function GroupPage() {
             </span>
           </div>
           <div>
+            {/* 노데이터 (QA 배치2) */}
+            {projects.length === 0 && (
+              <p className="nodata">
+                아직 프로젝트가 없어요 — 위 <b>＋ 새 프로젝트</b>로 첫 여행
+                계획을 시작해보세요.
+              </p>
+            )}
             {projects.map((p) => {
               const done = p.status === 'DONE';
               return (

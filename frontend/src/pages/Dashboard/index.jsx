@@ -78,7 +78,31 @@ const fmtTime = (mins) => {
   return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
 };
 
-const won = (n) => (n ? n.toLocaleString("ko-KR") + "원" : "무료");
+// 금액 표기 (QA 배치2) — 만원 이상은 "9.3만원"으로 축약해 긴 숫자를 줄이고,
+// 0원/없음은 빈 문자열을 돌려준다(예전 "무료" 표기는 정보가 아니라 소음이었다).
+// 호출부는 빈 값일 때 요소 자체를 그리지 않는다.
+const won = (n) => {
+  if (!n) return "";
+  if (n >= 10000) {
+    const man = n / 10000;
+    const text =
+      man >= 100
+        ? Math.round(man).toLocaleString("ko-KR")
+        : man.toFixed(1).replace(/\.0$/, "");
+    return `${text}만원`;
+  }
+  return `${n.toLocaleString("ko-KR")}원`;
+};
+
+// 소요 표기 (QA 배치2) — 60분 이상은 "1시간 15분"으로 읽기 좋게
+const fmtDur = (mins) => {
+  if (mins == null) return "";
+  if (mins < 60) return `${mins}분`;
+  const h = Math.floor(mins / 60);
+  const m = mins % 60;
+  return m > 0 ? `${h}시간 ${m}분` : `${h}시간`;
+};
+
 const catOf = (item) => CAT_COLORS[item?.cat] || CAT_COLORS.etc;
 
 // ── 블록 id 규약 ─────────────────────────────────────
@@ -377,7 +401,8 @@ function CardBody({
         <span className="time">
           {fmtTime(startMins)} – {fmtTime(endMins)}
         </span>
-        <span className="cost">{won(item?.cost)}</span>
+        {/* 무료(0원)는 표기 자체를 생략한다 (QA 배치2) */}
+        {item?.cost > 0 && <span className="cost">{won(item.cost)}</span>}
       </div>
       <div className="addr">📍 {item?.address || "위치 정보 없음"}</div>
       <div className="ctl">
@@ -385,7 +410,7 @@ function CardBody({
         <span className={`dur ${isThisResizing ? "is-resizing" : ""}`}>
           {isThisResizing
             ? "마우스를 움직여 조절 후 클릭하여 확정"
-            : `소요 ${item?.dur}분`}
+            : `소요 ${fmtDur(item?.dur)}`}
         </span>
       </div>
       {onEdge && (
@@ -420,6 +445,53 @@ function BlockEditBadge({ onEdit }) {
       }}
     >
       ✎
+    </button>
+  );
+}
+
+/**
+ * 꾹 누르면 연속 반복되는 버튼 (QA 배치2) — 400ms 홀드 후 100ms 간격 반복.
+ * 짧은 탭은 click 한 번이고, 홀드였다면 릴리즈 때 따라오는 click 을 삼켜
+ * 마지막에 한 칸 더 가는 이중 실행을 막는다.
+ */
+function HoldRepeatButton({ onTrigger, children, ...rest }) {
+  const timersRef = useRef({ delay: null, repeat: null });
+  const repeatedRef = useRef(false);
+
+  const stop = () => {
+    clearTimeout(timersRef.current.delay);
+    clearInterval(timersRef.current.repeat);
+    timersRef.current = { delay: null, repeat: null };
+  };
+
+  const handlePointerDown = () => {
+    repeatedRef.current = false;
+    timersRef.current.delay = setTimeout(() => {
+      repeatedRef.current = true;
+      onTrigger();
+      timersRef.current.repeat = setInterval(onTrigger, 100);
+    }, 400);
+  };
+
+  const handleClick = () => {
+    if (repeatedRef.current) {
+      repeatedRef.current = false;
+      return;
+    }
+    onTrigger();
+  };
+
+  return (
+    <button
+      type="button"
+      {...rest}
+      onPointerDown={handlePointerDown}
+      onPointerUp={stop}
+      onPointerLeave={stop}
+      onPointerCancel={stop}
+      onClick={handleClick}
+    >
+      {children}
     </button>
   );
 }
@@ -608,10 +680,20 @@ function SearchResultDraggable({ place, onClick }) {
 function ReadModeView({ chains, items, dayKeys, project }) {
   // 배경·좌우 여백은 편집 모드와 같은 껍데기(.dash-shell/.dash-body)가 쥔다 —
   // 여기서 배경을 따로 칠하면 모드를 바꿀 때 화면이 갈라져 보인다.
+
+  // Day별 비용 합계 (QA 배치2) — 편집 모드 예산과 같은 기준(체인 배치 블록만)
+  const dayCostOf = (day) =>
+    (chains[day] || []).reduce((sum, id) => sum + (items[id]?.cost || 0), 0);
+  const totalCost = dayKeys.reduce((sum, day) => sum + dayCostOf(day), 0);
+
   return (
     <div className="dash-body read-view">
+      <div className="rv-total">
+        여행 총 비용 <b>{won(totalCost) || "0원"}</b>
+      </div>
       {dayKeys.map((day, index) => {
         const chain = chains[day] || [];
+        const dayCost = dayCostOf(day);
         return (
           <div key={day} className="rv-day">
             <h2 className="rv-day-title">
@@ -619,6 +701,9 @@ function ReadModeView({ chains, items, dayKeys, project }) {
               <span className="rv-day-date">
                 {dayDate(project, index) || "날짜 미정"}
               </span>
+              {dayCost > 0 && (
+                <span className="rv-day-cost">{won(dayCost)}</span>
+              )}
             </h2>
 
             {/* 빈 Day 도 생략하지 않는다(RO-02) — 건너뛰면 Day 번호가 끊겨
@@ -659,7 +744,9 @@ function ReadModeView({ chains, items, dayKeys, project }) {
                         <div className="rv-range">
                           {fmtTime(startMins)} - {fmtTime(endMins)}
                         </div>
-                        <div className="rv-cost">{won(item.cost)}</div>
+                        {item.cost > 0 && (
+                          <div className="rv-cost">{won(item.cost)}</div>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -1186,8 +1273,14 @@ export function DashboardPage() {
       blockApi.updateTargetBudget(projectId, next).catch(rollbackToServer);
     }, 600);
   };
+  // 홀드 반복(100ms 간격 연속 호출)은 렌더 사이에 여러 번 발화한다 — 클로저의
+  // targetBudget 은 그 사이 낡아 있으므로 최신값은 ref 로 읽어 누적시킨다
+  const targetBudgetRef = useRef(targetBudget);
+  useEffect(() => {
+    targetBudgetRef.current = targetBudget;
+  });
   const handleTargetBudgetChange = (amount) =>
-    commitTargetBudget(targetBudget + amount);
+    commitTargetBudget(targetBudgetRef.current + amount);
 
   // 직접 입력 편집 상태 — null 이면 표시 모드, 문자열이면 입력 모드(입력 중 원문 유지)
   const [budgetDraft, setBudgetDraft] = useState(null);
@@ -3045,9 +3138,13 @@ export function DashboardPage() {
                       </button>
                       <div className="start-ctl">
                         시작{" "}
-                        <button onClick={() => handleStartChange(-30)}>−</button>
+                        <HoldRepeatButton onTrigger={() => handleStartChange(-30)}>
+                          −
+                        </HoldRepeatButton>
                         <b>{fmtTime(timelineStart)}</b>
-                        <button onClick={() => handleStartChange(30)}>＋</button>
+                        <HoldRepeatButton onTrigger={() => handleStartChange(30)}>
+                          ＋
+                        </HoldRepeatButton>
                       </div>
                     </div>
                   </div>
@@ -3226,8 +3323,13 @@ export function DashboardPage() {
                   <div className="pool-head">
                     <div>
                       <b>후보 목록</b> <span className="n">{pool.length}</span>
-                      <span className="pool-hint">
-                        끌어다 놓아 보관하세요 · 범위 밖에 놓으면 삭제
+                      {/* 사용 안내는 ⓘ 툴팁으로 (QA 배치2) — 상시 텍스트는 소음 */}
+                      <span
+                        className="hint-ico"
+                        tabIndex={0}
+                        title="블록을 끌어다 놓아 보관하는 공간이에요. 타임라인·후보 목록 밖에 놓으면 삭제됩니다."
+                      >
+                        ⓘ
                       </span>
                     </div>
                     <button
@@ -3271,16 +3373,18 @@ export function DashboardPage() {
                   <div className="bud-total">
                     <span className="bud-total-label">총 </span>
                     <span className="bud-total-value">
-                      {totalBudget.toLocaleString()}원
+                      {won(totalBudget) || "0원"}
                     </span>
                   </div>
 
                   <div className="bud-target">
                     <span>희망 총 예산</span>
                     <div className="bud-stepper">
-                      <button onClick={() => handleTargetBudgetChange(-100000)}>
+                      <HoldRepeatButton
+                        onTrigger={() => handleTargetBudgetChange(-100000)}
+                      >
                         -
-                      </button>
+                      </HoldRepeatButton>
                       {/* 금액을 누르면 직접 입력 — Enter/포커스 아웃으로 저장, Esc 취소 */}
                       {budgetDraft === null ? (
                         <button
@@ -3310,9 +3414,11 @@ export function DashboardPage() {
                           }}
                         />
                       )}
-                      <button onClick={() => handleTargetBudgetChange(100000)}>
+                      <HoldRepeatButton
+                        onTrigger={() => handleTargetBudgetChange(100000)}
+                      >
                         +
-                      </button>
+                      </HoldRepeatButton>
                     </div>
                   </div>
 
@@ -3327,7 +3433,7 @@ export function DashboardPage() {
                           width: `${seg.percent}%`,
                           backgroundColor: seg.color,
                         }}
-                        title={`${seg.name} · ${seg.cost.toLocaleString()}원 (사용액의 ${Math.round(seg.shareOfTotal)}%)`}
+                        title={`${seg.name} · ${won(seg.cost)} (사용액의 ${Math.round(seg.shareOfTotal)}%)`}
                       />
                     ))}
                     {budgetSegments.length === 0 && (
@@ -3341,7 +3447,7 @@ export function DashboardPage() {
                         <span key={seg.cat} className="bud-legend-item">
                           <i style={{ backgroundColor: seg.color }} />
                           <b>{seg.name}</b>
-                          {seg.cost.toLocaleString()}원
+                          {won(seg.cost)}
                           <em>{Math.round(seg.shareOfTotal)}%</em>
                         </span>
                       ))}
@@ -3354,8 +3460,8 @@ export function DashboardPage() {
                       className={`bud-left ${remainingBudget < 0 ? "is-over" : ""}`}
                     >
                       {remainingBudget < 0
-                        ? `${Math.abs(remainingBudget).toLocaleString()}원 초과`
-                        : `남은 ${remainingBudget.toLocaleString()}원`}
+                        ? `${won(Math.abs(remainingBudget))} 초과`
+                        : `남은 ${won(remainingBudget) || "0원"}`}
                     </span>
                   </div>
                 </div>

@@ -133,11 +133,15 @@ export function ChatbotWidget({ projectId, getMapBounds }) {
 
   return (
     <>
-      {!isOpen && (
-        <button className="cbw-fab" onClick={() => setIsOpen(true)}>
-          ✈️
-        </button>
-      )}
+      {/* 로고 버튼은 항상 같은 자리에 남는다(QA 배치2) — 열려 있어도 사라지지
+          않고, 같은 위치를 다시 눌러 닫는다. 열림 상태에선 ✕ 모양으로 바뀐다 */}
+      <button
+        className={`cbw-fab ${isOpen ? "is-open" : ""}`}
+        onClick={() => setIsOpen((v) => !v)}
+        title={isOpen ? "이음이 닫기" : "이음이 열기"}
+      >
+        {isOpen ? "✕" : "✈️"}
+      </button>
 
       {isOpen && (
         <div className="cbw">
@@ -231,7 +235,14 @@ export function ChatbotWidget({ projectId, getMapBounds }) {
             ))}
 
             {sending && (
-              <div className="cbw-bubble is-typing">이음이가 생각 중…</div>
+              <div className="cbw-bubble is-typing">
+                이음이가 생각 중
+                <span className="cbw-dots" aria-hidden="true">
+                  <i />
+                  <i />
+                  <i />
+                </span>
+              </div>
             )}
           </div>
 
