@@ -43,7 +43,9 @@ import { useToastStore } from "../../global/stores/toastStore";
 import "./index.css";
 
 const PX = 2.0;
-const SNAP = 10;
+// 드래그 스냅 1분 (QA ⓑ) — 10분 스냅이던 시절엔 분 단위 교통블록(실제 API 소요시간)
+// 과 완벽하게 맞물리지 않았다. 리사이즈는 원래 분 단위라 이제 둘이 같은 정밀도다.
+const SNAP = 1;
 // 하루의 마지막 시각 = 23:59. 24:00(1440)이 아닌 이유는 서버가 "HH:mm" 를
 // java.time.LocalTime 으로 파싱하는데 그 최대가 23:59 이기 때문이다 —
 // "24:00" 은 저장할 방법이 없어(BLOCK400) 애초에 만들 수 없게 막는다.
@@ -104,6 +106,29 @@ const fmtDur = (mins) => {
 };
 
 const catOf = (item) => CAT_COLORS[item?.cat] || CAT_COLORS.etc;
+
+/**
+ * 중복 orderKey 에 견디는 키 생성 (QA: 블록 이동 시 ">=" 오류 픽스).
+ * 삭제 복구(원래 키 재사용)·동시 생성 등으로 이웃 블록의 키가 같아질 수 있는데,
+ * fractional-indexing 은 before >= after 면 "a1 >= a1" 을 던지고 그게 토스트로
+ * 새어 나왔다. 경계가 모순이면 한쪽 경계를 버리고 다시 만든다 — 그 상태에선
+ * 상대 순서가 어차피 애매해서 서버의 (order_key, id) 동점 규칙이 순서를 정한다.
+ */
+const safeKeyBetween = (before, after) => {
+  try {
+    return generateKeyBetween(before, after);
+  } catch {
+    try {
+      return generateKeyBetween(before, null);
+    } catch {
+      try {
+        return generateKeyBetween(null, after);
+      } catch {
+        return generateKeyBetween(null, null);
+      }
+    }
+  }
+};
 
 // ── 블록 id 규약 ─────────────────────────────────────
 // 서버에 아직 없는 블록을 구분하는 규약 — custom-(모달 저장 전), search-(생성 요청 중)
@@ -694,7 +719,12 @@ function ReadModeView({ chains, items, dayKeys, project }) {
         여행 총 비용 <b>{won(totalCost) || "0원"}</b>
       </div>
       {dayKeys.map((day, index) => {
-        const chain = chains[day] || [];
+        // 표시는 시각 순으로 (QA ⓒ) — 체인은 orderKey 순서라 드래그·수정 이력에
+        // 따라 시각 순서와 어긋날 수 있는데, 읽기 모드는 "하루의 흐름"이라
+        // 시간이 곧 순서여야 한다. 정렬은 표시 전용이라 데이터를 건드리지 않는다.
+        const chain = [...(chains[day] || [])].sort(
+          (a, b) => (items[a]?.startMins ?? 0) - (items[b]?.startMins ?? 0),
+        );
         const dayCost = dayCostOf(day);
         return (
           <div key={day} className="rv-day">
@@ -1111,7 +1141,6 @@ export function DashboardPage() {
     // 활성 Day 에 좌표가 없으면 배치된 첫 여행지(지도 시작점)라도 보여준다.
     const last = lastMapFitRef.current;
     if (last?.map === map && last?.day === activeDay) return;
-    lastMapFitRef.current = { map, day: activeDay };
 
     let fitPoints = chainPoints;
     if (fitPoints.length === 0) {
@@ -1121,7 +1150,11 @@ export function DashboardPage() {
         .find((it) => it?.lat != null && it?.lng != null);
       fitPoints = firstPlaced ? [firstPlaced] : [];
     }
+    // 맞출 좌표가 아직 없으면 "맞췄다"고 기록하지 않는다 — 빈 보드로 들어온 직후
+    // 시작 지점 블록이 뒤늦게 생기는 경우(부트스트랩), 기록을 먼저 해 버리면
+    // 그 블록이 생겨도 카메라가 영영 안 움직인다(여수 미이동 버그의 원인).
     if (fitPoints.length === 0) return;
+    lastMapFitRef.current = { map, day: activeDay };
     if (fitPoints.length === 1) {
       map.setLevel(5);
       map.setCenter(
@@ -1135,6 +1168,65 @@ export function DashboardPage() {
       map.setBounds(bounds);
     }
   }, [map, chains, activeDay, items]);
+
+  // ── 시작 지점 부트스트랩 (QA ⓓ) ──
+  // 여행지(destination, 예: 전주)가 있는데 보드가 완전히 비어 있으면, 여행지를
+  // 지오코딩해 Day 1 09:00 에 "시작 지점" 블록을 만든다. 블록이 생기면 위의
+  // 핀·카메라 로직이 따라와 지도 기본 위치도 여행지가 된다.
+  // 프로젝트당 한 번만 시도하고, 블록이 하나라도 있으면 절대 만들지 않는다 —
+  // 지웠는데 자꾸 되살아나는 블록만큼 거슬리는 게 없다.
+  const destBootstrapRef = useRef(null); // 시도한 projectId
+  useEffect(() => {
+    if (status !== "loaded" || !project?.destination) return;
+    if (Object.keys(serverItems).length > 0) return;
+    if (destBootstrapRef.current === projectId) return;
+    if (!window.kakao?.maps?.services) return; // SDK 로드 전 — map 준비 후 재시도된다
+    destBootstrapRef.current = projectId;
+
+    const ps = new window.kakao.maps.services.Places();
+    ps.keywordSearch(project.destination, (data, searchStatus) => {
+      if (
+        searchStatus !== window.kakao.maps.services.Status.OK ||
+        !data[0]
+      ) {
+        // 부가 기능이라 화면은 조용히 두되, 진단은 가능하게 남긴다
+        console.warn(
+          `[dashboard] 시작 지점 지오코딩 실패: "${project.destination}" (${searchStatus})`,
+        );
+        return;
+      }
+      const place = data[0];
+      (async () => {
+        try {
+          await blockApi.createBlock(projectId, {
+            cat: "spot",
+            sub: "시작 지점",
+            name: project.destination,
+            address: place.road_address_name || place.address_name || "",
+            detail: "",
+            dur: 60,
+            startMins: 540, // Day 1 09:00
+            endMins: 600,
+            cost: 0,
+            lat: Number(place.y),
+            lng: Number(place.x),
+            placeId: String(place.id),
+            source: "MANUAL",
+            dayNo: 1,
+            orderKey: generateKeyBetween(null, null),
+          });
+          // 자기 BLOCK_CREATED op 는 정책상 스킵되므로 스냅샷 재조회로 반영한다
+          reload();
+          showToast(
+            `시작 지점 '${project.destination}' 블록을 Day 1에 추가했어요`,
+          );
+        } catch (e) {
+          // 실패해도 보드는 멀쩡하다 — 사용자가 직접 만들면 된다
+          console.warn("[dashboard] 시작 지점 블록 생성 실패:", e);
+        }
+      })();
+    });
+  }, [status, project, serverItems, projectId, map, reload, showToast]);
 
   // 날짜 팝오버는 Esc 로 닫는다. 브라우저 캘린더를 자동으로 띄우지는 않는다 —
   // 팝오버가 열리자마자 캘린더가 겹쳐 뜨면 시야를 가려서, 입력칸의 달력 표시를
@@ -1619,7 +1711,7 @@ export function DashboardPage() {
               pos,
               resolvedItems,
             );
-            const orderKey = generateKeyBetween(before, after);
+            const orderKey = safeKeyBetween(before, after);
             const created = await blockApi.createBlock(projectId, {
               ...b,
               endMins: b.startMins + b.dur,
@@ -1784,7 +1876,7 @@ export function DashboardPage() {
             pos,
             resolvedItems,
           );
-          const orderKey = generateKeyBetween(before, after);
+          const orderKey = safeKeyBetween(before, after);
           const created = await blockApi.createBlock(projectId, {
             ...b,
             endMins: b.startMins + b.dur,
@@ -2099,7 +2191,7 @@ export function DashboardPage() {
           .filter((id) => id !== targetId)
           .map((id) => items[id]?.orderKey)
           .find((k) => k != null) ?? null;
-      const orderKey = generateKeyBetween(null, firstKey);
+      const orderKey = safeKeyBetween(null, firstKey);
 
       try {
         const created = await blockApi.createBlock(projectId, {
@@ -2259,17 +2351,7 @@ export function DashboardPage() {
   // 제거한다(4단계). 서버 확인 전에는 지우지 않는다 — 실패 시 원래 위치로 복원하는
   // 롤백을 관리하는 것보다, 확인까지의 짧은 지연을 감수하는 쪽이 단순하다.
   // 로컬 전용 블록(auto- 교통)은 요청 없이 바로 제거한다.
-  //
-  // 내가 지운 서버 블록의 스냅샷은 되돌리기 스택에 남긴다 (Ctrl+Z, QA 배치3).
-  // 서버에 복구 API 가 없어 되돌리기 = "같은 내용으로 재생성"이다 — id 는 바뀌지만
-  // 협업 중에도 안전하다(다른 멤버에겐 그냥 새 블록 생성 op 로 보인다).
-  const deletedStackRef = useRef([]);
-  useEffect(() => {
-    deletedStackRef.current = []; // 프로젝트가 바뀌면 남의 프로젝트 블록을 못 살리게
-  }, [projectId]);
-
   const handleDeleteBlock = async (id) => {
-    const snapshot = items[id];
     if (isServerBlock(id)) {
       try {
         await blockApi.deleteBlock(id);
@@ -2278,10 +2360,6 @@ export function DashboardPage() {
           e?.message ?? "블록을 삭제하지 못했어요. 잠시 후 다시 시도해주세요.",
         );
         return; // 블록을 그대로 둔다 — 다시 드래그하면 재시도
-      }
-      if (snapshot) {
-        deletedStackRef.current.push({ block: snapshot });
-        if (deletedStackRef.current.length > 20) deletedStackRef.current.shift();
       }
     }
 
@@ -2298,78 +2376,8 @@ export function DashboardPage() {
       delete next[id];
       return next;
     });
-    showToast(
-      isServerBlock(id) ? "블록을 삭제했어요 🗑 (Ctrl+Z 되돌리기)" : "블록을 삭제했어요 🗑",
-    );
+    showToast("블록을 삭제했어요 🗑");
   };
-
-  // Ctrl+Z — 마지막으로 지운 블록을 같은 자리(dayNo·orderKey·시각)에 재생성한다.
-  // 삭제는 이웃 시각을 밀지 않으므로 원래 모습 그대로 돌아온다.
-  const undoLastDelete = useCallback(async () => {
-    const entry = deletedStackRef.current.pop();
-    if (!entry) return;
-    const b = entry.block;
-    const newId = `search-undo-${Date.now()}`; // 임시 id 규약(search- 접두)
-    const local = { ...b, id: newId };
-
-    // 낙관 배치 — 원래 자리(orderKey 기준). 후보였다면 후보로.
-    setItems((prev) => ({ ...prev, [newId]: local }));
-    if (b.dayNo == null) {
-      setPool((prev) => insertByOrderKey([...prev], itemsRef.current, local));
-    } else {
-      const dayKey = `d${b.dayNo}`;
-      setChains((prev) => ({
-        ...prev,
-        [dayKey]: insertByOrderKey(
-          [...(prev[dayKey] || [])],
-          itemsRef.current,
-          local,
-        ),
-      }));
-    }
-
-    try {
-      const created = await blockApi.createBlock(projectId, local);
-      // 세부 내용(detail)은 생성 바디에 없다(명세) — 생성 직후 별도 저장
-      if (b.detail) {
-        await blockApi.updateBlockFields(created.blockId, { detail: b.detail });
-      }
-      adoptServerId(newId, created.blockId, {
-        dayNo: b.dayNo ?? null,
-        orderKey: b.orderKey,
-      });
-      showToast(`'${b.name}' 삭제를 되돌렸어요 ↩`);
-    } catch (e) {
-      setItems((prev) => {
-        const next = { ...prev };
-        delete next[newId];
-        return next;
-      });
-      setPool((prev) => prev.filter((x) => x !== newId));
-      setChains((prev) => {
-        const next = { ...prev };
-        Object.keys(next).forEach((day) => {
-          next[day] = next[day].filter((x) => x !== newId);
-        });
-        return next;
-      });
-      showToast(e?.message ?? "삭제를 되돌리지 못했어요.");
-    }
-  }, [projectId, adoptServerId, showToast]);
-
-  useEffect(() => {
-    const onKey = (e) => {
-      if (!(e.ctrlKey || e.metaKey) || e.key.toLowerCase() !== "z") return;
-      // 입력 중의 Ctrl+Z 는 텍스트 실행 취소 — 우리가 가로채면 안 된다
-      const tag = e.target?.tagName;
-      if (tag === "INPUT" || tag === "TEXTAREA" || e.target?.isContentEditable)
-        return;
-      e.preventDefault();
-      undoLastDelete();
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [undoLastDelete]);
 
   // 저장 전에 모달을 닫으면 임시 블록을 남기지 않는다 (서버에도 아직 없다)
   const handleCancelEdit = () => {
@@ -2801,7 +2809,7 @@ export function DashboardPage() {
       (async () => {
         try {
           const [before, after] = neighborKeysAround(nextPool, insertAt, items);
-          const orderKey = generateKeyBetween(before, after);
+          const orderKey = safeKeyBetween(before, after);
           const created = await blockApi.createBlock(projectId, {
             ...newBlock,
             dayNo: null,
@@ -2863,7 +2871,7 @@ export function DashboardPage() {
         (async () => {
           try {
             const [before, after] = neighborKeysAround(nextPool, insertAt, items);
-            const orderKey = generateKeyBetween(before, after);
+            const orderKey = safeKeyBetween(before, after);
             await blockApi.moveBlock(activeIdLocal, { dayNo: null, orderKey });
             // 다음 이동의 이웃 계산이 정확하도록 로컬에도 새 위치 값을 반영
             setItems((prev) =>
@@ -2934,7 +2942,7 @@ export function DashboardPage() {
           try {
             const pos = newChain.indexOf(activeIdLocal);
             const [before, after] = neighborKeysAround(newChain, pos, newItems);
-            const orderKey = generateKeyBetween(before, after);
+            const orderKey = safeKeyBetween(before, after);
             const moved = newItems[activeIdLocal];
 
             await blockApi.moveBlock(activeIdLocal, {
