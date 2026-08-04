@@ -61,6 +61,7 @@ public class ProjectCommandServiceImpl implements ProjectCommandService {
         validateDateRange(startDate, endDate);
 
         project.updateInfo(request.name(), request.startDate(), request.endDate());
+        project.changeTransportPref(request.transportPrefs());
 
         List<Long> movedToPool = moveOutOfRangeBlocksToPool(project, startDate, endDate);
 
@@ -70,6 +71,9 @@ public class ProjectCommandServiceImpl implements ProjectCommandService {
         payload.put("startDate", project.getStartDate() != null ? project.getStartDate().toString() : null);
         payload.put("endDate", project.getEndDate() != null ? project.getEndDate().toString() : null);
         payload.put("movedToPool", movedToPool);
+        payload.put("transportPrefs", project.getTransportPrefs() == null
+                ? List.of()
+                : project.getTransportPrefs().stream().map(Enum::name).toList());
         opPublisher.publish(projectId, userId, clientId, "PROJECT_UPDATED", payload);
 
         return ProjectConverter.toUpdated(project, movedToPool);

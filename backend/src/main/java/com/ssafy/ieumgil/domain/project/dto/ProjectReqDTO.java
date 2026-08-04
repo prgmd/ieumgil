@@ -59,7 +59,10 @@ public class ProjectReqDTO {
             LocalDate startDate,
 
             @Schema(description = "종료일", example = "2026-08-14")
-            LocalDate endDate
+            LocalDate endDate,
+
+            @Schema(description = "이동수단 선호(복수 선택). null이면 미변경", example = "[\"CAR\"]")
+            List<TransportPref> transportPrefs
     ) {
     }
 

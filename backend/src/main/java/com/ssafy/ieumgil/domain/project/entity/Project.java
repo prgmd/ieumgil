@@ -138,6 +138,14 @@ public class Project extends BaseTimeEntity {
         }
     }
 
+    /** 이동수단 선호 부분 수정. 빈/null이면 무시(불변) — 다음 후보 계산부터 적용, 기존 블록은 재계산하지 않는다 */
+    public void changeTransportPref(List<TransportPref> transportPrefs) {
+        if (transportPrefs == null || transportPrefs.isEmpty()) {
+            return;
+        }
+        this.transportPrefs = transportPrefs.stream().distinct().toList();
+    }
+
     public void softDelete() {
         this.deletedAt = LocalDateTime.now();
     }
