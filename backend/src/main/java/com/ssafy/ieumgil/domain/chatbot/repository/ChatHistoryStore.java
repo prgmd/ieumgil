@@ -26,7 +26,8 @@ import java.util.Objects;
 @RequiredArgsConstructor
 public class ChatHistoryStore {
 
-    private static final int MAX_TURNS = 6;
+    /** 화면 복원용 저장 상한. LLM 프롬프트는 이 중 마지막 6턴만 쓴다(ChatbotCommandServiceImpl). */
+    private static final int MAX_TURNS = 10;
     private static final int MAX_ELEMENTS = MAX_TURNS * 2;
     private static final Duration TTL = Duration.ofDays(1);
 

@@ -61,9 +61,9 @@ class ChatHistoryStoreIntegrationTest extends IntegrationTestSupport {
         );
     }
 
-    /** 윈도우는 토큰 절감을 위해 6턴으로 줄였다(커밋 8875e7f). 이 숫자가 바뀌면 여기서 깨진다. */
+    /** 윈도우는 화면 복원 깊이를 위해 10턴이다(LLM 프롬프트는 별도로 마지막 6턴만 쓴다). 이 숫자가 바뀌면 여기서 깨진다. */
     @Test
-    void keepsOnlyMostRecentSixTurns() {
+    void keepsOnlyMostRecentTenTurns() {
         Long projectId = 9002L;
         Long memberId = 9002L;
 
@@ -77,9 +77,9 @@ class ChatHistoryStoreIntegrationTest extends IntegrationTestSupport {
 
         List<ChatTurn> history = chatHistoryStore.loadHistory(projectId, memberId);
 
-        assertThat(history).hasSize(12);
-        assertThat(history.get(0)).isEqualTo(new ChatTurn(ChatTurn.ROLE_USER, "user-9"));
-        assertThat(history.get(11)).isEqualTo(new ChatTurn(ChatTurn.ROLE_ASSISTANT, "assistant-14"));
+        assertThat(history).hasSize(20);
+        assertThat(history.get(0)).isEqualTo(new ChatTurn(ChatTurn.ROLE_USER, "user-5"));
+        assertThat(history.get(19)).isEqualTo(new ChatTurn(ChatTurn.ROLE_ASSISTANT, "assistant-14"));
     }
 
     @Test
@@ -155,7 +155,7 @@ class ChatHistoryStoreIntegrationTest extends IntegrationTestSupport {
         List<ChatTurn> history = chatHistoryStore.loadHistory(projectId, memberId);
 
         // 짝이 원자적으로 들어갔다면 잘린 창은 언제나 user로 시작해 user/assistant가 번갈아 나온다
-        assertThat(history).hasSize(12);
+        assertThat(history).hasSize(20);
         for (int i = 0; i < history.size(); i++) {
             String expectedRole = i % 2 == 0 ? ChatTurn.ROLE_USER : ChatTurn.ROLE_ASSISTANT;
             assertThat(history.get(i).role()).isEqualTo(expectedRole);
