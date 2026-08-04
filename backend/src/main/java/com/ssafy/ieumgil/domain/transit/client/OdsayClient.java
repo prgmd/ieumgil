@@ -33,7 +33,7 @@ public class OdsayClient {
         this.restClient = builder.build();
     }
 
-    public Optional<OdsayRouteResponse.Path> searchPublicTransitRoute(
+    public List<OdsayRouteResponse.Path> searchPublicTransitRoute(
             double startLat, double startLng, double endLat, double endLng, String mode) {
         try {
             int searchPathType = "BUS".equals(mode) ? 2 : "SUBWAY".equals(mode) ? 1 : 0;
@@ -48,10 +48,9 @@ public class OdsayClient {
                     .body(OdsayRouteResponse.class);
             checkForError(response == null ? null : response.error());
             if (response == null || response.result() == null || response.result().path() == null) {
-                return Optional.empty();
+                return List.of();
             }
-            List<OdsayRouteResponse.Path> paths = response.result().path();
-            return paths.isEmpty() ? Optional.empty() : Optional.of(paths.get(0));
+            return response.result().path();
         } catch (RestClientException | IllegalArgumentException e) {
             log.warn("ODsay 대중교통 길찾기 실패: {}", e.getMessage());
             throw new TransitException(TransitErrorCode.ODSAY_API_CALL_FAILED);

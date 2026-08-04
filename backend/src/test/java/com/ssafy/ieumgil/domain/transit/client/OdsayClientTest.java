@@ -120,13 +120,13 @@ class OdsayClientTest {
                 .andExpect(method(GET))
                 .andRespond(withSuccess(ROUTE_RESPONSE, MediaType.APPLICATION_JSON));
 
-        Optional<OdsayRouteResponse.Path> result =
+        List<OdsayRouteResponse.Path> result =
                 odsayClient.searchPublicTransitRoute(37.4979, 127.0276, 37.5665, 127.1054, "BUS");
 
-        assertThat(result).isPresent();
-        assertThat(result.get().info().totalTime()).isEqualTo(42);
-        assertThat(result.get().info().payment()).isEqualTo(1400);
-        assertThat(result.get().info().totalIntervalTime()).isEqualTo(13);
+        assertThat(result).isNotEmpty();
+        assertThat(result.get(0).info().totalTime()).isEqualTo(42);
+        assertThat(result.get(0).info().payment()).isEqualTo(1400);
+        assertThat(result.get(0).info().totalIntervalTime()).isEqualTo(13);
     }
 
     @Test
@@ -135,10 +135,10 @@ class OdsayClientTest {
                 .andExpect(method(GET))
                 .andRespond(withSuccess(ROUTE_RESPONSE, MediaType.APPLICATION_JSON));
 
-        Optional<OdsayRouteResponse.Path> result =
+        List<OdsayRouteResponse.Path> result =
                 odsayClient.searchPublicTransitRoute(37.4979, 127.0276, 37.5665, 127.1054, "SUBWAY");
 
-        assertThat(result).isPresent();
+        assertThat(result).isNotEmpty();
     }
 
     @Test
@@ -149,7 +149,7 @@ class OdsayClientTest {
         server.expect(requestTo("https://api.odsay.com/v1/api/searchPubTransPathT?SX=200.0&SY=100.0&EX=200.1&EY=100.1&apiKey=test-key&SearchPathType=2"))
                 .andRespond(withSuccess(emptyResponse, MediaType.APPLICATION_JSON));
 
-        Optional<OdsayRouteResponse.Path> result =
+        List<OdsayRouteResponse.Path> result =
                 odsayClient.searchPublicTransitRoute(100.0, 200.0, 100.1, 200.1, "BUS");
 
         assertThat(result).isEmpty();

@@ -41,11 +41,11 @@ class OdsayClientLiveTest {
 	void publicTransitRouteReturnsPathWithPositiveTotalTime() throws IOException {
 		OdsayClient client = liveClient();
 
-		Optional<OdsayRouteResponse.Path> result = client.searchPublicTransitRoute(
+		List<OdsayRouteResponse.Path> result = client.searchPublicTransitRoute(
 				BUSAN_STATION_LAT, BUSAN_STATION_LNG, HAEUNDAE_LAT, HAEUNDAE_LNG, "ANY");
 
-		assertThat(result).isPresent();
-		assertThat(result.get().info().totalTime()).isGreaterThan(0);
+		assertThat(result).isNotEmpty();
+		assertThat(result.get(0).info().totalTime()).isGreaterThan(0);
 	}
 
 	@Test

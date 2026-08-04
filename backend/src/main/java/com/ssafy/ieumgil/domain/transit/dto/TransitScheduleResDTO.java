@@ -39,8 +39,10 @@ public class TransitScheduleResDTO {
     public record BusSchedule(
             int busClass,
             String departureTime,
-            int wasteTimeMin,
-            int fare
+            /** 소요시간(분). ODsay가 주지 않으면 null이다 — 0분으로 두면 도착 시각을 지어내게 된다 */
+            Integer wasteTimeMin,
+            /** 요금. 없으면 null이다 — 0원과 구분한다 */
+            Integer fare
     ) {
     }
 
