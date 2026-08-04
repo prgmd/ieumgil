@@ -1433,6 +1433,19 @@
 .search-form button:hover {
   background: #6a4536;
 }
+/* 검색 내역 초기화 (QA) — 입력칸과 검색 버튼 사이의 보조 버튼.
+   검색(채움)과 급이 다르다는 걸 테두리형으로 말한다 */
+.search-form button.search-clear {
+  background: #fff;
+  border: 1px solid #e6dec8;
+  color: var(--ink2, #6b5a4e);
+  font-weight: normal;
+}
+.search-form button.search-clear:hover {
+  background: #f4f1ea;
+  color: var(--acc, #9c4a2f);
+}
+
 .search-results {
   display: flex;
   flex-direction: column;

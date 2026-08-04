@@ -1050,6 +1050,8 @@ export function DashboardPage() {
   const [searchResults, setSearchResults] = useState([]);
   const searchListRef = useRef(null);
   const infoWindowRef = useRef(null);
+  // 검색 결과 핀 — 추적해 둬야 재검색·초기화 때 지도에서 걷을 수 있다
+  const searchMarkersRef = useRef([]);
 
   // 지도 초기화 — 컨테이너 div 의 ref callback 으로 한다.
   //
@@ -1299,25 +1301,25 @@ export function DashboardPage() {
         }
 
         // 지도 화면 범위를 새 검색 결과들에 맞게 이동시키기
-        // (기존 handleSearchPlace 함수 내부의 if (map) 안쪽 로직)
         if (map) {
-          const bounds = new window.kakao.maps.LatLngBounds();
+          // 이전 검색의 핀부터 걷는다 — 안 걷으면 검색할 때마다 지도에 쌓인다
+          searchMarkersRef.current.forEach((m) => m.setMap(null));
+          searchMarkersRef.current = [];
 
-          // 💡 이 forEach 부분을 통째로 교체해 주세요!
+          const bounds = new window.kakao.maps.LatLngBounds();
           data.forEach((place) => {
             const position = new window.kakao.maps.LatLng(place.y, place.x);
             bounds.extend(position);
 
-            // 1. 마커를 변수에 담아서 생성
             const marker = new window.kakao.maps.Marker({
               map: map,
               position: position,
             });
-
-            // 2. 💡 생성된 마커에 클릭 이벤트(클릭 시 상세정보 띄우기) 연결!
+            // 마커 클릭 = 상세 말풍선
             window.kakao.maps.event.addListener(marker, "click", () => {
               handlePlaceClick(place);
             });
+            searchMarkersRef.current.push(marker);
           });
 
           map.setBounds(bounds);
@@ -1330,6 +1332,15 @@ export function DashboardPage() {
       }
     });
   };
+  // 검색 내역 초기화 (QA) — 결과 목록·지도 핀·말풍선·입력어를 한 번에 걷는다
+  const handleClearSearch = () => {
+    setSearchResults([]);
+    setSearchKeyword("");
+    searchMarkersRef.current.forEach((m) => m.setMap(null));
+    searchMarkersRef.current = [];
+    infoWindowRef.current?.close();
+  };
+
   const handlePlaceClick = (place) => {
     if (map && window.kakao && window.kakao.maps) {
       const moveLatLon = new window.kakao.maps.LatLng(place.y, place.x);
@@ -3694,6 +3705,17 @@ export function DashboardPage() {
                         onChange={(e) => setSearchKeyword(e.target.value)}
                         placeholder="도시, 명소, 음식..."
                       />
+                      {/* 결과가 있을 때만 초기화 — 목록·지도 핀을 한 번에 걷는다 */}
+                      {searchResults.length > 0 && (
+                        <button
+                          type="button"
+                          className="search-clear"
+                          onClick={handleClearSearch}
+                          title="검색 결과와 지도 핀을 지웁니다"
+                        >
+                          지우기
+                        </button>
+                      )}
                       <button type="submit">검색</button>
                     </form>
 
