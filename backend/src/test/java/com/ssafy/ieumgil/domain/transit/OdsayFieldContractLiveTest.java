@@ -51,6 +51,10 @@ class OdsayFieldContractLiveTest {
 	private static final double BUSAN_STATION_LAT = 35.1151;
 	private static final double BUSAN_STATION_LNG = 129.0413;
 
+	// 제주국제공항 실좌표 (부산역 기준 시외·도서).
+	private static final double JEJU_AIRPORT_LAT = 33.5113;
+	private static final double JEJU_AIRPORT_LNG = 126.4930;
+
 	@Test
 	@DisplayName("시내 경로에는 요금·배차·거리·환승 상세가 온다")
 	void 시내_경로_필드_계약() throws IOException {
@@ -113,6 +117,38 @@ class OdsayFieldContractLiveTest {
 		assertThat(trainResolves).as("기차 조회가 시외 경로 역 이름으로 풀려야 한다").isTrue();
 		assertThat(busResolves).as("고속버스 조회가 시외 경로 역 이름으로 풀려야 한다").isTrue();
 		assertThat(airResolves).as("DomesticAirport 도시명 별칭 추가 후 항공도 풀려야 한다(서울→김포)").isTrue();
+	}
+
+	@Test
+	@DisplayName("부산-제주처럼 첫 매칭 시외 경로가 항공 경로 자신이면 공항 전체 명칭이 온다 — 정규화 후 항공이 풀려야 한다")
+	void 부산_제주_항공_전체_명칭_계약() throws IOException {
+		OdsayClient client = liveOdsayClient();
+
+		List<OdsayRouteResponse.Path> paths = client.searchPublicTransitRoute(
+				BUSAN_STATION_LAT, BUSAN_STATION_LNG, JEJU_AIRPORT_LAT, JEJU_AIRPORT_LNG, "ANY");
+
+		assertThat(paths).isNotEmpty();
+		Set<Integer> intercityPathTypes = Set.of(11, 12, 13, 14, 20);
+		// TransitCandidateServiceImpl.RoadResult.intercityPath()와 같은 규칙 — 시외 판정 목록에서
+		// 처음 매칭되는 경로 하나를 그대로 쓴다.
+		OdsayRouteResponse.Path firstIntercity = paths.stream()
+				.filter(p -> intercityPathTypes.contains(p.pathType()))
+				.findFirst()
+				.orElseThrow(() -> new AssertionError("시외로 분류될 경로가 하나도 없다: " + paths));
+
+		String from = firstIntercity.info().firstStartStation();
+		String to = firstIntercity.info().lastEndStation();
+		System.out.println("[부산-제주 계약] pathType=" + firstIntercity.pathType()
+				+ ", firstStartStation=\"" + from + "\", lastEndStation=\"" + to + "\"");
+
+		// Task 14 실측(2026-08-04)에서 첫 매칭 경로가 pathType=13(항공) 자신이었고, 도시명이 아니라
+		// "김해국제공항"/"제주국제공항" 같은 공항 전체 명칭을 줬다 — 접미사 정규화 전에는 둘 다 실패해
+		// 부산→제주 항공 후보가 통째로 unavailable로 나왔다.
+		boolean airResolves = DomesticAirport.findByName(from).isPresent()
+				&& DomesticAirport.findByName(to).isPresent();
+		assertThat(airResolves)
+				.as("공항 전체 명칭(\"" + from + "\"/\"" + to + "\") 접미사 정규화 후 항공이 풀려야 한다")
+				.isTrue();
 	}
 
 	private boolean busTerminalResolves(TransitScheduleQueryService service, String name) {
