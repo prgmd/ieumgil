@@ -19,6 +19,7 @@
   cursor: pointer;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
   transition: transform 0.2s;
+  touch-action: none; /* 드래그 이동(포인터 이벤트)이 터치 스크롤과 안 싸우게 */
 }
 .cbw-fab:hover {
   transform: scale(1.05);

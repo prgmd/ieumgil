@@ -77,6 +77,66 @@ export function ChatbotWidget({ projectId, getMapBounds }) {
   const bodyRef = useRef(null);
   const msgSeqRef = useRef(0);
 
+  // ── 로고 버튼 드래그 이동 (QA 배치3) — 기본은 우하단, 끌어서 어디든 ──
+  // null = 기본 위치(CSS 의 right/bottom). 드래그하면 {left, top} 픽셀 고정.
+  // 6px 이상 움직였을 때만 드래그로 판정해, 릴리즈 때 따라오는 click(토글)을 삼킨다.
+  const [fabPos, setFabPos] = useState(null);
+  const suppressToggleRef = useRef(false);
+
+  const handleFabPointerDown = (e) => {
+    const start = {
+      x: e.clientX,
+      y: e.clientY,
+      rect: e.currentTarget.getBoundingClientRect(),
+      moved: false,
+    };
+    const onMove = (ev) => {
+      const dx = ev.clientX - start.x;
+      const dy = ev.clientY - start.y;
+      if (!start.moved && Math.hypot(dx, dy) < 6) return;
+      start.moved = true;
+      setFabPos({
+        left: Math.min(
+          Math.max(8, start.rect.left + dx),
+          window.innerWidth - start.rect.width - 8,
+        ),
+        top: Math.min(
+          Math.max(8, start.rect.top + dy),
+          window.innerHeight - start.rect.height - 8,
+        ),
+      });
+    };
+    const onUp = () => {
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+      if (start.moved) suppressToggleRef.current = true;
+    };
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+  };
+
+  const handleFabClick = () => {
+    if (suppressToggleRef.current) {
+      suppressToggleRef.current = false; // 드래그 릴리즈 — 열림/닫힘을 바꾸지 않는다
+      return;
+    }
+    setIsOpen((v) => !v);
+  };
+
+  // 패널은 로고 버튼 위에 얹힌다 — 버튼이 이동했으면 그 위치 기준으로 따라간다
+  const fabStyle = fabPos
+    ? { left: fabPos.left, top: fabPos.top, right: "auto", bottom: "auto" }
+    : undefined;
+  const panelStyle = fabPos
+    ? {
+        right: Math.max(8, window.innerWidth - fabPos.left - 60),
+        bottom: Math.min(
+          Math.max(8, window.innerHeight - fabPos.top + 10),
+          window.innerHeight - 540, // 패널(~530px)이 화면 위로 밀려나지 않게
+        ),
+      }
+    : undefined;
+
   // 새 메시지·"생각 중" 표시가 생기면 대화창을 맨 아래로
   useEffect(() => {
     const el = bodyRef.current;
@@ -134,17 +194,20 @@ export function ChatbotWidget({ projectId, getMapBounds }) {
   return (
     <>
       {/* 로고 버튼은 항상 같은 자리에 남는다(QA 배치2) — 열려 있어도 사라지지
-          않고, 같은 위치를 다시 눌러 닫는다. 열림 상태에선 ✕ 모양으로 바뀐다 */}
+          않고, 같은 위치를 다시 눌러 닫는다. 열림 상태에선 ✕ 모양으로 바뀐다.
+          꾹 잡고 끌면 원하는 곳으로 옮길 수 있다(QA 배치3). */}
       <button
         className={`cbw-fab ${isOpen ? "is-open" : ""}`}
-        onClick={() => setIsOpen((v) => !v)}
-        title={isOpen ? "이음이 닫기" : "이음이 열기"}
+        style={fabStyle}
+        onPointerDown={handleFabPointerDown}
+        onClick={handleFabClick}
+        title={isOpen ? "이음이 닫기" : "이음이 열기 · 끌어서 이동"}
       >
         {isOpen ? "✕" : "✈️"}
       </button>
 
       {isOpen && (
-        <div className="cbw">
+        <div className="cbw" style={panelStyle}>
           <div className="cbw-head">
             <span className="cbw-head-title">✈️ 챗봇 이음이</span>
             <button className="cbw-close" onClick={() => setIsOpen(false)}>

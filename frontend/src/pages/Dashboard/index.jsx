@@ -689,6 +689,8 @@ function ReadModeView({ chains, items, dayKeys, project }) {
   return (
     <div className="dash-body read-view">
       <div className="rv-total">
+        {/* 편집 모드와 헷갈리지 않게 모드를 명시한다 (QA 배치3) */}
+        <span className="rv-mode-chip">📖 읽기 전용</span>
         여행 총 비용 <b>{won(totalCost) || "0원"}</b>
       </div>
       {dayKeys.map((day, index) => {
@@ -1061,6 +1063,78 @@ export function DashboardPage() {
     window.addEventListener("resize", onResize);
     return () => window.removeEventListener("resize", onResize);
   }, [map]);
+
+  // ── 계획표 블록 → 지도 핀 (QA 배치3) ──
+  // 활성 Day 체인의 좌표 있는 블록을 핀으로 찍는다. 핀은 편집을 따라 실시간으로
+  // 갱신하되, 카메라 이동(범위 맞춤)은 "지도 준비·Day 전환 때 한 번"만 한다 —
+  // 블록을 만질 때마다 지도가 움직이면 검색하려고 옮겨 둔 화면을 뺏는다.
+  const chainMarkersRef = useRef([]);
+  const lastMapFitRef = useRef(null); // { map, day } — 카메라를 이미 맞춘 조합
+  useEffect(() => {
+    if (!map || !window.kakao?.maps) return;
+
+    chainMarkersRef.current.forEach((m) => m.setMap(null));
+    chainMarkersRef.current = [];
+
+    const chainPoints = (chains[activeDay] || [])
+      .map((id) => items[id])
+      .filter((it) => it?.lat != null && it?.lng != null);
+
+    chainPoints.forEach((it) => {
+      const position = new window.kakao.maps.LatLng(it.lat, it.lng);
+      const marker = new window.kakao.maps.Marker({
+        map,
+        position,
+        title: it.name,
+      });
+      // 핀 클릭 = 검색 결과 클릭과 같은 상세 말풍선
+      window.kakao.maps.event.addListener(marker, "click", () => {
+        if (!infoWindowRef.current) {
+          infoWindowRef.current = new window.kakao.maps.InfoWindow({
+            zIndex: 1,
+            removable: true,
+          });
+        }
+        infoWindowRef.current.setContent(
+          `<div style="padding:12px;font-size:13px;color:#333;min-width:180px;">
+             <b style="display:block;margin-bottom:4px;color:#d97e3c;">${it.name}</b>
+             ${it.address ? `<span>${it.address}</span>` : ""}
+           </div>`,
+        );
+        infoWindowRef.current.setPosition(position);
+        infoWindowRef.current.open(map);
+      });
+      chainMarkersRef.current.push(marker);
+    });
+
+    // 카메라 맞춤 — 이 (지도, Day) 조합에서 아직 안 맞췄을 때만.
+    // 활성 Day 에 좌표가 없으면 배치된 첫 여행지(지도 시작점)라도 보여준다.
+    const last = lastMapFitRef.current;
+    if (last?.map === map && last?.day === activeDay) return;
+    lastMapFitRef.current = { map, day: activeDay };
+
+    let fitPoints = chainPoints;
+    if (fitPoints.length === 0) {
+      const firstPlaced = Object.values(chains)
+        .flat()
+        .map((id) => items[id])
+        .find((it) => it?.lat != null && it?.lng != null);
+      fitPoints = firstPlaced ? [firstPlaced] : [];
+    }
+    if (fitPoints.length === 0) return;
+    if (fitPoints.length === 1) {
+      map.setLevel(5);
+      map.setCenter(
+        new window.kakao.maps.LatLng(fitPoints[0].lat, fitPoints[0].lng),
+      );
+    } else {
+      const bounds = new window.kakao.maps.LatLngBounds();
+      fitPoints.forEach((it) =>
+        bounds.extend(new window.kakao.maps.LatLng(it.lat, it.lng)),
+      );
+      map.setBounds(bounds);
+    }
+  }, [map, chains, activeDay, items]);
 
   // 날짜 팝오버는 Esc 로 닫는다. 브라우저 캘린더를 자동으로 띄우지는 않는다 —
   // 팝오버가 열리자마자 캘린더가 겹쳐 뜨면 시야를 가려서, 입력칸의 달력 표시를
@@ -2185,7 +2259,17 @@ export function DashboardPage() {
   // 제거한다(4단계). 서버 확인 전에는 지우지 않는다 — 실패 시 원래 위치로 복원하는
   // 롤백을 관리하는 것보다, 확인까지의 짧은 지연을 감수하는 쪽이 단순하다.
   // 로컬 전용 블록(auto- 교통)은 요청 없이 바로 제거한다.
+  //
+  // 내가 지운 서버 블록의 스냅샷은 되돌리기 스택에 남긴다 (Ctrl+Z, QA 배치3).
+  // 서버에 복구 API 가 없어 되돌리기 = "같은 내용으로 재생성"이다 — id 는 바뀌지만
+  // 협업 중에도 안전하다(다른 멤버에겐 그냥 새 블록 생성 op 로 보인다).
+  const deletedStackRef = useRef([]);
+  useEffect(() => {
+    deletedStackRef.current = []; // 프로젝트가 바뀌면 남의 프로젝트 블록을 못 살리게
+  }, [projectId]);
+
   const handleDeleteBlock = async (id) => {
+    const snapshot = items[id];
     if (isServerBlock(id)) {
       try {
         await blockApi.deleteBlock(id);
@@ -2194,6 +2278,10 @@ export function DashboardPage() {
           e?.message ?? "블록을 삭제하지 못했어요. 잠시 후 다시 시도해주세요.",
         );
         return; // 블록을 그대로 둔다 — 다시 드래그하면 재시도
+      }
+      if (snapshot) {
+        deletedStackRef.current.push({ block: snapshot });
+        if (deletedStackRef.current.length > 20) deletedStackRef.current.shift();
       }
     }
 
@@ -2210,8 +2298,78 @@ export function DashboardPage() {
       delete next[id];
       return next;
     });
-    showToast("블록을 삭제했어요 🗑");
+    showToast(
+      isServerBlock(id) ? "블록을 삭제했어요 🗑 (Ctrl+Z 되돌리기)" : "블록을 삭제했어요 🗑",
+    );
   };
+
+  // Ctrl+Z — 마지막으로 지운 블록을 같은 자리(dayNo·orderKey·시각)에 재생성한다.
+  // 삭제는 이웃 시각을 밀지 않으므로 원래 모습 그대로 돌아온다.
+  const undoLastDelete = useCallback(async () => {
+    const entry = deletedStackRef.current.pop();
+    if (!entry) return;
+    const b = entry.block;
+    const newId = `search-undo-${Date.now()}`; // 임시 id 규약(search- 접두)
+    const local = { ...b, id: newId };
+
+    // 낙관 배치 — 원래 자리(orderKey 기준). 후보였다면 후보로.
+    setItems((prev) => ({ ...prev, [newId]: local }));
+    if (b.dayNo == null) {
+      setPool((prev) => insertByOrderKey([...prev], itemsRef.current, local));
+    } else {
+      const dayKey = `d${b.dayNo}`;
+      setChains((prev) => ({
+        ...prev,
+        [dayKey]: insertByOrderKey(
+          [...(prev[dayKey] || [])],
+          itemsRef.current,
+          local,
+        ),
+      }));
+    }
+
+    try {
+      const created = await blockApi.createBlock(projectId, local);
+      // 세부 내용(detail)은 생성 바디에 없다(명세) — 생성 직후 별도 저장
+      if (b.detail) {
+        await blockApi.updateBlockFields(created.blockId, { detail: b.detail });
+      }
+      adoptServerId(newId, created.blockId, {
+        dayNo: b.dayNo ?? null,
+        orderKey: b.orderKey,
+      });
+      showToast(`'${b.name}' 삭제를 되돌렸어요 ↩`);
+    } catch (e) {
+      setItems((prev) => {
+        const next = { ...prev };
+        delete next[newId];
+        return next;
+      });
+      setPool((prev) => prev.filter((x) => x !== newId));
+      setChains((prev) => {
+        const next = { ...prev };
+        Object.keys(next).forEach((day) => {
+          next[day] = next[day].filter((x) => x !== newId);
+        });
+        return next;
+      });
+      showToast(e?.message ?? "삭제를 되돌리지 못했어요.");
+    }
+  }, [projectId, adoptServerId, showToast]);
+
+  useEffect(() => {
+    const onKey = (e) => {
+      if (!(e.ctrlKey || e.metaKey) || e.key.toLowerCase() !== "z") return;
+      // 입력 중의 Ctrl+Z 는 텍스트 실행 취소 — 우리가 가로채면 안 된다
+      const tag = e.target?.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA" || e.target?.isContentEditable)
+        return;
+      e.preventDefault();
+      undoLastDelete();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [undoLastDelete]);
 
   // 저장 전에 모달을 닫으면 임시 블록을 남기지 않는다 (서버에도 아직 없다)
   const handleCancelEdit = () => {
@@ -3877,6 +4035,36 @@ export function DashboardPage() {
                     ? `음성 연결됨 · ${voice.connectedCount + 1}명`
                     : "혼자 있어요"}
             </span>
+            {/* 참여자 아바타 (QA 배치3) — 나 + 음성 연결이 수립된 멤버들 */}
+            {voice.joined && (
+              <span className="voice-peers">
+                {[currentUser?.id, ...voice.connectedIds]
+                  .filter((id) => id != null)
+                  .map((id) => {
+                    const isMe = id === currentUser?.id;
+                    const member = isMe
+                      ? {
+                          nickname: currentUser?.nickname ?? "나",
+                          profileImg: currentUser?.profileImg,
+                        }
+                      : boardMembers.find((m) => m.memberId === id);
+                    if (!member) return null;
+                    return (
+                      <i
+                        key={id}
+                        className="voice-peer"
+                        title={isMe ? `${member.nickname} (나)` : member.nickname}
+                      >
+                        {member.profileImg?.startsWith("http") ? (
+                          <img src={member.profileImg} alt="" />
+                        ) : (
+                          (member.nickname?.[0] ?? "?")
+                        )}
+                      </i>
+                    );
+                  })}
+              </span>
+            )}
           </div>
         )}
 
