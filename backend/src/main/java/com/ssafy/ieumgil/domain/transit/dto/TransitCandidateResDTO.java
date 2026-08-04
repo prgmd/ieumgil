@@ -118,9 +118,13 @@ public class TransitCandidateResDTO {
             /** 등급. "KTX"·"무궁화"·항공사명. JSON 키가 class일 수 없어 grade다 */
             String grade,
             String departureAt,
-            /** 고속버스는 시간표에 도착시각이 없어 출발+소요로 계산한 값이다 */
+            /**
+             * 고속버스는 시간표에 도착시각이 없어 출발+소요로 계산한 값이다.
+             * 소요시간마저 없으면 null이다 — 도착 시각을 지어내지 않는다.
+             */
             String arrivalAt,
-            int durationMin,
+            /** 소요시간(분). 시간표가 주지 않으면 null이다 — 0분으로 두면 즉시 도착이 된다 */
+            Integer durationMin,
             /** 항공은 요금 정보가 없어 null이다 */
             Integer fare,
             TransitResDTO.FareConfidence fareConfidence,

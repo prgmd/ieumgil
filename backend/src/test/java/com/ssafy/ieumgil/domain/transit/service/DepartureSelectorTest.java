@@ -59,6 +59,23 @@ class DepartureSelectorTest {
     }
 
     @Test
+    @DisplayName("요금을 모르는 편은 최저가로 뽑지 않는다 — null을 0원으로 읽으면 늘 최저가가 된다")
+    void 요금을_모르는_편은_최저가가_아니다() {
+        List<Departure> all = List.of(
+                departure("고속버스 06:00", "16:00", 39700),
+                departure("고속버스 06:30", "16:30", 41000),
+                departure("고속버스 07:00", "17:00", null),
+                departure("고속버스 07:30", "17:30", null));
+
+        List<Departure> selected = DepartureSelector.selectThree(all, true);
+
+        assertThat(selected).hasSize(3);
+        assertThat(selected).allSatisfy(d -> assertThat(d.labels()).doesNotContain("최저 요금"));
+        // 최저가 축을 쓸 수 없으면 남은 자리는 시각순으로 채운다
+        assertThat(selected.get(2).name()).isEqualTo("고속버스 07:00");
+    }
+
+    @Test
     @DisplayName("3편보다 적으면 있는 만큼만 준다")
     void 편이_적으면_있는_만큼_준다() {
         List<Departure> all = List.of(departure("KTX 1", "16:00", 59800));

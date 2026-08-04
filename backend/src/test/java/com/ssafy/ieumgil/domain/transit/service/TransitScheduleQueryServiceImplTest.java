@@ -126,6 +126,20 @@ class TransitScheduleQueryServiceImplTest {
     }
 
     @Test
+    @DisplayName("고속버스 요금·소요시간이 없으면 0이 아니라 null이다")
+    void 고속버스_요금이_없으면_널이다() {
+        when(odsayClient.getIntercityBusSchedule(4000057, 4000156))
+                .thenReturn(List.of(new OdsayBusScheduleResponse.Bus(1, "06:00", null, null)));
+
+        List<TransitScheduleResDTO.BusSchedule> result = service.getIntercityBusSchedule(4000057, 4000156);
+
+        assertThat(result).hasSize(1);
+        // 0원으로 읽히면 "고속버스 0원 · 확정"이 되어 나간다
+        assertThat(result.get(0).fare()).isNull();
+        assertThat(result.get(0).wasteTimeMin()).isNull();
+    }
+
+    @Test
     @DisplayName("날짜를 주면 그 요일에 운행하지 않는 편은 뺀다")
     void 날짜를_주면_운행하지_않는_편을_뺀다() {
         OdsayTrainScheduleResponse.Fare fare = new OdsayTrainScheduleResponse.Fare(59800, 83700, 50830);

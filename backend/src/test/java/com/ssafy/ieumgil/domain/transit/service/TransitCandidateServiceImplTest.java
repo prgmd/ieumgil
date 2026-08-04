@@ -11,8 +11,10 @@ import com.ssafy.ieumgil.domain.project.entity.TransportPref;
 import com.ssafy.ieumgil.domain.project.repository.ProjectRepository;
 import com.ssafy.ieumgil.domain.transit.dto.OdsayRouteResponse;
 import com.ssafy.ieumgil.domain.transit.dto.TransitCandidateResDTO;
+import com.ssafy.ieumgil.domain.transit.dto.TransitCandidateResDTO.Candidate;
 import com.ssafy.ieumgil.domain.transit.dto.TransitCandidateResDTO.TransitMode;
 import com.ssafy.ieumgil.domain.transit.dto.TransitResDTO;
+import com.ssafy.ieumgil.domain.transit.dto.TransitScheduleResDTO;
 import com.ssafy.ieumgil.domain.transit.exception.TransitErrorCode;
 import com.ssafy.ieumgil.domain.transit.exception.TransitException;
 import com.ssafy.ieumgil.global.exception.CustomException;
@@ -21,16 +23,24 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
+import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
+import java.time.LocalTime;
 import java.util.List;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.tuple;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyDouble;
+import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.anyList;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
@@ -50,6 +60,14 @@ class TransitCandidateServiceImplTest {
     private PublicTransitQueryService publicTransitQueryService;
     @Mock
     private FuelPriceProvider fuelPriceProvider;
+    @Mock
+    private TransitScheduleQueryService transitScheduleQueryService;
+    /**
+     * 선정기는 목이 아니라 진짜 구현이다 — 라벨과 5개 선정은 실제 규칙을 봐야 의미가 있다.
+     * 그래도 spy로 두는 이유는 "시외 경로가 여기 닿지 않는다"를 호출 여부로 단정하기 위해서다.
+     */
+    @Spy
+    private TransitRouteSelector routeSelector = new TransitRouteSelector();
 
     @InjectMocks
     private TransitCandidateServiceImpl service;
@@ -90,6 +108,10 @@ class TransitCandidateServiceImplTest {
     private static final double LAT_CHEONGJU = 36.6424, LNG_CHEONGJU = 127.4890;
     /** 제주 */
     private static final double LAT_JEJU = 33.4996, LNG_JEJU = 126.5312;
+    /** 서울역 */
+    private static final double LAT_SEOUL = 37.5546, LNG_SEOUL = 126.9707;
+    /** 부산역 — 서울역에서 직선 약 325km */
+    private static final double LAT_BUSAN = 35.1151, LNG_BUSAN = 129.0413;
 
     private static final Long PROJECT_ID = 10L;
 
@@ -125,7 +147,7 @@ class TransitCandidateServiceImplTest {
         given(placeQueryService.getTaxiRoute(LAT_A, LNG_A, LAT_B, LNG_B))
                 .willReturn(Optional.of(new PlaceResDTO.TaxiRoute(8900, 0, 6800, 12)));
 
-        TransitCandidateResDTO.Result result = service.calculate(PROJECT_ID, List.of(1L, 2L));
+        TransitCandidateResDTO.Result result = service.calculate(PROJECT_ID, List.of(1L, 2L), null);
 
         TransitCandidateResDTO.Segment segment = result.segments().get(0);
         assertThat(segment.fromBlockId()).isEqualTo(1L);
@@ -153,14 +175,12 @@ class TransitCandidateServiceImplTest {
         given(placeQueryService.getTaxiRoute(LAT_A, LNG_A, LAT_B, LNG_B))
                 .willReturn(Optional.of(new PlaceResDTO.TaxiRoute(8900, 0, 6800, 12)));
 
-        TransitCandidateResDTO.Result result = service.calculate(PROJECT_ID, List.of(1L, 2L));
+        TransitCandidateResDTO.Result result = service.calculate(PROJECT_ID, List.of(1L, 2L), null);
 
         TransitCandidateResDTO.Segment segment = result.segments().get(0);
         assertThat(segment.defaultMode()).isEqualTo(TransitMode.CAR);
         assertThat(segment.candidates()).extracting(TransitCandidateResDTO.Candidate::mode)
                 .containsExactly(TransitMode.CAR, TransitMode.TAXI);
-        verify(publicTransitQueryService, never())
-                .getCombinedRoute(anyDouble(), anyDouble(), anyDouble(), anyDouble());
     }
 
     @Test
@@ -173,14 +193,15 @@ class TransitCandidateServiceImplTest {
         given(placeQueryService.getWalkingRoute(LAT_A, LNG_A, nearLat, LNG_A))
                 .willReturn(Optional.of(new PlaceResDTO.WalkingRoute(170, 3)));
 
-        TransitCandidateResDTO.Result result = service.calculate(PROJECT_ID, List.of(1L, 2L));
+        TransitCandidateResDTO.Result result = service.calculate(PROJECT_ID, List.of(1L, 2L), null);
 
         TransitCandidateResDTO.Segment segment = result.segments().get(0);
         assertThat(segment.defaultMode()).isEqualTo(TransitMode.WALK);
         assertThat(segment.candidates()).extracting(TransitCandidateResDTO.Candidate::mode)
                 .containsExactly(TransitMode.WALK);
+        // 300m 미만은 대중교통 경로를 아예 묻지 않는다 — 이 verify가 그 호출 절약의 증거다
         verify(publicTransitQueryService, never())
-                .getCombinedRoute(anyDouble(), anyDouble(), anyDouble(), anyDouble());
+                .getCombinedRoutes(anyDouble(), anyDouble(), anyDouble(), anyDouble());
         verify(placeQueryService, never())
                 .getTaxiRoute(anyDouble(), anyDouble(), anyDouble(), anyDouble());
     }
@@ -196,7 +217,7 @@ class TransitCandidateServiceImplTest {
         given(placeQueryService.getTaxiRoute(LAT_A, LNG_A, LAT_B, LNG_B))
                 .willReturn(Optional.of(new PlaceResDTO.TaxiRoute(8900, 0, 6800, 12)));
 
-        TransitCandidateResDTO.Result result = service.calculate(PROJECT_ID, List.of(1L, 2L));
+        TransitCandidateResDTO.Result result = service.calculate(PROJECT_ID, List.of(1L, 2L), null);
 
         assertThat(result.segments().get(0).candidates())
                 .extracting(TransitCandidateResDTO.Candidate::mode)
@@ -216,7 +237,7 @@ class TransitCandidateServiceImplTest {
         given(placeQueryService.getTaxiRoute(LAT_A, LNG_A, LAT_B, LNG_B))
                 .willReturn(Optional.of(new PlaceResDTO.TaxiRoute(8900, 0, 6800, 12)));
 
-        TransitCandidateResDTO.Result result = service.calculate(PROJECT_ID, List.of(1L, 2L));
+        TransitCandidateResDTO.Result result = service.calculate(PROJECT_ID, List.of(1L, 2L), null);
 
         TransitCandidateResDTO.Segment segment = result.segments().get(0);
         assertThat(segment.defaultMode()).isEqualTo(TransitMode.TAXI);
@@ -236,7 +257,7 @@ class TransitCandidateServiceImplTest {
         given(placeQueryService.getTaxiRoute(LAT_A, LNG_A, LAT_B, LNG_B))
                 .willReturn(Optional.empty());
 
-        TransitCandidateResDTO.Result result = service.calculate(PROJECT_ID, List.of(1L, 2L));
+        TransitCandidateResDTO.Result result = service.calculate(PROJECT_ID, List.of(1L, 2L), null);
 
         TransitCandidateResDTO.Segment segment = result.segments().get(0);
         assertThat(segment.defaultMode()).isNull();
@@ -260,7 +281,7 @@ class TransitCandidateServiceImplTest {
         given(placeQueryService.getTaxiRoute(LAT_B, LNG_B, LAT_A, LNG_A))
                 .willReturn(Optional.of(new PlaceResDTO.TaxiRoute(9100, 0, 6800, 13)));
 
-        TransitCandidateResDTO.Result result = service.calculate(PROJECT_ID, List.of(1L, 2L, 1L, 2L));
+        TransitCandidateResDTO.Result result = service.calculate(PROJECT_ID, List.of(1L, 2L, 1L, 2L), null);
 
         assertThat(result.segments()).hasSize(3);
         verify(publicTransitQueryService, times(1)).getCombinedRoutes(LAT_A, LNG_A, LAT_B, LNG_B);
@@ -277,7 +298,7 @@ class TransitCandidateServiceImplTest {
                 .willReturn(Optional.of(new PlaceResDTO.TaxiRoute(8900, 2400, 8300, 22)));
         given(fuelPriceProvider.pricePerLiter()).willReturn(1700);
 
-        TransitCandidateResDTO.Result result = service.calculate(PROJECT_ID, List.of(1L, 2L));
+        TransitCandidateResDTO.Result result = service.calculate(PROJECT_ID, List.of(1L, 2L), null);
 
         TransitCandidateResDTO.Candidate car = result.segments().get(0).candidates().get(0);
         assertThat(car.mode()).isEqualTo(TransitMode.CAR);
@@ -296,7 +317,7 @@ class TransitCandidateServiceImplTest {
         given(blockRepository.findAllByIdInAndProject_IdAndDeletedAtIsNull(List.of(1L, 2L), PROJECT_ID))
                 .willReturn(List.of(blockAt(1L, LAT_A, LNG_A)));
 
-        assertThatThrownBy(() -> service.calculate(PROJECT_ID, List.of(1L, 2L)))
+        assertThatThrownBy(() -> service.calculate(PROJECT_ID, List.of(1L, 2L), null))
                 .isInstanceOf(CustomException.class)
                 .hasFieldOrPropertyWithValue("code", TransitErrorCode.INVALID_BLOCKS);
     }
@@ -314,7 +335,7 @@ class TransitCandidateServiceImplTest {
         given(blockRepository.findAllByIdInAndProject_IdAndDeletedAtIsNull(List.of(1L, 2L), PROJECT_ID))
                 .willReturn(List.of(blockAt(1L, LAT_A, LNG_A), noCoordinates));
 
-        assertThatThrownBy(() -> service.calculate(PROJECT_ID, List.of(1L, 2L)))
+        assertThatThrownBy(() -> service.calculate(PROJECT_ID, List.of(1L, 2L), null))
                 .isInstanceOf(CustomException.class)
                 .hasFieldOrPropertyWithValue("code", TransitErrorCode.COORDINATE_REQUIRED);
     }
@@ -326,7 +347,7 @@ class TransitCandidateServiceImplTest {
         given(blockRepository.findAllByIdInAndProject_IdAndDeletedAtIsNull(List.of(1L), PROJECT_ID))
                 .willReturn(List.of(blockAt(1L, LAT_A, LNG_A)));
 
-        TransitCandidateResDTO.Result result = service.calculate(PROJECT_ID, List.of(1L));
+        TransitCandidateResDTO.Result result = service.calculate(PROJECT_ID, List.of(1L), null);
 
         assertThat(result.segments()).isEmpty();
         verifyNoInteractions(publicTransitQueryService);
@@ -342,7 +363,7 @@ class TransitCandidateServiceImplTest {
         given(publicTransitQueryService.getCombinedRoutes(LAT_A, LNG_A, LAT_B, LNG_B))
                 .willReturn(List.of(pathOf(44, 1500, 9, 12841)));
 
-        TransitCandidateResDTO.Result result = service.calculate(PROJECT_ID, List.of(1L, 2L));
+        TransitCandidateResDTO.Result result = service.calculate(PROJECT_ID, List.of(1L, 2L), null);
 
         TransitCandidateResDTO.Candidate transit = result.segments().get(0).candidates().stream()
                 .filter(c -> c.mode() == TransitMode.TRANSIT).findFirst().orElseThrow();
@@ -362,7 +383,7 @@ class TransitCandidateServiceImplTest {
         given(placeQueryService.getWalkingRoute(LAT_A, LNG_A, LAT_MID, LNG_A))
                 .willReturn(Optional.of(new PlaceResDTO.WalkingRoute(1400, 21)));
 
-        TransitCandidateResDTO.Result result = service.calculate(PROJECT_ID, List.of(1L, 2L));
+        TransitCandidateResDTO.Result result = service.calculate(PROJECT_ID, List.of(1L, 2L), null);
 
         TransitCandidateResDTO.Segment segment = result.segments().get(0);
         // 걸을 수는 있는 거리지만(도보 후보가 목록에 있다) 기본은 선호 수단이다.
@@ -391,14 +412,12 @@ class TransitCandidateServiceImplTest {
                 .willReturn(Optional.of(new PlaceResDTO.WalkingRoute(1400, 21)));
         given(fuelPriceProvider.pricePerLiter()).willReturn(1869);
 
-        TransitCandidateResDTO.Result result = service.calculate(PROJECT_ID, List.of(1L, 2L));
+        TransitCandidateResDTO.Result result = service.calculate(PROJECT_ID, List.of(1L, 2L), null);
 
         TransitCandidateResDTO.Segment segment = result.segments().get(0);
         assertThat(segment.defaultMode()).isEqualTo(TransitMode.CAR);
         assertThat(segment.candidates()).extracting(TransitCandidateResDTO.Candidate::mode)
                 .containsExactly(TransitMode.CAR, TransitMode.TAXI, TransitMode.WALK);
-        verify(publicTransitQueryService, never())
-                .getCombinedRoute(anyDouble(), anyDouble(), anyDouble(), anyDouble());
     }
 
     @Test
@@ -414,7 +433,7 @@ class TransitCandidateServiceImplTest {
         given(placeQueryService.getWalkingRoute(LAT_A, LNG_A, LAT_JUST_OVER_NEAR, LNG_A))
                 .willReturn(Optional.of(new PlaceResDTO.WalkingRoute(360, 6)));
 
-        TransitCandidateResDTO.Result result = service.calculate(PROJECT_ID, List.of(1L, 2L));
+        TransitCandidateResDTO.Result result = service.calculate(PROJECT_ID, List.of(1L, 2L), null);
 
         assertThat(result.segments().get(0).candidates()).extracting(TransitCandidateResDTO.Candidate::mode)
                 .containsExactly(TransitMode.TRANSIT, TransitMode.TAXI, TransitMode.WALK);
@@ -432,12 +451,13 @@ class TransitCandidateServiceImplTest {
         given(placeQueryService.getWalkingRoute(LAT_A, LNG_A, LAT_JUST_UNDER_NEAR, LNG_A))
                 .willReturn(Optional.of(new PlaceResDTO.WalkingRoute(330, 5)));
 
-        TransitCandidateResDTO.Result result = service.calculate(PROJECT_ID, List.of(1L, 2L));
+        TransitCandidateResDTO.Result result = service.calculate(PROJECT_ID, List.of(1L, 2L), null);
 
         assertThat(result.segments().get(0).candidates()).extracting(TransitCandidateResDTO.Candidate::mode)
                 .containsExactly(TransitMode.WALK);
+        // 300m 미만은 대중교통 경로를 아예 묻지 않는다 — 이 verify가 그 호출 절약의 증거다
         verify(publicTransitQueryService, never())
-                .getCombinedRoute(anyDouble(), anyDouble(), anyDouble(), anyDouble());
+                .getCombinedRoutes(anyDouble(), anyDouble(), anyDouble(), anyDouble());
         verify(placeQueryService, never())
                 .getTaxiRoute(anyDouble(), anyDouble(), anyDouble(), anyDouble());
     }
@@ -453,7 +473,7 @@ class TransitCandidateServiceImplTest {
         given(placeQueryService.getTaxiRoute(LAT_A, LNG_A, LAT_JUST_OVER_WALK, LNG_A))
                 .willReturn(Optional.of(new PlaceResDTO.TaxiRoute(5800, 0, 2600, 9)));
 
-        TransitCandidateResDTO.Result result = service.calculate(PROJECT_ID, List.of(1L, 2L));
+        TransitCandidateResDTO.Result result = service.calculate(PROJECT_ID, List.of(1L, 2L), null);
 
         assertThat(result.segments().get(0).candidates()).extracting(TransitCandidateResDTO.Candidate::mode)
                 .containsExactly(TransitMode.TRANSIT, TransitMode.TAXI);
@@ -474,7 +494,7 @@ class TransitCandidateServiceImplTest {
         given(placeQueryService.getWalkingRoute(LAT_A, LNG_A, LAT_JUST_UNDER_WALK, LNG_A))
                 .willReturn(Optional.of(new PlaceResDTO.WalkingRoute(2400, 34)));
 
-        TransitCandidateResDTO.Result result = service.calculate(PROJECT_ID, List.of(1L, 2L));
+        TransitCandidateResDTO.Result result = service.calculate(PROJECT_ID, List.of(1L, 2L), null);
 
         assertThat(result.segments().get(0).candidates()).extracting(TransitCandidateResDTO.Candidate::mode)
                 .containsExactly(TransitMode.TRANSIT, TransitMode.TAXI, TransitMode.WALK);
@@ -485,7 +505,7 @@ class TransitCandidateServiceImplTest {
     @DisplayName("항공·해운 구간이 있으면 자차·택시에 페리 경고를 붙이고 ESTIMATE로 강등한다")
     void 도서_목적지는_육로_후보를_강등한다() {
         givenProject(TransportPref.CAR);
-        given(blockRepository.findAllByIdInAndProject_IdAndDeletedAtIsNull(List.of(1L, 2L), PROJECT_ID))
+        given(blockRepository.findAllByIdInAndProject_IdAndDeletedAtIsNull(List.of(1L, 3L), PROJECT_ID))
                 .willReturn(List.of(cheongjuBlock(), jejuBlock()));
         // ODsay가 항공 경로를 준다 = 육로로 이어지지 않는다
         given(publicTransitQueryService.getCombinedRoutes(anyDouble(), anyDouble(), anyDouble(), anyDouble()))
@@ -493,7 +513,7 @@ class TransitCandidateServiceImplTest {
         given(placeQueryService.getTaxiRoute(anyDouble(), anyDouble(), anyDouble(), anyDouble()))
                 .willReturn(Optional.of(new PlaceResDTO.TaxiRoute(556600, 9900, 436642, 356)));
 
-        TransitCandidateResDTO.Result result = service.calculate(PROJECT_ID, List.of(1L, 2L));
+        TransitCandidateResDTO.Result result = service.calculate(PROJECT_ID, List.of(1L, 3L), null);
 
         TransitCandidateResDTO.Candidate taxi = candidateOf(result, TransitMode.TAXI);
         assertThat(taxi.caution()).contains("페리");
@@ -514,7 +534,7 @@ class TransitCandidateServiceImplTest {
         given(placeQueryService.getTaxiRoute(anyDouble(), anyDouble(), anyDouble(), anyDouble()))
                 .willReturn(Optional.of(new PlaceResDTO.TaxiRoute(14900, 0, 10327, 32)));
 
-        TransitCandidateResDTO.Result result = service.calculate(PROJECT_ID, List.of(1L, 2L));
+        TransitCandidateResDTO.Result result = service.calculate(PROJECT_ID, List.of(1L, 2L), null);
 
         TransitCandidateResDTO.Candidate taxi = candidateOf(result, TransitMode.TAXI);
         assertThat(taxi.caution()).isNull();
@@ -525,26 +545,449 @@ class TransitCandidateServiceImplTest {
     @DisplayName("드라이빙 조회가 실패해 available=false인 후보는 페리 경고를 붙이지 않는다")
     void 조회_실패한_후보는_강등하지_않는다() {
         givenProject(TransportPref.CAR);
-        given(blockRepository.findAllByIdInAndProject_IdAndDeletedAtIsNull(List.of(1L, 2L), PROJECT_ID))
+        given(blockRepository.findAllByIdInAndProject_IdAndDeletedAtIsNull(List.of(1L, 3L), PROJECT_ID))
                 .willReturn(List.of(cheongjuBlock(), jejuBlock()));
         given(publicTransitQueryService.getCombinedRoutes(anyDouble(), anyDouble(), anyDouble(), anyDouble()))
                 .willReturn(List.of(airPath()));
         given(placeQueryService.getTaxiRoute(anyDouble(), anyDouble(), anyDouble(), anyDouble()))
                 .willReturn(Optional.empty());
 
-        TransitCandidateResDTO.Result result = service.calculate(PROJECT_ID, List.of(1L, 2L));
+        TransitCandidateResDTO.Result result = service.calculate(PROJECT_ID, List.of(1L, 3L), null);
 
         TransitCandidateResDTO.Candidate taxi = candidateOf(result, TransitMode.TAXI);
         assertThat(taxi.available()).isFalse();
         assertThat(taxi.caution()).isNull();
     }
 
+    @Test
+    @DisplayName("시외 구간은 수단별로 나뉘고 기준 시각 이후 편이 붙는다")
+    void 시외_구간은_수단별로_나뉜다() {
+        given(blockRepository.findAllByIdInAndProject_IdAndDeletedAtIsNull(List.of(1L, 2L), PROJECT_ID))
+                .willReturn(List.of(seoulBlock(), busanBlock()));
+        given(projectRepository.findByIdAndDeletedAtIsNull(PROJECT_ID)).willReturn(Optional.of(publicProject()));
+        given(publicTransitQueryService.getCombinedRoutes(anyDouble(), anyDouble(), anyDouble(), anyDouble()))
+                .willReturn(List.of(trainPath()));  // pathType=11
+        given(transitScheduleQueryService.searchTrainStation("서울"))
+                .willReturn(Optional.of(terminal(3300128, "서울")));
+        given(transitScheduleQueryService.searchTrainStation("부산"))
+                .willReturn(Optional.of(terminal(3300108, "부산")));
+        given(transitScheduleQueryService.getTrainSchedule(eq(3300128), eq(3300108), any(LocalDate.class)))
+                .willReturn(List.of(
+                        train("KTX", 1, "16:00", "18:37", 59800),
+                        train("KTX", 15, "16:30", "19:12", 59800),
+                        train("무궁화", 1203, "18:10", "23:41", 28600)));
+
+        TransitCandidateResDTO.Result result =
+                service.calculate(PROJECT_ID, List.of(1L, 2L), LocalTime.of(14, 0));
+
+        TransitCandidateResDTO.Segment segment = result.segments().get(0);
+        assertThat(segment.intercity()).isTrue();
+        assertThat(segment.timetableApplied()).isTrue();
+        assertThat(segment.referenceAt()).isEqualTo("14:45");
+        // 세 수단을 동시에 조회하지만 후보 순서는 기차·고속버스·항공 그대로다
+        assertThat(segment.candidates()).extracting(Candidate::mode)
+                .startsWith(TransitMode.TRAIN, TransitMode.EXPRESS_BUS, TransitMode.AIR);
+
+        Candidate train = candidateOf(result, TransitMode.TRAIN);
+        assertThat(train.departures()).hasSize(3);
+        assertThat(train.departures().get(0).departureAt()).isEqualTo("16:00");
+        assertThat(train.departures().get(0).fare()).isEqualTo(59800);
+        assertThat(train.departures().get(2).labels()).contains("최저 요금");
+        // durationMin·fare·arrivalAt이 서로 바뀌어도 잡히도록 구별되는 값을 못 박는다(16:00→18:37은 157분)
+        assertThat(train.departures().get(0).name()).isEqualTo("KTX 1");
+        assertThat(train.departures().get(0).grade()).isEqualTo("KTX");
+        assertThat(train.departures().get(0).arrivalAt()).isEqualTo("18:37");
+        assertThat(train.departures().get(0).durationMin()).isEqualTo(157);
+        assertThat(train.departures().get(0).fareOptions().general()).isEqualTo(59800);
+        assertThat(train.departures().get(0).fareOptions().special()).isEqualTo(99800);
+        assertThat(train.departures().get(0).fareOptions().standing()).isEqualTo(54800);
+        assertThat(train.departures().get(0).fareConfidence())
+                .isEqualTo(TransitResDTO.FareConfidence.CONFIRMED);
+        // 후보의 대표값은 첫 편에서 온다
+        assertThat(train.durationMin()).isEqualTo(157);
+        assertThat(train.fare()).isEqualTo(59800);
+    }
+
+    @Test
+    @DisplayName("기준 시각보다 이른 편은 후보에서 뺀다")
+    void 기준_시각_이전_편은_제외한다() {
+        given(blockRepository.findAllByIdInAndProject_IdAndDeletedAtIsNull(List.of(1L, 2L), PROJECT_ID))
+                .willReturn(List.of(seoulBlock(), busanBlock()));
+        given(projectRepository.findByIdAndDeletedAtIsNull(PROJECT_ID)).willReturn(Optional.of(publicProject()));
+        given(publicTransitQueryService.getCombinedRoutes(anyDouble(), anyDouble(), anyDouble(), anyDouble()))
+                .willReturn(List.of(trainPath()));
+        given(transitScheduleQueryService.searchTrainStation(anyString()))
+                .willReturn(Optional.of(terminal(3300128, "서울")));
+        given(transitScheduleQueryService.getTrainSchedule(anyInt(), anyInt(), any(LocalDate.class)))
+                .willReturn(List.of(
+                        train("KTX", 1, "05:13", "07:50", 59800),
+                        train("KTX", 99, "16:00", "18:37", 59800)));
+
+        TransitCandidateResDTO.Result result =
+                service.calculate(PROJECT_ID, List.of(1L, 2L), LocalTime.of(14, 0));
+
+        Candidate train = candidateOf(result, TransitMode.TRAIN);
+        assertThat(train.departures()).extracting(d -> d.departureAt()).containsExactly("16:00");
+    }
+
+    @Test
+    @DisplayName("두 번째 시외 구간은 시간표를 적용하지 않고 이유를 남긴다")
+    void 두번째_시외_구간은_시간표를_건너뛴다() {
+        given(blockRepository.findAllByIdInAndProject_IdAndDeletedAtIsNull(List.of(1L, 2L, 3L), PROJECT_ID))
+                .willReturn(List.of(seoulBlock(), busanBlock(), jejuBlock()));
+        given(projectRepository.findByIdAndDeletedAtIsNull(PROJECT_ID)).willReturn(Optional.of(publicProject()));
+        given(publicTransitQueryService.getCombinedRoutes(anyDouble(), anyDouble(), anyDouble(), anyDouble()))
+                .willReturn(List.of(trainPath()));
+        given(transitScheduleQueryService.searchTrainStation(anyString()))
+                .willReturn(Optional.of(terminal(3300128, "서울")));
+        given(transitScheduleQueryService.getTrainSchedule(anyInt(), anyInt(), any(LocalDate.class)))
+                .willReturn(List.of(train("KTX", 1, "16:00", "18:37", 59800)));
+
+        TransitCandidateResDTO.Result result =
+                service.calculate(PROJECT_ID, List.of(1L, 2L, 3L), LocalTime.of(9, 0));
+
+        assertThat(result.segments().get(0).timetableApplied()).isTrue();
+        assertThat(result.segments().get(1).timetableApplied()).isFalse();
+        assertThat(result.segments().get(1).timetableSkipReason())
+                .isEqualTo("앞선 시외 구간의 편이 확정되지 않았습니다");
+        assertThat(result.segments().get(1).referenceAt()).isNull();
+        // 편만 비고 수단은 남는다 — 부산→제주에서 항공이 사라지면 배로 가라는 말이 된다
+        assertThat(result.segments().get(1).candidates()).extracting(Candidate::mode)
+                .contains(TransitMode.TRAIN, TransitMode.EXPRESS_BUS, TransitMode.AIR);
+        Candidate air = result.segments().get(1).candidates().stream()
+                .filter(c -> c.mode() == TransitMode.AIR).findFirst().orElseThrow();
+        assertThat(air.available()).isTrue();
+        assertThat(air.departures()).isEmpty();
+        // 탈 편이 없으면 구간도 그리지 않는다 — 0분짜리 leg는 "즉시 도착"으로 읽힌다
+        assertThat(air.legs()).isEmpty();
+        assertThat(air.durationMin()).isNull();
+        // 고를 편이 없는 수단은 기본이 될 수 없다
+        assertThat(result.segments().get(1).defaultMode()).isNotIn(
+                TransitMode.TRAIN, TransitMode.EXPRESS_BUS, TransitMode.AIR);
+    }
+
+    @Test
+    @DisplayName("시간표는 첫 시외 구간에서 한 번만 조회한다 — 기준 시각이 두 번째 구간을 감당하지 못한다")
+    void 시간표는_한_구간에만_조회한다() {
+        given(blockRepository.findAllByIdInAndProject_IdAndDeletedAtIsNull(List.of(1L, 2L, 3L), PROJECT_ID))
+                .willReturn(List.of(seoulBlock(), busanBlock(), jejuBlock()));
+        given(projectRepository.findByIdAndDeletedAtIsNull(PROJECT_ID)).willReturn(Optional.of(publicProject()));
+        given(publicTransitQueryService.getCombinedRoutes(anyDouble(), anyDouble(), anyDouble(), anyDouble()))
+                .willReturn(List.of(trainPath()));
+        given(transitScheduleQueryService.searchTrainStation(anyString()))
+                .willReturn(Optional.of(terminal(3300128, "서울")));
+        given(transitScheduleQueryService.getTrainSchedule(anyInt(), anyInt(), any(LocalDate.class)))
+                .willReturn(List.of(train("KTX", 1, "16:00", "18:37", 59800)));
+
+        service.calculate(PROJECT_ID, List.of(1L, 2L, 3L), LocalTime.of(9, 0));
+
+        // SegmentClock은 실제 탑승 시각(16:00)이 아니라 기준 시각(09:45)에서 이동시간만 누적한다.
+        // 두 번째 시외 구간에 그 커서로 다시 기준 시각을 뽑으면 이미 지나간 시각을 준다 —
+        // intercityUsed 가드가 그것을 막는다. 이 verify가 가드가 사라지면 깨진다(2회가 된다).
+        verify(transitScheduleQueryService, times(1))
+                .getTrainSchedule(anyInt(), anyInt(), any(LocalDate.class));
+        verify(transitScheduleQueryService, times(2)).searchTrainStation(anyString());
+    }
+
+    @Test
+    @DisplayName("dayStart가 없으면 09:00을 기준으로 삼는다")
+    void dayStart가_없으면_아홉시다() {
+        given(blockRepository.findAllByIdInAndProject_IdAndDeletedAtIsNull(List.of(1L, 2L), PROJECT_ID))
+                .willReturn(List.of(seoulBlock(), busanBlock()));
+        given(projectRepository.findByIdAndDeletedAtIsNull(PROJECT_ID)).willReturn(Optional.of(publicProject()));
+        given(publicTransitQueryService.getCombinedRoutes(anyDouble(), anyDouble(), anyDouble(), anyDouble()))
+                .willReturn(List.of(trainPath()));
+        given(transitScheduleQueryService.searchTrainStation(anyString()))
+                .willReturn(Optional.of(terminal(3300128, "서울")));
+        given(transitScheduleQueryService.getTrainSchedule(anyInt(), anyInt(), any(LocalDate.class)))
+                .willReturn(List.of(train("KTX", 1, "16:00", "18:37", 59800)));
+
+        TransitCandidateResDTO.Result result = service.calculate(PROJECT_ID, List.of(1L, 2L), null);
+
+        assertThat(result.segments().get(0).referenceAt()).isEqualTo("09:45");
+    }
+
+    @Test
+    @DisplayName("역 이름을 못 찾으면 그 수단만 제외하고 나머지는 유지한다")
+    void 역_검색_실패는_그_수단만_뺀다() {
+        given(blockRepository.findAllByIdInAndProject_IdAndDeletedAtIsNull(List.of(1L, 2L), PROJECT_ID))
+                .willReturn(List.of(seoulBlock(), busanBlock()));
+        given(projectRepository.findByIdAndDeletedAtIsNull(PROJECT_ID)).willReturn(Optional.of(publicProject()));
+        given(publicTransitQueryService.getCombinedRoutes(anyDouble(), anyDouble(), anyDouble(), anyDouble()))
+                .willReturn(List.of(trainPath()));
+        given(transitScheduleQueryService.searchTrainStation(anyString())).willReturn(Optional.empty());
+        given(placeQueryService.getTaxiRoute(anyDouble(), anyDouble(), anyDouble(), anyDouble()))
+                .willReturn(Optional.of(new PlaceResDTO.TaxiRoute(374600, 0, 401839, 310)));
+
+        TransitCandidateResDTO.Result result =
+                service.calculate(PROJECT_ID, List.of(1L, 2L), LocalTime.of(9, 0));
+
+        Candidate train = candidateOf(result, TransitMode.TRAIN);
+        assertThat(train.available()).isFalse();
+        assertThat(candidateOf(result, TransitMode.TAXI).available()).isTrue();
+    }
+
+    @Test
+    @DisplayName("기준 시각 이후 편이 없으면 available=true에 빈 departures다")
+    void 남은_편이_없으면_빈_목록이다() {
+        given(blockRepository.findAllByIdInAndProject_IdAndDeletedAtIsNull(List.of(1L, 2L), PROJECT_ID))
+                .willReturn(List.of(seoulBlock(), busanBlock()));
+        given(projectRepository.findByIdAndDeletedAtIsNull(PROJECT_ID)).willReturn(Optional.of(publicProject()));
+        given(publicTransitQueryService.getCombinedRoutes(anyDouble(), anyDouble(), anyDouble(), anyDouble()))
+                .willReturn(List.of(trainPath()));
+        given(transitScheduleQueryService.searchTrainStation(anyString()))
+                .willReturn(Optional.of(terminal(3300128, "서울")));
+        given(transitScheduleQueryService.getTrainSchedule(anyInt(), anyInt(), any(LocalDate.class)))
+                .willReturn(List.of(train("KTX", 1, "05:13", "07:50", 59800)));
+
+        TransitCandidateResDTO.Result result =
+                service.calculate(PROJECT_ID, List.of(1L, 2L), LocalTime.of(22, 0));
+
+        Candidate train = candidateOf(result, TransitMode.TRAIN);
+        assertThat(train.available()).isTrue();
+        assertThat(train.departures()).isEmpty();
+    }
+
+    @Test
+    @DisplayName("시내 구간은 후보 5개에 라벨과 legs가 붙는다")
+    void 시내_구간은_다중_후보다() {
+        given(blockRepository.findAllByIdInAndProject_IdAndDeletedAtIsNull(List.of(1L, 2L), PROJECT_ID))
+                .willReturn(List.of(blockA(), blockB()));
+        given(projectRepository.findByIdAndDeletedAtIsNull(PROJECT_ID)).willReturn(Optional.of(publicProject()));
+        given(publicTransitQueryService.getCombinedRoutes(anyDouble(), anyDouble(), anyDouble(), anyDouble()))
+                .willReturn(List.of(busPath(), subwayPath(), cheapPath()));
+
+        TransitCandidateResDTO.Result result =
+                service.calculate(PROJECT_ID, List.of(1L, 2L), LocalTime.of(9, 0));
+
+        TransitCandidateResDTO.Segment segment = result.segments().get(0);
+        assertThat(segment.intercity()).isFalse();
+        List<Candidate> transit = segment.candidates().stream()
+                .filter(c -> c.mode() == TransitMode.TRANSIT).toList();
+        assertThat(transit).hasSizeBetween(1, 5);
+        assertThat(transit.get(0).legs()).isNotEmpty();
+        assertThat(transit.stream().anyMatch(c -> c.labels().contains("최저 요금"))).isTrue();
+    }
+
+    @Test
+    @DisplayName("시외 경로가 섞인 구간은 시내 선정기에 닿지 않는다")
+    void 시외_경로는_시내_선정기에_닿지_않는다() {
+        // ODsay가 시내 경로(pathType=1)와 기차 경로(11)를 한 응답에 섞어 준다
+        시외_경로가_섞이면_선정기를_부르지_않는다(trainPath());
+    }
+
+    @Test
+    @DisplayName("해운 경로(pathType=14)도 시내 선정기에 닿지 않는다")
+    void 해운_경로는_시내_선정기에_닿지_않는다() {
+        // 해운은 요금도 환승 수도 없어 기차와 똑같은 누출 프로필이다. pathType 목록에서 빠지기 쉬워 따로 못 박는다
+        시외_경로가_섞이면_선정기를_부르지_않는다(ferryPath());
+    }
+
+    private void 시외_경로가_섞이면_선정기를_부르지_않는다(OdsayRouteResponse.Path intercityPath) {
+        given(blockRepository.findAllByIdInAndProject_IdAndDeletedAtIsNull(List.of(1L, 2L), PROJECT_ID))
+                .willReturn(List.of(seoulBlock(), busanBlock()));
+        given(projectRepository.findByIdAndDeletedAtIsNull(PROJECT_ID)).willReturn(Optional.of(publicProject()));
+        given(publicTransitQueryService.getCombinedRoutes(anyDouble(), anyDouble(), anyDouble(), anyDouble()))
+                .willReturn(List.of(busPath(), intercityPath));
+        given(transitScheduleQueryService.searchTrainStation(anyString())).willReturn(Optional.empty());
+
+        TransitCandidateResDTO.Result result =
+                service.calculate(PROJECT_ID, List.of(1L, 2L), LocalTime.of(9, 0));
+
+        TransitCandidateResDTO.Segment segment = result.segments().get(0);
+        assertThat(segment.intercity()).isTrue();
+        // 시외 경로는 payment가 null이고 환승 수도 없다 — 시내 선정기에 들어가면 "환승 최소" 축을
+        // 환승 0으로 이겨 버린다. 선정기 자체를 부르지 않는 것이 그 보장이다.
+        verify(routeSelector, never()).selectTop5(anyList());
+        assertThat(segment.candidates()).extracting(Candidate::mode)
+                .doesNotContain(TransitMode.TRANSIT);
+    }
+
+    @Test
+    @DisplayName("요금 없는 고속버스편은 0원 확정이 아니라 UNKNOWN이다")
+    void 요금_없는_고속버스편은_확정이_아니다() {
+        given(blockRepository.findAllByIdInAndProject_IdAndDeletedAtIsNull(List.of(1L, 2L), PROJECT_ID))
+                .willReturn(List.of(seoulBlock(), busanBlock()));
+        given(projectRepository.findByIdAndDeletedAtIsNull(PROJECT_ID)).willReturn(Optional.of(publicProject()));
+        given(publicTransitQueryService.getCombinedRoutes(anyDouble(), anyDouble(), anyDouble(), anyDouble()))
+                .willReturn(List.of(trainPath()));
+        given(transitScheduleQueryService.searchExpressBusTerminal(anyString()))
+                .willReturn(Optional.of(terminal(4000057, "서울고속버스터미널")));
+        // 편이 셋이어야 selectThree가 최저가 축까지 실제로 돈다 — 둘이면 시각순에서 끝나
+        // "최저 요금 라벨이 없다"는 단정이 저절로 통과해 버린다
+        given(transitScheduleQueryService.getIntercityBusSchedule(anyInt(), anyInt(), any(LocalDate.class)))
+                .willReturn(List.of(
+                        bus(2, "16:00", 240, 39700),
+                        bus(1, "17:00", null, null),
+                        bus(1, "18:00", 300, null)));
+
+        TransitCandidateResDTO.Result result =
+                service.calculate(PROJECT_ID, List.of(1L, 2L), LocalTime.of(9, 0));
+
+        Candidate expressBus = candidateOf(result, TransitMode.EXPRESS_BUS);
+        TransitCandidateResDTO.Departure known = expressBus.departures().get(0);
+        assertThat(known.fare()).isEqualTo(39700);
+        assertThat(known.fareConfidence()).isEqualTo(TransitResDTO.FareConfidence.CONFIRMED);
+        assertThat(known.grade()).isEqualTo("우등");
+        assertThat(known.arrivalAt()).isEqualTo("20:00");
+        assertThat(known.durationMin()).isEqualTo(240);
+
+        TransitCandidateResDTO.Departure unknown = expressBus.departures().get(1);
+        assertThat(unknown.fare()).isNull();
+        assertThat(unknown.fareConfidence()).isEqualTo(TransitResDTO.FareConfidence.UNKNOWN);
+        assertThat(unknown.grade()).isEqualTo("일반");
+        // 소요시간을 모르면 도착 시각도 지어내지 않는다
+        assertThat(unknown.arrivalAt()).isNull();
+        assertThat(unknown.durationMin()).isNull();
+        // 요금 없는 편이 0원으로 읽혀 최저가 라벨을 훔치면 안 된다
+        assertThat(expressBus.departures())
+                .allSatisfy(d -> assertThat(d.labels()).doesNotContain("최저 요금"));
+    }
+
+    @Test
+    @DisplayName("시작일이 없는 프로젝트는 시간표를 붙이지 않고 이유를 남긴다")
+    void 시작일이_없으면_시간표를_건너뛴다() {
+        given(blockRepository.findAllByIdInAndProject_IdAndDeletedAtIsNull(List.of(1L, 2L), PROJECT_ID))
+                .willReturn(List.of(seoulBlock(), busanBlock()));
+        givenProject(TransportPref.PUBLIC);  // startDate가 없는 프로젝트
+        given(publicTransitQueryService.getCombinedRoutes(anyDouble(), anyDouble(), anyDouble(), anyDouble()))
+                .willReturn(List.of(trainPath()));
+
+        TransitCandidateResDTO.Result result =
+                service.calculate(PROJECT_ID, List.of(1L, 2L), LocalTime.of(9, 0));
+
+        TransitCandidateResDTO.Segment segment = result.segments().get(0);
+        assertThat(segment.intercity()).isTrue();
+        assertThat(segment.timetableApplied()).isFalse();
+        assertThat(segment.timetableSkipReason())
+                .isEqualTo("프로젝트 시작일이 없어 운행 요일을 확인할 수 없습니다");
+        assertThat(segment.referenceAt()).isNull();
+        // 오늘 요일로 편을 거르고 요금을 고르느니 아예 묻지 않는다
+        verifyNoInteractions(transitScheduleQueryService);
+        // 수단 슬롯은 남되 탈 편이 정해지지 않았으므로 구간(leg)도 그리지 않는다
+        Candidate train = candidateOf(result, TransitMode.TRAIN);
+        assertThat(train.departures()).isEmpty();
+        assertThat(train.legs()).isEmpty();
+        assertThat(train.durationMin()).isNull();
+    }
+
+    @Test
+    @DisplayName("시작일이 없으면 시외 구간마다 같은 이유가 붙는다 — 뒤 구간에 '앞 구간 때문'이 아니다")
+    void 시작일이_없으면_모든_시외_구간에_같은_이유가_붙는다() {
+        given(blockRepository.findAllByIdInAndProject_IdAndDeletedAtIsNull(List.of(1L, 2L, 3L), PROJECT_ID))
+                .willReturn(List.of(seoulBlock(), busanBlock(), jejuBlock()));
+        givenProject(TransportPref.PUBLIC);  // startDate가 없는 프로젝트
+        given(publicTransitQueryService.getCombinedRoutes(anyDouble(), anyDouble(), anyDouble(), anyDouble()))
+                .willReturn(List.of(trainPath()));
+
+        TransitCandidateResDTO.Result result =
+                service.calculate(PROJECT_ID, List.of(1L, 2L, 3L), LocalTime.of(9, 0));
+
+        // 첫 구간에서 시간표를 붙인 적이 없으므로 intercityUsed가 서지 않는다 — 두 번째 구간도
+        // "앞선 시외 구간의 편이 확정되지 않았습니다"가 아니라 진짜 이유를 받아야 한다
+        assertThat(result.segments()).hasSize(2);
+        assertThat(result.segments()).allSatisfy(segment -> {
+            assertThat(segment.intercity()).isTrue();
+            assertThat(segment.timetableApplied()).isFalse();
+            assertThat(segment.timetableSkipReason())
+                    .isEqualTo("프로젝트 시작일이 없어 운행 요일을 확인할 수 없습니다");
+        });
+    }
+
     private Block cheongjuBlock() {
         return blockAt(1L, LAT_CHEONGJU, LNG_CHEONGJU);
     }
 
+    /** id가 3인 이유는 서울(1)→부산(2)→제주(3) 3구간 시나리오와 같은 블록을 쓰기 위해서다 */
     private Block jejuBlock() {
-        return blockAt(2L, LAT_JEJU, LNG_JEJU);
+        return blockAt(3L, LAT_JEJU, LNG_JEJU);
+    }
+
+    private Block seoulBlock() {
+        return blockAt(1L, LAT_SEOUL, LNG_SEOUL);
+    }
+
+    private Block busanBlock() {
+        return blockAt(2L, LAT_BUSAN, LNG_BUSAN);
+    }
+
+    private Block blockA() {
+        return blockAt(1L, LAT_A, LNG_A);
+    }
+
+    private Block blockB() {
+        return blockAt(2L, LAT_B, LNG_B);
+    }
+
+    /** 시외 구간의 여행 날짜(startDate + dayNo-1)를 유도할 수 있는 프로젝트 */
+    private Project publicProject() {
+        return Project.builder()
+                .transportPref(TransportPref.PUBLIC)
+                .startDate(LocalDate.of(2026, 8, 10))
+                .build();
+    }
+
+    /** 기차 경로(pathType=11). ODsay는 시외 경로에 payment를 주지 않는다 */
+    private OdsayRouteResponse.Path trainPath() {
+        return new OdsayRouteResponse.Path(11,
+                new OdsayRouteResponse.Info(157, null, null, 325000, 800, null, null, "서울", "부산"),
+                List.of(new OdsayRouteResponse.SubPath(4, 157, 325000, "서울", "부산", null)));
+    }
+
+    /** 해운 경로(pathType=14). 기차와 마찬가지로 요금도 환승 수도 없다 */
+    private OdsayRouteResponse.Path ferryPath() {
+        return new OdsayRouteResponse.Path(14,
+                new OdsayRouteResponse.Info(150, null, null, 98000, 600, null, null, "목포", "홍도"),
+                List.of(new OdsayRouteResponse.SubPath(7, 150, 98000, "목포항", "홍도항", null)));
+    }
+
+    /** 지하철로 이어지는 시내 경로 — 가장 빠르다 */
+    private OdsayRouteResponse.Path subwayPath() {
+        return new OdsayRouteResponse.Path(1,
+                new OdsayRouteResponse.Info(28, 1600, 4, 11200, 500, 0, 1, "시청", "강남역"),
+                List.of(new OdsayRouteResponse.SubPath(1, 28, 11200, "시청역", "강남역", null)));
+    }
+
+    /** 느리지만 가장 싼 시내 경로 */
+    private OdsayRouteResponse.Path cheapPath() {
+        return new OdsayRouteResponse.Path(1,
+                new OdsayRouteResponse.Info(51, 1200, 12, 12900, 900, 2, 0, "시청", "역삼"),
+                List.of(new OdsayRouteResponse.SubPath(2, 51, 12900, "시청앞", "역삼역", null)));
+    }
+
+    private TransitScheduleResDTO.TerminalSearchResult terminal(int stationId, String stationName) {
+        return TransitScheduleResDTO.TerminalSearchResult.builder()
+                .stationId(stationId)
+                .stationName(stationName)
+                .lat(0)
+                .lng(0)
+                .destinations(List.of())
+                .build();
+    }
+
+    private TransitScheduleResDTO.BusSchedule bus(
+            int busClass, String departureTime, Integer wasteTimeMin, Integer fare) {
+        return TransitScheduleResDTO.BusSchedule.builder()
+                .busClass(busClass)
+                .departureTime(departureTime)
+                .wasteTimeMin(wasteTimeMin)
+                .fare(fare)
+                .build();
+    }
+
+    private TransitScheduleResDTO.TrainSchedule train(
+            String trainClass, int trainNo, String departureTime, String arrivalTime, Integer generalFare) {
+        return TransitScheduleResDTO.TrainSchedule.builder()
+                .railName("경부선")
+                .trainClass(trainClass)
+                .trainNo(trainNo)
+                .departureTime(departureTime)
+                .arrivalTime(arrivalTime)
+                .runDay("매일")
+                .generalFare(generalFare)
+                .specialFare(generalFare + 40_000)
+                .standingFare(generalFare - 5_000)
+                .build();
     }
 
     /** 항공 구간이 섞인 경로. trafficType=6(AIR)이 있으면 육로로 이어지지 않는다는 신호다 */

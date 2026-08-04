@@ -19,7 +19,7 @@ class TransitCandidateReqDTOTest {
     void acceptsUpToThirtyBlocks() {
         List<Long> ids = IntStream.rangeClosed(1, 30).mapToObj(Long::valueOf).toList();
 
-        assertThat(validator.validate(new TransitCandidateReqDTO.Calculate(ids))).isEmpty();
+        assertThat(validator.validate(new TransitCandidateReqDTO.Calculate(ids, null))).isEmpty();
     }
 
     @Test
@@ -27,18 +27,18 @@ class TransitCandidateReqDTOTest {
     void rejectsMoreThanThirtyBlocks() {
         List<Long> ids = IntStream.rangeClosed(1, 31).mapToObj(Long::valueOf).toList();
 
-        assertThat(validator.validate(new TransitCandidateReqDTO.Calculate(ids))).isNotEmpty();
+        assertThat(validator.validate(new TransitCandidateReqDTO.Calculate(ids, null))).isNotEmpty();
     }
 
     @Test
     @DisplayName("blockIds가 null이면 거절한다")
     void rejectsNullBlockIds() {
-        assertThat(validator.validate(new TransitCandidateReqDTO.Calculate(null))).isNotEmpty();
+        assertThat(validator.validate(new TransitCandidateReqDTO.Calculate(null, null))).isNotEmpty();
     }
 
     @Test
     @DisplayName("블록이 하나뿐이어도 요청 자체는 유효하다 — 구간이 안 생길 뿐이다")
     void acceptsSingleBlock() {
-        assertThat(validator.validate(new TransitCandidateReqDTO.Calculate(List.of(1L)))).isEmpty();
+        assertThat(validator.validate(new TransitCandidateReqDTO.Calculate(List.of(1L), null))).isEmpty();
     }
 }
