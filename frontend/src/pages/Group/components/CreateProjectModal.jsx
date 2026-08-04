@@ -1,6 +1,8 @@
 import { useState } from 'react';
 import Modal from '../../My/shared/ui/Modal';
 import { useToastStore } from '../../../global/stores/toastStore';
+import { searchPlaces } from '../../../features/dashboard/map/addressLookup';
+import { createBlock } from '../../../features/dashboard/api/dashboardApi';
 
 // PROJECT.transport_pref는 CAR | PUBLIC 두 값뿐이다 (ERD.md).
 const TRANSPORT_OPTIONS = [
@@ -33,6 +35,34 @@ export default function CreateProjectModal({ open, onClose, onCreate }) {
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
+  // ── 출발지점 (선택) — 카카오 장소 검색으로 고른다 ──
+  // 고르면 프로젝트 생성 직후 그 좌표로 Day 1 09:00 에 "시작 지점" 블록을 만든다.
+  // 좌표를 아는 시점이 여기뿐이라 블록 생성도 여기서 한다 — 대시보드 입장 시
+  // 지오코딩을 다시 하는 방식은 실패·동시 입장 중복의 여지가 있었다.
+  const [depQuery, setDepQuery] = useState('');
+  const [depResults, setDepResults] = useState(null); // null = 검색 전
+  const [depSearching, setDepSearching] = useState(false);
+  const [departure, setDeparture] = useState(null); // 고른 장소 {name, address, lat, lng, placeId}
+
+  async function handleDepartureSearch() {
+    const keyword = depQuery.trim();
+    if (!keyword || depSearching) return;
+    setDepSearching(true);
+    try {
+      setDepResults(await searchPlaces(keyword));
+    } catch (e) {
+      setError(e?.message ?? '장소를 검색하지 못했어요.');
+    } finally {
+      setDepSearching(false);
+    }
+  }
+
+  function pickDeparture(place) {
+    setDeparture(place);
+    setDepResults(null);
+    setDepQuery('');
+  }
+
   function update(field, value) {
     setForm((f) => ({ ...f, [field]: value }));
   }
@@ -41,6 +71,10 @@ export default function CreateProjectModal({ open, onClose, onCreate }) {
     setForm(initialForm);
     setError('');
     setSubmitting(false);
+    setDepQuery('');
+    setDepResults(null);
+    setDepSearching(false);
+    setDeparture(null);
   }
 
   function handleClose() {
@@ -79,7 +113,33 @@ export default function CreateProjectModal({ open, onClose, onCreate }) {
     setError('');
     setSubmitting(true);
     try {
-      await onCreate(form);
+      const project = await onCreate(form);
+
+      // 출발지점을 골랐으면 Day 1 09:00 에 시작 블록을 함께 만든다(선택 사항).
+      // 프로젝트는 이미 생겼으므로 이 단계가 실패해도 생성 자체는 성공으로 두고,
+      // 대시보드에서 직접 추가하라고만 알린다.
+      if (departure && project?.projectId) {
+        try {
+          await createBlock(project.projectId, {
+            cat: 'spot',
+            sub: '시작 지점',
+            name: departure.name,
+            address: departure.address,
+            dur: 60,
+            startMins: 540, // Day 1 09:00
+            endMins: 600,
+            cost: 0,
+            lat: departure.lat,
+            lng: departure.lng,
+            placeId: departure.placeId,
+            source: 'MANUAL',
+            dayNo: 1,
+          });
+        } catch {
+          showToast('출발지점 블록은 만들지 못했어요 — 대시보드에서 직접 추가해주세요.');
+        }
+      }
+
       showToast('새 프로젝트가 생성됐어요 ✈');
       handleClose();
     } catch {
@@ -121,6 +181,68 @@ export default function CreateProjectModal({ open, onClose, onCreate }) {
           />
         </div>
       </div>
+
+      <label>출발지점 (선택)</label>
+      {departure ? (
+        <div className="dep-chip">
+          <span className="dep-chip-main">
+            📍 <b>{departure.name}</b>
+            {departure.address && (
+              <span className="dep-chip-addr">{departure.address}</span>
+            )}
+          </span>
+          <button
+            type="button"
+            className="dep-chip-x"
+            onClick={() => setDeparture(null)}
+            aria-label="출발지점 선택 해제"
+          >
+            ✕
+          </button>
+        </div>
+      ) : (
+        <>
+          <div className="dep-search">
+            <input
+              placeholder="예: 전주역, 김포공항 — 고르면 Day 1에 시작 블록이 놓여요"
+              value={depQuery}
+              onChange={(e) => setDepQuery(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && !e.nativeEvent.isComposing) {
+                  e.preventDefault(); // 폼 submit 으로 새지 않게
+                  handleDepartureSearch();
+                }
+              }}
+            />
+            <button
+              type="button"
+              className="btn btn-gh dep-search-btn"
+              onClick={handleDepartureSearch}
+              disabled={depSearching || !depQuery.trim()}
+            >
+              {depSearching ? '검색 중…' : '장소 검색'}
+            </button>
+          </div>
+          {depResults !== null && (
+            <div className="dep-results">
+              {depResults.map((p) => (
+                <button
+                  key={p.placeId}
+                  type="button"
+                  className="dep-result"
+                  onClick={() => pickDeparture(p)}
+                >
+                  <b>{p.name}</b>
+                  <span>{p.address}</span>
+                </button>
+              ))}
+              {depResults.length === 0 && (
+                <p className="dep-empty">검색 결과가 없어요 — 다른 키워드로 시도해보세요.</p>
+              )}
+            </div>
+          )}
+        </>
+      )}
 
       <div className="r2">
         <div>

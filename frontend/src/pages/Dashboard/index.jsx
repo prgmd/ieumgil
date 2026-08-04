@@ -1012,13 +1012,6 @@ export function DashboardPage() {
   const activeDay = dayKeys.includes(selectedDay) ? selectedDay : dayKeys[0];
   const activeDayIndex = Math.max(0, dayKeys.indexOf(activeDay));
 
-  // Day 시작 시각(타임라인 상단) — 서버에 저장 칸이 없는(ERD) 본인 화면 전용 값.
-  // 기본 09:00 고정이고 상단 ± 버튼으로만 바뀐다. 블록 시각에서 파생하지 않는다 —
-  // 파생하면 블록을 놓을 때마다 새로고침 후 타임라인 시작이 멋대로 움직인다.
-  // 초기값은 비워 두고 스냅샷 시드가 Day 별로 채운다. 시드에 없는 Day(기간 연장 등)는
-  // 읽는 쪽이 전부 `?? 540` 으로 받는다.
-  const [dayStart, setDayStart] = useState({});
-
   // 보드 편집 상태 — 초기값은 비워 두고, 스냅샷이 도착하면 아래 시드 effect 가 채운다.
   const [items, setItems] = useState({});
   const [chains, setChains] = useState({});
@@ -1159,8 +1152,8 @@ export function DashboardPage() {
 
   // 기간이 줄어 사라진 Day 에 남아 있던 블록은 버리지 않고 후보 목록으로 되돌린다 —
   // 서버가 PATCH 응답의 movedToPool 로 알려주는 것과 같은 규칙이다.
-  // (늘어난 Day 는 상태를 만들 필요가 없다. 조회하는 쪽이 전부 `chains[day] || []`,
-  //  `dayStart[day] ?? 540` 로 비어 있는 경우를 받아낸다.)
+  // (늘어난 Day 는 상태를 만들 필요가 없다. 조회하는 쪽이 전부 `chains[day] || []`
+  //  로 비어 있는 경우를 받아낸다.)
   // 시드와 같은 "렌더 중 조건부 setState" 패턴 — effect 로 하면 set-state-in-effect 에
   // 걸리고, 스냅샷 재시드와 같은 렌더에 겹칠 때도 아래 시드 블록이 나중에 실행되므로
   // 서버 진실이 이긴다.
@@ -1309,64 +1302,9 @@ export function DashboardPage() {
     }
   }, [map, chains, activeDay, items]);
 
-  // ── 시작 지점 부트스트랩 (QA ⓓ) ──
-  // 여행지(destination, 예: 전주)가 있는데 보드가 완전히 비어 있으면, 여행지를
-  // 지오코딩해 Day 1 09:00 에 "시작 지점" 블록을 만든다. 블록이 생기면 위의
-  // 핀·카메라 로직이 따라와 지도 기본 위치도 여행지가 된다.
-  // 프로젝트당 한 번만 시도하고, 블록이 하나라도 있으면 절대 만들지 않는다 —
-  // 지웠는데 자꾸 되살아나는 블록만큼 거슬리는 게 없다.
-  const destBootstrapRef = useRef(null); // 시도한 projectId
-  useEffect(() => {
-    if (status !== "loaded" || !project?.destination) return;
-    if (Object.keys(serverItems).length > 0) return;
-    if (destBootstrapRef.current === projectId) return;
-    if (!window.kakao?.maps?.services) return; // SDK 로드 전 — map 준비 후 재시도된다
-    destBootstrapRef.current = projectId;
-
-    const ps = new window.kakao.maps.services.Places();
-    ps.keywordSearch(project.destination, (data, searchStatus) => {
-      if (
-        searchStatus !== window.kakao.maps.services.Status.OK ||
-        !data[0]
-      ) {
-        // 부가 기능이라 화면은 조용히 두되, 진단은 가능하게 남긴다
-        console.warn(
-          `[dashboard] 시작 지점 지오코딩 실패: "${project.destination}" (${searchStatus})`,
-        );
-        return;
-      }
-      const place = data[0];
-      (async () => {
-        try {
-          await blockApi.createBlock(projectId, {
-            cat: "spot",
-            sub: "시작 지점",
-            name: project.destination,
-            address: place.road_address_name || place.address_name || "",
-            detail: "",
-            dur: 60,
-            startMins: 540, // Day 1 09:00
-            endMins: 600,
-            cost: 0,
-            lat: Number(place.y),
-            lng: Number(place.x),
-            placeId: String(place.id),
-            source: "MANUAL",
-            dayNo: 1,
-            orderKey: generateKeyBetween(null, null),
-          });
-          // 자기 BLOCK_CREATED op 는 정책상 스킵되므로 스냅샷 재조회로 반영한다
-          reload();
-          showToast(
-            `시작 지점 '${project.destination}' 블록을 Day 1에 추가했어요`,
-          );
-        } catch (e) {
-          // 실패해도 보드는 멀쩡하다 — 사용자가 직접 만들면 된다
-          console.warn("[dashboard] 시작 지점 블록 생성 실패:", e);
-        }
-      })();
-    });
-  }, [status, project, serverItems, projectId, map, reload, showToast]);
+  // (시작 지점 블록은 이제 프로젝트 생성 모달에서 출발지점을 고를 때 함께
+  //  만들어진다 — 입장 시 지오코딩하던 부트스트랩은 실패·동시 입장 중복의
+  //  여지가 있어 생성 시점으로 옮기며 제거했다. CreateProjectModal 참조.)
 
   // 날짜 팝오버는 Esc 로 닫는다. 브라우저 캘린더를 자동으로 띄우지는 않는다 —
   // 팝오버가 열리자마자 캘린더가 겹쳐 뜨면 시야를 가려서, 입력칸의 달력 표시를
@@ -1544,22 +1482,6 @@ export function DashboardPage() {
       ),
     );
 
-    // Day 시작 시각의 기본은 09:00, 버튼으로만 바뀐다(로컬 값이라 새로고침 시 초기화).
-    // 재시드(날짜 변경 reload·원격 PROJECT_UPDATED 등)에서는 세션 중 조정한 값을
-    // 보존한다 — 예전엔 여기서 무조건 재계산해서 날짜만 바꿔도 09:00 으로 리셋됐다.
-    // 단 시작보다 이른 블록이 있으면 타임라인 위로 잘리므로 그 시각까지 내려 맞춘다.
-    setDayStart((prev) => {
-      const starts = {};
-      for (const [dayKey, chain] of Object.entries(serverChains)) {
-        let start = prev[dayKey] ?? 540;
-        for (const id of chain) {
-          const s = serverItems[id]?.startMins;
-          if (s != null && s < start) start = s;
-        }
-        starts[dayKey] = start;
-      }
-      return starts;
-    });
 
     // 다른 프로젝트에서 넘어온 경우 이전 프로젝트의 Day 탭이 남지 않게 한다
     if (!serverChains[activeDay]) setActiveDay("d1");
@@ -1910,7 +1832,7 @@ export function DashboardPage() {
         const { newItems: resolvedItems, newChain } = resolveOverlaps(
           newItems,
           rebuilt,
-          dayStart[dayKey] ?? 540,
+          0, // 타임라인은 00:00 부터 — 시작 시각 개념이 없어졌다
           null,
         );
 
@@ -1933,9 +1855,6 @@ export function DashboardPage() {
         // 낙관 적용
         setItems(spilled.items);
         setChains(spilled.chains);
-        if (Object.keys(spilled.dayStarts).length > 0) {
-          setDayStart((prev) => ({ ...prev, ...spilled.dayStarts }));
-        }
 
         // ── 서버 반영 (5.5단계): 기존 생성분 삭제 → 밀린 실블록 시각 저장 →
         //    새 교통 블록 생성 → 로컬 임시 id 를 서버 blockId 로 교체 ──
@@ -2013,7 +1932,6 @@ export function DashboardPage() {
       bulkTransitPicker,
       chains,
       items,
-      dayStart,
       dayKeys,
       projectId,
       adoptServerId,
@@ -2113,7 +2031,7 @@ export function DashboardPage() {
         const { newItems: resolvedItems, newChain } = resolveOverlaps(
           newItems,
           currentChain,
-          dayStart[dayKey] ?? 540,
+          0, // 타임라인은 00:00 부터
           null,
         );
 
@@ -2132,9 +2050,6 @@ export function DashboardPage() {
         // 낙관 적용
         setItems(spilled.items);
         setChains(spilled.chains);
-        if (Object.keys(spilled.dayStarts).length > 0) {
-          setDayStart((prev) => ({ ...prev, ...spilled.dayStarts }));
-        }
 
         // ── 서버 반영 (5.5단계): 밀린 이웃 시각 저장 → 생성 → id 교체 ──
         try {
@@ -2200,7 +2115,6 @@ export function DashboardPage() {
       transitPicker,
       items,
       chains,
-      dayStart,
       dayKeys,
       projectId,
       adoptServerId,
@@ -2552,7 +2466,7 @@ export function DashboardPage() {
       const { newItems, newChain } = resolveOverlaps(
         { ...items, [targetId]: merged },
         chains[activeDay],
-        dayStart[activeDay] ?? 540,
+        0, // 타임라인은 00:00 부터
         targetId,
       );
       spilled = splitOverflowAtMidnight(
@@ -2607,9 +2521,6 @@ export function DashboardPage() {
 
         setItems(spilled.items);
         setChains(spilled.chains);
-        if (Object.keys(spilled.dayStarts).length > 0) {
-          setDayStart((prev) => ({ ...prev, ...spilled.dayStarts }));
-        }
         if (handled.size > 0) {
           spillNotice = `저장했어요 ✓ ${midnightSplitNotice(spilled)}`;
         }
@@ -2886,7 +2797,7 @@ export function DashboardPage() {
         const { newItems, newChain } = resolveOverlaps(
           updatedSnapshot,
           chains[activeDay],
-          dayStart[activeDay] ?? 540,
+          0, // 타임라인은 00:00 부터
           resizingState.id,
         );
         // 자정을 넘기는 이동량은 무시한다(정책 A) — 리사이즈가 자정 벽에서 멈춘다
@@ -2909,7 +2820,7 @@ export function DashboardPage() {
       window.removeEventListener("mousemove", handleMouseMove);
       window.removeEventListener("click", handleGlobalClick);
     };
-  }, [resizingState, activeDay, chains, dayStart, persistResize]);
+  }, [resizingState, activeDay, chains, persistResize]);
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
@@ -2917,15 +2828,6 @@ export function DashboardPage() {
       coordinateGetter: sortableKeyboardCoordinates,
     }),
   );
-
-  // 기본값은 09:00(?? 540) 그대로 두고, 버튼으로는 00:00 까지 내릴 수 있다.
-  // 위쪽 한계(23:00)는 그대로 — 그보다 늦게 시작하면 타임라인에 아무것도 못 놓는다.
-  const handleStartChange = (delta) => {
-    setDayStart((prev) => ({
-      ...prev,
-      [activeDay]: Math.max(0, Math.min(1380, (prev[activeDay] ?? 540) + delta)),
-    }));
-  };
 
   const computeDropTarget = useCallback(
     (active) => {
@@ -3001,15 +2903,10 @@ export function DashboardPage() {
 
         const relativeY =
           topY - tlRect.top + (timelineDOMRef.current?.scrollTop || 0);
-        const calcMins =
-          (dayStart[activeDay] ?? 540) +
-          Math.round((relativeY - TL_PAD_TOP) / PX);
+        const calcMins = Math.round((relativeY - TL_PAD_TOP) / PX); // 0 = 00:00
         let dropMins = Math.round(calcMins / SNAP) * SNAP;
         const dur = items[activeIdLocal]?.dur || 60; // 기본 소요시간 60분
-        dropMins = Math.max(
-          dayStart[activeDay] ?? 540,
-          Math.min(dropMins, DAY_END - dur),
-        );
+        dropMins = Math.max(0, Math.min(dropMins, DAY_END - dur));
         return { region: "timeline", dropMins, dur };
       }
 
@@ -3019,7 +2916,7 @@ export function DashboardPage() {
       if (active.data?.current?.from === "search") return { region: null };
       return { region: "discard" };
     },
-    [pool, activeDay, items, dayStart],
+    [pool, items],
   );
 
   // 렌더에서 쓰는 드래그 출처 정보({ from, place })는 state 로 둔다 —
@@ -3226,7 +3123,7 @@ export function DashboardPage() {
       const { newItems, newChain } = resolveOverlaps(
         updatedItems,
         currentDayList,
-        dayStart[activeDay] ?? 540,
+        0, // 타임라인은 00:00 부터
         activeIdLocal,
       );
 
@@ -3251,12 +3148,9 @@ export function DashboardPage() {
       ]);
       if (movedIds.size > 0) showToast(midnightSplitNotice(spilled));
 
-      // 낙관 적용 — 이월이 생긴 Day 는 00:00 부터 보이게 시작 시각도 내린다
+      // 낙관 적용 — 타임라인이 늘 00:00 부터라 이월 블록도 그대로 보인다
       setItems(spilled.items);
       setChains(spilled.chains);
-      if (Object.keys(spilled.dayStarts).length > 0) {
-        setDayStart((prev) => ({ ...prev, ...spilled.dayStarts }));
-      }
       if (isFromPool)
         setPool((prev) => prev.filter((id) => id !== activeIdLocal));
 
@@ -3332,10 +3226,28 @@ export function DashboardPage() {
 
   // Day 개수가 프로젝트 기간을 따라 바뀌므로, 동기화 effect 가 돌기 전 한 프레임 동안
   // 아직 없는 Day 를 가리킬 수 있다 — 기본 09:00 으로 받쳐 NaN 좌표를 만들지 않는다.
-  const timelineStart = dayStart[activeDay] ?? 540;
+  // 타임라인은 항상 00:00~24:00 전체를 덮는다 — "시작 시각" 개념을 없앴다.
+  // 새벽 빈 공간은 아래 자동 스크롤이 첫 블록(없으면 09:00) 위치로 건너뛴다.
+  const timelineStart = 0;
   const timelineEnd = DAY_END;
   const timeSlots = [];
   for (let t = timelineStart; t <= timelineEnd; t += 30) timeSlots.push(t);
+
+  // Day 를 열면 첫 블록(없으면 09:00)이 보이게 스크롤 — Day 당 한 번만.
+  // (chains/items 는 스크롤 계산 재료일 뿐, 바뀔 때마다 스크롤을 뺏으면 안 된다)
+  const lastScrollDayRef = useRef(null);
+  useEffect(() => {
+    if (status !== "loaded") return;
+    const el = timelineDOMRef.current;
+    if (!el || lastScrollDayRef.current === activeDay) return;
+    lastScrollDayRef.current = activeDay;
+    let first = 540;
+    for (const id of chains[activeDay] || []) {
+      const s = items[id]?.startMins;
+      if (s != null && s < first) first = s;
+    }
+    el.scrollTop = Math.max(0, (first - 15) * PX);
+  }, [status, activeDay, chains, items]);
 
   // ── 라이브 커서 송신 (7단계) — 명세의 50ms 스로틀, 대시보드 전역 ──
   // 타임라인 위에서는 "가로 비율 + 분(시각)"(area:"tl") — 상대와 내 스크롤·시작
@@ -3501,8 +3413,6 @@ export function DashboardPage() {
 
   // 스냅샷이 시드되기 전(로딩 중)에는 보드를 그리지 않는다.
   // 에러일 때는 위 effect 가 그룹 페이지로 되돌린다.
-  // dayStart 는 조건에 넣지 않는다 — 기간 미정 프로젝트는 dayKeys(기본 4일)가
-  // 서버 chains 보다 넓어 시드에 없는 Day 가 있을 수 있고, 그때는 `?? 540` 폴백이 받는다.
   if (status !== "loaded") return null;
 
   // 💡 타임라인 드래그 미리보기 합치기
@@ -3667,16 +3577,6 @@ export function DashboardPage() {
                           ? "생성 중..."
                           : "🚗 이동수단 자동 생성"}
                       </button>
-                      <div className="start-ctl">
-                        시작{" "}
-                        <HoldRepeatButton onTrigger={() => handleStartChange(-30)}>
-                          −
-                        </HoldRepeatButton>
-                        <b>{fmtTime(timelineStart)}</b>
-                        <HoldRepeatButton onTrigger={() => handleStartChange(30)}>
-                          ＋
-                        </HoldRepeatButton>
-                      </div>
                     </div>
                   </div>
 

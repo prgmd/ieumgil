@@ -123,6 +123,39 @@ export async function openAddressSearch() {
 }
 
 /**
+ * 카카오 키워드 장소 검색 — 프로젝트 생성 폼의 출발지점 선택처럼 지도 화면이
+ * 없는 곳에서도 쓸 수 있게 SDK 로딩까지 여기서 책임진다.
+ * @returns {Promise<Array<{placeId, name, address, lat, lng}>>} 상위 5건 (없으면 빈 배열)
+ */
+export async function searchPlaces(keyword) {
+  const maps = await ensureKakaoMaps();
+
+  return new Promise((resolve, reject) => {
+    new maps.services.Places().keywordSearch(keyword, (data, status) => {
+      if (status === maps.services.Status.ZERO_RESULT) {
+        resolve([]);
+        return;
+      }
+      if (status !== maps.services.Status.OK) {
+        reject(
+          new Error("장소를 검색하지 못했어요. 잠시 후 다시 시도해주세요."),
+        );
+        return;
+      }
+      resolve(
+        data.slice(0, 5).map((p) => ({
+          placeId: String(p.id),
+          name: p.place_name,
+          address: p.road_address_name || p.address_name || "",
+          lat: Number(p.y),
+          lng: Number(p.x),
+        })),
+      );
+    });
+  });
+}
+
+/**
  * 주소 → 좌표. 카카오 응답은 x=경도·y=위도이고 값이 문자열이다(헷갈리기 쉬운 지점).
  * @returns {Promise<{lat:number, lng:number, roadAddress:string, jibunAddress:string}>}
  * @throws  좌표를 못 찾으면 사용자에게 그대로 보여줄 수 있는 메시지로 던진다
