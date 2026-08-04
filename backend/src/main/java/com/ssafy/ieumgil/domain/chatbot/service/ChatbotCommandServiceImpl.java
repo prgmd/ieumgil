@@ -72,7 +72,12 @@ public class ChatbotCommandServiceImpl implements ChatbotCommandService {
 
         List<Message> messages = new ArrayList<>();
         messages.add(new SystemMessage(ChatbotPrompt.SYSTEM + ChatbotPrompt.modeTail(mode) + buildTripContext(project)));
-        for (ChatTurn turn : history) {
+        // LLM 컨텍스트는 마지막 6턴(=12개 원소)만. 저장은 10턴이지만 프롬프트를 키우면 GMS 비용이 는다.
+        int llmContextElements = 12;
+        List<ChatTurn> recent = history.size() > llmContextElements
+                ? history.subList(history.size() - llmContextElements, history.size())
+                : history;
+        for (ChatTurn turn : recent) {
             messages.add(toMessage(turn));
         }
         messages.add(new UserMessage(request.message()));
@@ -81,17 +86,18 @@ public class ChatbotCommandServiceImpl implements ChatbotCommandService {
         // 보드를 쓰는 곳이 둘(보드 tool·좌표 리졸버)이라 공급자를 하나로 공유해 쿼리를 한 번으로 묶는다
         RequestScopedBoard board = new RequestScopedBoard(() -> blockRepository.findChain(projectId));
         String reply = callGms(messages, resolveTools(board, mode, request, project, candidateCollector));
+        List<ChatbotResDTO.Candidate> candidates = candidateCollector.candidates();
 
         chatHistoryStore.appendExchange(
                 projectId,
                 memberId,
                 new ChatTurn(ChatTurn.ROLE_USER, request.message()),
-                new ChatTurn(ChatTurn.ROLE_ASSISTANT, reply)
+                new ChatTurn(ChatTurn.ROLE_ASSISTANT, reply, candidates)
         );
 
         return ChatbotResDTO.MessageResult.builder()
                 .reply(reply)
-                .candidates(candidateCollector.candidates())
+                .candidates(candidates)
                 .build();
     }
 

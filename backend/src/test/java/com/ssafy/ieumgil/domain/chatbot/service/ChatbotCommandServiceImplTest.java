@@ -434,6 +434,38 @@ class ChatbotCommandServiceImplTest {
         assertThat(result.candidates().get(0).category()).isEqualTo(BlockCategory.FOOD);
     }
 
+    @Test
+    @DisplayName("봇 응답의 후보가 이력의 assistant 턴에 저장된다")
+    void 후보가_이력에_저장된다() {
+        when(chatHistoryStore.loadHistory(1L, 1L)).thenReturn(List.of());
+        Project project = Project.builder().destination("제주도").budgetHeadcount(4).build();
+        when(projectRepository.findByIdAndDeletedAtIsNull(1L)).thenReturn(Optional.of(project));
+        PlaceResDTO.Place place = PlaceResDTO.Place.builder()
+                .placeId("77").name("스타벅스").address("제주 서귀포시")
+                .lat(33.45).lng(126.93).category("카페")
+                .build();
+        when(placeQueryService.searchPlaces(anyString(), any(), any())).thenReturn(List.of(place));
+        // 실제 tool-calling 루프 대신, 모델이 tool을 부른 상황을 tool 직접 호출로 재현한다
+        when(chatModel.call(any(Prompt.class))).thenAnswer(invocation -> {
+            Prompt prompt = invocation.getArgument(0);
+            ToolCallingChatOptions options = (ToolCallingChatOptions) prompt.getOptions();
+            options.getToolCallbacks().stream()
+                    .filter(tc -> tc.getToolDefinition().name().equals("searchPlaces"))
+                    .findFirst()
+                    .orElseThrow()
+                    .call("{\"keyword\":\"카페\"}");
+            return canned("카페 추천드려요");
+        });
+
+        chatbotCommandService.sendMessage(1L, 1L, new ChatbotReqDTO.SendMessage("카페 추천해줘", null, null));
+
+        ArgumentCaptor<ChatTurn> assistant = ArgumentCaptor.forClass(ChatTurn.class);
+        verify(chatHistoryStore).appendExchange(eq(1L), eq(1L), any(ChatTurn.class), assistant.capture());
+        assertThat(assistant.getValue().role()).isEqualTo(ChatTurn.ROLE_ASSISTANT);
+        assertThat(assistant.getValue().candidates()).hasSize(1);
+        assertThat(assistant.getValue().candidates().get(0).placeId()).isEqualTo("77");
+    }
+
     private static final ChatbotReqDTO.MapContext VIEWPORT =
             new ChatbotReqDTO.MapContext(33.44, 126.93, 33.47, 126.95);
 
