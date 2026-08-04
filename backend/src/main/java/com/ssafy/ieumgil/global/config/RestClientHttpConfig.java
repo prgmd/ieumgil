@@ -15,8 +15,10 @@ import java.net.http.HttpClient;
  * 커스터마이저보다 먼저 적용하므로 Boot의 기본 타임아웃/redirect 설정이 유지되고,
  * {@code @RestClientTest}의 MockServerRestClientCustomizer가 이후에 실제 팩토리를
  * 덮어써서 테스트에도 영향 없다.
- * <p>주의: {@code RestClient.create()}로 직접 생성하는 클라이언트(예: KakaoOAuthClient)는
- * 이 설정을 타지 않는다 — Boot의 자동 설정 경로를 거치는 RestClient.Builder만 대상이다.
+ * <p>주의: {@code RestClient.create()}로 직접 생성하면 이 설정도, application.yaml의
+ * 타임아웃도 타지 않는다 — Boot의 자동 설정 경로를 거치는 RestClient.Builder만 대상이다.
+ * 그래서 모든 클라이언트는 Builder를 주입받아 만든다 (KakaoOAuthClient가 create()를 쓰다
+ * 무한 대기 경로가 된 전례가 있다).
  */
 @Configuration
 public class RestClientHttpConfig {

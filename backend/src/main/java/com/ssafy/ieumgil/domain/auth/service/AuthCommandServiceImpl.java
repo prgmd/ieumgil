@@ -14,11 +14,20 @@ import com.ssafy.ieumgil.global.security.jwt.JwtProperties;
 import com.ssafy.ieumgil.global.security.jwt.JwtProvider;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 
+/**
+ * 의도적으로 클래스 레벨 {@code @Transactional}이 없다.
+ *
+ * kakaoLogin은 카카오 외부 HTTP를 2회 호출하는데, 트랜잭션 안에서 부르면 그 왕복 내내
+ * DB 커넥션을 물고 있게 된다 — 카카오가 지연되면 커넥션 풀이 로그인 요청들로 고갈되어
+ * 서비스 전체가 멈춘다. 남은 DB 작업은 조회 1회 + 신규 가입 시 save 1회뿐이라 리포지토리
+ * 자체 트랜잭션으로 충분하고, 둘을 한 트랜잭션으로 묶어도 동시 가입 경합은 어차피 못 막는다
+ * (kakao_id UNIQUE가 최후 방어선). reissue/logout은 Redis만 만져 JPA 트랜잭션이 무의미하다.
+ * 이 클래스에 여러 DB 쓰기가 생기면 그때는 DB 작업만 별도 빈으로 묶어 트랜잭션을 걸 것 —
+ * 외부 호출을 다시 트랜잭션 안으로 들이지 말 것.
+ */
 @Service
 @RequiredArgsConstructor
-@Transactional
 public class AuthCommandServiceImpl implements AuthCommandService {
 
     private static final String DEFAULT_NICKNAME = "이음길 사용자";
