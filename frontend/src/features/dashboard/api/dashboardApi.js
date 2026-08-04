@@ -56,15 +56,20 @@ export function timeToMins(time) {
 /**
  * 570 → "09:30". null 은 그대로 null.
  *
- * 1439(23:59)를 넘는 값은 여기서 자르지 않는다 — 서버가 "HH:mm" 를
- * java.time.LocalTime(최대 23:59)으로 파싱하므로 "24:00" 이상은 저장할 수 없지만,
- * 조용히 잘라내면 종료−시작 == 소요시간 불변식이 깨진다. 넘치는 변경은 애초에
- * 만들어지지 않게 화면에서 막는다(index.jsx 의 chainOverflowsMidnight · DAY_END).
+ * 하루의 끝(1440 = 24:00)만 23:59 로 낮춰 보낸다 — 서버가 "HH:mm" 를
+ * java.time.LocalTime 으로 파싱하는데 그 최대가 23:59 라 "24:00" 은 저장할 수 없다.
+ * 자정까지 꽉 채운 블록은 정상 상태이므로(넘친 부분은 다음 Day 로 쪼개진다) 거부가
+ * 아니라 표현을 낮추는 게 맞다. 화면 종료 시각은 startMins + dur 로 따로 계산하므로
+ * 24:00 으로 그대로 보이고, 서버도 end−start == duration 을 검사하지 않는다.
+ *
+ * 1440 을 넘는 값은 그대로 통과시킨다 — 그건 쪼개기가 빠진 호출부의 버그이고,
+ * 조용히 잘라내 숨기느니 서버 400 으로 드러나는 편이 낫다.
  */
 export function minsToTime(mins) {
   if (mins == null) return null;
-  const h = String(Math.floor(mins / 60)).padStart(2, "0");
-  const m = String(mins % 60).padStart(2, "0");
+  const safe = mins === 1440 ? 1439 : mins;
+  const h = String(Math.floor(safe / 60)).padStart(2, "0");
+  const m = String(safe % 60).padStart(2, "0");
   return `${h}:${m}`;
 }
 
