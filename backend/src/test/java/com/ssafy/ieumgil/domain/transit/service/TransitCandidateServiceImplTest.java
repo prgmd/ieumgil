@@ -9,6 +9,7 @@ import com.ssafy.ieumgil.domain.place.service.PlaceQueryService;
 import com.ssafy.ieumgil.domain.project.entity.Project;
 import com.ssafy.ieumgil.domain.project.entity.TransportPref;
 import com.ssafy.ieumgil.domain.project.repository.ProjectRepository;
+import com.ssafy.ieumgil.domain.transit.dto.OdsayRouteResponse;
 import com.ssafy.ieumgil.domain.transit.dto.TransitCandidateResDTO;
 import com.ssafy.ieumgil.domain.transit.dto.TransitCandidateResDTO.TransitMode;
 import com.ssafy.ieumgil.domain.transit.dto.TransitResDTO;
@@ -85,6 +86,11 @@ class TransitCandidateServiceImplTest {
      */
     private static final double LAT_JUST_UNDER_WALK = LAT_A + 0.01798;
 
+    /** 청주 */
+    private static final double LAT_CHEONGJU = 36.6424, LNG_CHEONGJU = 127.4890;
+    /** 제주 */
+    private static final double LAT_JEJU = 33.4996, LNG_JEJU = 126.5312;
+
     private static final Long PROJECT_ID = 10L;
 
     private Block blockAt(long id, double lat, double lng) {
@@ -101,16 +107,21 @@ class TransitCandidateServiceImplTest {
                 .willReturn(Optional.of(Project.builder().transportPref(pref).build()));
     }
 
+    /** ODsay 경로 목록 응답 하나를 durationMin·fare·intervalMin·distanceM만으로 단순화해 만든다. */
+    private OdsayRouteResponse.Path pathOf(int durationMin, Integer fare, Integer intervalMin, Integer distanceM) {
+        return new OdsayRouteResponse.Path(1,
+                new OdsayRouteResponse.Info(durationMin, fare, intervalMin, distanceM, null, null, null, null, null),
+                List.of());
+    }
+
     @Test
     @DisplayName("PUBLIC 프로젝트의 먼 구간은 대중교통이 기본이다")
     void publicPrefDefaultsToTransit() {
         givenProject(TransportPref.PUBLIC);
         given(blockRepository.findAllByIdInAndProject_IdAndDeletedAtIsNull(List.of(1L, 2L), PROJECT_ID))
                 .willReturn(List.of(blockAt(1L, LAT_A, LNG_A), blockAt(2L, LAT_B, LNG_B)));
-        given(publicTransitQueryService.getCombinedRoute(LAT_A, LNG_A, LAT_B, LNG_B))
-                .willReturn(TransitResDTO.Route.builder()
-                        .durationMin(25).fare(1400).intervalMin(8)
-                        .fareConfidence(TransitResDTO.FareConfidence.CONFIRMED).build());
+        given(publicTransitQueryService.getCombinedRoutes(LAT_A, LNG_A, LAT_B, LNG_B))
+                .willReturn(List.of(pathOf(25, 1400, 8, null)));
         given(placeQueryService.getTaxiRoute(LAT_A, LNG_A, LAT_B, LNG_B))
                 .willReturn(Optional.of(new PlaceResDTO.TaxiRoute(8900, 0, 6800, 12)));
 
@@ -180,10 +191,8 @@ class TransitCandidateServiceImplTest {
         givenProject(TransportPref.PUBLIC);
         given(blockRepository.findAllByIdInAndProject_IdAndDeletedAtIsNull(List.of(1L, 2L), PROJECT_ID))
                 .willReturn(List.of(blockAt(1L, LAT_A, LNG_A), blockAt(2L, LAT_B, LNG_B)));
-        given(publicTransitQueryService.getCombinedRoute(LAT_A, LNG_A, LAT_B, LNG_B))
-                .willReturn(TransitResDTO.Route.builder()
-                        .durationMin(25).fare(1400).intervalMin(8)
-                        .fareConfidence(TransitResDTO.FareConfidence.CONFIRMED).build());
+        given(publicTransitQueryService.getCombinedRoutes(LAT_A, LNG_A, LAT_B, LNG_B))
+                .willReturn(List.of(pathOf(25, 1400, 8, null)));
         given(placeQueryService.getTaxiRoute(LAT_A, LNG_A, LAT_B, LNG_B))
                 .willReturn(Optional.of(new PlaceResDTO.TaxiRoute(8900, 0, 6800, 12)));
 
@@ -202,7 +211,7 @@ class TransitCandidateServiceImplTest {
         givenProject(TransportPref.PUBLIC);
         given(blockRepository.findAllByIdInAndProject_IdAndDeletedAtIsNull(List.of(1L, 2L), PROJECT_ID))
                 .willReturn(List.of(blockAt(1L, LAT_A, LNG_A), blockAt(2L, LAT_B, LNG_B)));
-        given(publicTransitQueryService.getCombinedRoute(LAT_A, LNG_A, LAT_B, LNG_B))
+        given(publicTransitQueryService.getCombinedRoutes(LAT_A, LNG_A, LAT_B, LNG_B))
                 .willThrow(new TransitException(TransitErrorCode.ROUTE_NOT_FOUND));
         given(placeQueryService.getTaxiRoute(LAT_A, LNG_A, LAT_B, LNG_B))
                 .willReturn(Optional.of(new PlaceResDTO.TaxiRoute(8900, 0, 6800, 12)));
@@ -222,7 +231,7 @@ class TransitCandidateServiceImplTest {
         givenProject(TransportPref.PUBLIC);
         given(blockRepository.findAllByIdInAndProject_IdAndDeletedAtIsNull(List.of(1L, 2L), PROJECT_ID))
                 .willReturn(List.of(blockAt(1L, LAT_A, LNG_A), blockAt(2L, LAT_B, LNG_B)));
-        given(publicTransitQueryService.getCombinedRoute(LAT_A, LNG_A, LAT_B, LNG_B))
+        given(publicTransitQueryService.getCombinedRoutes(LAT_A, LNG_A, LAT_B, LNG_B))
                 .willThrow(new TransitException(TransitErrorCode.ROUTE_NOT_FOUND));
         given(placeQueryService.getTaxiRoute(LAT_A, LNG_A, LAT_B, LNG_B))
                 .willReturn(Optional.empty());
@@ -242,14 +251,10 @@ class TransitCandidateServiceImplTest {
         given(blockRepository.findAllByIdInAndProject_IdAndDeletedAtIsNull(List.of(1L, 2L, 1L, 2L), PROJECT_ID))
                 .willReturn(List.of(blockAt(1L, LAT_A, LNG_A), blockAt(2L, LAT_B, LNG_B)));
         // A→B가 두 번, B→A가 한 번 나온다. 방향이 다르면 다른 구간이므로 각각 한 번씩만 불려야 한다.
-        given(publicTransitQueryService.getCombinedRoute(LAT_A, LNG_A, LAT_B, LNG_B))
-                .willReturn(TransitResDTO.Route.builder()
-                        .durationMin(25).fare(1400).intervalMin(8)
-                        .fareConfidence(TransitResDTO.FareConfidence.CONFIRMED).build());
-        given(publicTransitQueryService.getCombinedRoute(LAT_B, LNG_B, LAT_A, LNG_A))
-                .willReturn(TransitResDTO.Route.builder()
-                        .durationMin(27).fare(1400).intervalMin(8)
-                        .fareConfidence(TransitResDTO.FareConfidence.CONFIRMED).build());
+        given(publicTransitQueryService.getCombinedRoutes(LAT_A, LNG_A, LAT_B, LNG_B))
+                .willReturn(List.of(pathOf(25, 1400, 8, null)));
+        given(publicTransitQueryService.getCombinedRoutes(LAT_B, LNG_B, LAT_A, LNG_A))
+                .willReturn(List.of(pathOf(27, 1400, 8, null)));
         given(placeQueryService.getTaxiRoute(LAT_A, LNG_A, LAT_B, LNG_B))
                 .willReturn(Optional.of(new PlaceResDTO.TaxiRoute(8900, 0, 6800, 12)));
         given(placeQueryService.getTaxiRoute(LAT_B, LNG_B, LAT_A, LNG_A))
@@ -258,7 +263,7 @@ class TransitCandidateServiceImplTest {
         TransitCandidateResDTO.Result result = service.calculate(PROJECT_ID, List.of(1L, 2L, 1L, 2L));
 
         assertThat(result.segments()).hasSize(3);
-        verify(publicTransitQueryService, times(1)).getCombinedRoute(LAT_A, LNG_A, LAT_B, LNG_B);
+        verify(publicTransitQueryService, times(1)).getCombinedRoutes(LAT_A, LNG_A, LAT_B, LNG_B);
         verify(placeQueryService, times(1)).getTaxiRoute(LAT_A, LNG_A, LAT_B, LNG_B);
     }
 
@@ -334,10 +339,8 @@ class TransitCandidateServiceImplTest {
         givenProject(TransportPref.PUBLIC);
         given(blockRepository.findAllByIdInAndProject_IdAndDeletedAtIsNull(List.of(1L, 2L), PROJECT_ID))
                 .willReturn(List.of(blockAt(1L, LAT_A, LNG_A), blockAt(2L, LAT_B, LNG_B)));
-        given(publicTransitQueryService.getCombinedRoute(LAT_A, LNG_A, LAT_B, LNG_B))
-                .willReturn(TransitResDTO.Route.builder()
-                        .durationMin(44).fare(1500).intervalMin(9).distanceM(12841)
-                        .fareConfidence(TransitResDTO.FareConfidence.CONFIRMED).build());
+        given(publicTransitQueryService.getCombinedRoutes(LAT_A, LNG_A, LAT_B, LNG_B))
+                .willReturn(List.of(pathOf(44, 1500, 9, 12841)));
 
         TransitCandidateResDTO.Result result = service.calculate(PROJECT_ID, List.of(1L, 2L));
 
@@ -352,10 +355,8 @@ class TransitCandidateServiceImplTest {
         givenProject(TransportPref.PUBLIC);
         given(blockRepository.findAllByIdInAndProject_IdAndDeletedAtIsNull(List.of(1L, 2L), PROJECT_ID))
                 .willReturn(List.of(blockAt(1L, LAT_A, LNG_A), blockAt(2L, LAT_MID, LNG_A)));
-        given(publicTransitQueryService.getCombinedRoute(LAT_A, LNG_A, LAT_MID, LNG_A))
-                .willReturn(TransitResDTO.Route.builder()
-                        .durationMin(9).fare(1400).intervalMin(6)
-                        .fareConfidence(TransitResDTO.FareConfidence.CONFIRMED).build());
+        given(publicTransitQueryService.getCombinedRoutes(LAT_A, LNG_A, LAT_MID, LNG_A))
+                .willReturn(List.of(pathOf(9, 1400, 6, null)));
         given(placeQueryService.getTaxiRoute(LAT_A, LNG_A, LAT_MID, LNG_A))
                 .willReturn(Optional.of(new PlaceResDTO.TaxiRoute(4800, 0, 1500, 6)));
         given(placeQueryService.getWalkingRoute(LAT_A, LNG_A, LAT_MID, LNG_A))
@@ -373,7 +374,7 @@ class TransitCandidateServiceImplTest {
                 .extracting(TransitCandidateResDTO.Candidate::durationMin, TransitCandidateResDTO.Candidate::distanceM)
                 .containsExactly(21, 1400);
         // 2km 미만이므로 도보도 실제로 조회한다 — 세 수단 전부 부른다.
-        verify(publicTransitQueryService).getCombinedRoute(LAT_A, LNG_A, LAT_MID, LNG_A);
+        verify(publicTransitQueryService).getCombinedRoutes(LAT_A, LNG_A, LAT_MID, LNG_A);
         verify(placeQueryService).getTaxiRoute(LAT_A, LNG_A, LAT_MID, LNG_A);
         verify(placeQueryService).getWalkingRoute(LAT_A, LNG_A, LAT_MID, LNG_A);
     }
@@ -406,10 +407,8 @@ class TransitCandidateServiceImplTest {
         givenProject(TransportPref.PUBLIC);
         given(blockRepository.findAllByIdInAndProject_IdAndDeletedAtIsNull(List.of(1L, 2L), PROJECT_ID))
                 .willReturn(List.of(blockAt(1L, LAT_A, LNG_A), blockAt(2L, LAT_JUST_OVER_NEAR, LNG_A)));
-        given(publicTransitQueryService.getCombinedRoute(LAT_A, LNG_A, LAT_JUST_OVER_NEAR, LNG_A))
-                .willReturn(TransitResDTO.Route.builder()
-                        .durationMin(4).fare(1400).intervalMin(6)
-                        .fareConfidence(TransitResDTO.FareConfidence.CONFIRMED).build());
+        given(publicTransitQueryService.getCombinedRoutes(LAT_A, LNG_A, LAT_JUST_OVER_NEAR, LNG_A))
+                .willReturn(List.of(pathOf(4, 1400, 6, null)));
         given(placeQueryService.getTaxiRoute(LAT_A, LNG_A, LAT_JUST_OVER_NEAR, LNG_A))
                 .willReturn(Optional.of(new PlaceResDTO.TaxiRoute(4800, 0, 380, 2)));
         given(placeQueryService.getWalkingRoute(LAT_A, LNG_A, LAT_JUST_OVER_NEAR, LNG_A))
@@ -419,7 +418,7 @@ class TransitCandidateServiceImplTest {
 
         assertThat(result.segments().get(0).candidates()).extracting(TransitCandidateResDTO.Candidate::mode)
                 .containsExactly(TransitMode.TRANSIT, TransitMode.TAXI, TransitMode.WALK);
-        verify(publicTransitQueryService).getCombinedRoute(LAT_A, LNG_A, LAT_JUST_OVER_NEAR, LNG_A);
+        verify(publicTransitQueryService).getCombinedRoutes(LAT_A, LNG_A, LAT_JUST_OVER_NEAR, LNG_A);
         verify(placeQueryService).getTaxiRoute(LAT_A, LNG_A, LAT_JUST_OVER_NEAR, LNG_A);
         verify(placeQueryService).getWalkingRoute(LAT_A, LNG_A, LAT_JUST_OVER_NEAR, LNG_A);
     }
@@ -449,10 +448,8 @@ class TransitCandidateServiceImplTest {
         givenProject(TransportPref.PUBLIC);
         given(blockRepository.findAllByIdInAndProject_IdAndDeletedAtIsNull(List.of(1L, 2L), PROJECT_ID))
                 .willReturn(List.of(blockAt(1L, LAT_A, LNG_A), blockAt(2L, LAT_JUST_OVER_WALK, LNG_A)));
-        given(publicTransitQueryService.getCombinedRoute(LAT_A, LNG_A, LAT_JUST_OVER_WALK, LNG_A))
-                .willReturn(TransitResDTO.Route.builder()
-                        .durationMin(12).fare(1400).intervalMin(7)
-                        .fareConfidence(TransitResDTO.FareConfidence.CONFIRMED).build());
+        given(publicTransitQueryService.getCombinedRoutes(LAT_A, LNG_A, LAT_JUST_OVER_WALK, LNG_A))
+                .willReturn(List.of(pathOf(12, 1400, 7, null)));
         given(placeQueryService.getTaxiRoute(LAT_A, LNG_A, LAT_JUST_OVER_WALK, LNG_A))
                 .willReturn(Optional.of(new PlaceResDTO.TaxiRoute(5800, 0, 2600, 9)));
 
@@ -470,10 +467,8 @@ class TransitCandidateServiceImplTest {
         givenProject(TransportPref.PUBLIC);
         given(blockRepository.findAllByIdInAndProject_IdAndDeletedAtIsNull(List.of(1L, 2L), PROJECT_ID))
                 .willReturn(List.of(blockAt(1L, LAT_A, LNG_A), blockAt(2L, LAT_JUST_UNDER_WALK, LNG_A)));
-        given(publicTransitQueryService.getCombinedRoute(LAT_A, LNG_A, LAT_JUST_UNDER_WALK, LNG_A))
-                .willReturn(TransitResDTO.Route.builder()
-                        .durationMin(12).fare(1400).intervalMin(7)
-                        .fareConfidence(TransitResDTO.FareConfidence.CONFIRMED).build());
+        given(publicTransitQueryService.getCombinedRoutes(LAT_A, LNG_A, LAT_JUST_UNDER_WALK, LNG_A))
+                .willReturn(List.of(pathOf(12, 1400, 7, null)));
         given(placeQueryService.getTaxiRoute(LAT_A, LNG_A, LAT_JUST_UNDER_WALK, LNG_A))
                 .willReturn(Optional.of(new PlaceResDTO.TaxiRoute(5800, 0, 2600, 9)));
         given(placeQueryService.getWalkingRoute(LAT_A, LNG_A, LAT_JUST_UNDER_WALK, LNG_A))
@@ -484,5 +479,91 @@ class TransitCandidateServiceImplTest {
         assertThat(result.segments().get(0).candidates()).extracting(TransitCandidateResDTO.Candidate::mode)
                 .containsExactly(TransitMode.TRANSIT, TransitMode.TAXI, TransitMode.WALK);
         verify(placeQueryService).getWalkingRoute(LAT_A, LNG_A, LAT_JUST_UNDER_WALK, LNG_A);
+    }
+
+    @Test
+    @DisplayName("항공·해운 구간이 있으면 자차·택시에 페리 경고를 붙이고 ESTIMATE로 강등한다")
+    void 도서_목적지는_육로_후보를_강등한다() {
+        givenProject(TransportPref.CAR);
+        given(blockRepository.findAllByIdInAndProject_IdAndDeletedAtIsNull(List.of(1L, 2L), PROJECT_ID))
+                .willReturn(List.of(cheongjuBlock(), jejuBlock()));
+        // ODsay가 항공 경로를 준다 = 육로로 이어지지 않는다
+        given(publicTransitQueryService.getCombinedRoutes(anyDouble(), anyDouble(), anyDouble(), anyDouble()))
+                .willReturn(List.of(airPath()));
+        given(placeQueryService.getTaxiRoute(anyDouble(), anyDouble(), anyDouble(), anyDouble()))
+                .willReturn(Optional.of(new PlaceResDTO.TaxiRoute(556600, 9900, 436642, 356)));
+
+        TransitCandidateResDTO.Result result = service.calculate(PROJECT_ID, List.of(1L, 2L));
+
+        TransitCandidateResDTO.Candidate taxi = candidateOf(result, TransitMode.TAXI);
+        assertThat(taxi.caution()).contains("페리");
+        assertThat(taxi.fareConfidence()).isEqualTo(TransitResDTO.FareConfidence.ESTIMATE);
+
+        TransitCandidateResDTO.Candidate car = candidateOf(result, TransitMode.CAR);
+        assertThat(car.caution()).contains("페리");
+    }
+
+    @Test
+    @DisplayName("육로 경로면 경고가 없고 택시 요금은 CONFIRMED다")
+    void 육로_구간은_강등하지_않는다() {
+        givenProject(TransportPref.CAR);
+        given(blockRepository.findAllByIdInAndProject_IdAndDeletedAtIsNull(List.of(1L, 2L), PROJECT_ID))
+                .willReturn(List.of(blockAt(1L, LAT_A, LNG_A), blockAt(2L, LAT_B, LNG_B)));
+        given(publicTransitQueryService.getCombinedRoutes(anyDouble(), anyDouble(), anyDouble(), anyDouble()))
+                .willReturn(List.of(busPath()));
+        given(placeQueryService.getTaxiRoute(anyDouble(), anyDouble(), anyDouble(), anyDouble()))
+                .willReturn(Optional.of(new PlaceResDTO.TaxiRoute(14900, 0, 10327, 32)));
+
+        TransitCandidateResDTO.Result result = service.calculate(PROJECT_ID, List.of(1L, 2L));
+
+        TransitCandidateResDTO.Candidate taxi = candidateOf(result, TransitMode.TAXI);
+        assertThat(taxi.caution()).isNull();
+        assertThat(taxi.fareConfidence()).isEqualTo(TransitResDTO.FareConfidence.CONFIRMED);
+    }
+
+    @Test
+    @DisplayName("드라이빙 조회가 실패해 available=false인 후보는 페리 경고를 붙이지 않는다")
+    void 조회_실패한_후보는_강등하지_않는다() {
+        givenProject(TransportPref.CAR);
+        given(blockRepository.findAllByIdInAndProject_IdAndDeletedAtIsNull(List.of(1L, 2L), PROJECT_ID))
+                .willReturn(List.of(cheongjuBlock(), jejuBlock()));
+        given(publicTransitQueryService.getCombinedRoutes(anyDouble(), anyDouble(), anyDouble(), anyDouble()))
+                .willReturn(List.of(airPath()));
+        given(placeQueryService.getTaxiRoute(anyDouble(), anyDouble(), anyDouble(), anyDouble()))
+                .willReturn(Optional.empty());
+
+        TransitCandidateResDTO.Result result = service.calculate(PROJECT_ID, List.of(1L, 2L));
+
+        TransitCandidateResDTO.Candidate taxi = candidateOf(result, TransitMode.TAXI);
+        assertThat(taxi.available()).isFalse();
+        assertThat(taxi.caution()).isNull();
+    }
+
+    private Block cheongjuBlock() {
+        return blockAt(1L, LAT_CHEONGJU, LNG_CHEONGJU);
+    }
+
+    private Block jejuBlock() {
+        return blockAt(2L, LAT_JEJU, LNG_JEJU);
+    }
+
+    /** 항공 구간이 섞인 경로. trafficType=6(AIR)이 있으면 육로로 이어지지 않는다는 신호다 */
+    private OdsayRouteResponse.Path airPath() {
+        return new OdsayRouteResponse.Path(20,
+                new OdsayRouteResponse.Info(356, null, null, 436642, null, null, null, "청주", "제주"),
+                List.of(new OdsayRouteResponse.SubPath(6, 356, 436642, "청주공항", "제주공항", null)));
+    }
+
+    /** 버스로만 이어지는 순수 육로 경로 */
+    private OdsayRouteResponse.Path busPath() {
+        return new OdsayRouteResponse.Path(1,
+                new OdsayRouteResponse.Info(32, 14900, 10, 10327, 200, 0, 0, "시청", "강남역"),
+                List.of(new OdsayRouteResponse.SubPath(2, 32, 10327, "시청", "강남역", null)));
+    }
+
+    private TransitCandidateResDTO.Candidate candidateOf(TransitCandidateResDTO.Result result, TransitMode mode) {
+        return result.segments().get(0).candidates().stream()
+                .filter(c -> c.mode() == mode)
+                .findFirst().orElseThrow();
     }
 }

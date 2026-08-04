@@ -8,9 +8,11 @@ import com.ssafy.ieumgil.domain.project.entity.Project;
 import com.ssafy.ieumgil.domain.project.entity.TransportPref;
 import com.ssafy.ieumgil.domain.project.exception.ProjectErrorCode;
 import com.ssafy.ieumgil.domain.project.repository.ProjectRepository;
+import com.ssafy.ieumgil.domain.transit.dto.OdsayRouteResponse;
 import com.ssafy.ieumgil.domain.transit.dto.TransitCandidateResDTO;
 import com.ssafy.ieumgil.domain.transit.dto.TransitCandidateResDTO.Candidate;
 import com.ssafy.ieumgil.domain.transit.dto.TransitCandidateResDTO.TransitMode;
+import com.ssafy.ieumgil.domain.transit.dto.TransitLegResDTO;
 import com.ssafy.ieumgil.domain.transit.dto.TransitResDTO;
 import com.ssafy.ieumgil.domain.transit.exception.TransitErrorCode;
 import com.ssafy.ieumgil.domain.transit.exception.TransitException;
@@ -57,6 +59,8 @@ public class TransitCandidateServiceImpl implements TransitCandidateService {
     private static final double FUEL_EFFICIENCY_KM_PER_L = 12.0;
     private static final int MAX_CONCURRENT_CALLS = 8;
     private static final Duration OVERALL_TIMEOUT = Duration.ofSeconds(20);
+    private static final String FERRY_CAUTION =
+            "페리 승선이 필요합니다. 배 시간표와 운임은 포함되지 않았습니다";
 
     private final BlockRepository blockRepository;
     private final ProjectRepository projectRepository;
@@ -222,20 +226,57 @@ public class TransitCandidateServiceImpl implements TransitCandidateService {
 
     private List<Candidate> calculateLeg(Leg leg, List<TransitMode> modes) {
         // 택시와 자차는 같은 카카오 길찾기 응답을 나눠 쓴다 — 요금 계산만 다를 뿐 경로는 같다.
-        PlaceResDTO.TaxiRoute driving = needsDriving(modes) ? callDriving(leg) : null;
+        boolean needsDriving = needsDriving(modes);
+        PlaceResDTO.TaxiRoute driving = needsDriving ? callDriving(leg) : null;
+        // 대중교통 후보(TRANSIT)와 도서 목적지 판정(자차·택시 강등)이 같은 대중교통 경로 목록을
+        // 쓴다 — 여기서 한 번만 물어 두 자리에서 나눠 쓴다. 둘 다 필요 없는 leg(도보만)라면 부르지 않는다.
+        boolean needsCombinedRoutes = modes.contains(TransitMode.TRANSIT) || needsDriving;
+        List<OdsayRouteResponse.Path> combinedRoutes = needsCombinedRoutes ? combinedRoutesFor(leg) : null;
+        // 도서 목적지 판정: ODsay 대중교통 경로에 항공·해운 구간이 있으면 자차·택시는 육로로 이어지지 않는다.
+        boolean nonRoad = needsDriving && hasNonRoadLeg(combinedRoutes);
 
         List<Candidate> candidates = new ArrayList<>();
         for (TransitMode mode : modes) {
-            candidates.add(switch (mode) {
-                case TRANSIT -> transitCandidate(leg);
+            Candidate candidate = switch (mode) {
+                case TRANSIT -> transitCandidate(combinedRoutes);
                 case TAXI -> taxiCandidate(driving);
                 case CAR -> carCandidate(driving);
                 case WALK -> walkCandidate(leg);
                 // modesFor()는 시내 구간에서 이 넷만 넘긴다 — 시외 수단은 여기 닿지 않는다.
                 case TRAIN, EXPRESS_BUS, AIR -> throw new IllegalStateException("시내 구간에 시외 수단: " + mode);
-            });
+            };
+            if (nonRoad && (mode == TransitMode.CAR || mode == TransitMode.TAXI) && candidate.available()) {
+                candidate = degradeForNonRoad(candidate);
+            }
+            candidates.add(candidate);
         }
         return candidates;
+    }
+
+    /**
+     * 대중교통 경로 목록. {@link #transitCandidate}와 {@link #hasNonRoadLeg}가 같은 leg에 대해
+     * 이 결과를 나눠 쓴다 — 따로 부르면 같은 leg를 ODsay에 두 번 묻게 된다.
+     */
+    private List<OdsayRouteResponse.Path> combinedRoutesFor(Leg leg) {
+        try {
+            return publicTransitQueryService
+                    .getCombinedRoutes(leg.fromLat(), leg.fromLng(), leg.toLat(), leg.toLng());
+        } catch (RuntimeException e) {
+            log.warn("대중교통 경로 목록 조회 실패: leg={}", leg, e);
+            return null;
+        }
+    }
+
+    /**
+     * 이 구간이 육로로 이어지는지. combinedRoutes에 담긴 <b>모든</b> 경로를 본다 — 첫 번째
+     * 경로만 보면 페리로만 이어지는 대안을 놓칠 수 있다.
+     */
+    private boolean hasNonRoadLeg(List<OdsayRouteResponse.Path> combinedRoutes) {
+        if (combinedRoutes == null) {
+            return false;
+        }
+        return combinedRoutes.stream()
+                .anyMatch(path -> TransitLegResDTO.hasNonRoadLeg(TransitLegResDTO.fromSubPaths(path.subPath())));
     }
 
     /** 앞에서부터 살아있는 첫 후보가 기본이다. 전부 실패했으면 null — 프론트가 그 구간만 비워 둔다. */
@@ -263,24 +304,29 @@ public class TransitCandidateServiceImpl implements TransitCandidateService {
         }
     }
 
-    private Candidate transitCandidate(Leg leg) {
-        try {
-            TransitResDTO.Route route = publicTransitQueryService
-                    .getCombinedRoute(leg.fromLat(), leg.fromLng(), leg.toLat(), leg.toLng());
-            return Candidate.builder()
-                    .mode(TransitMode.TRANSIT)
-                    .label(TransitMode.TRANSIT.label())
-                    .available(true)
-                    .durationMin(route.durationMin())
-                    .fare(route.fare())
-                    .fareConfidence(route.fareConfidence())
-                    .intervalMin(route.intervalMin())
-                    .distanceM(route.distanceM())
-                    .build();
-        } catch (RuntimeException e) {
-            log.warn("대중교통 경로 조회 실패: leg={}", leg, e);
+    /**
+     * combinedRoutes는 {@link #calculateLeg}가 이미 받아 둔 결과를 공유받는다 — 조회 실패는
+     * {@link #combinedRoutesFor}에서 이미 로그를 남기고 null을 준 상태다.
+     */
+    private Candidate transitCandidate(List<OdsayRouteResponse.Path> combinedRoutes) {
+        if (combinedRoutes == null || combinedRoutes.isEmpty()) {
             return Candidate.unavailable(TransitMode.TRANSIT);
         }
+        // getCombinedRoute()와 동일하게 첫 번째 경로를 대표값으로 쓴다.
+        OdsayRouteResponse.Info info = combinedRoutes.get(0).info();
+        Integer fare = info.payment();
+        return Candidate.builder()
+                .mode(TransitMode.TRANSIT)
+                .label(TransitMode.TRANSIT.label())
+                .available(true)
+                .durationMin(info.totalTime())
+                .fare(fare)
+                .fareConfidence(fare == null
+                        ? TransitResDTO.FareConfidence.UNKNOWN
+                        : TransitResDTO.FareConfidence.CONFIRMED)
+                .intervalMin(info.totalIntervalTime())
+                .distanceM(info.totalDistance())
+                .build();
     }
 
     private Candidate taxiCandidate(PlaceResDTO.TaxiRoute driving) {
@@ -314,6 +360,38 @@ public class TransitCandidateServiceImpl implements TransitCandidateService {
                 .fare(driving.toll() + estimateFuelCost(driving.distance()))
                 .fareConfidence(TransitResDTO.FareConfidence.ESTIMATE)
                 .distanceM(driving.distance())
+                .build();
+    }
+
+    /**
+     * 육로로 이어지지 않는 구간의 자차·택시를 강등한다.
+     *
+     * <p>후보에서 빼지 않는다 — 차를 배에 싣고 제주에 가는 계획은 실제로 존재하고, 서버가
+     * 사용자의 선택을 대신 막을 이유가 없다. 다만 카카오는 페리 시간표·운임을 모른 채
+     * 도로 주행만 계산해 {@code result_code=0}을 반환하므로(청주→제주 436km·5시간 55분·
+     * 556,600원) 그 값을 확정으로 내보내면 안 된다.
+     *
+     * <p>{@code CONFIRMED}는 "외부 API가 줬다"가 아니라 "이 값을 그대로 믿어도 된다"는
+     * 뜻이어야 한다.
+     */
+    private Candidate degradeForNonRoad(Candidate candidate) {
+        return Candidate.builder()
+                .mode(candidate.mode())
+                .label(candidate.label())
+                .available(candidate.available())
+                .durationMin(candidate.durationMin())
+                .fare(candidate.fare())
+                .fareConfidence(candidate.fare() == null
+                        ? TransitResDTO.FareConfidence.UNKNOWN
+                        : TransitResDTO.FareConfidence.ESTIMATE)
+                .intervalMin(candidate.intervalMin())
+                .distanceM(candidate.distanceM())
+                .labels(candidate.labels())
+                .transferCount(candidate.transferCount())
+                .walkMeters(candidate.walkMeters())
+                .caution(FERRY_CAUTION)
+                .legs(candidate.legs())
+                .departures(candidate.departures())
                 .build();
     }
 
