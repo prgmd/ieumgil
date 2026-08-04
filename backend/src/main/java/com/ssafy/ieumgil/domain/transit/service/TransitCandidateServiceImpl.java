@@ -132,6 +132,8 @@ public class TransitCandidateServiceImpl implements TransitCandidateService {
         SegmentClock clock = null;
         boolean intercityUsed = false;
         List<TransitCandidateResDTO.Segment> segments = new ArrayList<>();
+        // 자차·대중교통을 모두 고른 프로젝트는 구간마다 기본 수단을 강제하지 않는다 — 사용자가 그때그때 고른다.
+        boolean multiPref = project.getTransportPrefs() != null && project.getTransportPrefs().size() > 1;
 
         for (Pair pair : pairs) {
             int dayNo = dayNoOf(pair.from());
@@ -148,24 +150,24 @@ public class TransitCandidateServiceImpl implements TransitCandidateService {
 
             TransitCandidateResDTO.Segment segment;
             if (!road.isIntercity()) {
-                segment = citySegment(pair, road);
+                segment = citySegment(pair, road, multiPref);
             } else if (intercityUsed) {
-                segment = intercitySegmentWithoutTimetable(pair, road, SKIP_REASON_PRIOR_INTERCITY);
+                segment = intercitySegmentWithoutTimetable(pair, road, SKIP_REASON_PRIOR_INTERCITY, multiPref);
             } else {
                 LocalDate date = dateOf(project, pair);
                 Duration timetableBudget = remainingBudget(timetableDeadline);
                 if (date == null) {
                     // 시작일을 모르면 다음 시외 구간도 마찬가지다 — intercityUsed를 세우지 않아
                     // 뒤 구간에도 "앞 구간 때문"이 아닌 진짜 이유가 붙는다.
-                    segment = intercitySegmentWithoutTimetable(pair, road, SKIP_REASON_NO_START_DATE);
+                    segment = intercitySegmentWithoutTimetable(pair, road, SKIP_REASON_NO_START_DATE, multiPref);
                 } else if (timetableBudget.isZero()) {
                     // 다른 Day(또는 이 Day 안의 앞선 조회)가 공유 예산을 이미 다 썼다. intercityUsed를
                     // 세우지 않는다 — 시작일 미상 케이스와 같은 이유로, 뒤따르는 시외 구간도 "앞 구간
                     // 확정" 대신 같은 예산 소진 이유를 받아야 한다(예산은 요청 전체가 공유하므로 이후
                     // Day도 마찬가지다).
-                    segment = intercitySegmentWithoutTimetable(pair, road, SKIP_REASON_TIMETABLE_BUDGET_EXHAUSTED);
+                    segment = intercitySegmentWithoutTimetable(pair, road, SKIP_REASON_TIMETABLE_BUDGET_EXHAUSTED, multiPref);
                 } else {
-                    segment = intercitySegment(pair, road, clock.reference(), date, timetableBudget);
+                    segment = intercitySegment(pair, road, clock.reference(), date, timetableBudget, multiPref);
                     intercityUsed = true;
                 }
             }
@@ -410,7 +412,8 @@ public class TransitCandidateServiceImpl implements TransitCandidateService {
      * 고속버스 39,700원 4시간은 사용자가 실제로 저울질하는 대안이라 하나로 뭉치면 그 선택이 사라진다.
      */
     private TransitCandidateResDTO.Segment intercitySegment(
-            Pair pair, RoadResult road, LocalTime reference, LocalDate date, Duration timetableBudget) {
+            Pair pair, RoadResult road, LocalTime reference, LocalDate date, Duration timetableBudget,
+            boolean multiPref) {
         String from = road.firstStartStation();
         String to = road.lastEndStation();
 
@@ -430,7 +433,7 @@ public class TransitCandidateServiceImpl implements TransitCandidateService {
                 .intercity(true)
                 .timetableApplied(true)
                 .referenceAt(reference.format(HHMM))
-                .defaultMode(defaultModeOf(candidates))
+                .defaultMode(multiPref ? null : defaultModeOf(candidates))
                 .candidates(candidates)
                 .build();
     }
@@ -446,7 +449,7 @@ public class TransitCandidateServiceImpl implements TransitCandidateService {
      * 조회를 안 한 것이지 실패한 것이 아니므로 {@code available=true}다.
      */
     private TransitCandidateResDTO.Segment intercitySegmentWithoutTimetable(
-            Pair pair, RoadResult road, String reason) {
+            Pair pair, RoadResult road, String reason, boolean multiPref) {
         List<Candidate> candidates = new ArrayList<>();
         for (TransitMode mode : INTERCITY_MODES) {
             candidates.add(departureCandidate(
@@ -461,12 +464,12 @@ public class TransitCandidateServiceImpl implements TransitCandidateService {
                 .timetableApplied(false)
                 .timetableSkipReason(reason)
                 .referenceAt(null)
-                .defaultMode(defaultModeOf(candidates))
+                .defaultMode(multiPref ? null : defaultModeOf(candidates))
                 .candidates(candidates)
                 .build();
     }
 
-    private TransitCandidateResDTO.Segment citySegment(Pair pair, RoadResult road) {
+    private TransitCandidateResDTO.Segment citySegment(Pair pair, RoadResult road, boolean multiPref) {
         List<Candidate> candidates = new ArrayList<>();
         if (road.transitRequested()) {
             candidates.addAll(transitCandidates(road.paths()));
@@ -478,7 +481,7 @@ public class TransitCandidateServiceImpl implements TransitCandidateService {
                 .toBlockId(pair.to().getId())
                 .intercity(false)
                 .timetableApplied(false)
-                .defaultMode(defaultModeOf(candidates))
+                .defaultMode(multiPref ? null : defaultModeOf(candidates))
                 .candidates(candidates)
                 .build();
     }
