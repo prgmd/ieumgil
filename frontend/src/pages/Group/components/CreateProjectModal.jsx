@@ -20,7 +20,7 @@ const initialForm = {
   budgetHeadcount: 4,
   startDate: todayISO(),
   endDate: todayISO(),
-  transportPref: '', // 기본값 없음 — 사용자가 직접 골라야 함
+  transportPrefs: [], // 기본값 없음 — 사용자가 직접 골라야 함
   targetBudget: '',
 };
 
@@ -97,7 +97,7 @@ export default function CreateProjectModal({ open, onClose, onCreate }) {
     }
     // 서버가 필수로 받는다(ProjectReqDTO.Create @NotNull). 빈 값으로 보내면
     // enum 변환이 실패해 COMMON400_4 로 떨어지므로 여기서 먼저 막는다.
-    if (!form.transportPref) {
+    if (form.transportPrefs.length < 1) {
       setError('주요 이동수단을 선택해주세요.');
       return;
     }
@@ -266,22 +266,26 @@ export default function CreateProjectModal({ open, onClose, onCreate }) {
 
       <div className="r2">
         <div>
-          <label>주요 이동수단 *</label>
-          <select
-            value={form.transportPref}
-            onChange={(e) => update('transportPref', e.target.value)}
-          >
-            {/* 초기값은 빈 문자열로 두고 되돌아갈 수는 없게 한다 —
-                기본값을 정해주지 않고 사용자가 직접 고르게 하려는 의도. */}
-            <option value="" disabled>
-              선택해주세요
-            </option>
-            {TRANSPORT_OPTIONS.map((t) => (
-              <option key={t.value} value={t.value}>
-                {t.label}
-              </option>
+          <fieldset>
+            <legend>주요 이동수단 * (복수 선택)</legend>
+            {TRANSPORT_OPTIONS.map((opt) => (
+              <label key={opt.value}>
+                <input
+                  type="checkbox"
+                  checked={form.transportPrefs.includes(opt.value)}
+                  onChange={(e) => {
+                    setForm((f) => ({
+                      ...f,
+                      transportPrefs: e.target.checked
+                        ? [...f.transportPrefs, opt.value]
+                        : f.transportPrefs.filter((v) => v !== opt.value),
+                    }));
+                  }}
+                />
+                {opt.label}
+              </label>
             ))}
-          </select>
+          </fieldset>
         </div>
         <div>
           <label>목표 예산 (총액, 원)</label>

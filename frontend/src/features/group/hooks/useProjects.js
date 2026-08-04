@@ -57,7 +57,7 @@ export function useProjects(groupId) {
         endDate: form.endDate,
         budgetHeadcount: Number(form.budgetHeadcount),
         targetBudget: form.targetBudget === "" ? null : Number(form.targetBudget),
-        transportPref: form.transportPref,
+        transportPrefs: form.transportPrefs,
       };
 
       // POST 응답은 { projectId } 하나뿐이므로(my-group-api.md) 카드에 필요한
