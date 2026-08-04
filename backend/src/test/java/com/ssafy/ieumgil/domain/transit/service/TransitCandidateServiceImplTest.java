@@ -116,8 +116,12 @@ class TransitCandidateServiceImplTest {
     private static final Long PROJECT_ID = 10L;
 
     private Block blockAt(long id, double lat, double lng) {
+        return blockAt(id, lat, lng, 1);
+    }
+
+    private Block blockAt(long id, double lat, double lng, int dayNo) {
         return Block.builder()
-                .id(id).dayNo(1).orderKey("a" + id).name("블록" + id)
+                .id(id).dayNo(dayNo).orderKey("a" + id).name("블록" + id)
                 .category(BlockCategory.SPOT).durationMin(60).budget(0)
                 .lat(BigDecimal.valueOf(lat)).lng(BigDecimal.valueOf(lng))
                 .source(BlockSource.KAKAO)
@@ -664,6 +668,48 @@ class TransitCandidateServiceImplTest {
         // 고를 편이 없는 수단은 기본이 될 수 없다
         assertThat(result.segments().get(1).defaultMode()).isNotIn(
                 TransitMode.TRAIN, TransitMode.EXPRESS_BUS, TransitMode.AIR);
+    }
+
+    @Test
+    @DisplayName("다른 Day의 시외 구간은 앞 Day 때문에 건너뛰지 않고 자기 시간표를 받는다")
+    void 다른_Day의_시외_구간은_자기_시간표를_받는다() {
+        // Day1: 서울(1)->부산(2). Day2: 부산(2)->제주(3) — blockIds에 2를 두 번 이어 붙여
+        // "이동 없는" 경계 쌍으로 만든다(pairsOf는 같은 id가 연달아 오면 구간을 만들지 않는다).
+        // 실제로는 요청 크기 상한 30의 근거("3일 일정에 Day당 10블록")대로 여러 Day를 한
+        // 체인으로 보낸 상황을 재현한다.
+        given(blockRepository.findAllByIdInAndProject_IdAndDeletedAtIsNull(List.of(1L, 2L, 2L, 3L), PROJECT_ID))
+                .willReturn(List.of(
+                        blockAt(1L, LAT_SEOUL, LNG_SEOUL, 1),
+                        blockAt(2L, LAT_BUSAN, LNG_BUSAN, 2),
+                        blockAt(3L, LAT_JEJU, LNG_JEJU, 2)));
+        given(projectRepository.findByIdAndDeletedAtIsNull(PROJECT_ID)).willReturn(Optional.of(publicProject()));
+        given(publicTransitQueryService.getCombinedRoutes(anyDouble(), anyDouble(), anyDouble(), anyDouble()))
+                .willReturn(List.of(trainPath()));
+        given(transitScheduleQueryService.searchTrainStation(anyString()))
+                .willReturn(Optional.of(terminal(3300128, "서울")));
+        given(transitScheduleQueryService.getTrainSchedule(anyInt(), anyInt(), any(LocalDate.class)))
+                .willReturn(List.of(train("KTX", 1, "16:00", "18:37", 59800)));
+
+        TransitCandidateResDTO.Result result =
+                service.calculate(PROJECT_ID, List.of(1L, 2L, 2L, 3L), LocalTime.of(9, 0));
+
+        assertThat(result.segments()).hasSize(2);
+        TransitCandidateResDTO.Segment day1Segment = result.segments().get(0);
+        TransitCandidateResDTO.Segment day2Segment = result.segments().get(1);
+
+        assertThat(day1Segment.timetableApplied()).isTrue();
+        assertThat(day1Segment.referenceAt()).isEqualTo("09:45");
+
+        // 고쳐지기 전에는 day2Segment가 timetableApplied=false·
+        // skipReason="앞선 시외 구간의 편이 확정되지 않았습니다"·referenceAt=null이었다.
+        assertThat(day2Segment.timetableApplied()).isTrue();
+        assertThat(day2Segment.timetableSkipReason()).isNull();
+        // Day2도 자기 dayStart(09:00)에서 새로 45분 버퍼를 계산한다 — Day1의 누적 시각을
+        // 물려받지 않는다.
+        assertThat(day2Segment.referenceAt()).isEqualTo("09:45");
+        // Day마다 시간표를 한 번씩, 총 두 번 조회한다
+        verify(transitScheduleQueryService, times(2))
+                .getTrainSchedule(anyInt(), anyInt(), any(LocalDate.class));
     }
 
     @Test

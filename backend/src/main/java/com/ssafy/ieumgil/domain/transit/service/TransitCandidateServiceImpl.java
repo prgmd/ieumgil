@@ -112,12 +112,27 @@ public class TransitCandidateServiceImpl implements TransitCandidateService {
         // 1단: 구간마다 시내 경로·자차·택시를 병렬로 모은다. 시외 여부는 여기서 받은 pathType으로 판정된다.
         Map<Leg, RoadResult> roadByLeg = fetchRoadResults(distinctLegsOf(pairs), project.getTransportPref());
 
-        // 2단: 순서대로 훑으며 기준 시각을 누적하고, 첫 시외 구간에만 시간표를 붙인다.
-        SegmentClock clock = new SegmentClock(dayStart == null ? DEFAULT_DAY_START : dayStart);
+        // 2단: 순서대로 훑으며 기준 시각을 누적하고, Day마다 첫 시외 구간에만 시간표를 붙인다.
+        // blockIds는 여러 Day를 한 체인으로 이어 보낼 수 있다(요청 크기 상한 30의 근거 자체가
+        // "3일 일정에 Day당 10블록"이다) — 그래서 기준 시각과 시외 확정 플래그는 요청 전체가 아니라
+        // Day 하나에서만 유지해야 한다. 그렇지 않으면 Day2의 시외 구간이 Day1의 확정 때문에
+        // "앞선 시외 구간의 편이 확정되지 않았습니다"로 잘못 건너뛰어진다.
+        Integer currentDayNo = null;
+        SegmentClock clock = null;
         boolean intercityUsed = false;
         List<TransitCandidateResDTO.Segment> segments = new ArrayList<>();
 
         for (Pair pair : pairs) {
+            int dayNo = dayNoOf(pair.from());
+            if (!Objects.equals(currentDayNo, dayNo)) {
+                // 새 Day로 넘어가면 기준 시각과 시외 확정 플래그를 다시 시작한다 — 이전 Day가
+                // 얼마나 늦게 끝났든 이 Day와는 무관하다. dayStart는 요청 하나에 하나뿐이라
+                // 모든 Day에 같은 값(또는 기본값)을 그대로 적용한다 — Day별로 다른 시작 시각을
+                // 받으려면 요청 계약이 바뀌어야 한다(별도 논의 필요).
+                clock = new SegmentClock(dayStart == null ? DEFAULT_DAY_START : dayStart);
+                intercityUsed = false;
+                currentDayNo = dayNo;
+            }
             RoadResult road = roadByLeg.get(legOf(pair.from(), pair.to()));
 
             TransitCandidateResDTO.Segment segment;
@@ -156,8 +171,12 @@ public class TransitCandidateServiceImpl implements TransitCandidateService {
         if (project.getStartDate() == null) {
             return null;
         }
-        int dayNo = pair.from().getDayNo() == null ? 1 : pair.from().getDayNo();
-        return project.getStartDate().plusDays(dayNo - 1L);
+        return project.getStartDate().plusDays(dayNoOf(pair.from()) - 1L);
+    }
+
+    /** 블록의 dayNo. 미설정(null)이면 1일차로 본다 — Day 경계 판정과 여행 날짜 계산이 같은 규칙을 쓴다. */
+    private int dayNoOf(Block block) {
+        return block.getDayNo() == null ? 1 : block.getDayNo();
     }
 
     /** 요청 순서대로 연속 쌍을 만든다. 같은 블록이 연달아 오면 이동이 없으므로 구간을 만들지 않는다. */
