@@ -20,7 +20,7 @@ import static org.mockito.Mockito.when;
 
 /**
  * Redis 자체가 죽었을 때의 강등 — 실제 Redis로는 재현할 수 없어 목으로 본다.
- * 키 설계·TTL·6턴 창·자가 치유 같은 실동작은 {@link ChatHistoryStoreIntegrationTest}에서 본다.
+ * 키 설계·TTL·10턴 창·자가 치유 같은 실동작은 {@link ChatHistoryStoreIntegrationTest}에서 본다.
  */
 @ExtendWith(MockitoExtension.class)
 class ChatHistoryStoreTest {
