@@ -3110,7 +3110,11 @@ export function DashboardPage() {
         endMins: item.startMins + item.dur,
       };
     })
-    .filter(Boolean);
+    .filter(Boolean)
+    // 시각 순 정렬 — 체인은 orderKey 순서라 이동 이력에 따라 시각 순서와 어긋날
+    // 수 있는데, 이 배열의 "다음 항목"이 이동 버튼(🚗) 위치·간격과 boundTop 의
+    // 기준이라 시간이 곧 순서여야 한다 (버튼이 엉뚱한 높이에 그려지던 버그)
+    .sort((a, b) => a.startMins - b.startMins);
 
   // 편집 배지에 쓸 이름 — 락 소유자가 멤버 목록에 없으면(탈퇴 직후 등) 뭉뚱그린다
   const nicknameOf = (memberId) =>
