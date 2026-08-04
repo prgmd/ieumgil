@@ -311,7 +311,7 @@
       "endDate": "2026-08-13",
       "destination": "제주",
       "budgetHeadcount": 4,
-      "transportPref": "CAR",
+      "transportPrefs": ["CAR"],
       "status": "PLANNING",
       "themeColor": "sunset"
     }
@@ -335,7 +335,7 @@
   "destination": "제주",
   "budgetHeadcount": 4,
   "targetBudget": 300000,
-  "transportPref": "CAR"
+  "transportPrefs": ["CAR"]
 }
 ```
 
@@ -347,7 +347,7 @@
 | `destination` | string | N | 여행지 |
 | `budgetHeadcount` | int | Y | 정산 인원(1인당 표시용, 생성 폼 여행 인원) |
 | `targetBudget` | int | N | 프로젝트 전체 목표 예산 |
-| `transportPref` | enum | Y | `CAR` \| `PUBLIC` |
+| `transportPrefs` | array\<enum\> | Y | 이동수단 선호(복수 선택 가능), 값은 `CAR`\|`PUBLIC`, 최소 1개 |
 
 **Response `201`:**
 ```json
@@ -365,8 +365,8 @@
 
 | code | HTTP | 상황 |
 |---|---|---|
-| `COMMON400_1` | 400 | 필수 필드 누락, 범위 위반 (`@Valid` 실패) |
-| `COMMON400_4` | 400 | `transportPref`에 `CAR`·`PUBLIC` 외의 값(빈 문자열 포함) — enum 변환 실패 |
+| `COMMON400_1` | 400 | 필수 필드 누락, 범위 위반 (`@Valid` 실패, `transportPrefs` 빈 배열 포함) |
+| `COMMON400_4` | 400 | `transportPrefs` 원소에 `CAR`·`PUBLIC` 외의 값(빈 문자열 포함) — enum 변환 실패 |
 | `PROJECT400` | 400 | endDate < startDate |
 
 ---
@@ -377,7 +377,7 @@
 
 **Request Body:** (부분 갱신, 변경 필드만 전송)
 ```json
-{ "name": "제주 4박 5일", "startDate": "2026-08-10", "endDate": "2026-08-14" }
+{ "name": "제주 4박 5일", "startDate": "2026-08-10", "endDate": "2026-08-14", "transportPrefs": ["CAR", "PUBLIC"] }
 ```
 
 | 필드 | 타입 | 필수 | 설명 |
@@ -385,6 +385,7 @@
 | `name` | string | N | 프로젝트 이름 |
 | `startDate` | date | N | 시작일 |
 | `endDate` | date | N | 종료일 |
+| `transportPrefs` | array\<enum\> | N | 이동수단 선호(복수 선택 가능), 값은 `CAR`\|`PUBLIC`. `null`이면 미변경 |
 
 **Response `200`:**
 ```json
