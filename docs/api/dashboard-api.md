@@ -405,20 +405,24 @@
 
 체인 순서의 블록 id 목록을 받아 연속 구간마다 이동수단 후보를 계산한다(BLK-04/BLK-10). **블록을 생성하지 않는다** — 순수 계산 결과만 반환하며, 사용자가 후보 중 하나를 고르면 프론트가 별도로 `POST /api/projects/{projectId}/blocks`를 호출해야 실제 교통 블록이 생긴다(아래 매핑표 참조).
 
+계산은 두 단계다. 1단은 모든 구간의 시내 경로·자차·택시 조회를 병렬로 모으고(최대 20초) — 시외 여부(`intercity`)도 이때 ODsay가 준 경로의 `pathType`(11 기차·12 고속버스·13 항공·14 해운·20 복합 중 하나라도 있으면 시외)으로 판정된다. 2단은 구간을 순서대로 훑으며 **Day 안에서 처음 만나는 시외 구간 하나에만** 기차·고속버스·항공 시간표를 붙인다(최대 20초, 1단 다음 순차라 최악 40초). 뒤따르는 시외 구간과 여행 날짜를 모르는 구간은 시간표를 건너뛴다 — 아래 "시간표를 적용하지 않는 경우" 참조.
+
 **Request Body:**
 ```json
-{ "blockIds": [101, 105, 107] }
+{ "blockIds": [101, 105, 107], "dayStart": "09:00" }
 ```
 
 | 필드 | 타입 | 필수 | 설명 |
 |---|---|---|---|
 | `blockIds` | array\<long\> | Y | 구간을 만들 블록 id, 체인 순서대로. 최대 30개(초과 시 `400`) |
+| `dayStart` | string(`HH:mm`) | N | Day 시작 시각. 미지정 시 `09:00` |
 
 > 서버가 인접 쌍으로 구간을 만든다 — `[101,105,107]`이면 `(101,105)`,`(105,107)` 두 구간.
 > `blockIds`가 0~1개면 만들 구간이 없으므로 **`segments: []`를 200으로 반환한다(400이 아니다)** — 단, 그 1개가 이 프로젝트에 실재하고 좌표를 가진 유효한 블록일 때다. 구간 생성 전에 요청에 포함된 **모든** 블록의 존재·좌표를 먼저 검사하므로, blockIds가 1개뿐이라도 그 블록이 없거나 좌표가 없으면 여전히 `400`이다.
 > 같은 id가 연속으로 오면(예: `[101,101,105]`) 그 쌍만 건너뛴다 — 이동이 없다고 보고 구간을 만들지 않는다. 단, 이 경우도 좌표 검사는 두 id 모두에 대해 먼저 이뤄진다(예: `[101,101]`에서 101에 좌표가 없으면 구간이 0개여도 `TRANSIT400_2`).
+> `dayStart`는 날짜를 받지 않는다 — 여행 날짜는 프로젝트 `startDate`와 블록 `dayNo`(`startDate + (dayNo-1)`)로 서버가 유도하며, `startDate`가 없으면 그 Day의 시외 구간은 시간표를 아예 적용하지 못한다(아래 참조).
 
-**Response `200`:**
+**Response `200`(시내 구간 — 다중 후보 + 환승 상세):**
 ```json
 {
   "isSuccess": true,
@@ -429,11 +433,48 @@
       {
         "fromBlockId": 101,
         "toBlockId": 105,
+        "intercity": false,
+        "timetableApplied": false,
+        "timetableSkipReason": null,
+        "referenceAt": null,
         "defaultMode": "TRANSIT",
         "candidates": [
-          { "mode": "TRANSIT", "label": "대중교통", "available": true, "durationMin": 42, "fare": 1400, "fareConfidence": "CONFIRMED", "intervalMin": 13, "distanceM": 9800 },
-          { "mode": "TAXI", "label": "택시", "available": true, "durationMin": 15, "fare": 12000, "fareConfidence": "CONFIRMED", "intervalMin": null, "distanceM": 8200 },
-          { "mode": "WALK", "label": "도보", "available": false, "durationMin": null, "fare": null, "fareConfidence": null, "intervalMin": null, "distanceM": null }
+          {
+            "mode": "TRANSIT", "label": "대중교통", "available": true,
+            "durationMin": 44, "fare": 1500, "fareConfidence": "CONFIRMED",
+            "intervalMin": 9, "distanceM": 12841, "transferCount": 0, "walkMeters": 150,
+            "labels": ["추천", "환승 최소", "도보 최소"], "caution": null,
+            "legs": [{ "type": "BUS", "lineName": null, "from": "시청", "to": "강남역", "durationMin": 44 }],
+            "departures": null
+          },
+          {
+            "mode": "TRANSIT", "label": "대중교통", "available": true,
+            "durationMin": 28, "fare": 1600, "fareConfidence": "CONFIRMED",
+            "intervalMin": 4, "distanceM": 11200, "transferCount": 1, "walkMeters": 500,
+            "labels": ["최단 시간"], "caution": null,
+            "legs": [{ "type": "SUBWAY", "lineName": null, "from": "시청", "to": "강남역", "durationMin": 28 }],
+            "departures": null
+          },
+          {
+            "mode": "TRANSIT", "label": "대중교통", "available": true,
+            "durationMin": 51, "fare": 1200, "fareConfidence": "CONFIRMED",
+            "intervalMin": 12, "distanceM": 12900, "transferCount": 2, "walkMeters": 900,
+            "labels": ["최저 요금"], "caution": null,
+            "legs": [{ "type": "BUS", "lineName": null, "from": "시청", "to": "역삼", "durationMin": 51 }],
+            "departures": null
+          },
+          {
+            "mode": "TAXI", "label": "택시", "available": true,
+            "durationMin": 32, "fare": 14900, "fareConfidence": "CONFIRMED",
+            "intervalMin": null, "distanceM": 10327, "transferCount": null, "walkMeters": null,
+            "labels": null, "caution": null, "legs": null, "departures": null
+          },
+          {
+            "mode": "WALK", "label": "도보", "available": false,
+            "durationMin": null, "fare": null, "fareConfidence": null,
+            "intervalMin": null, "distanceM": null, "transferCount": null, "walkMeters": null,
+            "labels": null, "caution": null, "legs": null, "departures": null
+          }
         ]
       }
     ]
@@ -441,54 +482,186 @@
 }
 ```
 
+`legs[].lineName`은 위 예시처럼 ODsay가 노선 정보를 안 줄 때 `null`이다. 채워질 때는 지하철은 노선명("2호선"), 버스는 번호("402")가 온다 — 도보 구간은 ODsay가 승하차 지점 자체를 주지 않아 `from`/`to`까지 `null`이다.
+
+**Response `200`(시외 구간 — 수단 분리 + 출발편):**
+```json
+{
+  "isSuccess": true,
+  "code": "COMMON200",
+  "message": "요청에 성공했습니다.",
+  "result": {
+    "segments": [
+      {
+        "fromBlockId": 105,
+        "toBlockId": 107,
+        "intercity": true,
+        "timetableApplied": true,
+        "timetableSkipReason": null,
+        "referenceAt": "14:45",
+        "defaultMode": "TRAIN",
+        "candidates": [
+          {
+            "mode": "TRAIN", "label": "기차", "available": true,
+            "durationMin": 157, "fare": 59800, "fareConfidence": "CONFIRMED",
+            "intervalMin": null, "distanceM": null, "transferCount": 0, "walkMeters": null,
+            "labels": null, "caution": null,
+            "legs": [{ "type": "TRAIN", "lineName": null, "from": "서울", "to": "부산", "durationMin": 157 }],
+            "departures": [
+              { "name": "KTX 1", "grade": "KTX", "departureAt": "16:00", "arrivalAt": "18:37", "durationMin": 157, "fare": 59800, "fareConfidence": "CONFIRMED", "fareOptions": { "general": 59800, "special": 99800, "standing": 54800 }, "labels": [] },
+              { "name": "KTX 15", "grade": "KTX", "departureAt": "16:30", "arrivalAt": "19:12", "durationMin": 162, "fare": 59800, "fareConfidence": "CONFIRMED", "fareOptions": { "general": 59800, "special": 99800, "standing": 54800 }, "labels": [] },
+              { "name": "무궁화 1203", "grade": "무궁화", "departureAt": "18:10", "arrivalAt": "23:41", "durationMin": 331, "fare": 28600, "fareConfidence": "CONFIRMED", "fareOptions": { "general": 28600, "special": 68600, "standing": 23600 }, "labels": ["최저 요금"] }
+            ]
+          },
+          {
+            "mode": "EXPRESS_BUS", "label": "고속·시외버스", "available": true,
+            "durationMin": 240, "fare": 39700, "fareConfidence": "CONFIRMED",
+            "intervalMin": null, "distanceM": null, "transferCount": 0, "walkMeters": null,
+            "labels": null, "caution": null,
+            "legs": [{ "type": "EXPRESS_BUS", "lineName": null, "from": "서울", "to": "부산", "durationMin": 240 }],
+            "departures": [
+              { "name": "고속버스", "grade": "우등", "departureAt": "16:00", "arrivalAt": "20:00", "durationMin": 240, "fare": 39700, "fareConfidence": "CONFIRMED", "fareOptions": null, "labels": [] }
+            ]
+          },
+          {
+            "mode": "AIR", "label": "항공", "available": true,
+            "durationMin": 55, "fare": null, "fareConfidence": "UNKNOWN",
+            "intervalMin": null, "distanceM": null, "transferCount": 0, "walkMeters": null,
+            "labels": null, "caution": null,
+            "legs": [{ "type": "AIR", "lineName": null, "from": "김포", "to": "김해", "durationMin": 55 }],
+            "departures": [
+              { "name": "대한항공 1201", "grade": "대한항공", "departureAt": "17:20", "arrivalAt": "18:15", "durationMin": 55, "fare": null, "fareConfidence": "UNKNOWN", "fareOptions": null, "labels": [] }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+> 항공 편명·시각은 예시다 — 확실한 사실은 `fare`가 항상 `null`이고 `fareConfidence`가 항상 `UNKNOWN`이라는 것뿐이다(ODsay 항공 시간표에 요금 필드 자체가 없어 추정하지 않는다). `TAXI`·`CAR` 후보도 이 구간에 함께 온다 — 시내·시외를 구분하지 않고 같은 방식(카카오 길찾기)으로 계산되며, 지면상 위 예시에서는 생략했다.
+
+**Segment 필드:**
+
 | 필드 | 타입 | 설명 |
 |---|---|---|
 | `segments[].fromBlockId` / `toBlockId` | long | 구간의 출발/도착 블록 id |
-| `segments[].defaultMode` | enum \| null | 후보 중 기본값(조회에 성공한 첫 수단, 우선순위순). **그 구간의 모든 조회가 실패하면 null**이다 |
-| `segments[].candidates[].mode` | enum | `TRANSIT`\|`TAXI`\|`CAR`\|`WALK` — 아래 참조 |
-| `.label` | string | 한글 표시명(`대중교통`\|`택시`\|`자차`\|`도보`) |
-| `.available` | bool | **조회 실패 여부만** 나타낸다. 아래 콜아웃 참조 |
-| `.durationMin` / `.fare` / `.fareConfidence` / `.intervalMin` / `.distanceM` | - | `available:false`면 전부 `null`. 수단별로 비는 필드가 아래 표처럼 갈린다 |
+| `segments[].intercity` | bool | 시외 구간 여부(ODsay `pathType` 기준, 위 참조) |
+| `segments[].timetableApplied` | bool | 시간표를 조회해 실제 출발편을 골랐는지. `intercity:false`(시내)면 해당 없음으로 항상 `false`다 |
+| `segments[].timetableSkipReason` | string \| null | `timetableApplied:false`인 이유. 시내처럼 애초에 해당 없는 경우는 `null`(사유 없음과 미적용을 구분하지 않는다) |
+| `segments[].referenceAt` | string(`HH:mm`) \| null | 이 구간의 출발편을 고르는 기준 시각. 시간표를 적용한 시외 구간에만 있다 |
+| `segments[].defaultMode` | enum \| null | 후보 중 기본값 — 조회에 성공했고(`available:true`) **실제로 탈 편이 있는** 첫 후보(우선순위순: `TransportPref`가 정한 수단 또는 `TRAIN`→`EXPRESS_BUS`→`AIR`). 모든 후보가 조회 실패했거나, 시외에서 고를 편이 있는 수단이 하나도 없으면 `null` |
+| `segments[].candidates` | array | 아래 참조 |
 
-**수단마다 비는 필드가 다르다** (`available:true`인데도 `null`인 경우 — 프론트엔드가 그 항목만 숨기면 된다)
+**Candidate 필드:**
 
-| 필드 | `TRANSIT` | `TAXI` | `CAR` | `WALK` |
-|---|---|---|---|---|
-| `durationMin` | ○ | ○ | ○ | ○ |
-| `fare` | ○ | ○ | ○ | ○ (항상 `0`) |
-| `intervalMin`(배차간격) | ○ | **null** | **null** | **null** |
-| `distanceM` | ○ | ○ | ○ | ○ |
+| 필드 | 타입 | 설명 |
+|---|---|---|
+| `mode` | enum | `TransitMode` 값(아래 표) |
+| `label` | string | 한글 표시명 |
+| `available` | bool | **조회 실패 여부만** 나타낸다. 거리 임계로 제외된 도보처럼 애초에 안 부른 수단은 `candidates`에 없다(아래 콜아웃) |
+| `durationMin` / `fare` / `fareConfidence` / `intervalMin` / `distanceM` / `labels` / `transferCount` / `walkMeters` / `caution` / `legs` / `departures` | - | 수단별로 채워지는 필드가 다르다 — 아래 표 참조 |
 
-`distanceM`은 실제 경로 거리다(직선거리가 아니다 — 시청→강남역 직선 8,785m vs 경로 10,327m).
-모든 수단에 채운다: 대중교통은 ODsay `totalDistance`, 자차·택시는 카카오 응답,
-도보는 카카오 도보 경로 거리다.
+**수단마다 채워지는 필드가 다르다** (`available:true`인데도 `null`인 필드는 프론트가 그 항목만 숨기면 된다)
 
-> 이전 문서는 "대중교통은 ODsay가 거리를 주지 않아 null"이라고 적었으나 오진단이었다.
-> `totalDistance`가 실제로 오며(시청→강남역 12,841 / 서울→부산 402,000), 응답 DTO가
-> 그 필드를 읽지 않아 null이었다.
+| 필드 | `TRANSIT` | `TRAIN` | `EXPRESS_BUS` | `AIR` | `TAXI` | `CAR` | `WALK` |
+|---|---|---|---|---|---|---|---|
+| `durationMin` | ○ | ○\* | ○\* | ○\* | ○ | ○ | ○ |
+| `fare` | ○ | ○\* | ○\* | **null** | ○ | ○ | ○(항상 `0`) |
+| `intervalMin` | ○ | null | null | null | null | null | null |
+| `distanceM` | ○ | **null** | **null** | **null** | ○ | ○ | ○ |
+| `transferCount` | ○ | `0` | `0` | `0` | null | null | null |
+| `walkMeters` | ○ | null | null | null | null | null | null |
+| `labels`(Candidate 레벨) | ○ | null | null | null | null | null | null |
+| `caution` | null | null | null | null | ○(도서 목적지만) | ○(도서 목적지만) | null |
+| `legs` | ○ | ○\*(0~1개) | ○\*(0~1개) | ○\*(0~1개) | null | null | null |
+| `departures` | null | ○(0~3개) | ○(0~3개) | ○(0~3개) | null | null | null |
 
-`distanceM`은 **외부 API가 준 실제 경로 거리(미터)**이고 직선거리가 아니다. 실측 예: 서울시청→강남역이 직선 8,785m인데 `distanceM`은 10,327m다(도로를 따라가므로). 자차 연료비도 이 값으로 계산하므로 직선거리를 쓰면 기름값이 15%가량 싸게 나온다.
-
-> 서버 내부에서 쓰는 직선거리(하버사인)는 300m·2km 임계를 판정해 **외부 API를 부를지 말지** 정하는 용도이며 응답에 나가지 않는다.
+\* `TRAIN`/`EXPRESS_BUS`/`AIR`는 "편은 있는데 아직 못 고른 것"이 아니라 **후보 자체가 슬롯**이다 — 시간표 조회에 성공했지만 기준 시각 이후 탈 편이 없으면(또는 애초에 시간표를 적용하지 않으면) `available:true`인 채로 `departures: []`·`legs: []`·`durationMin`/`fare`: `null`을 낸다("모드 슬롯"과 "실제 제안"을 구분하지 않으면 사라진 수단이 "배로만 가라"는 뜻이 된다). `durationMin`/`fare`는 **편이 있어도** `null`일 수 있다 — 대표값은 항상 선택된 첫 편에서 오는데, 그 편 자체의 소요시간·요금을 ODsay가 안 줄 때가 있다(예: 고속버스 시간표가 `wasteTime`·`fare`를 비워서 주는 편). 지어내지 않고 그대로 `null`로 낸다. `distanceM`은 세 수단 모두 시간표 API가 거리를 주지 않아 편이 있어도 항상 `null`이다.
 
 **`TransitMode`:**
 
 | 값 | 한글 | 비고 |
 |---|---|---|
-| `TRANSIT` | 대중교통 | 버스+지하철 통합 조회(ODsay). 사용자가 고르는 단위는 "대중교통이냐 택시냐"이지 "버스냐 지하철이냐"가 아니라서 따로 내지 않는다 |
-| `TAXI` | 택시 | 카카오모빌리티 Directions API 실측 요금 |
-| `CAR` | 자차 | 통행료(카카오 실측) + 연료비(추정) 합산 |
-| `WALK` | 도보 | 카카오 도보 길찾기 API. **요금 자체가 없어 `fare`는 항상 `0`**(API가 준 실측값이 아니라 하드코딩) |
+| `TRANSIT` | 대중교통 | 시내 버스+지하철 통합 조회(ODsay). "대중교통이냐 택시냐"가 선택 단위라 버스·지하철을 따로 내지 않는다. 최대 5개 후보(아래 참조) |
+| `TRAIN` | 기차 | ODsay 기차 시간표. 시외 구간에서만 나온다 |
+| `EXPRESS_BUS` | 고속·시외버스 | ODsay 고속/시외버스 시간표. 시외 구간에서만 나온다 |
+| `AIR` | 항공 | ODsay 항공 시간표. 시외 구간에서만 나오며 요금은 항상 `null` |
+| `TAXI` | 택시 | 카카오모빌리티 Directions API 실측 요금. 시내·시외 구분 없이 나온다 |
+| `CAR` | 자차 | 통행료(카카오 실측) + 연료비(추정) 합산. 시내·시외 구분 없이 나온다 |
+| `WALK` | 도보 | 카카오 도보 길찾기 API. 시외 구간에는 나오지 않는다(직선거리 임계 이전에 시외로 갈라진다). **요금 자체가 없어 `fare`는 항상 `0`**(하드코딩, 실측값이 아니다) |
 
-`fareConfidence`는 `CONFIRMED`(요금 산정에 가정이 섞이지 않은 값 — `TRANSIT`/`TAXI`는 외부 API 실측 요금, `WALK`은 요금이 없어 고정된 `0`) 또는 `ESTIMATE`(가정이 들어간 추정치)다. `CAR`는 통행료는 실측이지만 연료비가 추정(연비 가정값 사용)이라 항상 `ESTIMATE`로 표시된다.
+**`Leg`(경로 구간 상세):**
 
-`CAR`의 연료비는 `거리 ÷ 연비 가정값(12km/L) × 유가`다. 유가는 오피넷 전국 평균 휘발유가를 하루 한 번(+ 서버 기동 직후) 받아 메모리에 캐시해 쓰고, `OPINET_API_KEY`가 없거나 조회에 실패하면 상수 유가로 대체한다 — 어느 쪽이든 응답 형태는 같고 `fareConfidence`도 `ESTIMATE` 그대로다(연비 가정이 이미 추정이라 유가 출처가 신뢰도를 바꾸지 않는다).
+| 필드 | 타입 | 설명 |
+|---|---|---|
+| `type` | enum | `SUBWAY`\|`BUS`\|`WALK`\|`TRAIN`\|`EXPRESS_BUS`\|`AIR`\|`FERRY`\|`OTHER`. `FERRY`는 도서 목적지 판정에만 내부적으로 쓰이고 현재 응답의 `legs`에는 나타나지 않는다(해운이 섞인 경로는 시내 선정기에 닿지 않고, 시외 후보의 leg는 수단 고정 값을 쓴다) |
+| `lineName` | string \| null | 지하철 노선명·버스 번호·항공사명. 정보가 없거나(도보) 시외 후보의 leg(수단 고정 매핑이라 애초에 채우지 않는다)면 `null` |
+| `from` / `to` | string \| null | 승하차 지점명. 도보 구간은 ODsay가 지점을 주지 않아 `null` |
+| `durationMin` | int | 정수 필드라 `null`이 없다 — 모르면 `0`이다 |
+
+**`Departure`(시외 출발편):**
+
+| 필드 | 타입 | 설명 |
+|---|---|---|
+| `name` | string | 사용자에게 보일 이름(`"KTX 1"`·`"무궁화 1203"`·`"고속버스"`·`"{항공사} {편명}"`) |
+| `grade` | string \| null | 등급/항공사(`"KTX"`·`"무궁화"`·`"일반"`\|`"우등"`\|`"프리미엄"`\|항공사명). **JSON 키는 예약어인 `class`가 아니라 `grade`다.** 고속버스 등급 코드를 해석 못 하면 `null` |
+| `departureAt` / `arrivalAt` | string(`HH:mm`) \| null | 고속버스는 시간표에 도착 시각이 없어 `출발 + 소요`로 계산한다. 소요시간마저 없으면 `arrivalAt`도 `null`이다(도착 시각을 지어내지 않는다) |
+| `durationMin` | int \| null | 시간표가 주지 않으면 `null`이다(`0`으로 두면 즉시 도착으로 읽힌다) |
+| `fare` | int \| null | 항공은 항상 `null`이다(요금 정보 자체가 없다 — 성수기·항공사에 따라 배 이상 차이 나 추정하지 않는다) |
+| `fareConfidence` | enum | `CONFIRMED`\|`UNKNOWN`(항공, 또는 고속버스 편에 요금이 없을 때) |
+| `fareOptions` | object \| null | 등급별 요금(`general`/`special`/`standing`). **기차만** 있다 |
+| `labels` | array\<string\> | `"최저 요금"` 등 이 편이 뽑힌 이유. 없으면 `[]`(`null`이 아니다) |
+
+**후보·편 선정 규칙:**
+
+- 시내 대중교통(`TRANSIT`)은 ODsay 경로 중 최대 5개다 — 추천(첫 경로)·최단 시간·최저 요금·환승 최소·도보 최소 다섯 축에서 하나씩 뽑되, 같은 경로가 여러 축에서 뽑히면 `labels`를 합쳐 하나로 낸다(그만큼 5개보다 적을 수 있다). 축이 겹쳐 5개가 안 차면 ODsay가 준 순서대로 나머지를 채운다.
+- 시외 출발편(`departures`)은 기준 시각(`referenceAt`) 이후 편 중 최대 3개다. 기차·고속버스는 **시각순 2편 + 최저 요금(일반석 기준) 1편**이고, 항공은 요금 정보가 없어 **시각순 3편**이다. 기준 시각 이전 편은 제외한다.
+- **운행 요일**: ODsay `runDay`(`"매일"`·`"토일"`·`"목"`·`"월수금"`·`"평일"`·`"주말"`·`"휴일"` 등 한글 표기)를 여행 날짜의 요일과 맞춰, 그날 운행하지 않는 편은 시간표 조회 단계에서 이미 제외한다. **공휴일은 평일로 취급**한다(공휴일 API를 따로 붙이지 않는다 — 요금이 조금 다를 수 있어도 그 불확실성을 노출하는 쪽이 더 혼란스럽다). 해석하지 못하는 표기는 걸러내지 않고 통과시킨다(편을 놓치는 것보다 여분의 후보를 보여주는 편이 낫다). **고속버스는 이 필터가 적용되지 않는다** — ODsay 고속버스 시간표 응답 자체에 `runDay`가 없다. 기차 요금은 여행 날짜의 요일(평일/주말)에 맞는 값이 있으면 그 값을 우선한다.
+
+**기준 시각(`referenceAt`)과 45분 버퍼:** 서버가 Day 시작 시각(`dayStart`, 기본 `09:00`)부터 구간을 순서대로 훑으며 커서를 누적한다. 각 구간의 `referenceAt`은 그 시점 커서에 **역·터미널·공항 이동 버퍼 45분**(명세 BLK-04)을 더한 값이다. 커서는 앞 구간의 (기본 수단 `durationMin` + 도착 블록 체류시간)만큼만 전진하며 시외 구간의 실제 탑승 시각(예: KTX 16:00 출발)은 반영하지 않는다 — 그래서 커서는 뒤 구간으로 갈수록 신뢰할 수 없어지고, 그 때문에 시간표는 Day의 첫 시외 구간에만 적용된다.
+
+**시간표를 적용하지 않는 경우(`timetableApplied: false`):**
+
+| 상황 | `timetableSkipReason` | 비고 |
+|---|---|---|
+| 시내 구간(`intercity: false`) | `null` | 애초에 해당 없음 — 사유가 아니라 미적용이다 |
+| 같은 Day에서 두 번째 이후의 시외 구간 | `"앞선 시외 구간의 편이 확정되지 않았습니다"` | Day당 시간표는 첫 시외 구간에서 한 번만 조회한다 |
+| `project.startDate`가 없음 | `"프로젝트 시작일이 없어 운행 요일을 확인할 수 없습니다"` | 오늘 날짜로 갈음하지 않는다 — 실제 여행일과 무관한 시간표를 확정처럼 낼 수 없다. 이 경우 그 Day의 **모든** 시외 구간이 같은 사유를 받는다(뒤 구간에 "앞 구간 때문"이라는 잘못된 사유가 붙지 않도록 한다) |
+
+두 스킵 케이스 모두 `referenceAt: null`이고, `TRAIN`/`EXPRESS_BUS`/`AIR` 세 수단 슬롯은 그대로 남되(`available: true`) `departures: []`·`legs: []`이며 `durationMin`/`fare`는 `null`이다 — 수단 자체를 지우면 "제주는 배로만 가라"는 뜻이 되므로, 조회를 안 한 것과 조회에 실패한 것을 구분한다. 프론트는 이 구간에서 시간표 기반 편 선택 UI 대신 `timetableSkipReason`을 그대로 안내 문구로 보여주면 된다.
+
+**도서 목적지 — 자차·택시 강등:** ODsay 대중교통 경로에 항공·해운 구간이 하나라도 섞여 있으면(제주 등 도서 목적지), 카카오 길찾기가 도로 주행만 계산해 성공을 반환하더라도 그 값을 그대로 믿지 않는다 — 자차·택시 후보에 `caution`을 붙이고 `fareConfidence`를 `ESTIMATE`로 강등한다(원래 `CONFIRMED`인 택시도 마찬가지). 후보에서 빼지는 않는다 — 차를 배에 실어 가는 계획도 실제로 존재한다. 실측 예(청주→제주, 도로 주행만으로 계산된 값): `distanceM` 436,642 · `durationMin` 356 · 택시 `fare` 556,600원.
+```json
+{
+  "mode": "TAXI", "label": "택시", "available": true,
+  "durationMin": 356, "fare": 556600, "fareConfidence": "ESTIMATE",
+  "distanceM": 436642,
+  "caution": "페리 승선이 필요합니다. 배 시간표와 운임은 포함되지 않았습니다"
+}
+```
+드라이빙 조회 자체가 실패해 `available: false`인 후보에는 이 강등을 적용하지 않는다(강등은 성공한 값의 신뢰도를 낮추는 것이지 실패에 덧씌우는 것이 아니다). 강등된 값의 `fare`가 어떤 이유로든 `null`이면 `ESTIMATE`가 아니라 `UNKNOWN`이 된다.
+
+`distanceM`은 **외부 API가 준 실제 경로 거리(미터)**이고 직선거리가 아니다. 대중교통(ODsay `totalDistance`)·자차·택시(카카오)·도보(카카오)에서 채워지며, 위 표처럼 시외 시간표 수단(`TRAIN`/`EXPRESS_BUS`/`AIR`)에는 채워지지 않는다(`null`). 같은 서울시청→강남역 구간에서 대중교통 `distanceM`은 12,841m, 택시 경로는 10,327m다(같은 두 지점이라도 대중교통과 도로 경로는 서로 다르고, 둘 다 직선거리 8,785m와도 다르다 — 대중교통·택시가 반드시 같은 도로를 타는 것도 아니다). 자차 연료비도 이 값으로 계산하므로 직선거리를 쓰면 기름값이 실제보다 낮게 나온다.
+
+> 서버 내부에서 쓰는 직선거리(하버사인)는 300m·2km 임계를 판정해 **외부 API를 부를지 말지** 정하는 용도이며 응답에 나가지 않는다.
+
+`fareConfidence`는 세 값이다:
+
+| 값 | 의미 | 나오는 곳 |
+|---|---|---|
+| `CONFIRMED` | 그대로 믿어도 되는 실값 | 시내 대중교통, 기차·고속버스 시간표(요금이 있을 때), 육로 구간의 택시, 도보(요금이 없어 고정된 `0`도 CONFIRMED) |
+| `ESTIMATE` | 가정이 들어간 추정치 | 자차 연료비(항상), 도서 목적지(페리 필요)로 강등된 자차·택시 |
+| `UNKNOWN` | 알 수 없음(`fare: null`) | 항공(항상 — 추정하지 않는다), 요금 정보가 없는 고속버스 편, 시간표를 적용하지 못했거나 편이 없는 시외 후보, 강등 대상인데 `fare`마저 없는 자차·택시 |
+
+`CAR`의 연료비는 `거리 ÷ 연비 가정값(12km/L) × 유가`다. 유가는 오피넷 전국 평균 휘발유가를 하루 한 번(+ 서버 기동 직후) 받아 메모리에 캐시해 쓰고, `OPINET_API_KEY`가 없거나 조회에 실패하면 상수 유가로 대체한다 — 어느 쪽이든 응답 형태는 같고 `fareConfidence`도 `ESTIMATE` 그대로다(연비 가정이 이미 추정이라 유가 출처가 신뢰도를 바꾸지 않는다). `WALK`의 `fareConfidence`는 요금이 없어 고정된 `0`이므로 `CONFIRMED`다.
 
 > **`available: false`는 조회 실패 전용이다.** 직선거리 2km 초과로 후보에서 제외된 도보는 `candidates` 목록에 **아예 나타나지 않는다.** `available:false`인 항목과 목록에 없는 항목을 같은 의미로 취급하면 프론트가 "도보가 왜 회색인가 — 먼 것인가 API가 죽은 것인가"를 구분할 수 없다.
 >
-> **`defaultMode`는 null일 수 있다** — 그 구간의 모든 후보 조회가 실패했을 때다. 프론트는 그 구간만 비워 두고 안내한다.
+> **`defaultMode`는 null일 수 있다** — 그 구간의 모든 후보 조회가 실패했거나(시외에서) 탈 수 있는 편이 있는 수단이 하나도 없을 때다. 프론트는 그 구간만 비워 두고 안내한다.
 >
-> **기본 선택과 후보 포함 여부는 서로 다른 질문이다 — 임계값 두 개가 각각 답한다.**
+> **기본 선택과 후보 포함 여부는 서로 다른 질문이다 — 임계값 두 개가 각각 답한다. 이 판정은 시내·시외 구분 없이 구간의 직선거리로만 정해진다**(먼 시외 구간도 예외가 아니다 — 서울↔부산처럼 대중교통이 아예 불가능한 거리라도 택시 후보는 그대로 계산된다).
 > - 직선거리 **300m 미만**: 대중교통·택시를 물을 거리가 아니므로 호출 자체를 생략하고 도보만 후보로 낸다.
 > - 직선거리 **300m~2km**: 프로젝트의 `TransportPref`가 정한 수단(`CAR`→자차, `PUBLIC`/미지정→대중교통)이 **기본값(`defaultMode`)이자 후보 1순위**이고 택시가 항상 따라붙으며, **도보도 후보로 함께 나온다**(기본은 아니다).
 > - 직선거리 **2km 초과**: 도보가 후보에서 빠진다. 기본 수단은 여전히 `TransportPref` 기준으로 정해진다.
