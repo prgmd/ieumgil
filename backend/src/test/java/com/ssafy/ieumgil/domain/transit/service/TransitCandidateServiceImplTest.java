@@ -27,6 +27,7 @@ import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.math.BigDecimal;
+import java.time.Duration;
 import java.time.LocalDate;
 import java.time.LocalTime;
 import java.util.List;
@@ -529,6 +530,27 @@ class TransitCandidateServiceImplTest {
     }
 
     @Test
+    @DisplayName("한 경로 안에 육로 구간과 해운 구간이 섞여 있어도 그 경로는 육로로 치지 않는다")
+    void 버스와_해운이_섞인_경로는_육로가_아니다() {
+        // hasRoadPath는 경로 하나하나를 본다 — 그 경로의 일부(버스)가 육로라고 해서 경로 전체를
+        // 육로로 인정하면 안 된다("항구까지는 버스, 그다음은 배"인 경로가 유일한 대안일 때
+        // 자차·택시가 여전히 후보로 남으면 안 되기 때문이다).
+        givenProject(TransportPref.CAR);
+        given(blockRepository.findAllByIdInAndProject_IdAndDeletedAtIsNull(List.of(1L, 3L), PROJECT_ID))
+                .willReturn(List.of(cheongjuBlock(), jejuBlock()));
+        given(publicTransitQueryService.getCombinedRoutes(anyDouble(), anyDouble(), anyDouble(), anyDouble()))
+                .willReturn(List.of(busPlusFerryPath()));
+
+        TransitCandidateResDTO.Result result = service.calculate(PROJECT_ID, List.of(1L, 3L), null);
+
+        assertThat(result.segments().get(0).candidates())
+                .extracting(TransitCandidateResDTO.Candidate::mode)
+                .doesNotContain(TransitMode.CAR, TransitMode.TAXI);
+        verify(placeQueryService, never())
+                .getTaxiRoute(anyDouble(), anyDouble(), anyDouble(), anyDouble());
+    }
+
+    @Test
     @DisplayName("육로 경로면 자차·택시 후보가 그대로 있고 택시 요금은 CONFIRMED다")
     void 육로_구간은_후보를_그대로_낸다() {
         givenProject(TransportPref.CAR);
@@ -764,6 +786,61 @@ class TransitCandidateServiceImplTest {
         // Day마다 시간표를 한 번씩, 총 두 번 조회한다
         verify(transitScheduleQueryService, times(2))
                 .getTrainSchedule(anyInt(), anyInt(), any(LocalDate.class));
+    }
+
+    @Test
+    @DisplayName("두 번째 Day의 시간표 조회는 새 20초가 아니라 첫 Day가 쓰고 남은 예산만 받는다")
+    void 두번째_Day는_새_예산이_아니라_남은_예산을_받는다() throws InterruptedException {
+        // 진짜 20초를 기다리지 않기 위해 예산을 잠깐 줄인다 — TIMETABLE_TIMEOUT은 이 테스트를
+        // 위해 package-private·非final로 뒀다.
+        Duration original = TransitCandidateServiceImpl.TIMETABLE_TIMEOUT;
+        TransitCandidateServiceImpl.TIMETABLE_TIMEOUT = Duration.ofMillis(600);
+        try {
+            given(blockRepository.findAllByIdInAndProject_IdAndDeletedAtIsNull(List.of(1L, 2L, 2L, 3L), PROJECT_ID))
+                    .willReturn(List.of(
+                            blockAt(1L, LAT_SEOUL, LNG_SEOUL, 1),
+                            blockAt(2L, LAT_BUSAN, LNG_BUSAN, 2),
+                            blockAt(3L, LAT_JEJU, LNG_JEJU, 2)));
+            given(projectRepository.findByIdAndDeletedAtIsNull(PROJECT_ID)).willReturn(Optional.of(publicProject()));
+            given(publicTransitQueryService.getCombinedRoutes(anyDouble(), anyDouble(), anyDouble(), anyDouble()))
+                    .willReturn(List.of(trainPath()));
+            given(transitScheduleQueryService.searchTrainStation(anyString()))
+                    .willReturn(Optional.of(terminal(3300128, "서울")));
+            given(transitScheduleQueryService.searchExpressBusTerminal(anyString())).willReturn(Optional.empty());
+            // Day1은 350ms 걸려도 자기 예산(600ms, 새 예산) 안에 끝나 정상 응답한다. 그 350ms를
+            // 쓰고 나면 공유 예산에는 약 250ms만 남는다. Day2는 450ms가 걸리는데, 이건 "남은
+            // ~250ms"로는 못 끝내지만(→ 취소되어 unavailable) "새 600ms"라면 넉넉히 끝난다
+            // (→ available) — 그래서 이 둘의 결과가 갈리는 것 자체가 예산이 Day끼리 공유되는지
+            // 아닌지를 실측으로 가른다.
+            given(transitScheduleQueryService.getTrainSchedule(anyInt(), anyInt(), any(LocalDate.class)))
+                    .willAnswer(invocation -> {
+                        Thread.sleep(350);
+                        return List.of(train("KTX", 1, "16:00", "18:37", 59800));
+                    })
+                    .willAnswer(invocation -> {
+                        Thread.sleep(450);
+                        return List.of(train("KTX", 2, "17:00", "19:37", 59800));
+                    });
+
+            TransitCandidateResDTO.Result result =
+                    service.calculate(PROJECT_ID, List.of(1L, 2L, 2L, 3L), LocalTime.of(9, 0));
+
+            assertThat(result.segments()).hasSize(2);
+            Candidate day1Train = result.segments().get(0).candidates().stream()
+                    .filter(c -> c.mode() == TransitMode.TRAIN).findFirst().orElseThrow();
+            Candidate day2Train = result.segments().get(1).candidates().stream()
+                    .filter(c -> c.mode() == TransitMode.TRAIN).findFirst().orElseThrow();
+
+            assertThat(day1Train.available()).as("Day1은 자기 예산(600ms) 안에 끝난다").isTrue();
+            assertThat(day1Train.departures()).isNotEmpty();
+            // 고쳐지기 전(Day마다 새 20초)이었다면 450ms < 600ms라 Day2도 available=true였다.
+            // 남은 예산(~250ms)을 받는 지금은 450ms가 그 예산을 넘겨 취소된다.
+            assertThat(day2Train.available())
+                    .as("Day2는 Day1이 쓰고 남은 예산만 받아 시간 안에 못 끝나고 취소된다")
+                    .isFalse();
+        } finally {
+            TransitCandidateServiceImpl.TIMETABLE_TIMEOUT = original;
+        }
     }
 
     @Test
@@ -1039,6 +1116,15 @@ class TransitCandidateServiceImplTest {
         return new OdsayRouteResponse.Path(14,
                 new OdsayRouteResponse.Info(150, null, null, 98000, 600, null, null, "목포", "홍도"),
                 List.of(new OdsayRouteResponse.SubPath(7, 150, 98000, "목포항", "홍도항", null)));
+    }
+
+    /** 버스(육로)로 항구까지 간 다음 배를 타는 복합 경로(pathType=20). 일부만 육로여도 경로 전체는 비육로다 */
+    private OdsayRouteResponse.Path busPlusFerryPath() {
+        return new OdsayRouteResponse.Path(20,
+                new OdsayRouteResponse.Info(200, null, null, 120000, 700, null, null, "목포", "홍도"),
+                List.of(
+                        new OdsayRouteResponse.SubPath(2, 30, 15000, "목포터미널", "목포항", null),
+                        new OdsayRouteResponse.SubPath(7, 150, 98000, "목포항", "홍도항", null)));
     }
 
     /** 지하철로 이어지는 시내 경로 — 가장 빠르다 */

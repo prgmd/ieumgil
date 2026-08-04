@@ -26,6 +26,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 import java.time.Duration;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalTime;
 import java.time.format.DateTimeFormatter;
@@ -76,11 +77,17 @@ public class TransitCandidateServiceImpl implements TransitCandidateService {
      * 2단 시간표 조회의 상한. 기차·고속버스는 터미널 검색 2회 + 시간표 1회, 항공은 공항을
      * {@link DomesticAirport}에서 메모리로 찾으므로 시간표 1회다 — 세 수단을 직렬로 두면
      * read-timeout 15초짜리 호출이 최대 7번 쌓인다(약 105초). 동시에 부르고 상한을 건다.
+     *
+     * <p>{@code final}이 아니다 — Day 예산 공유(진짜 20초를 기다리지 않고도) 테스트가 값을
+     * 잠깐 줄여 썼다가 되돌릴 수 있어야 한다. 프로덕션에서 이 값을 바꾸는 코드는 없다.
      */
-    private static final Duration TIMETABLE_TIMEOUT = Duration.ofSeconds(20);
+    static Duration TIMETABLE_TIMEOUT = Duration.ofSeconds(20);
     private static final LocalTime DEFAULT_DAY_START = LocalTime.of(9, 0);
     private static final String SKIP_REASON_PRIOR_INTERCITY = "앞선 시외 구간의 편이 확정되지 않았습니다";
     private static final String SKIP_REASON_NO_START_DATE = "프로젝트 시작일이 없어 운행 요일을 확인할 수 없습니다";
+    /** 시간표 조회 예산({@link #TIMETABLE_TIMEOUT})을 다른 Day가 이미 다 써서 이 Day는 조회를 시도조차 못 할 때 */
+    private static final String SKIP_REASON_TIMETABLE_BUDGET_EXHAUSTED =
+            "다른 Day의 시간표 조회가 시간을 다 써서 확인하지 못했습니다";
     /**
      * ODsay pathType — 11 기차, 12 고속버스, 13 항공, 14 해운, 20 복합.
      *
@@ -115,6 +122,12 @@ public class TransitCandidateServiceImpl implements TransitCandidateService {
         // "3일 일정에 Day당 10블록"이다) — 그래서 기준 시각과 시외 확정 플래그는 요청 전체가 아니라
         // Day 하나에서만 유지해야 한다. 그렇지 않으면 Day2의 시외 구간이 Day1의 확정 때문에
         // "앞선 시외 구간의 편이 확정되지 않았습니다"로 잘못 건너뛰어진다.
+        //
+        // 시간표 조회 예산({@link #TIMETABLE_TIMEOUT})은 반대로 Day별로 다시 주지 않는다 — 여기서
+        // 데드라인을 한 번만 잡고 Day마다 "남은" 시간만 쓰게 한다. Day마다 새 20초를 주면 3일
+        // 일정에서 최악 20(1단) + 20×3(2단) = 80초가 되어 클래스 Javadoc의 "최악 40초" 계약이
+        // 깨진다 — 예산을 요청 전체가 공유해야 그 상한이 몇 Day를 담든 유지된다.
+        Instant timetableDeadline = Instant.now().plus(TIMETABLE_TIMEOUT);
         Integer currentDayNo = null;
         SegmentClock clock = null;
         boolean intercityUsed = false;
@@ -140,12 +153,19 @@ public class TransitCandidateServiceImpl implements TransitCandidateService {
                 segment = intercitySegmentWithoutTimetable(pair, road, SKIP_REASON_PRIOR_INTERCITY);
             } else {
                 LocalDate date = dateOf(project, pair);
+                Duration timetableBudget = remainingBudget(timetableDeadline);
                 if (date == null) {
                     // 시작일을 모르면 다음 시외 구간도 마찬가지다 — intercityUsed를 세우지 않아
                     // 뒤 구간에도 "앞 구간 때문"이 아닌 진짜 이유가 붙는다.
                     segment = intercitySegmentWithoutTimetable(pair, road, SKIP_REASON_NO_START_DATE);
+                } else if (timetableBudget.isZero()) {
+                    // 다른 Day(또는 이 Day 안의 앞선 조회)가 공유 예산을 이미 다 썼다. intercityUsed를
+                    // 세우지 않는다 — 시작일 미상 케이스와 같은 이유로, 뒤따르는 시외 구간도 "앞 구간
+                    // 확정" 대신 같은 예산 소진 이유를 받아야 한다(예산은 요청 전체가 공유하므로 이후
+                    // Day도 마찬가지다).
+                    segment = intercitySegmentWithoutTimetable(pair, road, SKIP_REASON_TIMETABLE_BUDGET_EXHAUSTED);
                 } else {
-                    segment = intercitySegment(pair, road, clock.reference(), date);
+                    segment = intercitySegment(pair, road, clock.reference(), date, timetableBudget);
                     intercityUsed = true;
                 }
             }
@@ -153,6 +173,16 @@ public class TransitCandidateServiceImpl implements TransitCandidateService {
             clock.advance(defaultDurationOf(segment), stayMinutesOf(pair.to()));
         }
         return TransitCandidateResDTO.Result.builder().segments(segments).build();
+    }
+
+    /**
+     * 공유 데드라인까지 남은 시간(음수면 0으로 바닥 처리). Day마다 새 {@link #TIMETABLE_TIMEOUT}을
+     * 주지 않고 이 값을 2단 호출({@link #intercityCandidates})의 실제 상한으로 쓴다 — 그래야 여러
+     * Day를 담은 요청에서도 2단 전체가 {@link #TIMETABLE_TIMEOUT} 하나를 공유한다.
+     */
+    private Duration remainingBudget(Instant deadline) {
+        Duration remaining = Duration.between(Instant.now(), deadline);
+        return remaining.isNegative() ? Duration.ZERO : remaining;
     }
 
     /**
@@ -202,8 +232,10 @@ public class TransitCandidateServiceImpl implements TransitCandidateService {
      * 구간이 29개라 그대로 풀면 외부 API의 초당 한도를 넘긴다. 전체 상한도 둔다: 한 구간이
      * 늘어져도 요청 전체가 매달려 있으면 안 되고, 늦은 구간은 "조회 실패"로 내려보내면 그만이다.
      *
-     * <p>시간표 조회는 여기 없다. 기준 시각이 앞 구간의 결과에 달려 있어 병렬로 만들 수 없고,
-     * 어차피 한 요청에 한 구간만 시간표를 쓴다.
+     * <p>시간표 조회는 여기 없다. 기준 시각이 앞 구간의 결과에 달려 있어 병렬로 만들 수 없다.
+     * Day마다 첫 시외 구간에서 한 번씩 불릴 수 있어 요청 하나에 여러 번 불릴 수 있지만,
+     * 그 여러 호출이 {@link #TIMETABLE_TIMEOUT} 하나를 나눠 쓰므로({@link #remainingBudget})
+     * 전체 상한은 그대로 유지된다.
      */
     private Map<Leg, RoadResult> fetchRoadResults(Set<Leg> legs, TransportPref pref) {
         List<Leg> ordered = List.copyOf(legs);
@@ -377,7 +409,7 @@ public class TransitCandidateServiceImpl implements TransitCandidateService {
      * 고속버스 39,700원 4시간은 사용자가 실제로 저울질하는 대안이라 하나로 뭉치면 그 선택이 사라진다.
      */
     private TransitCandidateResDTO.Segment intercitySegment(
-            Pair pair, RoadResult road, LocalTime reference, LocalDate date) {
+            Pair pair, RoadResult road, LocalTime reference, LocalDate date, Duration timetableBudget) {
         String from = road.firstStartStation();
         String to = road.lastEndStation();
 
@@ -387,7 +419,7 @@ public class TransitCandidateServiceImpl implements TransitCandidateService {
             log.warn("시외 경로에 역 이름이 없다: from={}, to={}", from, to);
             INTERCITY_MODES.forEach(mode -> candidates.add(Candidate.unavailable(mode)));
         } else {
-            candidates.addAll(intercityCandidates(from, to, reference, date));
+            candidates.addAll(intercityCandidates(from, to, reference, date, timetableBudget));
         }
         candidates.addAll(road.roadCandidates());   // 자차·택시. 1단에서 이미 만들어졌다
 
@@ -488,7 +520,12 @@ public class TransitCandidateServiceImpl implements TransitCandidateService {
      * <p>기차·고속버스는 터미널 검색 2회 + 시간표 1회, 항공은 시간표 1회다(공항은
      * {@link DomesticAirport}에서 메모리로 찾는다). 직렬로 두면 한 요청이 read-timeout 15초 × 7회를
      * 서블릿 스레드에서 그대로 뒤집어쓴다. 1단({@link #fetchRoadResults})과 같은 방식으로
-     * 동시에 부르고 {@link #TIMETABLE_TIMEOUT} 상한을 건다.
+     * 동시에 부른다.
+     *
+     * <p>상한은 {@link #TIMETABLE_TIMEOUT} 그 자체가 아니라 호출한 쪽이 넘겨준 {@code budget}이다
+     * — 여러 Day를 담은 요청이면 이 메서드가 Day마다 다시 불리는데, 예산은 요청 전체가
+     * {@link #remainingBudget}로 공유하므로 두 번째 이후 Day는 남은 시간만큼만 받는다(항상
+     * 0보다 크다 — 호출자가 0이면 아예 부르지 않고 예산 소진 사유로 건너뛴다).
      *
      * <p>세마포어를 걸지 않는 이유: 2단은 1단이 끝난 뒤에 돌고 동시 호출이 세 개뿐이라
      * {@value #MAX_CONCURRENT_CALLS}개 상한 안이다.
@@ -496,7 +533,7 @@ public class TransitCandidateServiceImpl implements TransitCandidateService {
      * <p>순서는 {@link #INTERCITY_MODES} 그대로다 — 후보 순서가 곧 화면 순서다.
      */
     private List<Candidate> intercityCandidates(
-            String from, String to, LocalTime reference, LocalDate date) {
+            String from, String to, LocalTime reference, LocalDate date, Duration budget) {
         List<Callable<Candidate>> tasks = List.of(
                 () -> trainCandidate(from, to, reference, date),
                 () -> expressBusCandidate(from, to, reference, date),
@@ -505,10 +542,10 @@ public class TransitCandidateServiceImpl implements TransitCandidateService {
         ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
         try {
             List<Future<Candidate>> futures =
-                    executor.invokeAll(tasks, TIMETABLE_TIMEOUT.toMillis(), TimeUnit.MILLISECONDS);
+                    executor.invokeAll(tasks, budget.toMillis(), TimeUnit.MILLISECONDS);
             List<Candidate> candidates = new ArrayList<>();
             for (int i = 0; i < INTERCITY_MODES.size(); i++) {
-                candidates.add(candidateOf(futures.get(i), INTERCITY_MODES.get(i)));
+                candidates.add(candidateOf(futures.get(i), INTERCITY_MODES.get(i), budget));
             }
             return candidates;
         } catch (InterruptedException e) {
@@ -521,7 +558,7 @@ public class TransitCandidateServiceImpl implements TransitCandidateService {
     }
 
     /** 타임아웃·예외로 끝난 수단만 조회 실패로 내려간다 — 나머지 두 수단까지 잃지 않는다. */
-    private Candidate candidateOf(Future<Candidate> future, TransitMode mode) {
+    private Candidate candidateOf(Future<Candidate> future, TransitMode mode, Duration budget) {
         try {
             return future.get();
         } catch (InterruptedException e) {
@@ -529,7 +566,7 @@ public class TransitCandidateServiceImpl implements TransitCandidateService {
             log.warn("시외 시간표 조회 인터럽트: mode={}", mode);
             return Candidate.unavailable(mode);
         } catch (CancellationException e) {
-            log.warn("시외 시간표 조회 타임아웃 취소({}초): mode={}", TIMETABLE_TIMEOUT.toSeconds(), mode);
+            log.warn("시외 시간표 조회 타임아웃 취소({}초): mode={}", budget.toSeconds(), mode);
             return Candidate.unavailable(mode);
         } catch (ExecutionException e) {
             log.warn("시외 시간표 조회 실패: mode={}", mode, e.getCause());
@@ -829,7 +866,6 @@ public class TransitCandidateServiceImpl implements TransitCandidateService {
                 .distanceM(driving.distance())
                 .build();
     }
-
 
     /** 거리(m) ÷ 연비 × 유가. 차종을 모르니 연비는 가정값이고, 그래서 요금이 ESTIMATE로 나간다. */
     private int estimateFuelCost(int distanceM) {
