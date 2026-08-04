@@ -22,8 +22,10 @@ public record OdsayBusScheduleResponse(Result result, List<OdsayRouteResponse.Od
     public record Bus(
             int busClass,
             String departureTime,
-            int wasteTime,
-            int fare
+            /** 소요시간(분). primitive로 두면 누락이 0분이 되어 도착 시각이 출발 시각과 같아진다 */
+            Integer wasteTime,
+            /** 요금. primitive로 두면 누락이 0원이 되어 "고속버스 0원 확정"으로 나간다 */
+            Integer fare
     ) {
     }
 }

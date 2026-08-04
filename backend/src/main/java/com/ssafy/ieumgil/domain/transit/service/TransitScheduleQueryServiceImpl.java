@@ -7,6 +7,8 @@ import com.ssafy.ieumgil.domain.transit.dto.TransitScheduleResDTO;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
+import java.time.DayOfWeek;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
 
@@ -119,5 +121,53 @@ public class TransitScheduleQueryServiceImpl implements TransitScheduleQueryServ
                         .runDay(f.runDay())
                         .build())
                 .toList();
+    }
+
+    @Override
+    public List<TransitScheduleResDTO.TrainSchedule> getTrainSchedule(
+            int startStationId, int endStationId, LocalDate date) {
+        DayOfWeek dayOfWeek = date.getDayOfWeek();
+        return odsayClient.getTrainSchedule(startStationId, endStationId).stream()
+                .filter(t -> ScheduleDayFilter.runsOn(t.runDay(), dayOfWeek))
+                .map(t -> TransitScheduleResDTO.TrainSchedule.builder()
+                        .railName(t.railName())
+                        .trainClass(t.trainClass())
+                        .trainNo(t.trainNo())
+                        .departureTime(t.departureTime())
+                        .arrivalTime(t.arrivalTime())
+                        .wasteTime(t.wasteTime())
+                        .runDay(t.runDay())
+                        .generalFare(pickFare(t.fare() == null ? null : t.fare().general(), t.generalFare(), dayOfWeek))
+                        .specialFare(pickFare(t.fare() == null ? null : t.fare().special(), t.specialFare(), dayOfWeek))
+                        .standingFare(pickFare(t.fare() == null ? null : t.fare().standing(), t.standingFare(), dayOfWeek))
+                        .build())
+                .toList();
+    }
+
+    @Override
+    public List<TransitScheduleResDTO.BusSchedule> getIntercityBusSchedule(
+            int startStationId, int endStationId, LocalDate date) {
+        // 버스 시간표에는 runDay가 없다 — ODsay가 주지 않으므로 필터할 것이 없다
+        return getIntercityBusSchedule(startStationId, endStationId);
+    }
+
+    @Override
+    public List<TransitScheduleResDTO.FlightSchedule> getFlightSchedule(
+            int startStationId, int endStationId, LocalDate date) {
+        DayOfWeek dayOfWeek = date.getDayOfWeek();
+        return getFlightSchedule(startStationId, endStationId).stream()
+                .filter(f -> ScheduleDayFilter.runsOn(f.runDay(), dayOfWeek))
+                .toList();
+    }
+
+    /**
+     * 요일별 breakdown이 있으면 그것을 우선한다.
+     *
+     * <p>날짜 없는 {@code resolveFare}는 {@code fare.general} 같은 통합 필드를 먼저 집는데,
+     * 그 값이 어느 요일 기준인지 알 수 없다. 날짜를 아는 이 경로에서는 요일별 값이 더 정확하다.
+     */
+    private Integer pickFare(Integer flat, OdsayTrainScheduleResponse.DayFare breakdown, DayOfWeek dayOfWeek) {
+        Integer byDay = ScheduleDayFilter.fareFor(breakdown, dayOfWeek);
+        return byDay != null ? byDay : flat;
     }
 }
