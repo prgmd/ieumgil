@@ -134,6 +134,47 @@ class FestivalBatchServiceTest {
     }
 
     @Test
+    @DisplayName("배치가 detailCommon2 homepage를 추출해 저장한다")
+    void 홈페이지를_채운다() {
+        festivalBatchService = new FestivalBatchService(tourApiClient, festivalRepository);
+        TourApiResponse.Item item = new TourApiResponse.Item(
+                "123", "머드축제", "보령시", "", "126.5", "36.3",
+                "20260701", "20260710", "http://img", "44", "44130", "축제");
+        when(tourApiClient.fetchTotalCount(anyString())).thenReturn(1);
+        when(tourApiClient.searchFestivals(anyString(), eq(1), anyInt())).thenReturn(List.of(item));
+        when(festivalRepository.findByContentId("123")).thenReturn(Optional.empty());
+        when(tourApiClient.fetchDetailHomepage("123"))
+                .thenReturn("<a href=\"http://mud.example.com\">머드</a>");
+
+        festivalBatchService.syncFestivals();
+
+        ArgumentCaptor<Festival> captor = ArgumentCaptor.forClass(Festival.class);
+        verify(festivalRepository).save(captor.capture());
+        assertThat(captor.getValue().getHomepage()).isEqualTo("http://mud.example.com");
+    }
+
+    @Test
+    @DisplayName("상세 조회가 실패해도 축제는 homepage=null로 저장된다")
+    void 상세_실패해도_축제는_적재된다() {
+        festivalBatchService = new FestivalBatchService(tourApiClient, festivalRepository);
+        TourApiResponse.Item item = new TourApiResponse.Item(
+                "123", "머드축제", "보령시", "", "126.5", "36.3",
+                "20260701", "20260710", "http://img", "44", "44130", "축제");
+        when(tourApiClient.fetchTotalCount(anyString())).thenReturn(1);
+        when(tourApiClient.searchFestivals(anyString(), eq(1), anyInt())).thenReturn(List.of(item));
+        when(festivalRepository.findByContentId("123")).thenReturn(Optional.empty());
+        when(tourApiClient.fetchDetailHomepage("123"))
+                .thenThrow(new com.ssafy.ieumgil.domain.festival.exception.FestivalException(
+                        com.ssafy.ieumgil.domain.festival.exception.FestivalErrorCode.TOUR_API_CALL_FAILED));
+
+        festivalBatchService.syncFestivals();
+
+        ArgumentCaptor<Festival> captor = ArgumentCaptor.forClass(Festival.class);
+        verify(festivalRepository).save(captor.capture());
+        assertThat(captor.getValue().getHomepage()).isNull();
+    }
+
+    @Test
     @DisplayName("총건수 기준으로 페이지 수를 정하고 끝까지 돈다")
     void paginatesByTotalCount() {
         festivalBatchService = new FestivalBatchService(tourApiClient, festivalRepository);

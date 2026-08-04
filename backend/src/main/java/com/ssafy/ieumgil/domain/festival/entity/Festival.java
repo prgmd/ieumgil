@@ -54,9 +54,13 @@ public class Festival extends BaseTimeEntity {
 
     private String firstImage;
 
+    @Column(length = 500)
+    private String homepage;
+
     public void update(String title, String category, String lDongRegnCd, String lDongSignguCd,
                         String addr, Double lat, Double lng,
-                        LocalDate eventStartDate, LocalDate eventEndDate, String firstImage) {
+                        LocalDate eventStartDate, LocalDate eventEndDate, String firstImage,
+                        String homepage) {
         this.title = title;
         this.category = category;
         this.lDongRegnCd = lDongRegnCd;
@@ -67,5 +71,6 @@ public class Festival extends BaseTimeEntity {
         this.eventStartDate = eventStartDate;
         this.eventEndDate = eventEndDate;
         this.firstImage = firstImage;
+        this.homepage = homepage;
     }
 }
