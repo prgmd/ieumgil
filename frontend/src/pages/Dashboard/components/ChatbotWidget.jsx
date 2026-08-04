@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { useDraggable } from "@dnd-kit/core";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm"; // 표·취소선 등 GFM 확장 — 표는 기본 문법에 없다
-import { sendChatbotMessage } from "../../../features/dashboard/api/dashboardApi";
+import { sendChatbotMessage, fetchChatbotHistory } from "../../../features/dashboard/api/dashboardApi";
 import "./ChatbotWidget.css";
 
 const CAT_LABEL = {
@@ -142,6 +142,29 @@ export function ChatbotWidget({ projectId, getMapBounds }) {
     const el = bodyRef.current;
     if (el) el.scrollTop = el.scrollHeight;
   }, [messages, sending, isOpen]);
+
+  // 마운트 시 서버 이력을 불러 말풍선을 복원한다. 이미 보낸 메시지가 있으면(레이스) 덮지 않는다.
+  useEffect(() => {
+    let cancelled = false;
+    fetchChatbotHistory(projectId)
+      .then((res) => {
+        if (cancelled || !res?.turns?.length) return;
+        const restored = res.turns.map((t) => {
+          msgSeqRef.current += 1;
+          return {
+            id: msgSeqRef.current,
+            role: t.role === "assistant" ? "bot" : "user",
+            text: t.content,
+            candidates: t.candidates ?? [],
+          };
+        });
+        setMessages((prev) => (prev.length ? prev : restored));
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [projectId]);
 
   const pushMessage = (msg) => {
     msgSeqRef.current += 1;

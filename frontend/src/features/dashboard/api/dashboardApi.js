@@ -239,6 +239,16 @@ export async function sendChatbotMessage(
   }
 }
 
+/** 챗봇 대화 이력(후보 포함). (docs .../chatbot-history-restore-design.md) */
+export async function fetchChatbotHistory(projectId) {
+  try {
+    const { data } = await axiosInstance.get(`/projects/${projectId}/chatbot/messages`);
+    return unwrap(data); // { turns: [{ role, content, candidates }] }
+  } catch (error) {
+    unwrapError(error);
+  }
+}
+
 // ── 교통 후보 ────────────────────────────────────────
 
 /**
