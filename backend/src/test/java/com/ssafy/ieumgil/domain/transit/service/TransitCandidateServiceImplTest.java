@@ -131,7 +131,7 @@ class TransitCandidateServiceImplTest {
 
     private void givenProject(TransportPref pref) {
         given(projectRepository.findByIdAndDeletedAtIsNull(PROJECT_ID))
-                .willReturn(Optional.of(Project.builder().transportPref(pref).build()));
+                .willReturn(Optional.of(Project.builder().transportPrefs(List.of(pref)).build()));
     }
 
     /** ODsay 경로 목록 응답 하나를 durationMin·fare·intervalMin·distanceM만으로 단순화해 만든다. */
@@ -1099,7 +1099,7 @@ class TransitCandidateServiceImplTest {
     /** 시외 구간의 여행 날짜(startDate + dayNo-1)를 유도할 수 있는 프로젝트 */
     private Project publicProject() {
         return Project.builder()
-                .transportPref(TransportPref.PUBLIC)
+                .transportPrefs(List.of(TransportPref.PUBLIC))
                 .startDate(LocalDate.of(2026, 8, 10))
                 .build();
     }

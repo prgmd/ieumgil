@@ -4,12 +4,14 @@ import com.ssafy.ieumgil.domain.project.entity.ProjectStatus;
 import com.ssafy.ieumgil.domain.project.entity.TransportPref;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Positive;
 import jakarta.validation.constraints.PositiveOrZero;
 import jakarta.validation.constraints.Size;
 
 import java.time.LocalDate;
+import java.util.List;
 
 public class ProjectReqDTO {
 
@@ -41,9 +43,9 @@ public class ProjectReqDTO {
             @PositiveOrZero(message = "목표 예산은 0 이상이어야 합니다.")
             Integer targetBudget,
 
-            @Schema(description = "이동수단 선호", example = "CAR")
-            @NotNull(message = "이동수단은 필수입니다.")
-            TransportPref transportPref
+            @Schema(description = "이동수단 선호(복수 선택)", example = "[\"CAR\"]")
+            @NotEmpty(message = "이동수단은 필수입니다.")
+            List<TransportPref> transportPrefs
     ) {
     }
 

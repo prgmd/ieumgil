@@ -41,7 +41,7 @@ public class ProjectResDTO {
             LocalDate endDate,
             String destination,
             Integer budgetHeadcount,
-            TransportPref transportPref,
+            List<TransportPref> transportPrefs,
             ProjectStatus status,
             String themeColor
     ) {
@@ -70,7 +70,7 @@ public class ProjectResDTO {
             String destination,
             LocalDate startDate,
             LocalDate endDate,
-            TransportPref transportPref,
+            List<TransportPref> transportPrefs,
             Integer budgetHeadcount,
             Integer targetBudget,
             List<String> keywords,

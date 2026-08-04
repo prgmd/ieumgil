@@ -84,7 +84,7 @@ class LocalSpecialtyRecommendationLiveTest {
                 .startDate(LocalDate.of(2026, 10, 1))
                 .endDate(LocalDate.of(2026, 10, 3))
                 .budgetHeadcount(2)
-                .transportPref(TransportPref.PUBLIC)
+                .transportPrefs(List.of(TransportPref.PUBLIC))
                 .build();
         String systemPrompt = ChatbotPrompt.SYSTEM
                 + ChatbotPrompt.modeTail(ChatbotMode.GENERAL)

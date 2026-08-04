@@ -58,9 +58,9 @@ public class Project extends BaseTimeEntity {
 
     private LocalDate endDate;
 
-    @Enumerated(EnumType.STRING)
-    @Column(length = 10)
-    private TransportPref transportPref;
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "transport_prefs", columnDefinition = "jsonb")
+    private List<TransportPref> transportPrefs;
 
     /** 정산 인원(1인당 표시용). null이면 조회 시점 그룹 멤버 수를 따른다(BGT-03) */
     private Integer budgetHeadcount;
