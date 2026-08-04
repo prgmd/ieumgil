@@ -673,11 +673,16 @@
 
 | 후보 필드 | 블록 필드 |
 |---|---|
-| `durationMin` | `durationMin` |
-| `fare` | `budget` |
+| `durationMin`(선택된 후보 — 시외는 선택된 편의 값) | `durationMin` |
+| `fare`(선택된 후보/편, 없으면 `0`) | `budget` |
 | `label` | `subCategory` |
-| `mode`·`fare`·`fareConfidence`·`intervalMin` | `transportMeta`에 담고 `generated: true` 추가 |
 | (고정) | `category: TRANSPORT` |
+| 선택된 `Candidate` 원본 + `departureName`(시외에서 고른 편 이름, 시내면 `null`) | `transportMeta.chosen` |
+| 해당 `Segment`의 `intercity`/`timetableApplied`/`timetableSkipReason`/`referenceAt` | `transportMeta.segment` |
+| 그 구간의 `candidates[]` 스냅샷 그대로(편집 재선택용, 재조회 없이 재렌더) | `transportMeta.candidates` |
+| (고정) | `transportMeta.generated: true` |
+
+`transportMeta.chosen`과 `transportMeta.candidates[]`의 원소는 같은 모양이다 — 둘 다 이 응답의 `Candidate`를 가공 없이 그대로 담는다. `chosen`만 그 후보 하나에 `departureName`을 얹는다. 프론트는 열람 시 `chosen`만 읽고, 편집 재선택 시 `candidates` 스냅샷으로 피커를 재렌더한다(재조회 없음).
 
 **Errors:**
 
