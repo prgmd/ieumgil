@@ -1,0 +1,1761 @@
+/* 카테고리 색·잉크색 토큰(--stay/--food/--acc …). 개인·그룹 페이지와 같은 팔레트를
+   쓰므로 여기서도 같은 파일을 읽어, 대시보드만 따로 열려도 색이 비지 않게 한다. */
+@import "../My/shared/styles/tokens.css";
+
+/* ─────────────────────────────────────────────────────────────
+   화면 껍데기.
+   모드 전환 바와 보드가 예전에는 각각 자기 배경을 가진 두 덩어리였다 —
+   이제 .dash-shell 하나가 배경을 쥐고, 전환 바(.dash-toolbar)와 본문(.dash-body)이
+   같은 폭·같은 배경 위에 얹혀 한 화면처럼 이어진다.
+   ───────────────────────────────────────────────────────────── */
+.dash-shell {
+  background: #f4f1ea;
+  min-height: calc(100vh - 50px); /* 50px = 상단 앱바 */
+  padding: 14px 0 40px; /* 제목·모드 전환이 상단바로 올라가 툴바 띠가 없다 */
+}
+
+/* 상단바(AppBar extra)에 올라간 대시보드 제목·모드 전환 — 50px 높이에 맞춘 축소판.
+   flex:1 로 남는 폭을 다 차지해, 모드 전환을 오른쪽 끝(활동 배지 왼쪽)으로 민다 */
+.dash-headbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0; /* 제목이 길면 말줄임 — 오른쪽 crew·프로필을 밀지 않는다 */
+  flex: 1;
+}
+.dash-headbar-title {
+  margin: 0;
+  font-size: 16.5px;
+  font-weight: 700;
+  color: var(--ink1, #3d2b22);
+  line-height: 1.2;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 300px;
+}
+.dash-headbar .dash-sub {
+  font-size: 12px;
+  color: var(--ink3, #8a776a);
+  white-space: nowrap;
+}
+.dash-headbar .mode-switch {
+  padding: 3px;
+  margin-left: auto; /* 활동중 배지(crew) 바로 왼쪽까지 민다 */
+}
+.dash-headbar .mode-tab {
+  padding: 5px 13px;
+  font-size: 13px;
+}
+
+/* 전환 바 + 본문이 같은 자를 쓰도록 폭·좌우 여백을 한곳에서 정한다.
+   1720px까지 넓혀 옆에 남던 빈 공간을 지도·보드가 나눠 쓰게 했다. */
+.dash-toolbar,
+.dash-body {
+  max-width: 1720px;
+  margin: 0 auto;
+  padding: 0 28px;
+}
+.dash-toolbar {
+  display: flex;
+  align-items: flex-end;
+  gap: 16px;
+  padding-bottom: 12px;
+}
+.dash-heading h1 {
+  margin: 0;
+  font-size: 22px;
+  color: var(--ink1, #3d2b22);
+  line-height: 1.2;
+}
+.dash-heading .dash-sub {
+  font-size: 12.5px;
+  color: var(--ink3, #8a776a);
+}
+
+/* 모드 전환 — 별도 띠가 아니라 본문에 붙은 탭처럼 보이게 한다 */
+/* 보이스 위젯 — 화면 맨 아래 가운데 붙는 타원형 바 하나. 자동 연결이라 "참여"
+   버튼이 없고 마이크·스피커 토글과 상태만 있다. 모달(오버레이)보다는 아래에 깔린다.
+   접으면 토글만 남은 작은 타원이고, 펼치면 같은 타원이 옆으로 늘어나면서
+   마이크·스피커 아이콘이 그 안에 나타난다. */
+/* 화면 맨 아래 가장자리에 붙는다(bottom:0) — 컨테이너가 아래로 고정돼 있어
+   패널이 열려도 탭은 제자리에서 위로만 자란다. */
+.voice-bar {
+  position: fixed;
+  bottom: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 900;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  user-select: none;
+}
+
+/* 펼쳐질 때 탭 위로 뜨는 아이콘 묶음 */
+.voice-items {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+  padding: 6px 14px 6px 6px;
+  background: var(--bg1, #fffdf8);
+  border: 1px solid var(--border1, #e3dfd8);
+  border-radius: 999px;
+  box-shadow: 0 6px 18px rgba(61, 43, 34, 0.18);
+  animation: voice-items-in 0.14s ease-out;
+}
+@keyframes voice-items-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* 하단 탭 — 평소엔 아래로 내려가 윗부분만 빼꼼 보이고, 올리거나 펼치면 다 나온다.
+   아래 테두리를 지우고 위쪽 모서리만 둥글려 화면 밖에서 올라온 것처럼 보이게 한다. */
+.voice-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 26px;
+  padding: 0 12px;
+  border: 1px solid var(--border1, #e3dfd8);
+  border-bottom: none;
+  border-radius: 10px 10px 0 0;
+  background: var(--bg1, #fffdf8);
+  box-shadow: 0 -2px 10px rgba(61, 43, 34, 0.12);
+  color: var(--ink2, #6b5a4e);
+  font-size: 12px;
+  font-weight: bold;
+  line-height: 1;
+  cursor: pointer;
+  transform: translateY(12px);
+  transition: transform 0.16s ease;
+}
+.voice-tab:hover,
+.voice-tab:focus-visible,
+.voice-bar.is-open .voice-tab {
+  transform: translateY(0);
+}
+.voice-tab-caret {
+  font-size: 9px;
+  color: var(--ink3, #8a776a);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .voice-items {
+    animation: none;
+  }
+  .voice-tab {
+    transition: none;
+  }
+}
+.voice-mic {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  border: none;
+  cursor: pointer;
+  font-size: 15px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: background-color 0.15s ease;
+}
+.voice-mic.on {
+  background: var(--spot, #3e8e63);
+}
+.voice-mic.off {
+  background: #c9beb2;
+}
+.voice-mic:disabled {
+  cursor: default;
+  opacity: 0.7;
+}
+.voice-status {
+  font-size: 12px;
+  font-weight: bold;
+  color: var(--ink3, #8a776a);
+  white-space: nowrap;
+}
+
+.mode-switch {
+  display: flex;
+  gap: 4px;
+  background: rgba(61, 43, 34, 0.06);
+  padding: 5px;
+  border-radius: 22px;
+}
+.mode-tab {
+  padding: 8px 18px;
+  border: none;
+  border-radius: 18px;
+  background: transparent;
+  color: #8c7b70;
+  font-size: 14px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.mode-tab:hover {
+  color: var(--acc, #9c4a2f);
+}
+.mode-tab.on {
+  background: var(--bg2, #fdfbf7);
+  color: #7c5443;
+  font-weight: bold;
+  box-shadow: 0 2px 6px rgba(61, 43, 34, 0.12);
+}
+
+/* Dashboard 하위에 적용될 전체 레이아웃 래퍼 */
+.dashboard-page {
+  position: relative; /* 페이지 좌표 커서 레이어(.cursor-layer)의 기준 박스 */
+  color: var(--ink1, #211c19);
+  padding-bottom: 8px;
+  display: flex;
+  gap: 26px;
+  align-items: flex-start;
+}
+
+/* ─────────────────────────────────────────────────────────────
+   Day 탭 = 다이어리 책갈피.
+   리본처럼 왼쪽 끝에 V 노치를 파고, 오른쪽 끝은 보드 밑으로 밀어 넣어
+   (margin-right 음수 + z-index) "책장에 끼운 책갈피"로 보이게 한다.
+   선택된 탭만 보드와 같은 크림색이라 펼쳐진 페이지와 이어져 보인다.
+   ───────────────────────────────────────────────────────────── */
+.daycol {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: 140px;
+  flex-shrink: 0;
+  padding-top: 34px;
+  margin-right: -22px; /* 이만큼이 보드 아래로 들어간다 */
+  position: relative; /* z-index 가 먹으려면 필요 */
+  z-index: 1;
+}
+.day-tab {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  text-align: left;
+  border: none;
+  padding: 11px 30px 11px 22px;
+  color: var(--ink3, #8a776a);
+  background: linear-gradient(90deg, #efe6d4 0%, #f7efe0 100%);
+  clip-path: polygon(0 0, 100% 0, 100% 100%, 0 100%, 11px 50%);
+  filter: drop-shadow(-1px 3px 5px rgba(61, 43, 34, 0.13));
+  cursor: pointer;
+  transition:
+    transform 0.18s ease,
+    background 0.18s ease,
+    color 0.18s ease,
+    padding 0.18s ease;
+}
+.day-tab .dt-label,
+.day-tab .dt-date {
+  transition: font-size 0.18s ease;
+}
+/* 다이어리 느낌의 바느질선 */
+.day-tab::after {
+  content: "";
+  position: absolute;
+  left: 15px;
+  top: 7px;
+  bottom: 7px;
+  border-left: 1px dashed rgba(61, 43, 34, 0.22);
+}
+/* 고른 책갈피는 "커진다".
+   오른쪽 끝이 보드 밑에 물려 있으므로 오른쪽으로 밀면 보이는 길이가 오히려 줄어든다 —
+   그래서 왼쪽(바깥)으로 빼내고 위아래 여백·글자도 키운다. */
+.day-tab:hover {
+  transform: translateX(-4px);
+  color: var(--acc, #9c4a2f);
+}
+.day-tab.on {
+  /* 보드와 같은 크림색 → 선택한 책갈피가 펼친 페이지와 하나로 이어진다 */
+  background: var(--bg2, #fdfbf7);
+  color: var(--acc, #9c4a2f);
+  transform: translateX(-12px);
+  padding-top: 15px;
+  padding-bottom: 15px;
+  filter: drop-shadow(-3px 5px 11px rgba(61, 43, 34, 0.18));
+}
+.day-tab .dt-top {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.day-tab .dt-label {
+  font-size: 15.5px;
+  font-weight: 600;
+}
+.day-tab.on .dt-label {
+  font-size: 17px;
+  font-weight: 700;
+}
+.day-tab.on .dt-date {
+  font-size: 12.5px;
+  opacity: 0.9;
+}
+.day-tab .dt-date {
+  font-size: 11.5px;
+  opacity: 0.75;
+}
+.day-tab .cnt {
+  font-size: 11.5px;
+  font-weight: 500;
+  background: rgba(61, 43, 34, 0.1);
+  border-radius: 99px;
+  padding: 1px 7px;
+}
+.day-tab.on .cnt {
+  background: var(--acc, #9c4a2f);
+  color: #fff;
+}
+
+/* 메인 플래너 보드 — 책갈피(.daycol) 위에 겹쳐 그려야 탭이 보드 밑으로 들어간다 */
+.main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  position: relative;
+  z-index: 2;
+}
+.board {
+  background: var(--bg2, #fdfbf7);
+  border: 1px solid var(--border1, #e3dfd8);
+  border-radius: 20px;
+  padding: 24px;
+}
+.bd-head {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  border-bottom: 1px solid var(--border1, #e3dfd8);
+  padding-bottom: 16px;
+}
+.bd-head h2 {
+  margin: 0;
+  font-size: 24px;
+}
+.bd-head .date {
+  color: var(--ink3, #786d63);
+}
+
+/* 날짜 = 캘린더 버튼. 평소엔 그냥 텍스트처럼 보이고, 올리면 누를 수 있다는 걸 알려준다 */
+.date-wrap {
+  position: relative;
+}
+.date-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  padding: 4px 10px;
+  background: transparent;
+  font-size: inherit;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.date-btn .date-ico {
+  font-size: 12px;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+.date-btn:hover {
+  background: #fff;
+  border-color: var(--border1, #e3dfd8);
+  color: var(--acc, #9c4a2f);
+}
+.date-btn:hover .date-ico {
+  opacity: 0.9;
+}
+/* 팝오버 밖을 누르면 닫히게 하는 투명막 */
+.date-pop-back {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+}
+.date-pop {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  z-index: 201;
+  width: 250px;
+  padding: 14px;
+  border: 1px solid var(--border1, #e3dfd8);
+  border-radius: 14px;
+  background: var(--bg1, #fffdf8);
+  box-shadow: 0 14px 30px rgba(61, 43, 34, 0.18);
+}
+.date-pop label {
+  display: block;
+  font-size: 12px;
+  color: var(--ink3, #8a776a);
+  margin-bottom: 6px;
+}
+.date-pop input {
+  width: 100%;
+  padding: 9px 11px;
+  border: 1.5px solid var(--border1, #e3dfd8);
+  border-radius: 10px;
+  background: #fff;
+  font-family: inherit;
+  font-size: 14px;
+}
+.date-pop p {
+  margin: 8px 0 0;
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: var(--ink3, #8a776a);
+}
+.bd-head .right {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.start-ctl {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: #fff;
+  border: 1px solid var(--border1, #e3dfd8);
+  padding: 4px 12px;
+  border-radius: 20px;
+  font-size: 14px;
+}
+.start-ctl button {
+  background: none;
+  border: none;
+  font-size: 16px;
+  cursor: pointer;
+  color: var(--acc, #9c4a2f);
+  font-weight: bold;
+  padding: 0 4px;
+}
+.auto-transport-btn {
+  background: #fff;
+  border: 1px solid var(--border1, #e3dfd8);
+  padding: 8px 16px;
+  border-radius: 20px;
+  font-size: 14px;
+  cursor: pointer;
+  color: var(--ink1);
+  transition: all 0.2s;
+}
+.auto-transport-btn:hover:not(:disabled) {
+  background: #f0ece1;
+}
+.auto-transport-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* 계획 보드 — 세로도 화면을 쓰게 하되 타임라인만 안에서 스크롤한다 */
+.board.plan-board {
+  display: flex;
+  flex-direction: column;
+  max-height: min(78vh, 900px);
+}
+.board.plan-board .bd-head {
+  flex-shrink: 0;
+}
+
+/* ── 타임라인 ─────────────────────────────────────────────── */
+.tl {
+  position: relative;
+  margin-top: 10px;
+  border: 1px solid var(--border1, #e3dfd8);
+  border-radius: 12px;
+  background: var(--bg1, #fffdf8);
+  padding: 10px;
+  min-height: 320px;
+  max-height: min(62vh, 740px);
+  overflow-x: hidden;
+  overflow-y: auto;
+  transition: background 0.2s;
+}
+.tl.dropover {
+  background: rgba(156, 74, 47, 0.02);
+}
+
+/* 눈금판과 블록판 — 여백(--tl-pad-*)만 JSX 가 넘기고 나머지는 여기서 */
+.tl-bg,
+.tl-slots {
+  position: absolute;
+  top: var(--tl-pad-top);
+  left: var(--tl-pad-left);
+  right: 0;
+}
+.tl-bg {
+  bottom: 0;
+  z-index: 0;
+  pointer-events: none;
+}
+.tl-slots {
+  bottom: 100px;
+  z-index: 5;
+}
+.tl-mark {
+  position: absolute;
+  left: 0;
+  width: 100%;
+  height: 1px;
+}
+.tl-mark-time {
+  position: absolute;
+  left: -64px;
+  top: -10px;
+  width: 52px;
+  text-align: right;
+  font-size: 12px;
+  font-weight: 700;
+  color: #c9b8a5;
+}
+.tl-mark-line {
+  position: absolute;
+  left: -6px;
+  right: 0;
+  top: 0;
+  border-top: 1px dashed rgba(61, 43, 34, 0.15);
+}
+
+/* 드래그 중 "여기에 놓기" 미리보기 — 색은 끌고 있는 블록의 카테고리(--dc/--cb) */
+/* 블록 좌상단의 "가장 최근 수정자" 아바타 — 테두리는 그 멤버의 커서 색.
+   타임라인에서는 .slot(카드가 overflow:hidden 이라), 후보에서는 .pcard 에 붙는다. */
+.blk-editor {
+  position: absolute;
+  top: -6px;
+  left: -6px;
+  z-index: 16; /* 타임라인 점(.slot .dot, z15)보다 위 — 점이 프로필을 가리지 않게 */
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 2px solid #fff; /* 멤버 색 테두리 대신 흰 테두리 — 배경과의 분리용 */
+  box-sizing: border-box;
+  background: #fff;
+  overflow: hidden;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 9px;
+  font-weight: bold;
+  color: hsl(var(--vh) 65% 38%);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
+}
+.blk-editor img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+/* Day 탭의 "보는 중" 아바타 — 테두리가 그 멤버의 커서 색 (7단계).
+   여러 명이면 살짝 겹쳐 쌓는다(AppBar 의 crew 겹침과 같은 문법). */
+.dt-viewers {
+  position: absolute;
+  top: 5px;
+  right: 8px;
+  display: flex;
+  align-items: center;
+}
+.dt-viewers img,
+.dt-viewers i {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 2px solid hsl(var(--vh) 65% 48%);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
+  box-sizing: border-box;
+  background: #fff;
+}
+.dt-viewers img {
+  object-fit: cover;
+}
+.dt-viewers i {
+  /* 이미지 없는 멤버 — 닉네임 첫 글자 */
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 9px;
+  font-style: normal;
+  font-weight: bold;
+  color: hsl(var(--vh) 65% 38%);
+}
+.dt-viewers img + img,
+.dt-viewers img + i,
+.dt-viewers i + img,
+.dt-viewers i + i {
+  margin-left: -6px;
+}
+.dt-viewers-more {
+  font-size: 9px;
+  font-style: normal;
+  font-weight: bold;
+  color: var(--ink3, #8a776a);
+  margin-left: 2px;
+}
+
+/* 라이브 커서(7단계) — 눈금·카드와 같은 오프셋의 오버레이. 클릭·드래그를
+   가로채면 안 되므로 pointer-events 를 통째로 끈다. */
+.cursor-layer {
+  position: absolute;
+  pointer-events: none;
+  z-index: 20; /* 카드(.tl-slots z5)·고스트(z8) 위 */
+}
+.remote-cursor {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  /* 50ms 스로틀 송신의 점프를 잇는 보간 — 짧게 잡아 '따라오는' 느낌만 준다 */
+  transition:
+    top 90ms linear,
+    left 90ms linear;
+}
+.remote-cursor-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50% 50% 50% 0; /* 좌하단 꼭짓점 — 포인터 느낌 */
+  transform: rotate(45deg);
+  background: hsl(var(--cursor-h) 65% 48%);
+  border: 2px solid #fff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+  flex-shrink: 0;
+}
+.remote-cursor-name {
+  font-size: 11px;
+  font-weight: bold;
+  color: #fff;
+  background: hsl(var(--cursor-h) 65% 48%);
+  padding: 2px 7px;
+  border-radius: 9px;
+  white-space: nowrap;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.15);
+}
+
+.tl-ghost {
+  position: absolute;
+  left: -6px;
+  right: 10px;
+  z-index: 8;
+  display: flex;
+  align-items: flex-start;
+  padding: 6px 10px;
+  border: 2px dashed var(--dc);
+  border-radius: 12px;
+  background: var(--cb);
+  opacity: 0.75;
+  pointer-events: none;
+}
+.tl-ghost-label {
+  padding: 2px 8px;
+  border-radius: 8px;
+  background: #fff;
+  font-size: 12px;
+  font-weight: 800;
+  color: var(--dc);
+}
+
+/* 블록 위·아래 리사이즈 손잡이 */
+.tl-edge {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 16px;
+  z-index: 40;
+  cursor: ns-resize;
+  background: transparent;
+}
+.tl-edge.is-top {
+  top: 0;
+}
+.tl-edge.is-bottom {
+  bottom: 0;
+}
+.tl-edge.is-active {
+  background: rgba(0, 0, 0, 0.1);
+}
+
+/* 타임라인에 놓인 블록의 자리(시간·높이는 인라인, 나머지는 여기) */
+.slot {
+  position: absolute;
+  left: 10px;
+  right: 10px;
+  z-index: 5;
+  transition:
+    top 0.25s cubic-bezier(0.2, 0, 0, 1),
+    height 0.25s cubic-bezier(0.2, 0, 0, 1);
+}
+.slot.is-dragging {
+  opacity: 0;
+  pointer-events: none;
+}
+.slot.is-dragging,
+.slot.is-resizing {
+  z-index: 100;
+  transition: none;
+}
+.slot .card {
+  height: 100%;
+  position: relative;
+  overflow: hidden;
+  cursor: pointer;
+}
+.slot.is-resizing .card {
+  cursor: ns-resize;
+  box-shadow: 0 0 0 2px var(--dc);
+}
+/* 시각 라벨과 점 */
+.slot .tlab {
+  position: absolute;
+  left: -64px;
+  top: -10px;
+  z-index: 15;
+  width: 52px;
+  padding: 2px 0;
+  text-align: right;
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--dc);
+  background: rgba(255, 253, 248, 0.95);
+}
+.slot .dot {
+  position: absolute;
+  left: -6px;
+  top: -7px;
+  z-index: 15;
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  border: 2px solid var(--bg1, #fffdf8);
+  background: var(--dc);
+}
+/* 드래그 중인 카드가 원래 있던 자리 */
+.slot-ghost {
+  opacity: 0;
+}
+
+/* 두 블록 사이의 "이동 추가" 칩 */
+.trans-slot {
+  position: absolute;
+  left: 10px;
+  right: 15px;
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  transform: translateY(-50%);
+  pointer-events: none;
+}
+.trans-slot.has-gap {
+  right: 10px;
+  justify-content: center;
+}
+.trans-chip {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
+  border: 1px solid var(--food, #d97e3c);
+  border-radius: 20px;
+  background: #fff;
+  color: var(--food, #d97e3c);
+  font-family: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  pointer-events: auto;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.12);
+  transition:
+    background 0.15s,
+    color 0.15s;
+}
+.trans-chip:hover {
+  background: var(--food, #d97e3c);
+  color: #fff;
+}
+.trans-chip-ico {
+  font-size: 14px;
+}
+.trans-chip-label {
+  font-weight: bold;
+}
+
+/* 아무 블록도 없는 Day 안내 */
+.endzone {
+  position: absolute;
+  top: 40px;
+  left: 10px;
+  right: 10px;
+  text-align: center;
+  color: var(--ink3, #8a776a);
+  pointer-events: none;
+}
+
+/* ── 후보 및 휴지통 영역 ───────────────────────────────────── */
+.pool-sec {
+  min-width: 0;
+  background: var(--bg2, #fdfbf7);
+  border: 1px solid var(--border1, #e3dfd8);
+  border-radius: 20px;
+  padding: 20px;
+}
+.pool-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+.pool-hint {
+  margin-left: 8px;
+  font-size: 12px;
+  color: var(--ink3, #8a776a);
+}
+.pool-add-btn {
+  padding: 6px 14px;
+  border: none;
+  border-radius: 8px;
+  background: #7c5443;
+  color: #fff;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: bold;
+  cursor: pointer;
+  box-shadow: 0 2px 6px rgba(124, 84, 67, 0.2);
+}
+.pool-add-btn:hover {
+  background: #6a4536;
+}
+/* 후보 목록 빈 상태 (POOL-01) — 어디서 채우는지 알려주는 자리 표시 */
+.pool-empty {
+  width: 100%;
+  padding: 22px 16px;
+  border: 1.5px dashed var(--border1, #e3dfd8);
+  border-radius: 12px;
+  text-align: center;
+  font-size: 12.5px;
+  line-height: 1.7;
+  color: var(--ink3, #8a776a);
+}
+.pool-empty b {
+  color: var(--ink2, #6b5a4e);
+}
+
+/* 후보 목록 위로 블록을 끌어왔을 때의 점선 테두리 */
+.pool-dropzone {
+  position: absolute;
+  inset: 0;
+  border: 2px dashed var(--acc, #9c4a2f);
+  border-radius: 14px;
+  background: rgba(156, 74, 47, 0.04);
+  pointer-events: none;
+}
+.pool-head b {
+  font-size: 18px;
+}
+.pool-head .n {
+  background: var(--acc, #9c4a2f);
+  color: #fff;
+  border-radius: 10px;
+  padding: 2px 8px;
+  font-size: 13px;
+  font-weight: bold;
+}
+/* (예전에 있던 `.pool-head span:last-child` 규칙은 지웠다 —
+   안내 문구 스타일은 위의 .pool-hint 가 쥔다) */
+/* 후보 목록 — 한 줄에 정확히 5개. 카드 폭을 고정하고 flex-wrap 으로 흘리면
+   남는 폭에 따라 4개만 들어가고 5번째가 다음 줄로 떨어진다. 열 개수를 그리드가
+   쥐고 카드가 폭을 따라가게 하면 보드가 넓든 좁든 5개 배치가 유지된다.
+   minmax(0, 1fr) 의 0 은 긴 이름이 열을 밀어내지 못하게 막는 최소폭이다. */
+.pool {
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 12px;
+  min-height: 150px;
+  padding-bottom: 20px;
+}
+/* ── 보드 밖 삭제 경고 ──────────────────────────────────────
+   전용 휴지통 영역을 없앤 대신, 후보 목록·타임라인 밖으로 블록을 끌고 가면
+   경고 배너를 띄운다. 화면 전체를 물들이지는 않는다 — 배너 하나로 충분하고,
+   보드가 빨개지면 정작 끌고 있는 블록이 안 보인다. */
+.discard-warning {
+  position: fixed;
+  inset: 0;
+  z-index: 995;
+  /* 이걸 빼면 드래그 중 포인터를 가로채 드롭이 통째로 깨진다 */
+  pointer-events: none;
+}
+/* 반투명이라 뒤가 비쳐 보인다 — 배너에 가린 보드를 확인하면서 놓을 수 있다.
+   blur 를 얹어야 배경이 복잡해도 글자가 읽힌다. */
+.discard-warning-label {
+  position: absolute;
+  left: 50%;
+  top: 40px;
+  transform: translateX(-50%);
+  padding: 22px 44px;
+  border-radius: 999px;
+  background: rgba(214, 74, 74, 0.72);
+  border: 2px solid rgba(255, 255, 255, 0.45);
+  backdrop-filter: blur(3px);
+  color: #fff;
+  font-size: 22px;
+  font-weight: bold;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+  text-shadow: 0 1px 3px rgba(90, 20, 20, 0.5);
+  box-shadow: 0 10px 30px rgba(61, 43, 34, 0.28);
+}
+
+/* 블럭(카드) 공통 디자인 */
+.card,
+.pcard {
+  background: var(--cb);
+  border: 1px solid var(--dc);
+  border-radius: 10px;
+  padding: 10px 12px;
+  font-size: 13px;
+  color: var(--ink1);
+  display: flex;
+  flex-direction: column;
+}
+.card:hover,
+.pcard:hover {
+  filter: brightness(0.97);
+}
+.pcard {
+  /* 폭은 .pool 그리드의 열이 정한다 — 여기서 고정하면 5열이 깨진다 */
+  cursor: pointer; /* 카드 전체가 수정 클릭 영역 (끌기도 그대로 된다) */
+  position: relative; /* 수정 표시(.blk-op) 기준 */
+}
+.pcard.is-dragging {
+  opacity: 0.35;
+}
+/* 마우스에 붙어 따라오는 복제 카드(DragOverlay) */
+.pcard.is-overlay,
+.card.is-overlay {
+  cursor: grabbing;
+}
+/* 복제본은 그리드 밖(DragOverlay)에 떠 있어 열 폭을 물려받지 못한다 —
+   폭을 직접 줘야 원본과 비슷한 크기로 끌린다 */
+.pcard.is-overlay {
+  width: 200px;
+}
+.card.is-overlay {
+  width: 320px;
+  box-shadow: 0 10px 28px rgba(61, 43, 34, 0.22);
+}
+
+/* 블록 수정 표시 — 개인 페이지의 카드 버튼(.g-card .op)과 같은 모양·같은 hover 규칙.
+   평소엔 숨어 있고 카드에 마우스를 올릴 때만 나타난다. */
+.blk-op {
+  position: absolute;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border: none;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.88);
+  color: var(--ink1, #3d2b22);
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+  z-index: 50; /* 리사이즈 핸들(z-index 40)보다 위 */
+  box-shadow: 0 2px 6px rgba(61, 43, 34, 0.16);
+}
+.blk-op:hover {
+  background: #fff;
+  color: var(--acc, #9c4a2f);
+}
+.pcard .blk-op {
+  top: 6px;
+  right: 6px;
+}
+.card .blk-op {
+  bottom: 6px;
+  right: 8px;
+}
+.pcard:hover .blk-op,
+.card:hover .blk-op {
+  display: flex;
+}
+/* 수정 표시가 뜰 자리를 비워준다 */
+.pcard:hover .grip {
+  opacity: 0;
+}
+.pcard .l {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+.pcard .cat {
+  font-weight: 700;
+  color: var(--dc);
+}
+.pcard .grip {
+  color: var(--dc);
+  opacity: 0.5;
+}
+.pcard .nm {
+  font-weight: bold;
+  color: #333;
+  font-size: 14px;
+  margin-bottom: 4px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.pcard .sub {
+  color: var(--ink2);
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* 타임라인 내 카드 디자인 */
+.card .l1 {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+.card .cat {
+  font-weight: 700;
+  color: var(--dc);
+  background: #fff;
+  padding: 2px 6px;
+  border-radius: 6px;
+  font-size: 12px;
+}
+.card .auto-badge {
+  background: var(--dc);
+  color: #fff;
+  padding: 2px 6px;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: bold;
+}
+/* 다른 멤버가 이 블록의 상세를 편집 중(advisory 락, 6단계).
+   자동 배지와 달리 채우지 않고 점선 테두리 — "정보"지 "속성"이 아니라서. */
+.lock-badge {
+  border: 1.5px dashed var(--dc, #7c5443);
+  color: var(--dc, #7c5443);
+  background: #fff;
+  padding: 1px 6px;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: bold;
+  white-space: nowrap;
+  animation: lock-badge-in 0.2s ease;
+}
+@keyframes lock-badge-in {
+  from {
+    opacity: 0;
+    transform: scale(0.9);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+.card .nm {
+  font-weight: bold;
+  color: #333;
+  font-size: 15px;
+}
+.card .nm-sub {
+  font-size: 12px;
+  color: var(--ink3);
+  margin-left: 4px;
+}
+.card .time {
+  margin-left: auto;
+  font-family: monospace;
+  font-size: 14px;
+  color: var(--dc);
+  font-weight: bold;
+}
+.card .cost {
+  font-weight: 600;
+  color: var(--ink2);
+  font-size: 12.5px;
+}
+.card .addr {
+  color: var(--ink2);
+  margin-bottom: 6px;
+  font-size: 12.5px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.card .ctl {
+  margin-top: auto;
+  padding-top: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-top: 1px dashed rgba(0, 0, 0, 0.1);
+  font-size: 12px;
+  color: var(--ink3);
+}
+/* 리사이즈 중 안내 문구 — 카테고리 색으로 강조 */
+.card .dur.is-resizing {
+  color: var(--dc);
+  font-weight: bold;
+}
+
+/* 사이드 패널 — 창이 넓어지면 같이 넓어져 지도가 남는 공간을 쓴다 */
+.side {
+  width: clamp(300px, 26vw, 460px);
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+/* 지도 — 사이드 폭과 화면 높이에 맞춰 커진다(고정 220px이었음) */
+.map-box {
+  height: clamp(300px, 42vh, 560px);
+  background: #e9e5dc;
+  border-radius: 12px;
+}
+
+/* ── 사이드 패널 공통(예산·지도·검색) ───────────────────────
+   테두리·기본 라운드는 .panel 을 그대로 쓰고, 사이드에서만 크림색 배경과
+   그림자를 덧입힌다(예전에 각 패널에 인라인으로 붙어 있던 값들). */
+.side .panel {
+  padding: 24px;
+  background: #fbf8f1;
+  border-radius: 16px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+}
+.side .panel:not(:last-child) {
+  margin-bottom: 20px;
+}
+/* .panel h4 (0,1,1) 보다 우선하도록 클래스를 함께 적는다 */
+.panel h4.panel-title {
+  margin: 0 0 16px;
+  font-size: 16px;
+  color: #3d2b22;
+}
+.panel-title-sub {
+  font-size: 12px;
+  font-weight: normal;
+  color: var(--ink3, #8a776a);
+}
+
+/* ── 예산 패널 ─────────────────────────────────────────────── */
+.bud-total {
+  margin-bottom: 16px;
+}
+.bud-total-label {
+  font-size: 15px;
+  font-weight: bold;
+  color: #666;
+}
+.bud-total-value {
+  font-size: 28px;
+  font-weight: 800;
+  color: #3d2b22;
+}
+.bud-target {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+  font-size: 13px;
+  color: var(--ink3, #8a776a);
+}
+.bud-stepper {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 8px;
+  border-radius: 8px;
+  background: #f4f1ea;
+}
+.bud-stepper button {
+  border: none;
+  background: none;
+  color: #666;
+  font-family: inherit;
+  font-weight: bold;
+  cursor: pointer;
+}
+.bud-stepper button:hover {
+  color: var(--acc, #9c4a2f);
+}
+.bud-stepper-value {
+  font-weight: bold;
+  color: #333;
+}
+/* 금액이 버튼이 됐다(클릭 = 직접 입력) — ± 버튼 공통 스타일의 회색을 되돌린다 */
+.bud-stepper button.bud-stepper-value {
+  color: #333;
+}
+.bud-stepper button.bud-stepper-value:hover {
+  color: var(--acc, #9c4a2f);
+}
+.bud-stepper-input {
+  width: 96px;
+  border: 1px solid var(--border1, #e3dfd8);
+  border-radius: 6px;
+  padding: 2px 6px;
+  font-family: inherit;
+  font-size: inherit;
+  font-weight: bold;
+  color: #333;
+  background: #fff;
+  outline: none;
+  appearance: textfield; /* 숫자 입력의 위아래 스피너 제거 — ± 버튼이 이미 있다 */
+  -moz-appearance: textfield;
+}
+.bud-stepper-input::-webkit-outer-spin-button,
+.bud-stepper-input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+.bud-foot {
+  display: flex;
+  justify-content: space-between;
+  font-size: 12px;
+  color: var(--ink3, #8a776a);
+}
+.bud-left {
+  color: #666;
+}
+/* 예산을 넘겼을 때 */
+.bud-left.is-over {
+  color: var(--food, #d97e3c);
+  font-weight: bold;
+}
+
+/* ── 검색 패널 ─────────────────────────────────────────────── */
+.search-box {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.search-form {
+  display: flex;
+  gap: 8px;
+}
+.search-form input {
+  flex: 1;
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid #e6dec8;
+  border-radius: 10px;
+  background: #fff;
+  font-family: inherit;
+  font-size: 14px;
+  outline: none;
+}
+.search-form button {
+  padding: 0 16px;
+  border: none;
+  border-radius: 10px;
+  background: #7c5443;
+  color: #fff;
+  font-family: inherit;
+  font-weight: bold;
+  cursor: pointer;
+}
+.search-form button:hover {
+  background: #6a4536;
+}
+.search-results {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 250px;
+  overflow-y: auto;
+}
+.search-empty {
+  padding: 20px 0;
+  text-align: center;
+  font-size: 13px;
+  color: var(--ink3, #8a776a);
+}
+
+/* 검색 결과 한 줄 — 끌어서 타임라인·후보로 옮길 수 있다 */
+.sr-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 12px;
+  border: 1px solid #e6dec8;
+  border-radius: 10px;
+  background: #fff;
+  cursor: grab;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.02);
+  transition:
+    box-shadow 0.2s,
+    transform 0.2s;
+}
+.sr-item.is-dragging {
+  opacity: 0.4;
+  box-shadow: 0 8px 16px rgba(0, 0, 0, 0.12);
+}
+.sr-main {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+.sr-dot {
+  margin-top: 4px;
+  font-size: 10px;
+  color: var(--food, #d97e3c);
+}
+.sr-name {
+  margin-bottom: 2px;
+  font-size: 14px;
+  font-weight: bold;
+  color: #333;
+}
+.sr-addr {
+  margin-bottom: 2px;
+  font-size: 12px;
+  color: #888;
+}
+.sr-cat {
+  font-size: 11px;
+  color: #aaa;
+}
+.sr-grip {
+  padding-left: 8px;
+  font-size: 18px;
+  color: #c9b8a5;
+}
+
+/* ── 블록 상세 수정 창을 덮는 막 ───────────────────────────── */
+.blk-modal-ov {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.5);
+}
+
+/* ── 이동수단 선택 모달 — 구간 버튼 → 후보 목록에서 하나 고르면 블록 생성 ── */
+/* 읽기 모드 빈 Day (RO-02) — Day 를 생략하지 않고 "일정 없음"으로 남긴다 */
+.rv-day-empty {
+  margin: 0;
+  padding: 14px 0 4px;
+  font-size: 13px;
+  color: var(--ink3, #8a776a);
+}
+
+.transit-picker {
+  width: 340px;
+  background: var(--bg2, #fdfbf7);
+  border-radius: 14px;
+  padding: 18px;
+  box-shadow: 0 12px 32px rgba(61, 43, 34, 0.28);
+}
+.tp-title {
+  margin: 0 0 4px;
+  font-size: 16px;
+  color: var(--ink1, #3d2b22);
+}
+.tp-route {
+  margin: 0 0 12px;
+  font-size: 12.5px;
+  color: var(--ink3, #8a776a);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tp-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.tp-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--border1, #e3dfd8);
+  border-radius: 10px;
+  background: #fff;
+  cursor: pointer;
+  text-align: left;
+  transition:
+    border-color 0.15s ease,
+    background-color 0.15s ease;
+}
+.tp-item:hover:not(:disabled) {
+  border-color: var(--acc, #9c4a2f);
+  background: #fdf6ef;
+}
+.tp-item:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+.tp-ico {
+  font-size: 18px;
+  flex-shrink: 0;
+}
+.tp-main {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.tp-name {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13.5px;
+  color: var(--ink1, #3d2b22);
+}
+.tp-reco {
+  font-style: normal;
+  font-size: 10.5px;
+  font-weight: bold;
+  color: #fff;
+  background: var(--spot, #3e8e63);
+  padding: 1px 6px;
+  border-radius: 7px;
+}
+.tp-meta {
+  font-size: 12px;
+  color: var(--ink3, #8a776a);
+}
+.tp-cancel {
+  margin-top: 12px;
+  width: 100%;
+  padding: 9px 0;
+  border: none;
+  border-radius: 9px;
+  background: rgba(61, 43, 34, 0.07);
+  color: var(--ink2, #6b5a4e);
+  font-size: 13px;
+  cursor: pointer;
+}
+.tp-cancel:hover {
+  background: rgba(61, 43, 34, 0.12);
+}
+
+/* ── 통합(전 구간) 모달 — 구간마다 수단 칩에서 고른다 ── */
+.transit-picker.tp-bulk {
+  width: 480px;
+}
+.tp-seg-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-height: 52vh;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+.tp-seg {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.tp-seg-route {
+  font-size: 13px;
+  font-weight: bold;
+  color: var(--ink1, #3d2b22);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tp-seg-none {
+  font-style: normal;
+  font-size: 11.5px;
+  font-weight: normal;
+  color: #9c3b3b;
+  margin-left: 6px;
+}
+.tp-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.tp-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 6px 10px;
+  border: 1.5px solid var(--border1, #e3dfd8);
+  border-radius: 9px;
+  background: #fff;
+  font-size: 12.5px;
+  color: var(--ink1, #3d2b22);
+  cursor: pointer;
+  transition:
+    border-color 0.15s ease,
+    background-color 0.15s ease;
+}
+.tp-chip:hover:not(:disabled) {
+  border-color: var(--acc, #9c4a2f);
+}
+.tp-chip.on {
+  border-color: var(--acc, #9c4a2f);
+  background: #fdf6ef;
+  font-weight: bold;
+}
+.tp-chip:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.tp-chip-meta {
+  font-size: 11px;
+  color: var(--ink3, #8a776a);
+}
+.tp-chip-skip {
+  color: var(--ink3, #8a776a);
+}
+.tp-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 14px;
+}
+.tp-actions .tp-cancel {
+  margin-top: 0;
+  flex: 1;
+}
+.tp-apply {
+  flex: 2;
+  padding: 9px 0;
+  border: none;
+  border-radius: 9px;
+  background: var(--acc, #9c4a2f);
+  color: #fff;
+  font-size: 13px;
+  font-weight: bold;
+  cursor: pointer;
+}
+.tp-apply:hover {
+  background: #7c5443;
+}
+
+/* ── 예산: 블록별 색 세그먼트 막대 ─────────────────────────── */
+.bud-track {
+  display: flex;
+  width: 100%;
+  height: 14px;
+  background: #e6dec8;
+  border-radius: 99px;
+  overflow: hidden;
+  margin-bottom: 10px;
+}
+.bud-seg {
+  height: 100%;
+  min-width: 2px;
+  box-shadow: inset -1px 0 0 rgba(255, 255, 255, 0.75);
+  transition:
+    width 0.3s ease,
+    filter 0.15s ease;
+  cursor: default;
+}
+.bud-seg:hover {
+  filter: brightness(1.08) saturate(1.1);
+}
+.bud-empty {
+  width: 100%;
+  font-size: 10.5px;
+  color: var(--ink3, #8a776a);
+  text-align: center;
+  line-height: 14px;
+}
+.bud-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  margin-bottom: 10px;
+}
+.bud-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11.5px;
+  color: var(--ink3, #8a776a);
+}
+.bud-legend-item b {
+  color: var(--ink1, #3d2b22);
+  font-weight: 600;
+  max-width: 110px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.bud-legend-item i {
+  width: 9px;
+  height: 9px;
+  border-radius: 3px;
+  flex-shrink: 0;
+}
+/* 사용액 대비 비중 */
+.bud-legend-item em {
+  font-style: normal;
+  color: var(--ink3, #8a776a);
+  opacity: 0.8;
+}
+
+/* ── 읽기 모드 ─────────────────────────────────────────────
+   배경은 .dash-shell 이 쥐고, 여기서는 Day 카드와 세로 타임라인만 그린다.
+   블록 색은 행(.rv-row)에 심어둔 --dc(진한 색)·--cb(연한 배경)를 따른다.
+   ───────────────────────────────────────────────────────── */
+.read-view {
+  padding-bottom: 8px;
+}
+.rv-day {
+  margin-bottom: 32px;
+  padding: 32px;
+  border-radius: 16px;
+  background: #fbf8f1;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+}
+.rv-day-title {
+  margin: 0 0 24px;
+  font-size: 26px;
+  color: #3d2b22;
+}
+.rv-day-date {
+  font-size: 15px;
+  font-weight: normal;
+  color: #888;
+}
+.rv-list {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+/* 시각들을 잇는 세로선 */
+.rv-line {
+  position: absolute;
+  left: 55px;
+  top: 20px;
+  bottom: 20px;
+  width: 2px;
+  background: #e6dec8;
+  z-index: 0;
+}
+.rv-row {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 20px;
+}
+.rv-time {
+  width: 60px;
+  text-align: right;
+  font-size: 15px;
+  font-weight: bold;
+  color: var(--dc);
+  background: #fbf8f1;
+}
+.rv-dot {
+  width: 12px;
+  height: 12px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  border: 2px solid #fbf8f1;
+  background: var(--dc);
+}
+.rv-card {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 18px 24px;
+  border-radius: 12px;
+  background: var(--cb);
+}
+.rv-card-main {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+.rv-badge {
+  padding: 4px 8px;
+  border-radius: 6px;
+  background: var(--dc);
+  color: #fff;
+  font-size: 12px;
+  font-weight: bold;
+  white-space: nowrap;
+}
+.rv-name {
+  margin-bottom: 4px;
+  font-size: 17px;
+  font-weight: bold;
+  color: #333;
+}
+.rv-addr {
+  font-size: 13px;
+  color: #666;
+}
+.rv-card-side {
+  text-align: right;
+  white-space: nowrap;
+}
+.rv-range {
+  margin-bottom: 6px;
+  font-weight: bold;
+  color: var(--dc);
+}
+.rv-cost {
+  font-size: 15px;
+  font-weight: bold;
+  color: #333;
+}
+.panel {
+  background: var(--bg2, #fdfbf7);
+  border: 1px solid var(--border1, #e3dfd8);
+  border-radius: 20px;
+  padding: 24px;
+}
+.panel h4 {
+  margin: 0 0 16px 0;
+  font-size: 18px;
+  border-bottom: 2px solid var(--ink1);
+  padding-bottom: 12px;
+  display: inline-block;
+}
+.bud {
+  display: flex;
+  justify-content: space-between;
+  font-size: 16px;
+  font-weight: 600;
+}
+.bud .t {
+  color: var(--acc, #9c4a2f);
+  font-size: 20px;
+}
+.map {
+  background: #e9e5dc;
+  height: 300px;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.kk {
+  color: #a99f91;
+  font-weight: bold;
+}

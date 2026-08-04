@@ -1,5 +1,6 @@
 package com.ssafy.ieumgil.domain.project.service;
 
+import com.ssafy.ieumgil.domain.block.repository.BlockRepository;
 import com.ssafy.ieumgil.domain.group.entity.TravelGroup;
 import com.ssafy.ieumgil.domain.group.exception.GroupErrorCode;
 import com.ssafy.ieumgil.domain.group.repository.TravelGroupRepository;
@@ -10,11 +11,16 @@ import com.ssafy.ieumgil.domain.project.entity.Project;
 import com.ssafy.ieumgil.domain.project.exception.ProjectErrorCode;
 import com.ssafy.ieumgil.domain.project.repository.ProjectRepository;
 import com.ssafy.ieumgil.global.exception.CustomException;
+import com.ssafy.ieumgil.global.realtime.OpPublisher;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
+import java.time.temporal.ChronoUnit;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 
 @Service
 @RequiredArgsConstructor
@@ -23,8 +29,10 @@ public class ProjectCommandServiceImpl implements ProjectCommandService {
 
     private final ProjectRepository projectRepository;
     private final TravelGroupRepository travelGroupRepository;
+    private final BlockRepository blockRepository;
+    private final OpPublisher opPublisher;
 
-    /** 프로젝트 생성 (PRJ-01) */
+    /** 프로젝트 생성 (PRJ-01). 대시보드가 아직 열리기 전이라 op는 발행하지 않는다 */
     @Override
     public ProjectResDTO.Created createProject(Long userId, Long groupId, ProjectReqDTO.Create request) {
         TravelGroup group = getGroup(groupId);
@@ -36,9 +44,15 @@ public class ProjectCommandServiceImpl implements ProjectCommandService {
         return ProjectConverter.toCreated(project);
     }
 
-    /** 프로젝트 이름·기간 수정 (PRJ-02). null인 필드는 건드리지 않는다 */
+    /**
+     * 프로젝트 이름·기간 수정 (PRJ-02). null인 필드는 건드리지 않는다.
+     *
+     * 기간이 줄어 범위를 벗어난 블록은 후보(POOL)로 일괄 이동하고 그 id 목록(movedToPool)을
+     * 응답과 op에 싣는다 — 각 클라이언트가 해당 블록만 POOL 영역으로 옮겨 그린다.
+     */
     @Override
-    public ProjectResDTO.Updated updateProject(Long userId, Long projectId, ProjectReqDTO.Update request) {
+    public ProjectResDTO.Updated updateProject(Long userId, Long projectId, String clientId,
+                                               ProjectReqDTO.Update request) {
         Project project = getProject(projectId);
 
         // 부분 수정이라 안 보낸 필드는 기존 값과 비교해야 한다
@@ -48,18 +62,107 @@ public class ProjectCommandServiceImpl implements ProjectCommandService {
 
         project.updateInfo(request.name(), request.startDate(), request.endDate());
 
-        return ProjectConverter.toUpdated(project);
+        List<Long> movedToPool = moveOutOfRangeBlocksToPool(project, startDate, endDate);
+
+        Map<String, Object> payload = new HashMap<>();
+        payload.put("projectId", projectId);
+        payload.put("name", project.getName());
+        payload.put("startDate", project.getStartDate() != null ? project.getStartDate().toString() : null);
+        payload.put("endDate", project.getEndDate() != null ? project.getEndDate().toString() : null);
+        payload.put("movedToPool", movedToPool);
+        opPublisher.publish(projectId, userId, clientId, "PROJECT_UPDATED", payload);
+
+        return ProjectConverter.toUpdated(project, movedToPool);
     }
 
-    /** 프로젝트 소프트 삭제 (PRJ-03). 그룹 복구 시 함께 살아나야 하므로 행을 남긴다 */
+    /** 프로젝트 소프트 삭제 (PRJ-03). 보고 있던 멤버가 목록으로 빠져나가도록 op를 쏜다 */
     @Override
-    public void softDeleteProject(Long userId, Long projectId) {
+    public void softDeleteProject(Long userId, Long projectId, String clientId) {
         Project project = getProject(projectId);
+
+        // 저널·브로드캐스트는 커밋 이후에만 나가므로, 여기서 발행해도 롤백되면 op도 함께 사라진다
+        opPublisher.publish(projectId, userId, clientId, "PROJECT_DELETED",
+                Map.of("projectId", projectId));
 
         project.softDelete();
     }
 
+    /** 상태 전환 (GRP-10). PLANNING↔DONE 양방향, DONE이어도 쓰기 거부 없음(NFR-05) */
+    @Override
+    public ProjectResDTO.StatusChanged changeStatus(Long userId, Long projectId, String clientId,
+                                                    ProjectReqDTO.UpdateStatus request) {
+        Project project = getProject(projectId);
+
+        project.changeStatus(request.status());
+
+        Map<String, Object> payload = new HashMap<>();
+        payload.put("projectId", projectId);
+        payload.put("status", project.getStatus().name());
+        payload.put("doneAt", project.getDoneAt() != null ? project.getDoneAt().toString() : null);
+        opPublisher.publish(projectId, userId, clientId, "PROJECT_STATUS_CHANGED", payload);
+
+        return ProjectResDTO.StatusChanged.builder()
+                .status(project.getStatus())
+                .doneAt(project.getDoneAt())
+                .build();
+    }
+
+    /** 정산 인원 지정/해제 (BGT-03). null이면 그룹 멤버 수 연동으로 복귀 */
+    @Override
+    public ProjectResDTO.HeadcountChanged changeBudgetHeadcount(Long userId, Long projectId, String clientId,
+                                                                ProjectReqDTO.UpdateHeadcount request) {
+        Project project = getProject(projectId);
+
+        project.changeBudgetHeadcount(request.headcount());
+
+        Map<String, Object> payload = new HashMap<>();
+        payload.put("projectId", projectId);
+        payload.put("budgetHeadcount", project.getBudgetHeadcount());   // null 그대로 — 연동 복귀 신호
+        opPublisher.publish(projectId, userId, clientId, "BUDGET_HEADCOUNT_CHANGED", payload);
+
+        return ProjectResDTO.HeadcountChanged.builder()
+                .budgetHeadcount(project.getBudgetHeadcount())
+                .build();
+    }
+
+    /** 총 예산 변경. null이면 예산 미설정으로 초기화한다 */
+    @Override
+    public ProjectResDTO.BudgetChanged updateBudget(Long userId, Long projectId, String clientId,
+                                                    ProjectReqDTO.UpdateBudget request) {
+        Project project = getProject(projectId);
+
+        project.updateBudget(request.targetBudget());
+
+        Map<String, Object> payload = new HashMap<>();
+        payload.put("projectId", projectId);
+        payload.put("targetBudget", project.getTargetBudget());   // null 그대로 — 예산 해제 신호
+        opPublisher.publish(projectId, userId, clientId, "TARGET_BUDGET_CHANGED", payload);
+
+        return ProjectResDTO.BudgetChanged.builder()
+                .targetBudget(project.getTargetBudget())
+                .build();
+    }
+
     // ----- 공통 -----
+
+    /**
+     * 기간 밖 블록의 POOL 이동. 응답·op에 실을 id는 벌크 UPDATE "전"에 SELECT로 확보한다
+     * (벌크는 개수만 돌려준다). 벌크 UPDATE는 clearAutomatically로 영속성 컨텍스트를 비우므로
+     * 반드시 마지막 순서로 부른다 — 앞의 project 변경은 flushAutomatically가 먼저 DB에 내보낸다.
+     */
+    private List<Long> moveOutOfRangeBlocksToPool(Project project, LocalDate startDate, LocalDate endDate) {
+        if (startDate == null || endDate == null) {
+            return List.of();   // 기간 미정이면 범위 개념이 없다
+        }
+        int dayCount = (int) ChronoUnit.DAYS.between(startDate, endDate) + 1;
+
+        List<Long> outOfRange = blockRepository.findIdsOutOfRange(project.getId(), dayCount);
+        if (outOfRange.isEmpty()) {
+            return List.of();
+        }
+        blockRepository.moveOutOfRangeToPool(project.getId(), dayCount);
+        return outOfRange;
+    }
 
     /** 존재 확인·멤버십은 컨트롤러의 @GroupMember가 끝냈다. 여기서는 엔티티만 가져온다 */
     private TravelGroup getGroup(Long groupId) {

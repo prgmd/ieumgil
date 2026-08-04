@@ -1,5 +1,6 @@
 import axios from "axios";
 import { tokenStorage } from "../util/tokenStorage";
+import { getClientId } from "./clientId";
 
 /**
  * 전역 Axios 인스턴스
@@ -16,6 +17,18 @@ const REISSUE_URL = "/auth/refresh";
 // 리프레시 자체가 실패했을 때 이동시킬 로그인 경로
 const LOGIN_PATH = "/";
 
+/**
+ * 이 탭(클라이언트 인스턴스)의 식별자 — 실시간 op 브로드캐스트의 "요청자 본인 스킵"용.
+ *
+ * 대시보드 변경 요청에 X-Client-Id 로 실어 보내면, 서버가 브로드캐스트 op 의 clientId 에
+ * 같은 값을 넣어 되돌려준다. 수신 측은 자기 CLIENT_ID 와 같은 op 를 무시한다 — 안 그러면
+ * 방금 자기가 보낸 변경을 되돌려받아 입력 중 커서가 튀거나 글자가 씹힌다. (dashboard-api.md 공통 규약)
+ *
+ * 새로고침마다 값이 바뀌어도 무방하다 — "지금 열려 있는 이 화면"만 구분하면 되기 때문.
+ * 그래서 저장하지 않고 모듈 로드 시 1회 생성한다.
+ */
+export const CLIENT_ID = crypto.randomUUID();
+
 const axiosInstance = axios.create({
   baseURL: BASE_URL,
   timeout: 10000,
@@ -27,12 +40,22 @@ const axiosInstance = axios.create({
 
 /* ------------------------------------------------------------------ *
  * 요청 인터셉터: accessToken 을 Authorization 헤더에 자동 삽입
+ * + 변경 요청에는 X-Client-Id(탭 UUID) 첨부
  * ------------------------------------------------------------------ */
+
+// 브로드캐스트에서 자기 op 를 스킵하기 위한 헤더(dashboard-api.md 공통 규약).
+// 대시보드 외 엔드포인트는 이 헤더를 무시하므로 변경 메서드 전체에 일괄 첨부한다 —
+// 빠뜨리면 에러 없이 자기 변경이 이중 적용되는, 원인 찾기 어려운 종류의 버그가 된다.
+const MUTATING_METHODS = new Set(["post", "put", "patch", "delete"]);
+
 axiosInstance.interceptors.request.use(
   (config) => {
     const accessToken = tokenStorage.getAccessToken();
     if (accessToken) {
       config.headers.Authorization = `Bearer ${accessToken}`;
+    }
+    if (MUTATING_METHODS.has(config.method)) {
+      config.headers["X-Client-Id"] = getClientId();
     }
     return config;
   },

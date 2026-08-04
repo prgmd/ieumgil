@@ -77,13 +77,21 @@ public class GroupConverter {
                 .build();
     }
 
-    /** online은 Redis presence 연동 전까지 false 고정 */
+    /**
+     * 그룹 페이지 멤버 목록용 — online false 고정.
+     * presence는 "특정 프로젝트 보드를 보는 중"의 개념이라 그룹 단위 목록에는 해당 값이 없다.
+     * 대시보드 스냅샷은 아래 오버로드로 실값을 받는다.
+     */
     public static GroupResDTO.MemberDetail toMemberDetail(User user) {
+        return toMemberDetail(user, false);
+    }
+
+    public static GroupResDTO.MemberDetail toMemberDetail(User user, boolean online) {
         return GroupResDTO.MemberDetail.builder()
                 .memberId(user.getId())
                 .nickname(user.getNickname())
                 .profileImg(user.getProfileImageUrl())
-                .online(false)
+                .online(online)
                 .build();
     }
 

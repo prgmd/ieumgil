@@ -11,6 +11,7 @@ import org.springframework.stereotype.Component;
 
 import javax.crypto.SecretKey;
 import java.nio.charset.StandardCharsets;
+import java.time.Instant;
 import java.util.Date;
 
 @Component
@@ -37,11 +38,21 @@ public class JwtProvider {
     }
 
     public Long getUserIdFromAccessToken(String token) {
-        return getUserId(token, TYPE_ACCESS);
+        return Long.parseLong(parseTypedClaims(token, TYPE_ACCESS).getSubject());
     }
 
     public Long getUserIdFromRefreshToken(String token) {
-        return getUserId(token, TYPE_REFRESH);
+        return Long.parseLong(parseTypedClaims(token, TYPE_REFRESH).getSubject());
+    }
+
+    /**
+     * access 토큰의 만료 시각.
+     *
+     * <p>WS는 CONNECT 때 토큰을 한 번만 보고 이후 프레임에는 토큰이 실리지 않는다.
+     * 이 값을 세션에 남겨 두지 않으면 한 번 연결된 세션은 만료가 존재하지 않는 채널이 된다.
+     */
+    public Instant getAccessTokenExpiry(String token) {
+        return parseTypedClaims(token, TYPE_ACCESS).getExpiration().toInstant();
     }
 
     private String createToken(Long userId, String type, long validityMillis) {
@@ -55,12 +66,13 @@ public class JwtProvider {
                 .compact();
     }
 
-    private Long getUserId(String token, String expectedType) {
+    /** 서명·만료 검증 후 토큰 종류(access/refresh)까지 맞는지 확인한 클레임 */
+    private Claims parseTypedClaims(String token, String expectedType) {
         Claims claims = parseClaims(token);
         if (!expectedType.equals(claims.get(CLAIM_TYPE, String.class))) {
             throw new CustomException(AuthErrorCode.INVALID_TOKEN);
         }
-        return Long.parseLong(claims.getSubject());
+        return claims;
     }
 
     private Claims parseClaims(String token) {

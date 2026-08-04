@@ -7,6 +7,7 @@ import com.ssafy.ieumgil.domain.user.entity.User;
 import com.ssafy.ieumgil.domain.user.exception.UserErrorCode;
 import com.ssafy.ieumgil.domain.user.repository.UserRepository;
 import com.ssafy.ieumgil.global.exception.CustomException;
+import com.ssafy.ieumgil.global.websocket.WsSessionRegistry;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -22,6 +23,7 @@ public class UserCommandServiceImpl implements UserCommandService {
     private final GroupMemberRepository groupMemberRepository;
     private final TravelGroupRepository travelGroupRepository;
     private final RefreshTokenRepository refreshTokenRepository;
+    private final WsSessionRegistry wsSessionRegistry;
 
     /**
      * 회원 탈퇴 (AUTH-05).
@@ -32,6 +34,7 @@ public class UserCommandServiceImpl implements UserCommandService {
      *
      * refresh token을 지우는 것이 실질적인 접근 차단이다. 이미 발급된 access token은
      * 최대 30분간 유효하지만, 소속 그룹이 전부 정리되어 그룹 API는 403이 된다.
+     * REST가 막혀도 열려 있는 WS는 그대로이므로 세션까지 끊어야 실제로 차단된다(GRP-09).
      */
     @Override
     public void withdraw(Long userId) {
@@ -51,6 +54,8 @@ public class UserCommandServiceImpl implements UserCommandService {
         leaveAllGroups(userId);
 
         refreshTokenRepository.deleteByUserId(userId);
+
+        wsSessionRegistry.disconnect(userId);
     }
 
     /**

@@ -71,6 +71,37 @@ export function useProjects(groupId) {
     [groupId],
   );
 
+  /**
+   * 프로젝트 수정. 서버(PATCH /projects/{id})가 받는 건 이름·기간뿐이라 그 세 개만
+   * 전송한다 — 목적지/인원/이동수단은 수정 API 가 아직 없으므로 폼에서도 읽기 전용으로
+   * 보여준다. 화면에서만 바뀌고 새로고침하면 되돌아가는 "가짜 수정"을 만들지 않기 위함.
+   *
+   * 목록 재조회는 하지 않는다. 응답(Updated)이 방금 바꾼 세 필드를 그대로 돌려주므로
+   * 그 값만 기존 카드 위에 덮어쓰면 카드가 쓰는 나머지 필드(destination·status 등)를
+   * 잃지 않는다. (useMyGroups.renameGroup 과 같은 판단)
+   */
+  const updateProject = useCallback(async (projectId, form) => {
+    const updated = await api.updateProject(projectId, {
+      name: form.name.trim(),
+      startDate: form.startDate,
+      endDate: form.endDate,
+    });
+    setResult((prev) => ({
+      ...prev,
+      projects: prev.projects.map((p) =>
+        p.projectId === projectId
+          ? {
+              ...p,
+              name: updated.name,
+              startDate: updated.startDate,
+              endDate: updated.endDate,
+            }
+          : p,
+      ),
+    }));
+    return updated;
+  }, []);
+
   const deleteProject = useCallback(async (projectId) => {
     await api.deleteProject(projectId);
     setResult((prev) => ({
@@ -83,6 +114,7 @@ export function useProjects(groupId) {
     projects: isValidId && !isStale ? result.projects : EMPTY,
     status: !isValidId ? "idle" : isStale ? "loading" : result.status,
     createProject,
+    updateProject,
     deleteProject,
   };
 }

@@ -373,7 +373,7 @@
 
 ### PATCH /api/projects/{projectId}
 
-프로젝트 이름·기간 수정. **기간 축소 시**: 서버가 사라지는 Day의 블록을 `dayNo=null`(후보)로 일괄 이동하고, `PROJECT_UPDATED` op의 payload에 `movedToPool: [blockId...]`를 실어 **op 1건으로 원자적 전파**(GRP-03). → 실시간 전파 상세는 [대시보드API.md](대시보드API.md) 참조.
+프로젝트 이름·기간 수정. **기간 축소 시**: 서버가 사라지는 Day의 블록을 `dayNo=null`(후보)로 일괄 이동하고, `PROJECT_UPDATED` op의 payload에 `movedToPool: [blockId...]`를 실어 **op 1건으로 원자적 전파**(GRP-03). → 실시간 전파 상세는 [dashboard-api.md](dashboard-api.md) 참조.
 
 **Request Body:** (부분 갱신, 변경 필드만 전송)
 ```json
