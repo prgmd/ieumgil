@@ -3121,6 +3121,15 @@ export function DashboardPage() {
                         </>
                       )}
                     </div>
+                    <span
+                      // tip-down: 헤더 바로 아래라 위로 열면 상단바에 가린다
+                      className="hint-ico tip-down"
+                      tabIndex={0}
+                      aria-label="계획표 사용 안내"
+                      data-tip="후보 블록을 원하는 시간에 끌어다 놓아 일정을 만들어요. 블록의 위·아래 가장자리를 누르면 10분 단위로 길이를 조절하고, 블록 사이 🚗 버튼으로 이동수단을 추가할 수 있어요."
+                    >
+                      ⓘ
+                    </span>
                     <div className="right">
                       <button
                         className="auto-transport-btn"
@@ -3323,11 +3332,13 @@ export function DashboardPage() {
                   <div className="pool-head">
                     <div>
                       <b>후보 목록</b> <span className="n">{pool.length}</span>
-                      {/* 사용 안내는 ⓘ 툴팁으로 (QA 배치2) — 상시 텍스트는 소음 */}
+                      {/* 사용 안내는 ⓘ 커스텀 툴팁으로 (QA 배치2) — 호버 즉시,
+                          앱 디자인에 맞는 말풍선. 문구는 data-tip 이 CSS content 로 그린다 */}
                       <span
                         className="hint-ico"
                         tabIndex={0}
-                        title="블록을 끌어다 놓아 보관하는 공간이에요. 타임라인·후보 목록 밖에 놓으면 삭제됩니다."
+                        aria-label="후보 목록 사용 안내"
+                        data-tip="블록을 끌어다 놓아 보관하는 공간이에요. 타임라인·후보 목록 밖에 놓으면 삭제됩니다."
                       >
                         ⓘ
                       </span>
@@ -3374,6 +3385,14 @@ export function DashboardPage() {
                     <span className="bud-total-label">총 </span>
                     <span className="bud-total-value">
                       {won(totalBudget) || "0원"}
+                    </span>
+                    <span
+                      className="hint-ico"
+                      tabIndex={0}
+                      aria-label="예산 사용 안내"
+                      data-tip="계획표에 배치된 블록들의 비용 합계예요(후보 목록은 제외). 희망 총 예산을 정하면 카테고리별 사용률이 막대로 보여요 — 금액을 클릭하면 직접 입력할 수 있어요."
+                    >
+                      ⓘ
                     </span>
                   </div>
 
@@ -3468,9 +3487,14 @@ export function DashboardPage() {
 
                 <div className="panel">
                   <h4 className="panel-title">
-                    지도{" "}
-                    <span className="panel-title-sub">
-                      검색하면 지도가 이동합니다
+                    지도
+                    <span
+                      className="hint-ico"
+                      tabIndex={0}
+                      aria-label="지도 사용 안내"
+                      data-tip="장소를 검색하면 지도가 그 위치로 이동해요. 검색 결과나 지도의 핀을 클릭하면 상세 정보 말풍선이 떠요."
+                    >
+                      ⓘ
                     </span>
                   </h4>
                   {/* 높이는 CSS(.map-box)에서 화면 높이에 맞춰 늘린다 — 사이드 폭이
@@ -3485,7 +3509,17 @@ export function DashboardPage() {
                 </div>
 
                 <div className="panel">
-                  <h4 className="panel-title">카카오 장소 검색</h4>
+                  <h4 className="panel-title">
+                    카카오 장소 검색
+                    <span
+                      className="hint-ico"
+                      tabIndex={0}
+                      aria-label="장소 검색 사용 안내"
+                      data-tip="장소를 검색한 뒤 마음에 드는 결과를 끌어다 후보 목록에 담아요. 계획표에는 후보 목록을 거쳐 올릴 수 있어요."
+                    >
+                      ⓘ
+                    </span>
+                  </h4>
                   <div className="search-box">
                     <form className="search-form" onSubmit={handleSearchPlace}>
                       <input
