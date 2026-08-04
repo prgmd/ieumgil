@@ -5,6 +5,7 @@ import {
   geocodeAddress,
   preloadAddressSearch,
 } from "../../../features/dashboard/map/addressLookup";
+import { TransitCandidateCard } from "./TransitCandidateCard";
 import "./BlockEditForm.css";
 
 // 서버가 lat/lng 를 필수로 보는 장소성 카테고리 — 좌표 없이 보내면 BLOCK400 이다.
@@ -21,6 +22,7 @@ export function BlockEditForm({
   maxDurationMin = null,
   onSave,
   onCancel,
+  onReselectTransport,
 }) {
   const [formData, setFormData] = useState({
     id: initialData.id,
@@ -196,6 +198,35 @@ export function BlockEditForm({
           />
         </div>
       </div>
+
+      {formData.category === "TRANSPORT" && (
+        <div className="bef-row">
+          <div className="bef-col">
+            <label className="bef-label">이동 수단</label>
+            {initialData.transportMeta?.chosen ? (
+              <TransitCandidateCard
+                candidate={initialData.transportMeta.chosen}
+                mode="view"
+                selectedDepartureName={
+                  initialData.transportMeta.chosen.departureName ?? null
+                }
+              />
+            ) : (
+              <p className="bef-addr-hint">
+                이 블록은 예전 방식으로 생성됐어요. 다시 계산하려면 변경을
+                눌러주세요.
+              </p>
+            )}
+            <button
+              type="button"
+              className="bef-addr-btn"
+              onClick={() => onReselectTransport?.(initialData)}
+            >
+              변경
+            </button>
+          </div>
+        </div>
+      )}
 
       <div className="bef-row">
         <div className="bef-col">

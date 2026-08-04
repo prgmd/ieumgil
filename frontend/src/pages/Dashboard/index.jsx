@@ -9,7 +9,9 @@ import { useParams, useNavigate } from "react-router-dom";
 import { BlockEditForm } from "./components/BlockEditForm";
 import { ChatbotWidget } from "./components/ChatbotWidget";
 import { RemoteCursorLayer } from "./components/RemoteCursorLayer";
+import { TransitCandidateCard } from "./components/TransitCandidateCard";
 import { hueOf } from "./components/memberColor";
+import { TRANSIT_MODE_META, buildTransportMeta } from "./transitMeta";
 import {
   DndContext,
   DragOverlay,
@@ -151,14 +153,6 @@ const catFromKakaoGroup = (code) => {
 
 // "d3" → 3 (서버 dayNo)
 const dayNoOf = (dayKey) => Number(String(dayKey).replace("d", ""));
-
-// 이동수단 코드 → 표시용 아이콘·이름 (label 이 비어 올 때의 폴백)
-const TRANSIT_MODE_META = {
-  TRANSIT: { ico: "🚌", nm: "대중교통" },
-  TAXI: { ico: "🚕", nm: "택시" },
-  CAR: { ico: "🚗", nm: "자가용" },
-  WALK: { ico: "🚶", nm: "도보" },
-};
 
 /** 하루의 끝을 넘긴 블록이 있는지 — 쪼개기가 필요한지 판단할 때만 쓴다 */
 const chainOverflowsMidnight = (chainIds, itemsMap) =>
@@ -310,12 +304,6 @@ const splitOverflowAtMidnight = (chainsIn, itemsIn, dayKeys) => {
 
   return { chains, items, moved, created, trimmed, dayStarts, blocked: false };
 };
-
-// 후보 칩·행에 함께 표시할 요금 문구 — 추정치는 "약 "을 붙인다
-const transitFareText = (c) =>
-  (c.fare || 0) > 0
-    ? `${c.fareConfidence === "ESTIMATE" ? "약 " : ""}${c.fare.toLocaleString()}원`
-    : "무료";
 
 /**
  * 최종 목록에서 pos 위치 블록의 양옆 orderKey 경계를 찾는다.
@@ -849,6 +837,17 @@ function ReadModeView({ chains, items, dayKeys, project }) {
     (chains[day] || []).reduce((sum, id) => sum + (items[id]?.cost || 0), 0);
   const totalCost = dayKeys.reduce((sum, day) => sum + dayCostOf(day), 0);
 
+  // 교통 블록 접기 카드 — 행(block)별 펼침 상태. Day 전체가 아니라 블록별로 접는다.
+  const [expandedIds, setExpandedIds] = useState(() => new Set());
+  const toggleExpanded = (id) => {
+    setExpandedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
   return (
     <div className="dash-body read-view">
       <div className="rv-total">
@@ -889,6 +888,7 @@ function ReadModeView({ chains, items, dayKeys, project }) {
                 const startMins = item.startMins;
                 const endMins = startMins + item.dur;
                 const catStyle = catOf(item);
+                const isTransport = item.cat === "trans" && item.transportMeta?.chosen;
                 return (
                   // 카테고리 색만 CSS 변수로 넘기고, 그 색을 어디에 쓸지는 CSS 가 정한다
                   <div
@@ -898,27 +898,69 @@ function ReadModeView({ chains, items, dayKeys, project }) {
                   >
                     <div className="rv-time">{fmtTime(startMins)}</div>
                     <div className="rv-dot" />
-                    <div className="rv-card">
-                      <div className="rv-card-main">
-                        <span className="rv-badge">
-                          {catStyle.nm} {item.sub ? `· ${item.sub}` : ""}
-                        </span>
-                        <div>
-                          <div className="rv-name">{item.name}</div>
-                          <div className="rv-addr">
-                            📍 {item.address || "위치 정보 없음"}
+                    {isTransport ? (
+                      <div className="rv-card rv-transit">
+                        <button
+                          type="button"
+                          className="rv-transit-head"
+                          onClick={() => toggleExpanded(id)}
+                        >
+                          <span className="tcc-ico">
+                            {TRANSIT_MODE_META[item.transportMeta.chosen.mode]?.ico ??
+                              "🚏"}
+                          </span>
+                          <b>{item.transportMeta.chosen.label ?? item.name}</b>
+                          {item.transportMeta.chosen.departureName && (
+                            <span> {item.transportMeta.chosen.departureName}</span>
+                          )}
+                          {item.cost > 0 && (
+                            <span className="rv-cost">{won(item.cost)}</span>
+                          )}
+                          <span className="rv-transit-caret">
+                            {expandedIds.has(id) ? "▲" : "▼"}
+                          </span>
+                        </button>
+                        {expandedIds.has(id) && (
+                          <div className="rv-transit-body">
+                            <TransitCandidateCard
+                              candidate={item.transportMeta.chosen}
+                              mode="view"
+                              selectedDepartureName={
+                                item.transportMeta.chosen.departureName ?? null
+                              }
+                            />
+                            {item.transportMeta.segment?.referenceAt && (
+                              <p className="tp-banner">
+                                기준: {item.transportMeta.segment.referenceAt} 이후
+                                출발
+                              </p>
+                            )}
                           </div>
-                        </div>
-                      </div>
-                      <div className="rv-card-side">
-                        <div className="rv-range">
-                          {fmtTime(startMins)} - {fmtTime(endMins)}
-                        </div>
-                        {item.cost > 0 && (
-                          <div className="rv-cost">{won(item.cost)}</div>
                         )}
                       </div>
-                    </div>
+                    ) : (
+                      <div className="rv-card">
+                        <div className="rv-card-main">
+                          <span className="rv-badge">
+                            {catStyle.nm} {item.sub ? `· ${item.sub}` : ""}
+                          </span>
+                          <div>
+                            <div className="rv-name">{item.name}</div>
+                            <div className="rv-addr">
+                              📍 {item.address || "위치 정보 없음"}
+                            </div>
+                          </div>
+                        </div>
+                        <div className="rv-card-side">
+                          <div className="rv-range">
+                            {fmtTime(startMins)} - {fmtTime(endMins)}
+                          </div>
+                          {item.cost > 0 && (
+                            <div className="rv-cost">{won(item.cost)}</div>
+                          )}
+                        </div>
+                      </div>
+                    )}
                   </div>
                 );
               })}
@@ -1805,20 +1847,26 @@ export function DashboardPage() {
         const { segments = [] } = await blockApi.calculateTransitCandidates(
           projectId,
           realIds,
+          blockApi.minsToTime(dayStart[dayKey] ?? 540),
         );
         if (!segments.some((s) => s.candidates?.some((c) => c.available))) {
           showToast("이동 가능한 경로를 찾지 못했어요.");
           return;
         }
         // 구간별 초기 선택 = 서버 추천(defaultMode) → 첫 이용 가능 후보 → 제외(null)
+        // choices[pairKey] = {candidate, departure} | null(제외) — departure 는
+        // 시외에서 고른 편(시내면 null), candidate 의 첫 편으로 초기화한다.
         const choices = {};
         segments.forEach((s) => {
-          choices[`${s.fromBlockId}-${s.toBlockId}`] =
+          const initial =
             s.candidates?.find(
               (c) => c.mode === s.defaultMode && c.available,
             ) ??
             s.candidates?.find((c) => c.available) ??
             null;
+          choices[`${s.fromBlockId}-${s.toBlockId}`] = initial
+            ? { candidate: initial, departure: initial.departures?.[0] ?? null }
+            : null;
         });
         setBulkTransitPicker({ dayKey, segments, choices });
       } catch (e) {
@@ -1836,13 +1884,14 @@ export function DashboardPage() {
       items,
       projectId,
       showToast,
+      dayStart,
     ],
   );
 
-  // 통합 모달에서 구간 하나의 선택을 바꾼다 (cand = null 이면 그 구간 제외)
-  const setBulkChoice = (pairKey, cand) => {
+  // 통합 모달에서 구간 하나의 선택을 바꾼다 (choice = null 이면 그 구간 제외)
+  const setBulkChoice = (pairKey, choice) => {
     setBulkTransitPicker((prev) =>
-      prev ? { ...prev, choices: { ...prev.choices, [pairKey]: cand } } : prev,
+      prev ? { ...prev, choices: { ...prev.choices, [pairKey]: choice } } : prev,
     );
   };
 
@@ -1853,7 +1902,9 @@ export function DashboardPage() {
     async () => {
       const picker = bulkTransitPicker;
       if (!picker) return;
-      const { dayKey, choices } = picker;
+      const { dayKey, choices, segments } = picker;
+      const segmentOf = (fromId, toId) =>
+        segments.find((s) => s.fromBlockId === fromId && s.toBlockId === toId);
 
       // 모달이 열린 사이 체인이 바뀌었을 수 있다(협업) — 지금 체인을 기준으로
       // 다시 훑고, 더 이상 인접하지 않은 구간의 선택은 자연히 버려진다(pair 키 불일치)
@@ -1878,11 +1929,11 @@ export function DashboardPage() {
           rebuilt.push(id);
           if (i < realIds.length - 1) {
             const chosen = choices[`${id}-${realIds[i + 1]}`];
-            if (!chosen?.available) return; // 제외했거나 모르는 구간 — 만들지 않는다
+            if (!chosen?.candidate?.available) return; // 제외했거나 모르는 구간 — 만들지 않는다
             const info = {
-              mode: chosen.label || chosen.mode,
-              dur: Math.max(10, chosen.durationMin || 10),
-              cost: chosen.fare || 0,
+              mode: chosen.candidate.label || chosen.candidate.mode,
+              dur: Math.max(10, chosen.candidate.durationMin || 10),
+              cost: chosen.candidate.fare || 0,
             };
             const newId = `auto-${dayKey}-${id}-${i}`;
             newItems[newId] = {
@@ -1896,6 +1947,11 @@ export function DashboardPage() {
               auto: true,
               autoDay: dayKey,
               startMins: newItems[id].startMins + newItems[id].dur,
+              transportMeta: buildTransportMeta(
+                segmentOf(id, realIds[i + 1]),
+                chosen.candidate,
+                chosen.departure,
+              ),
             };
             rebuilt.push(newId);
             createdLocalIds.push(newId);
@@ -1983,7 +2039,9 @@ export function DashboardPage() {
               spilled.items,
             );
             const orderKey = safeKeyBetween(before, after);
-            const transportMeta = { generated: true, mode: b.sub };
+            // transportMeta 는 이미 buildTransportMeta 로 만들어 b 에 실려 있다(...b).
+            // adoptServerId 가 extra 로도 받도록 그 값을 그대로 넘긴다.
+            const transportMeta = b.transportMeta;
             const created = await blockApi.createBlock(projectId, {
               ...b,
               endMins: b.startMins + b.dur,
@@ -2025,7 +2083,7 @@ export function DashboardPage() {
 
   // ── 구간 "이동 추가" = 두 단계: ① 후보 조회 → 선택 모달, ② 선택 → 블록 생성 ──
   // 어떤 수단으로 갈지는 사용자가 고른다 — 서버 추천(defaultMode)은 표시만 한다.
-  const [transitPicker, setTransitPicker] = useState(null); // {dayKey, currentId, nextId, defaultMode, candidates}
+  const [transitPicker, setTransitPicker] = useState(null); // {dayKey, currentId, nextId, segment, defaultMode, candidates, chosenCandidate, chosenDeparture}
 
   const handleAddSingleTransport = useCallback(
     async (dayKey, currentId, nextId) => {
@@ -2044,19 +2102,28 @@ export function DashboardPage() {
         const { segments = [] } = await blockApi.calculateTransitCandidates(
           projectId,
           [currentId, nextId],
+          blockApi.minsToTime(dayStart[dayKey] ?? 540),
         );
-        const candidates = segments[0]?.candidates ?? [];
+        const segment = segments[0];
+        const candidates = segment?.candidates ?? [];
         if (!candidates.some((c) => c.available)) {
           showToast("두 장소 사이의 경로를 찾지 못했어요.");
           return;
         }
+        const initialCandidate =
+          candidates.find((c) => c.mode === segment.defaultMode && c.available) ??
+          candidates.find((c) => c.available) ??
+          null;
         // 생성하지 않고 선택 모달을 연다 — 생성은 confirmTransitChoice 가 한다
         setTransitPicker({
           dayKey,
           currentId,
           nextId,
-          defaultMode: segments[0].defaultMode,
+          segment,
+          defaultMode: segment.defaultMode,
           candidates,
+          chosenCandidate: initialCandidate,
+          chosenDeparture: initialCandidate?.departures?.[0] ?? null,
         });
       } catch (e) {
         showToast(
@@ -2066,14 +2133,27 @@ export function DashboardPage() {
         setIsGeneratingTransport(false);
       }
     },
-    [isGeneratingTransport, transitPicker, chains, projectId, showToast],
+    [isGeneratingTransport, transitPicker, chains, projectId, showToast, dayStart],
   );
 
-  // 선택 모달에서 수단을 고르면 그 구간에 교통 블록을 만든다 (기존 5.5단계 경로)
+  // 피커에서 다른 후보/편을 고른다 (아직 생성하지 않는다 — confirmTransitChoice 가 한다)
+  const setTransitPickerCandidate = (c) => {
+    setTransitPicker((prev) =>
+      prev
+        ? { ...prev, chosenCandidate: c, chosenDeparture: c.departures?.[0] ?? null }
+        : prev,
+    );
+  };
+  const setTransitPickerDeparture = (d) => {
+    setTransitPicker((prev) => (prev ? { ...prev, chosenDeparture: d } : prev));
+  };
+
+  // 선택 모달에서 "확인"을 누르면 그 구간에 교통 블록을 만든다 (기존 5.5단계 경로)
   const confirmTransitChoice = useCallback(
-    async (chosen) => {
+    async () => {
       const picker = transitPicker;
       setTransitPicker(null);
+      const chosen = picker?.chosenCandidate;
       if (!picker || !chosen?.available) return;
 
       const { dayKey, currentId } = picker;
@@ -2107,6 +2187,11 @@ export function DashboardPage() {
           auto: true,
           autoDay: dayKey,
           startMins: items[currentId].startMins + items[currentId].dur,
+          transportMeta: buildTransportMeta(
+            picker.segment,
+            chosen,
+            picker.chosenDeparture,
+          ),
         };
         currentChain.splice(insertIdx + 1, 0, newId);
 
@@ -2171,7 +2256,9 @@ export function DashboardPage() {
             spilled.items,
           );
           const orderKey = safeKeyBetween(before, after);
-          const transportMeta = { generated: true, mode: b.sub };
+          // transportMeta 는 이미 buildTransportMeta 로 만들어 b 에 실려 있다(...b).
+          // adoptServerId 가 extra 로도 받도록 그 값을 그대로 넘긴다.
+          const transportMeta = b.transportMeta;
           const created = await blockApi.createBlock(projectId, {
             ...b,
             endMins: b.startMins + b.dur,
@@ -2710,6 +2797,79 @@ export function DashboardPage() {
     }
     setEditingBlockId(null);
   };
+
+  // ── 교통 블록 편집 재선택 — 저장된 candidates 스냅샷으로 피커를 재조회 없이 연다 ──
+  // 생성 흐름(transitPicker)과 상태를 공유하지 않는다 — "생성 후 자리에 삽입" 로직과
+  // 얽히면 오히려 복잡해진다(계획 Task 7).
+  const [transportReselectPicker, setTransportReselectPicker] = useState(null); // {blockId, candidates, chosenCandidate, chosenDeparture}
+
+  const handleReselectTransport = (block) => {
+    const candidates = block.transportMeta?.candidates;
+    if (!candidates || candidates.length === 0) {
+      showToast("다시 계산할 후보가 없어요. 삭제 후 새로 만들어주세요.");
+      return;
+    }
+    const chosenMode = block.transportMeta?.chosen?.mode;
+    const initialCandidate =
+      candidates.find((c) => c.mode === chosenMode) ?? candidates[0];
+    setTransportReselectPicker({
+      blockId: block.id,
+      candidates,
+      chosenCandidate: initialCandidate,
+      chosenDeparture: initialCandidate?.departures?.[0] ?? null,
+    });
+  };
+
+  const setReselectCandidate = (c) => {
+    setTransportReselectPicker((prev) =>
+      prev
+        ? { ...prev, chosenCandidate: c, chosenDeparture: c.departures?.[0] ?? null }
+        : prev,
+    );
+  };
+  const setReselectDeparture = (d) => {
+    setTransportReselectPicker((prev) =>
+      prev ? { ...prev, chosenDeparture: d } : prev,
+    );
+  };
+
+  // "저장" — 같은 블록의 transportMeta 만 교체한다(재생성 없음, PATCH LWW)
+  const applyReselectTransport = useCallback(async () => {
+    const picker = transportReselectPicker;
+    if (!picker || !picker.chosenCandidate?.available) return;
+    const newMeta = {
+      ...buildTransportMeta(
+        // segment 는 원래 스냅샷의 segment 메타를 그대로 유지 — 재조회하지 않으므로
+        // referenceAt 등은 처음 계산 시점 그대로다(편집 모드에서 후보 재조회 안 함).
+        // 이 segment 는 이미 candidates 가 벗겨진 조각(intercity/timetableApplied/
+        // timetableSkipReason/referenceAt)이라 buildTransportMeta 가 유도하는
+        // candidates 는 항상 빈 배열이다 — picker.candidates(원래 스냅샷)로 덮어써야 한다.
+        items[picker.blockId]?.transportMeta?.segment,
+        picker.chosenCandidate,
+        picker.chosenDeparture,
+      ),
+      candidates: picker.candidates,
+    };
+    setTransportReselectPicker(null);
+    try {
+      await blockApi.updateBlockFields(picker.blockId, { transportMeta: newMeta });
+      setItems((prev) => {
+        if (!prev[picker.blockId]) return prev;
+        return {
+          ...prev,
+          [picker.blockId]: {
+            ...prev[picker.blockId],
+            transportMeta: newMeta,
+            sub: newMeta.chosen?.label ?? prev[picker.blockId].sub,
+            dur: newMeta.chosen?.durationMin ?? prev[picker.blockId].dur,
+            cost: newMeta.chosen?.fare ?? prev[picker.blockId].cost,
+          },
+        };
+      });
+    } catch (e) {
+      showToast(e?.message ?? "저장하지 못했어요. 잠시 후 다시 시도해주세요.");
+    }
+  }, [transportReselectPicker, items, showToast]);
 
   // ── 편집 락 수명 = 편집 모달 수명 (6단계, advisory) ──
   // 모달을 열면 획득 → 10초 주기 하트비트(TTL 30초) → 닫으면 해제.
@@ -4201,6 +4361,7 @@ export function DashboardPage() {
                 }
                 onSave={handleSaveBlock}
                 onCancel={handleCancelEdit}
+                onReselectTransport={handleReselectTransport}
               />
             );
           })()}
@@ -4233,38 +4394,38 @@ export function DashboardPage() {
                         <em className="tp-seg-none">경로 없음</em>
                       )}
                     </div>
+                    {s.referenceAt && (
+                      <p className="tp-banner">{s.referenceAt} 이후 출발편 기준</p>
+                    )}
+                    {s.timetableApplied === false && s.timetableSkipReason && (
+                      <p className="tp-banner tp-banner-warn">
+                        {s.timetableSkipReason} — 앞 구간 확정 후 다시 계산하세요
+                      </p>
+                    )}
                     {routable && (
                       <div className="tp-chips">
-                        {s.candidates.map((c) => {
-                          const meta = TRANSIT_MODE_META[c.mode] ?? {
-                            ico: "🚏",
-                            nm: c.mode,
-                          };
-                          return (
-                            <button
-                              key={c.mode}
-                              type="button"
-                              className={`tp-chip ${chosen?.mode === c.mode ? "on" : ""}`}
-                              disabled={!c.available}
-                              title={
-                                c.available
-                                  ? `${c.durationMin}분 · ${transitFareText(c)}${c.intervalMin ? ` · 배차 ~${c.intervalMin}분` : ""}`
-                                  : "이용 불가"
-                              }
-                              onClick={() => setBulkChoice(pairKey, c)}
-                            >
-                              {meta.ico} {c.label || meta.nm}
-                              {c.available && (
-                                <span className="tp-chip-meta">
-                                  {c.durationMin}분
-                                </span>
-                              )}
-                              {c.mode === s.defaultMode && c.available && (
-                                <em className="tp-reco">추천</em>
-                              )}
-                            </button>
-                          );
-                        })}
+                        {s.candidates.map((c, idx) => (
+                          <TransitCandidateCard
+                            key={`${c.mode}-${idx}`}
+                            candidate={c}
+                            mode="select"
+                            selected={chosen?.candidate === c}
+                            onSelectCandidate={(cand) =>
+                              setBulkChoice(pairKey, {
+                                candidate: cand,
+                                departure: cand.departures?.[0] ?? null,
+                              })
+                            }
+                            selectedDepartureName={
+                              chosen?.candidate === c
+                                ? (chosen?.departure?.name ?? null)
+                                : null
+                            }
+                            onSelectDeparture={(d) =>
+                              setBulkChoice(pairKey, { candidate: c, departure: d })
+                            }
+                          />
+                        ))}
                         <button
                           type="button"
                           className={`tp-chip tp-chip-skip ${chosen === null ? "on" : ""}`}
@@ -4312,58 +4473,99 @@ export function DashboardPage() {
               {items[transitPicker.currentId]?.name ?? "출발지"} →{" "}
               {items[transitPicker.nextId]?.name ?? "도착지"}
             </p>
+            {transitPicker.segment?.referenceAt && (
+              <p className="tp-banner">
+                {transitPicker.segment.referenceAt} 이후 출발편 기준
+              </p>
+            )}
+            {transitPicker.segment?.timetableApplied === false &&
+              transitPicker.segment?.timetableSkipReason && (
+                <p className="tp-banner tp-banner-warn">
+                  {transitPicker.segment.timetableSkipReason} — 앞 구간 확정 후
+                  다시 계산하세요
+                </p>
+              )}
             <div className="tp-list">
-              {transitPicker.candidates.map((c) => {
-                const meta = TRANSIT_MODE_META[c.mode] ?? {
-                  ico: "🚏",
-                  nm: c.mode,
-                };
-                const fareText =
-                  (c.fare || 0) > 0
-                    ? `${c.fareConfidence === "ESTIMATE" ? "약 " : ""}${c.fare.toLocaleString()}원`
-                    : "무료";
-                return (
-                  <button
-                    key={c.mode}
-                    type="button"
-                    className="tp-item"
-                    disabled={!c.available}
-                    onClick={() => confirmTransitChoice(c)}
-                  >
-                    <span className="tp-ico">{meta.ico}</span>
-                    <span className="tp-main">
-                      <span className="tp-name">
-                        <b>{c.label || meta.nm}</b>
-                        {c.mode === transitPicker.defaultMode && (
-                          <em className="tp-reco">추천</em>
-                        )}
-                      </span>
-                      <span className="tp-meta">
-                        {c.available
-                          ? [
-                              `${c.durationMin}분`,
-                              fareText,
-                              c.intervalMin ? `배차 ~${c.intervalMin}분` : null,
-                              c.distanceM
-                                ? `${(c.distanceM / 1000).toFixed(1)}km`
-                                : null,
-                            ]
-                              .filter(Boolean)
-                              .join(" · ")
-                          : "이용 불가"}
-                      </span>
-                    </span>
-                  </button>
-                );
-              })}
+              {transitPicker.candidates.map((c, idx) => (
+                <TransitCandidateCard
+                  key={`${c.mode}-${idx}`}
+                  candidate={c}
+                  mode="select"
+                  selected={transitPicker.chosenCandidate === c}
+                  onSelectCandidate={setTransitPickerCandidate}
+                  selectedDepartureName={
+                    transitPicker.chosenCandidate === c
+                      ? (transitPicker.chosenDeparture?.name ?? null)
+                      : null
+                  }
+                  onSelectDeparture={setTransitPickerDeparture}
+                />
+              ))}
             </div>
-            <button
-              type="button"
-              className="tp-cancel"
-              onClick={() => setTransitPicker(null)}
-            >
-              취소
-            </button>
+            <div className="tp-actions">
+              <button
+                type="button"
+                className="tp-cancel"
+                onClick={() => setTransitPicker(null)}
+              >
+                취소
+              </button>
+              <button
+                type="button"
+                className="tp-apply"
+                disabled={!transitPicker.chosenCandidate?.available}
+                onClick={confirmTransitChoice}
+              >
+                이 수단으로 추가
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 교통 블록 편집 재선택 — 저장된 candidates 스냅샷으로 재조회 없이 연다.
+          "저장"을 눌러야 PATCH /blocks/{id}/fields 로 transportMeta 를 통째 교체한다 */}
+      {transportReselectPicker && (
+        <div
+          className="blk-modal-ov"
+          onClick={() => setTransportReselectPicker(null)}
+        >
+          <div className="transit-picker" onClick={(e) => e.stopPropagation()}>
+            <h3 className="tp-title">이동 수단 변경</h3>
+            <div className="tp-list">
+              {transportReselectPicker.candidates.map((c, idx) => (
+                <TransitCandidateCard
+                  key={`${c.mode}-${idx}`}
+                  candidate={c}
+                  mode="select"
+                  selected={transportReselectPicker.chosenCandidate === c}
+                  onSelectCandidate={setReselectCandidate}
+                  selectedDepartureName={
+                    transportReselectPicker.chosenCandidate === c
+                      ? (transportReselectPicker.chosenDeparture?.name ?? null)
+                      : null
+                  }
+                  onSelectDeparture={setReselectDeparture}
+                />
+              ))}
+            </div>
+            <div className="tp-actions">
+              <button
+                type="button"
+                className="tp-cancel"
+                onClick={() => setTransportReselectPicker(null)}
+              >
+                취소
+              </button>
+              <button
+                type="button"
+                className="tp-apply"
+                disabled={!transportReselectPicker.chosenCandidate?.available}
+                onClick={applyReselectTransport}
+              >
+                저장
+              </button>
+            </div>
           </div>
         </div>
       )}
