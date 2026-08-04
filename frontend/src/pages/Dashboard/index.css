@@ -1077,7 +1077,9 @@
 
 /* 블록 수정 표시 — 개인 페이지의 카드 버튼(.g-card .op)과 같은 모양·같은 hover 규칙.
    평소엔 숨어 있고 카드에 마우스를 올릴 때만 나타난다. */
-.blk-op {
+/* 블록 외부 링크 표시(.blk-link)도 같은 노출 규칙을 쓴다 — 연필 옆에 나란히 뜬다. */
+.blk-op,
+.blk-link {
   position: absolute;
   display: none;
   align-items: center;
@@ -1094,7 +1096,8 @@
   z-index: 50; /* 리사이즈 핸들(z-index 40)보다 위 */
   box-shadow: 0 2px 6px rgba(61, 43, 34, 0.16);
 }
-.blk-op:hover {
+.blk-op:hover,
+.blk-link:hover {
   background: #fff;
   color: var(--acc, #9c4a2f);
 }
@@ -1102,12 +1105,22 @@
   top: 6px;
   right: 6px;
 }
+.pcard .blk-link {
+  top: 6px;
+  right: 36px; /* 연필(.blk-op) 왼쪽 */
+}
 .card .blk-op {
   bottom: 6px;
   right: 8px;
 }
+.card .blk-link {
+  bottom: 6px;
+  right: 38px; /* 연필(.blk-op) 왼쪽 */
+}
 .pcard:hover .blk-op,
-.card:hover .blk-op {
+.card:hover .blk-op,
+.pcard:hover .blk-link,
+.card:hover .blk-link {
   display: flex;
 }
 /* 수정 표시가 뜰 자리를 비워준다 */

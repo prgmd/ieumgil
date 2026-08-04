@@ -1,5 +1,6 @@
 package com.ssafy.ieumgil.domain.festival.client;
 
+import com.ssafy.ieumgil.domain.festival.dto.TourApiDetailResponse;
 import com.ssafy.ieumgil.domain.festival.dto.TourApiResponse;
 import com.ssafy.ieumgil.domain.festival.exception.FestivalErrorCode;
 import com.ssafy.ieumgil.domain.festival.exception.FestivalException;
@@ -38,6 +39,37 @@ public class TourApiClient {
             return List.of();
         }
         return body.items().item();
+    }
+
+    /**
+     * 축제 상세의 homepage 원문을 준다. 없으면 null.
+     *
+     * <p>searchFestival2(목록)에는 homepage가 없어 detailCommon2(상세)를 따로 부른다.
+     * 배치가 축제마다 한 번 부른다(총 209건 규모).
+     */
+    public String fetchDetailHomepage(String contentId) {
+        try {
+            String query = "serviceKey=" + URLEncoder.encode(properties.serviceKey(), StandardCharsets.UTF_8)
+                    + "&MobileOS=ETC"
+                    + "&MobileApp=ieumgil"
+                    + "&_type=json"
+                    + "&contentId=" + URLEncoder.encode(contentId, StandardCharsets.UTF_8);
+            URI uri = URI.create(properties.baseUrl() + "/detailCommon2?" + query);
+            TourApiDetailResponse response = restClient.get()
+                    .uri(uri)
+                    .retrieve()
+                    .body(TourApiDetailResponse.class);
+            if (response == null || response.response() == null || response.response().body() == null
+                    || response.response().body().items() == null
+                    || response.response().body().items().item() == null
+                    || response.response().body().items().item().isEmpty()) {
+                return null;
+            }
+            return response.response().body().items().item().get(0).homepage();
+        } catch (RestClientException | IllegalArgumentException e) {
+            log.warn("투어API 축제 상세 조회 실패: {}", e.getMessage());
+            throw new FestivalException(FestivalErrorCode.TOUR_API_CALL_FAILED);
+        }
     }
 
     private TourApiResponse.Body fetchBody(String eventStartDate, int pageNo, int numOfRows) {

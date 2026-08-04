@@ -35,6 +35,7 @@ import { useVoiceChat } from "../../features/dashboard/voice/useVoiceChat";
 import { createOpSequencer } from "../../features/dashboard/realtime/opSequencer";
 import { ensureKakaoMaps } from "../../features/dashboard/map/addressLookup";
 import * as blockApi from "../../features/dashboard/api/dashboardApi";
+import { openBlockLink, hasExternalLink } from "../../features/dashboard/api/externalLink";
 import { getClientId } from "../../global/api/clientId";
 import { useGroupDetail } from "../../features/group/hooks/useGroupDetail";
 import { useProjects } from "../../features/group/hooks/useProjects";
@@ -613,6 +614,29 @@ function BlockEditBadge({ onEdit }) {
 }
 
 /**
+ * 블록 출처(카카오/축제)로 이동하는 외부 링크 아이콘. hover 시에만 노출(.blk-op와 같은 규칙).
+ * 카드 전체에 드래그 리스너가 걸려 있어 pointerdown 을 끊어 드래그 시작으로 오해되지 않게 한다.
+ */
+function BlockLinkBadge({ item }) {
+  if (!hasExternalLink(item)) return null;
+  return (
+    <button
+      type="button"
+      className="blk-link"
+      title="출처 링크 열기"
+      aria-label="출처 링크 열기"
+      onPointerDown={(e) => e.stopPropagation()}
+      onClick={(e) => {
+        e.stopPropagation();
+        openBlockLink(item);
+      }}
+    >
+      🔗
+    </button>
+  );
+}
+
+/**
  * 꾹 누르면 연속 반복되는 버튼 (QA 배치2) — 400ms 홀드 후 100ms 간격 반복.
  * 짧은 탭은 click 한 번이고, 홀드였다면 릴리즈 때 따라오는 click 을 삼켜
  * 마지막에 한 칸 더 가는 이중 실행을 막는다.
@@ -715,6 +739,7 @@ function PoolCard({ id, item, onEditBlock, lockedBy, editor }) {
         lockedBy={lockedBy}
       />
       <BlockEditBadge onEdit={onEditBlock && (() => onEditBlock(id))} />
+      <BlockLinkBadge item={item} />
     </div>
   );
 }
@@ -801,7 +826,10 @@ function TimelineCard({
           lockedBy={lockedBy}
         />
         {!isThisResizing && (
-          <BlockEditBadge onEdit={onEditBlock && (() => onEditBlock(id))} />
+          <>
+            <BlockEditBadge onEdit={onEditBlock && (() => onEditBlock(id))} />
+            <BlockLinkBadge item={item} />
+          </>
         )}
       </div>
     </div>

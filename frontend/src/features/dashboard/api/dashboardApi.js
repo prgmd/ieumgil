@@ -426,3 +426,15 @@ export async function updateBudgetHeadcount(projectId, headcount) {
     unwrapError(error);
   }
 }
+
+// ── 축제 ─────────────────────────────────────────────
+
+/** 축제 공식 홈페이지 URL. 없으면 { url: null }. (docs .../block-external-link-design.md) */
+export async function fetchFestivalHomepage(contentId) {
+  try {
+    const { data } = await axiosInstance.get(`/festivals/${contentId}/homepage`);
+    return unwrap(data); // { url: string | null }
+  } catch (error) {
+    unwrapError(error);
+  }
+}

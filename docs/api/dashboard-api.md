@@ -58,6 +58,12 @@
 | POST | `/api/projects/{projectId}/chatbot/messages` | 대화형 채팅 — 일반/지도기반 추천 통합 | Yes |
 | GET | `/api/projects/{projectId}/chatbot/messages` | 대화 이력 조회 — 추천 후보 포함, 새로고침 복원용 | Yes |
 
+### 축제
+
+| Method | Path | 설명 | Auth |
+|---|---|---|---|
+| GET | `/api/festivals/{contentId}/homepage` | 축제 공식 홈페이지 URL 조회 | Yes |
+
 ---
 
 ## 상세 명세 — 프로젝트 보드
@@ -914,6 +920,27 @@ ODsay 열차 시간표(KTX·무궁화 등) → 출발 후보 목록(앞 일정 �
 | `turns` | 시간순 배열. 대화가 없으면 빈 배열 |
 | `turns[].role` | `user` \| `assistant` |
 | `turns[].candidates` | 그 턴의 추천 후보 — 필드 구성은 `POST /messages` 응답의 `candidates`와 동일. 없으면 빈 배열 |
+
+---
+
+## 상세 명세 — 축제
+
+### GET /api/festivals/{contentId}/homepage
+
+축제 공식 홈페이지 URL 조회(블록 카드 외부 링크 이동용). 나이틀리 배치(`FestivalBatchService`)가 TourAPI `detailCommon2`로 미리 채워 둔 `Festival.homepage`를 DB에서 읽어 줄 뿐, **호출 시점에 TourAPI를 부르지 않는다**.
+
+**Path Params:** `contentId`(축제 블록의 `placeId`와 동일)
+
+**Response `200`:**
+```json
+{
+  "isSuccess": true,
+  "code": "COMMON200",
+  "message": "요청에 성공했습니다.",
+  "result": { "url": "http://www.boryeongmudfestival.com" }
+}
+```
+> `url`은 홈페이지가 없거나(배치 미수집) 축제 자체가 없으면 `null`이다 — 프론트는 이때 `https://map.kakao.com/?q={축제명}` 카카오 검색으로 폴백한다. 별도 에러 코드는 없다.
 
 ---
 

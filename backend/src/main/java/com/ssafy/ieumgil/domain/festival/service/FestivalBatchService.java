@@ -4,6 +4,7 @@ import com.ssafy.ieumgil.domain.festival.client.TourApiClient;
 import com.ssafy.ieumgil.domain.festival.dto.TourApiResponse;
 import com.ssafy.ieumgil.domain.festival.entity.Festival;
 import com.ssafy.ieumgil.domain.festival.repository.FestivalRepository;
+import com.ssafy.ieumgil.domain.festival.util.HomepageUrlExtractor;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -121,11 +122,22 @@ public class FestivalBatchService {
         Double lng = item.mapx() == null || item.mapx().isBlank() ? null : Double.parseDouble(item.mapx());
         String addr = (item.addr1() == null ? "" : item.addr1())
                 + (item.addr2() == null || item.addr2().isBlank() ? "" : " " + item.addr2());
+        String homepage = fetchHomepageQuietly(item.contentid());
 
         Festival festival = festivalRepository.findByContentId(item.contentid())
                 .orElseGet(() -> Festival.builder().contentId(item.contentid()).build());
         festival.update(item.title(), item.lclsSystm2(), item.lDongRegnCd(), item.lDongSignguCd(),
-                addr, lat, lng, eventStartDate, eventEndDate, item.firstimage());
+                addr, lat, lng, eventStartDate, eventEndDate, item.firstimage(), homepage);
         festivalRepository.save(festival);
+    }
+
+    /** 홈페이지는 부가 정보다 — 상세 조회가 실패해도 축제 적재를 막지 않는다. */
+    private String fetchHomepageQuietly(String contentId) {
+        try {
+            return HomepageUrlExtractor.extract(tourApiClient.fetchDetailHomepage(contentId));
+        } catch (RuntimeException e) {
+            log.warn("축제 상세 조회 실패 — homepage 없이 적재 contentId={}: {}", contentId, e.getMessage());
+            return null;
+        }
     }
 }

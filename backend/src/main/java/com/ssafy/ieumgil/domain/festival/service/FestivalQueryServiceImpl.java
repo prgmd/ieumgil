@@ -18,4 +18,11 @@ public class FestivalQueryServiceImpl implements FestivalQueryService {
     public List<Festival> findByRegionAndDateRange(String lDongRegnCd, LocalDate tripStartDate, LocalDate tripEndDate) {
         return festivalRepository.findOverlapping(lDongRegnCd, tripStartDate, tripEndDate);
     }
+
+    @Override
+    public String getHomepageUrl(String contentId) {
+        return festivalRepository.findByContentId(contentId)
+                .map(Festival::getHomepage)
+                .orElse(null);
+    }
 }
