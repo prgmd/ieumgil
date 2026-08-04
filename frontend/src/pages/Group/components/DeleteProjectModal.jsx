@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import ConfirmModal from '../../My/shared/ui/ConfirmModal';
+import { isTripFinished } from '../../../features/group/util/tripStatus';
 import { useToastStore } from '../../../global/stores/toastStore';
 
 /**
@@ -11,7 +12,9 @@ export default function DeleteProjectModal({ open, onClose, project, onDelete })
 
   if (!project) return null;
 
-  const done = project.status === 'DONE';
+  // 카드의 배지와 같은 판정을 써야 한다 — 카드엔 "여행 완료"인데 삭제 확인창은
+  // 계획 중처럼 말하면 같은 프로젝트를 두 가지로 부르는 셈이다
+  const done = isTripFinished(project);
 
   async function handleConfirm() {
     setSubmitting(true);

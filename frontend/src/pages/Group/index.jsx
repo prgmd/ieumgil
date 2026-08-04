@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useGroupDetail } from '../../features/group/hooks/useGroupDetail';
 import { useProjects } from '../../features/group/hooks/useProjects';
+import { isTripFinished } from '../../features/group/util/tripStatus';
 import { useToastStore } from '../../global/stores/toastStore';
 import LeaveGroupModal from './components/LeaveGroupModal';
 import CreateProjectModal from './components/CreateProjectModal';
@@ -120,7 +121,8 @@ export function GroupPage() {
               </p>
             )}
             {projects.map((p) => {
-              const done = p.status === 'DONE';
+              // 서버 status 는 아직 전부 PLANNING 이라 종료일로 판정한다
+              const done = isTripFinished(p);
               return (
                 <div
                   key={p.projectId}
@@ -134,7 +136,7 @@ export function GroupPage() {
                       {p.transportPref && ` · ${TRANSPORT_LABEL[p.transportPref]}`}
                     </div>
                     <span className={`status ${done ? 'st-done' : 'st-plan'}`}>
-                      {done ? '완료 — 편집 가능' : '계획 중'}
+                      {done ? '여행 완료' : '계획 중'}
                     </span>
                   </div>
                   {/* flat 모델 — 완료 여부와 무관하게 모든 멤버가 수정·삭제할 수 있다.
