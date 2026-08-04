@@ -4,6 +4,16 @@ import lombok.Builder;
 
 public class TransitResDTO {
 
+    /**
+     * 요금 필드가 없으면 {@code UNKNOWN}이다. 0으로 채우고 CONFIRMED를 붙이면
+     * "무료"라고 단언하는 셈이 된다 — 실제로 서울→부산 KTX가 그렇게 나갔다.
+     *
+     * <p>ODsay 응답을 후보/경로로 옮기는 자리가 여럿이라 이 규칙만 여기 모은다.
+     */
+    public static FareConfidence confidenceOf(Integer fare) {
+        return fare == null ? FareConfidence.UNKNOWN : FareConfidence.CONFIRMED;
+    }
+
     @Builder
     public record Route(
             int durationMin,

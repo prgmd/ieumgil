@@ -56,22 +56,15 @@ public class PublicTransitQueryServiceImpl implements PublicTransitQueryService 
         return paths;
     }
 
-    /**
-     * 요금 필드가 없으면 {@code UNKNOWN}이다. 0으로 채우고 CONFIRMED를 붙이면
-     * "무료"라고 단언하는 셈이 된다 — 실제로 서울→부산 KTX가 그렇게 나갔다.
-     */
     private TransitResDTO.Route toRoute(OdsayRouteResponse.Path path) {
         OdsayRouteResponse.Info info = path.info();
-        Integer fare = info.payment();
         return TransitResDTO.Route.builder()
                 .durationMin(info.totalTime())
-                .fare(fare)
+                .fare(info.payment())
                 .intervalMin(info.totalIntervalTime())
                 .distanceM(info.totalDistance())
                 .estimated(false)
-                .fareConfidence(fare == null
-                        ? TransitResDTO.FareConfidence.UNKNOWN
-                        : TransitResDTO.FareConfidence.CONFIRMED)
+                .fareConfidence(TransitResDTO.confidenceOf(info.payment()))
                 .build();
     }
 }
