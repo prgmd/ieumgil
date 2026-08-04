@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.ssafy.ieumgil.domain.chatbot.dto.ChatbotReqDTO;
 import com.ssafy.ieumgil.domain.chatbot.dto.ChatbotResDTO;
 import com.ssafy.ieumgil.domain.chatbot.service.ChatbotCommandService;
+import com.ssafy.ieumgil.domain.chatbot.service.ChatbotQueryService;
 import com.ssafy.ieumgil.global.apiPayload.CustomResponse;
 import com.ssafy.ieumgil.global.security.jwt.JwtProvider;
 import com.ssafy.ieumgil.domain.chatbot.ChatbotMode;
@@ -44,6 +45,9 @@ class ChatbotControllerTest {
 
     @MockitoBean
     private ChatbotCommandService chatbotCommandService;
+
+    @MockitoBean
+    private ChatbotQueryService chatbotQueryService;
 
     @MockitoBean
     private JwtProvider jwtProvider;

@@ -20,6 +20,18 @@ public class ChatbotResDTO {
     ) {
     }
 
+    @Schema(description = "대화 이력")
+    public record HistoryResult(List<HistoryTurn> turns) {
+    }
+
+    @Schema(description = "이력 한 턴")
+    public record HistoryTurn(
+            @Schema(description = "user 또는 assistant") String role,
+            @Schema(description = "메시지 텍스트") String content,
+            @Schema(description = "그 턴의 추천 후보. 없으면 빈 배열") List<Candidate> candidates
+    ) {
+    }
+
     /**
      * 챗봇이 추천한 장소·축제. 블록 생성 요청(BlockReqDTO.Create)에 그대로 대응하는 필드로 구성한다.
      *
