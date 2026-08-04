@@ -1118,6 +1118,43 @@
   font-weight: bold;
 }
 
+/* ── 짧은 블록 축약 (QA: 글 짤림) — 높이에 맞춰 아래 줄부터 단계적으로 접는다.
+   hide-ctl(<92px): "소요 n분" 줄 / is-short(<60px): 주소 줄까지 /
+   is-tiny(≤34px): 패딩·글자까지 줄여 한 줄이 정확히 들어가게 한다. */
+.slot.hide-ctl .card .ctl {
+  display: none;
+}
+.slot.is-short .card .addr {
+  display: none;
+}
+.slot.is-short .card .l1 {
+  margin-bottom: 0;
+}
+.slot.is-short .card {
+  justify-content: center;
+}
+.slot.is-tiny .card {
+  padding-top: 2px;
+  padding-bottom: 2px;
+}
+.slot.is-tiny .card .cat,
+.slot.is-tiny .card .nm-sub,
+.slot.is-tiny .card .auto-badge,
+.slot.is-tiny .card .lock-badge {
+  display: none;
+}
+.slot.is-tiny .card .l1 {
+  gap: 6px;
+  align-items: center;
+}
+.slot.is-tiny .card .nm {
+  font-size: 12px;
+}
+.slot.is-tiny .card .time,
+.slot.is-tiny .card .cost {
+  font-size: 11px;
+}
+
 /* 사이드 패널 — 창이 넓어지면 같이 넓어져 지도가 남는 공간을 쓴다 */
 .side {
   width: clamp(300px, 26vw, 460px);

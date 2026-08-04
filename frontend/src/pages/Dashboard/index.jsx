@@ -503,6 +503,16 @@ function TimelineCard({
   });
   const catStyle = catOf(item);
   const height = (item?.dur || 30) * PX;
+  // 짧은 블록은 내용이 높이를 넘쳐 글이 잘린다 — 높이에 맞춰 단계적으로 접는다.
+  // 전체 레이아웃(첫 줄+주소+소요)이 필요한 높이는 약 90px(패딩 20+줄 3개) —
+  // 그보다 낮으면 아래 줄부터 순서대로 접는다. 잘린 채 그리는 구간이 없어야 한다.
+  const sizeClass = [
+    height < 92 && "hide-ctl", // "소요 n분" 줄부터 접는다
+    height < 60 && "is-short", // 주소 줄까지
+    height <= 34 && "is-tiny", // 한 줄 축약
+  ]
+    .filter(Boolean)
+    .join(" ");
   const isThisResizing =
     resizingState?.id === id ? resizingState.direction : null;
 
@@ -525,7 +535,7 @@ function TimelineCard({
 
   return (
     <div
-      className={`slot ${isDragging ? "is-dragging" : ""} ${isThisResizing ? "is-resizing" : ""}`}
+      className={`slot ${sizeClass} ${isDragging ? "is-dragging" : ""} ${isThisResizing ? "is-resizing" : ""}`}
       style={slotStyle}
     >
       <span className="tlab">{fmtTime(startMins)}</span>
@@ -1132,19 +1142,22 @@ export function DashboardPage() {
       ),
     );
 
-    // Day 시작 시각은 09:00 고정 — 버튼으로만 바뀐다(로컬 값이라 새로고침 시 초기화).
-    // 단 09:00 이전에 시작하는 블록이 있으면 타임라인 위로 잘려 안 보이므로,
-    // 그런 Day 에 한해 가장 이른 블록 시각까지만 내려서 맞춘다.
-    const starts = {};
-    for (const [dayKey, chain] of Object.entries(serverChains)) {
-      let start = 540;
-      for (const id of chain) {
-        const s = serverItems[id]?.startMins;
-        if (s != null && s < start) start = s;
+    // Day 시작 시각의 기본은 09:00, 버튼으로만 바뀐다(로컬 값이라 새로고침 시 초기화).
+    // 재시드(날짜 변경 reload·원격 PROJECT_UPDATED 등)에서는 세션 중 조정한 값을
+    // 보존한다 — 예전엔 여기서 무조건 재계산해서 날짜만 바꿔도 09:00 으로 리셋됐다.
+    // 단 시작보다 이른 블록이 있으면 타임라인 위로 잘리므로 그 시각까지 내려 맞춘다.
+    setDayStart((prev) => {
+      const starts = {};
+      for (const [dayKey, chain] of Object.entries(serverChains)) {
+        let start = prev[dayKey] ?? 540;
+        for (const id of chain) {
+          const s = serverItems[id]?.startMins;
+          if (s != null && s < start) start = s;
+        }
+        starts[dayKey] = start;
       }
-      starts[dayKey] = start;
-    }
-    setDayStart(starts);
+      return starts;
+    });
 
     // 다른 프로젝트에서 넘어온 경우 이전 프로젝트의 Day 탭이 남지 않게 한다
     if (!serverChains[activeDay]) setActiveDay("d1");
@@ -3454,11 +3467,12 @@ export function DashboardPage() {
               </DragOverlay>
 
               {/* 타임라인 밖(후보·사이드 등)의 라이브 커서 — 페이지 비율 좌표.
-                  Day 무관 영역이라 상대가 다른 Day 를 봐도 그린다 */}
+                  같은 Day 를 보는 멤버의 것만 그린다(다른 화면 위 커서는 착시) */}
               <RemoteCursorLayer
                 mode="page"
                 register={registerPageCursorHandler}
                 myId={currentUser?.id}
+                activeDayNo={dayNoOf(activeDay)}
                 nicknameOf={nicknameOf}
               />
 

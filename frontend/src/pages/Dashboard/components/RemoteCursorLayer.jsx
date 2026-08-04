@@ -25,8 +25,9 @@ const EXPIRE_MS = 5000;
  * @param {(handler: (msg) => void) => void} register 수신 콜백 등록(latest-ref 주입)
  * @param {number|undefined} myId 자기 커서 스킵 기준(actorId 비교 — 계약상 clientId 아님)
  * @param {"tl"|"page"} mode 이 레이어가 그리는 좌표 공간
- * @param {number} [activeDayNo] tl 전용 — 지금 보는 Day. 다른 Day 의 커서는 그리지 않는다
- *   (page 커서는 후보 목록·사이드 등 Day 와 무관한 영역이라 항상 그린다)
+ * @param {number} activeDayNo 지금 보는 Day — 다른 Day 를 보는 멤버의 커서는 어느
+ *   레이어에서도 그리지 않는다. 서로 다른 화면 위에 커서만 겹치면 "저 사람이 내
+ *   화면을 가리키고 있다"는 착시가 생긴다(QA: 시작시간 부근에서 day 무관 노출)
  * @param {(memberId: number) => string} nicknameOf 커서에 붙일 이름표
  */
 export function RemoteCursorLayer({
@@ -85,7 +86,7 @@ export function RemoteCursorLayer({
   }, []);
 
   const visible = Object.entries(cursors).filter(
-    ([, c]) => mode === "page" || c.dayNo === activeDayNo,
+    ([, c]) => c.dayNo === activeDayNo,
   );
 
   return (
