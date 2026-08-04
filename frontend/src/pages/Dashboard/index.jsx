@@ -2417,7 +2417,8 @@ export function DashboardPage() {
         break;
       case "PROJECT_UPDATED":
         if (own) break; // 자기 변경으로 보드 전체를 재시드할 이유가 없다
-        // 이름·기간·movedToPool — Day 탭 수 등 훅 소유 파생에 걸쳐 있어 재시드가 정확하다
+        // 이름·기간·이동수단·movedToPool — Day 탭 수 등 훅 소유 파생에 걸쳐 있어 재시드가 정확하다.
+        // reload() 가 스냅샷을 통째로 다시 받아오므로 project.transportPrefs 도 이 한 번으로 갱신된다.
         reload();
         break;
       case "PROJECT_DELETED":
