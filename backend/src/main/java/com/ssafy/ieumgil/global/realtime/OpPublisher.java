@@ -9,6 +9,8 @@ import com.ssafy.ieumgil.domain.user.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Component;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -22,9 +24,14 @@ import java.util.concurrent.locks.ReentrantLock;
  * 한 트랜잭션으로 묶여야, 저널에는 있는데 변경은 롤백된(또는 그 반대) 어긋남이 생기지 않는다.
  * 브로드캐스트만 OpBroadcastListener가 AFTER_COMMIT으로 내보낸다.
  *
- * 채번~기록 구간은 프로젝트 단위 ReentrantLock으로 직렬화한다(단일 인스턴스 전제).
- * 락이 커밋까지 잡지는 않으므로 seq 5가 6보다 늦게 커밋될 수 있다 — 클라이언트는
- * seq 갭을 감지하면 ops?afterSeq= 재전송으로 따라잡는 규약이라 순서 역전은 허용된다.
+ * 채번~트랜잭션 완료(커밋/롤백) 구간을 프로젝트 단위 ReentrantLock으로 직렬화한다(단일 인스턴스 전제).
+ * 락을 커밋 뒤까지 잡는 이유: 채번~기록까지만 잡으면 seq N이 미커밋인 채 N+1이 먼저 커밋될 수
+ * 있고, 그 창에서 스냅샷을 읽은 클라이언트는 lastSeq=N+1인데 N의 변경이 없는 블록 상태를 받는다.
+ * 이후 N의 브로드캐스트가 도착해도 seq ≤ lastSeq로 스킵되고, 같은 창에서는 ops?afterSeq=
+ * 재조회도 N을 돌려주지 못해 새로고침 전까지 변경이 유실된다.
+ *
+ * 롤백된 seq는 저널에 영구 갭으로 남는다 — 이것은 순서 역전과 별개 문제로, 클라이언트의
+ * 갭 재시도 규약이 다루는 영역이다.
  */
 @Component
 @RequiredArgsConstructor
@@ -47,7 +54,22 @@ public class OpPublisher {
     public long publish(Long projectId, Long actorId, String clientId, String opType, Map<String, Object> payload) {
         ReentrantLock lock = projectLocks.computeIfAbsent(projectId, id -> new ReentrantLock());
         lock.lock();
+        boolean unlockAtTxCompletion = false;
         try {
+            // 트랜잭션 완료(커밋이든 롤백이든) 시점까지 락을 연장한다. 등록을 채번보다 먼저 하는
+            // 이유: 등록 이후 어떤 예외가 나든 롤백의 afterCompletion이 반드시 unlock을 수행한다.
+            // 같은 트랜잭션에서 publish가 여러 번 불려도 안전하다 — ReentrantLock의 hold count가
+            // 호출 횟수만큼 쌓이고, 그만큼 등록된 동기화가 각각 한 번씩 unlock 한다.
+            if (TransactionSynchronizationManager.isSynchronizationActive()) {
+                TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                    @Override
+                    public void afterCompletion(int status) {
+                        lock.unlock();
+                    }
+                });
+                unlockAtTxCompletion = true;
+            }
+
             long seq = seqGenerator.next(projectId);
 
             // 이 맵이 곧 브로드캐스트 전문이자 저장 전문이다 — 둘을 따로 만들면 언젠가 어긋난다
@@ -77,7 +99,10 @@ public class OpPublisher {
             eventPublisher.publishEvent(new OpEvent(projectId, op));
             return seq;
         } finally {
-            lock.unlock();
+            // 트랜잭션 밖에서 불린 경우(규약 위반이지만 테스트 등)의 안전망 — 락을 여기서 푼다
+            if (!unlockAtTxCompletion) {
+                lock.unlock();
+            }
         }
     }
 }
