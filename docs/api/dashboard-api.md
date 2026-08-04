@@ -56,6 +56,7 @@
 | Method | Path | 설명 | Auth |
 |---|---|---|---|
 | POST | `/api/projects/{projectId}/chatbot/messages` | 대화형 채팅 — 일반/지도기반 추천 통합 | Yes |
+| GET | `/api/projects/{projectId}/chatbot/messages` | 대화 이력 조회 — 추천 후보 포함, 새로고침 복원용 | Yes |
 
 ---
 
@@ -868,6 +869,51 @@ ODsay 열차 시간표(KTX·무궁화 등) → 출발 후보 목록(앞 일정 �
 | `CHATBOT400` | 400 | `mode: MAP`인데 `mapContext` 누락 |
 | `CHATBOT502` | 502 | GMS/LLM 호출 실패 |
 | `CHATBOT500` | 500 | 대화 이력 저장 실패 |
+
+### GET /api/projects/{projectId}/chatbot/messages
+
+프로젝트+멤버 단위로 저장된 최근 대화 이력을 추천 후보(`candidates`)까지 포함해 반환한다. 새로고침해도 챗봇 대화(추천 카드 포함)를 복원할 수 있게 프론트가 위젯 마운트 시 호출한다.
+
+저장 이력은 최근 **10턴**(user+assistant 쌍)까지 남는다. 단 다음 `POST /messages` 호출의 LLM 프롬프트에는 비용 절감을 위해 이 중 마지막 6턴만 실린다 — 화면 복원 깊이와 LLM 컨텍스트 비용을 분리한 것이다. TTL은 1일이며, 그 이전이나 10턴을 넘는 대화는 복원되지 않는다.
+
+**Response `200`:**
+```json
+{
+  "isSuccess": true,
+  "code": "COMMON200",
+  "message": "요청에 성공했습니다.",
+  "result": {
+    "turns": [
+      { "role": "user", "content": "제주 추천해줘", "candidates": [] },
+      {
+        "role": "assistant",
+        "content": "성산일출봉 어때요",
+        "candidates": [
+          {
+            "name": "성산일출봉",
+            "category": "SPOT",
+            "lat": 33.4581,
+            "lng": 126.9425,
+            "address": "제주 서귀포시 성산읍",
+            "placeId": "12345",
+            "source": "KAKAO",
+            "subCategory": "관광명소",
+            "eventStartDate": null,
+            "eventEndDate": null,
+            "detail": null
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+| 필드 | 설명 |
+|---|---|
+| `turns` | 시간순 배열. 대화가 없으면 빈 배열 |
+| `turns[].role` | `user` \| `assistant` |
+| `turns[].candidates` | 그 턴의 추천 후보 — 필드 구성은 `POST /messages` 응답의 `candidates`와 동일. 없으면 빈 배열 |
 
 ---
 
