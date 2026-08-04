@@ -4,7 +4,6 @@ import com.ssafy.ieumgil.domain.auth.dto.KakaoTokenResponse;
 import com.ssafy.ieumgil.domain.auth.dto.KakaoUserInfoResponse;
 import com.ssafy.ieumgil.domain.auth.exception.AuthErrorCode;
 import com.ssafy.ieumgil.global.exception.CustomException;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
@@ -18,11 +17,20 @@ import org.springframework.web.client.RestClientException;
 
 @Slf4j
 @Component
-@RequiredArgsConstructor
 public class KakaoOAuthClient {
 
     private final KakaoOAuthProperties properties;
-    private final RestClient restClient = RestClient.create();
+    private final RestClient restClient;
+
+    /**
+     * 반드시 Boot 자동 설정 Builder로 만든다 — {@code RestClient.create()}로 직접 생성하면
+     * application.yaml의 타임아웃(connect 5s / read 15s)과 {@code RestClientHttpConfig}를
+     * 타지 않아, 카카오가 응답을 물고 있으면 로그인 요청 스레드가 무기한 대기한다.
+     */
+    public KakaoOAuthClient(RestClient.Builder builder, KakaoOAuthProperties properties) {
+        this.properties = properties;
+        this.restClient = builder.build();
+    }
 
     /**
      * 프론트에서 전달받은 인가코드로 카카오 액세스 토큰을 발급받는다.
