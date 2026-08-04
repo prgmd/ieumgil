@@ -78,8 +78,6 @@ public class TransitCandidateServiceImpl implements TransitCandidateService {
      * read-timeout 15초짜리 호출이 최대 7번 쌓인다(약 105초). 동시에 부르고 상한을 건다.
      */
     private static final Duration TIMETABLE_TIMEOUT = Duration.ofSeconds(20);
-    private static final String FERRY_CAUTION =
-            "페리 승선이 필요합니다. 배 시간표와 운임은 포함되지 않았습니다";
     private static final LocalTime DEFAULT_DAY_START = LocalTime.of(9, 0);
     private static final String SKIP_REASON_PRIOR_INTERCITY = "앞선 시외 구간의 편이 확정되지 않았습니다";
     private static final String SKIP_REASON_NO_START_DATE = "프로젝트 시작일이 없어 운행 요일을 확인할 수 없습니다";
@@ -323,24 +321,28 @@ public class TransitCandidateServiceImpl implements TransitCandidateService {
     private RoadResult roadResultOf(Leg leg, LegModes modes) {
         // 택시와 자차는 같은 카카오 길찾기 응답을 나눠 쓴다 — 요금 계산만 다를 뿐 경로는 같다.
         boolean needsDriving = modes.road().contains(RoadMode.TAXI) || modes.road().contains(RoadMode.CAR);
-        PlaceResDTO.TaxiRoute driving = needsDriving ? callDriving(leg) : null;
         // 시내 후보 선정·시외 판정·도서 목적지 판정이 같은 대중교통 경로 목록을 쓴다 — 여기서 한 번만
         // 물어 세 자리에서 나눠 쓴다. 셋 다 필요 없는 leg(도보만)라면 부르지 않는다.
         List<OdsayRouteResponse.Path> paths =
                 modes.transit() || needsDriving ? combinedRoutesFor(leg) : List.of();
-        // 도서 목적지 판정: ODsay 대중교통 경로에 항공·해운 구간이 있으면 자차·택시는 육로로 이어지지 않는다.
-        boolean nonRoad = needsDriving && hasNonRoadLeg(paths);
+        // 도서 목적지 판정: paths가 비어 있으면(조회 실패·타임아웃 포함) "모른다"는 뜻이라 지금까지처럼
+        // 자차·택시를 정상적으로 만든다 — paths가 있는데 그중 육로로만 이어지는 경로가 하나도 없을 때만
+        // "이 leg는 육로로 갈 수 없다"고 판정한다. 예전에는 여러 경로 중 항공·해운이 섞인 것 하나만
+        // 있어도 육로가 없다고 오판했다(서울-부산처럼 기차·버스가 멀쩡히 있는데도 국내선 하나 때문에
+        // 걸림) — 이제는 육로 대안이 하나도 없을 때만 자차·택시 후보 자체를 만들지 않는다.
+        boolean roadUnreachable = needsDriving && !paths.isEmpty() && !hasRoadPath(paths);
+        PlaceResDTO.TaxiRoute driving = needsDriving && !roadUnreachable ? callDriving(leg) : null;
 
         List<Candidate> roadCandidates = new ArrayList<>();
         for (RoadMode mode : modes.road()) {
+            if (roadUnreachable && (mode == RoadMode.CAR || mode == RoadMode.TAXI)) {
+                continue;
+            }
             Candidate candidate = switch (mode) {
                 case TAXI -> taxiCandidate(driving);
                 case CAR -> carCandidate(driving);
                 case WALK -> walkCandidate(leg);
             };
-            if (nonRoad && (mode == RoadMode.CAR || mode == RoadMode.TAXI) && candidate.available()) {
-                candidate = degradeForNonRoad(candidate);
-            }
             roadCandidates.add(candidate);
         }
         return new RoadResult(paths, modes.transit(), List.copyOf(roadCandidates));
@@ -360,12 +362,14 @@ public class TransitCandidateServiceImpl implements TransitCandidateService {
     }
 
     /**
-     * 이 구간이 육로로 이어지는지. combinedRoutes에 담긴 <b>모든</b> 경로를 본다 — 첫 번째
-     * 경로만 보면 페리로만 이어지는 대안을 놓칠 수 있다.
+     * combinedRoutes 중 육로(항공·해운 leg가 없는 경로)로만 이어지는 대안이 하나라도 있는지.
+     * 항공·해운 leg가 섞인 경로는 육로가 아니다 — bus+ferry처럼 일부만 육로여도 그 경로 전체는
+     * 육로 대안으로 치지 않는다. 모든 경로를 본다 — 첫 번째 경로만 보면 육로 대안이 뒤에 있는
+     * 경우를 놓칠 수 있다.
      */
-    private boolean hasNonRoadLeg(List<OdsayRouteResponse.Path> combinedRoutes) {
+    private boolean hasRoadPath(List<OdsayRouteResponse.Path> combinedRoutes) {
         return combinedRoutes.stream()
-                .anyMatch(path -> TransitLegResDTO.hasNonRoadLeg(TransitLegResDTO.fromSubPaths(path.subPath())));
+                .anyMatch(path -> !TransitLegResDTO.hasNonRoadLeg(TransitLegResDTO.fromSubPaths(path.subPath())));
     }
 
     /**
@@ -826,37 +830,6 @@ public class TransitCandidateServiceImpl implements TransitCandidateService {
                 .build();
     }
 
-    /**
-     * 육로로 이어지지 않는 구간의 자차·택시를 강등한다.
-     *
-     * <p>후보에서 빼지 않는다 — 차를 배에 싣고 제주에 가는 계획은 실제로 존재하고, 서버가
-     * 사용자의 선택을 대신 막을 이유가 없다. 다만 카카오는 페리 시간표·운임을 모른 채
-     * 도로 주행만 계산해 {@code result_code=0}을 반환하므로(청주→제주 436km·5시간 55분·
-     * 556,600원) 그 값을 확정으로 내보내면 안 된다.
-     *
-     * <p>{@code CONFIRMED}는 "외부 API가 줬다"가 아니라 "이 값을 그대로 믿어도 된다"는
-     * 뜻이어야 한다.
-     */
-    private Candidate degradeForNonRoad(Candidate candidate) {
-        return Candidate.builder()
-                .mode(candidate.mode())
-                .label(candidate.label())
-                .available(candidate.available())
-                .durationMin(candidate.durationMin())
-                .fare(candidate.fare())
-                .fareConfidence(candidate.fare() == null
-                        ? TransitResDTO.FareConfidence.UNKNOWN
-                        : TransitResDTO.FareConfidence.ESTIMATE)
-                .intervalMin(candidate.intervalMin())
-                .distanceM(candidate.distanceM())
-                .labels(candidate.labels())
-                .transferCount(candidate.transferCount())
-                .walkMeters(candidate.walkMeters())
-                .caution(FERRY_CAUTION)
-                .legs(candidate.legs())
-                .departures(candidate.departures())
-                .build();
-    }
 
     /** 거리(m) ÷ 연비 × 유가. 차종을 모르니 연비는 가정값이고, 그래서 요금이 ESTIMATE로 나간다. */
     private int estimateFuelCost(int distanceM) {
