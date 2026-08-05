@@ -43,10 +43,10 @@ INSERT INTO group_member (group_id, member_id, joined_at)
 VALUES (9001, 1, now())
 ON CONFLICT (group_id, member_id) DO NOTHING;
 
-INSERT INTO project (id, name, group_id, status, start_date, end_date, transport_pref, destination, created_at, updated_at)
+INSERT INTO project (id, name, group_id, status, start_date, end_date, transport_prefs, destination, created_at, updated_at)
 VALUES
-  (9001, '실측검증-PUBLIC', 9001, 'PLANNING', '2026-08-10', '2026-08-13', 'PUBLIC', '부산·제주', now(), now()),
-  (9002, '실측검증-CAR',    9001, 'PLANNING', '2026-08-10', '2026-08-13', 'CAR',    '부산·제주', now(), now())
+  (9001, '실측검증-PUBLIC', 9001, 'PLANNING', '2026-08-10', '2026-08-13', '["PUBLIC"]'::jsonb, '부산·제주', now(), now()),
+  (9002, '실측검증-CAR',    9001, 'PLANNING', '2026-08-10', '2026-08-13', '["CAR"]'::jsonb,    '부산·제주', now(), now())
 ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO block (project_id, author_id, day_no, order_key, category, name, lat, lng,

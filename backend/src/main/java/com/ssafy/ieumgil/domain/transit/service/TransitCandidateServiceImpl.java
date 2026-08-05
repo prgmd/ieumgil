@@ -115,7 +115,7 @@ public class TransitCandidateServiceImpl implements TransitCandidateService {
         List<Pair> pairs = pairsOf(blockIds, loadBlocks(projectId, blockIds));
 
         // 1단: 구간마다 시내 경로·자차·택시를 병렬로 모은다. 시외 여부는 여기서 받은 pathType으로 판정된다.
-        Map<Leg, RoadResult> roadByLeg = fetchRoadResults(distinctLegsOf(pairs), project.getTransportPref());
+        Map<Leg, RoadResult> roadByLeg = fetchRoadResults(distinctLegsOf(pairs), project.getTransportPrefs());
 
         // 2단: 순서대로 훑으며 기준 시각을 누적하고, Day마다 첫 시외 구간에만 시간표를 붙인다.
         // blockIds는 여러 Day를 한 체인으로 이어 보낼 수 있다(요청 크기 상한 30의 근거 자체가
@@ -132,6 +132,8 @@ public class TransitCandidateServiceImpl implements TransitCandidateService {
         SegmentClock clock = null;
         boolean intercityUsed = false;
         List<TransitCandidateResDTO.Segment> segments = new ArrayList<>();
+        // 자차·대중교통을 모두 고른 프로젝트는 구간마다 기본 수단을 강제하지 않는다 — 사용자가 그때그때 고른다.
+        boolean multiPref = project.getTransportPrefs() != null && project.getTransportPrefs().size() > 1;
 
         for (Pair pair : pairs) {
             int dayNo = dayNoOf(pair.from());
@@ -148,24 +150,24 @@ public class TransitCandidateServiceImpl implements TransitCandidateService {
 
             TransitCandidateResDTO.Segment segment;
             if (!road.isIntercity()) {
-                segment = citySegment(pair, road);
+                segment = citySegment(pair, road, multiPref);
             } else if (intercityUsed) {
-                segment = intercitySegmentWithoutTimetable(pair, road, SKIP_REASON_PRIOR_INTERCITY);
+                segment = intercitySegmentWithoutTimetable(pair, road, SKIP_REASON_PRIOR_INTERCITY, multiPref);
             } else {
                 LocalDate date = dateOf(project, pair);
                 Duration timetableBudget = remainingBudget(timetableDeadline);
                 if (date == null) {
                     // 시작일을 모르면 다음 시외 구간도 마찬가지다 — intercityUsed를 세우지 않아
                     // 뒤 구간에도 "앞 구간 때문"이 아닌 진짜 이유가 붙는다.
-                    segment = intercitySegmentWithoutTimetable(pair, road, SKIP_REASON_NO_START_DATE);
+                    segment = intercitySegmentWithoutTimetable(pair, road, SKIP_REASON_NO_START_DATE, multiPref);
                 } else if (timetableBudget.isZero()) {
                     // 다른 Day(또는 이 Day 안의 앞선 조회)가 공유 예산을 이미 다 썼다. intercityUsed를
                     // 세우지 않는다 — 시작일 미상 케이스와 같은 이유로, 뒤따르는 시외 구간도 "앞 구간
                     // 확정" 대신 같은 예산 소진 이유를 받아야 한다(예산은 요청 전체가 공유하므로 이후
                     // Day도 마찬가지다).
-                    segment = intercitySegmentWithoutTimetable(pair, road, SKIP_REASON_TIMETABLE_BUDGET_EXHAUSTED);
+                    segment = intercitySegmentWithoutTimetable(pair, road, SKIP_REASON_TIMETABLE_BUDGET_EXHAUSTED, multiPref);
                 } else {
-                    segment = intercitySegment(pair, road, clock.reference(), date, timetableBudget);
+                    segment = intercitySegment(pair, road, clock.reference(), date, timetableBudget, multiPref);
                     intercityUsed = true;
                 }
             }
@@ -237,14 +239,14 @@ public class TransitCandidateServiceImpl implements TransitCandidateService {
      * 그 여러 호출이 {@link #TIMETABLE_TIMEOUT} 하나를 나눠 쓰므로({@link #remainingBudget})
      * 전체 상한은 그대로 유지된다.
      */
-    private Map<Leg, RoadResult> fetchRoadResults(Set<Leg> legs, TransportPref pref) {
+    private Map<Leg, RoadResult> fetchRoadResults(Set<Leg> legs, List<TransportPref> prefs) {
         List<Leg> ordered = List.copyOf(legs);
         Semaphore permits = new Semaphore(MAX_CONCURRENT_CALLS);
         List<Callable<RoadResult>> tasks = ordered.stream()
                 .map(leg -> (Callable<RoadResult>) () -> {
                     permits.acquire();
                     try {
-                        return roadResultOf(leg, modesFor(pref, straightDistanceOf(leg)));
+                        return roadResultOf(leg, modesFor(prefs, straightDistanceOf(leg)));
                     } finally {
                         permits.release();
                     }
@@ -257,7 +259,7 @@ public class TransitCandidateServiceImpl implements TransitCandidateService {
                     executor.invokeAll(tasks, OVERALL_TIMEOUT.toMillis(), TimeUnit.MILLISECONDS);
             Map<Leg, RoadResult> byLeg = new HashMap<>();
             for (int i = 0; i < ordered.size(); i++) {
-                byLeg.put(ordered.get(i), resultOf(futures.get(i), ordered.get(i), pref));
+                byLeg.put(ordered.get(i), resultOf(futures.get(i), ordered.get(i), prefs));
             }
             return byLeg;
         } catch (InterruptedException e) {
@@ -270,25 +272,25 @@ public class TransitCandidateServiceImpl implements TransitCandidateService {
     }
 
     /** 타임아웃·예외로 끝난 구간은 모든 수단이 조회 실패인 구간으로 내려간다 — 요청 전체를 깨지 않는다. */
-    private RoadResult resultOf(Future<RoadResult> future, Leg leg, TransportPref pref) {
+    private RoadResult resultOf(Future<RoadResult> future, Leg leg, List<TransportPref> prefs) {
         try {
             return future.get();
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             log.warn("교통 후보 구간 조회 인터럽트: leg={}", leg);
-            return unavailableFor(leg, pref);
+            return unavailableFor(leg, prefs);
         } catch (CancellationException e) {
             log.warn("교통 후보 구간 조회 타임아웃 취소(20초): leg={}", leg);
-            return unavailableFor(leg, pref);
+            return unavailableFor(leg, prefs);
         } catch (ExecutionException e) {
             log.warn("교통 후보 구간 조회 실패: leg={}", leg, e.getCause());
-            return unavailableFor(leg, pref);
+            return unavailableFor(leg, prefs);
         }
     }
 
     /** 경로 목록이 비어 있으므로 시외로 판정되지 않는다 — 조회 실패는 시내 구간의 조회 실패로 나간다. */
-    private RoadResult unavailableFor(Leg leg, TransportPref pref) {
-        LegModes modes = modesFor(pref, straightDistanceOf(leg));
+    private RoadResult unavailableFor(Leg leg, List<TransportPref> prefs) {
+        LegModes modes = modesFor(prefs, straightDistanceOf(leg));
         return new RoadResult(List.of(), modes.transit(),
                 modes.road().stream().map(mode -> Candidate.unavailable(mode.mode())).toList());
     }
@@ -323,16 +325,17 @@ public class TransitCandidateServiceImpl implements TransitCandidateService {
      *
      * <p>거리는 직선거리다. 외부 API를 부르기 <b>전에</b> 판정해야 호출 자체를 걸러낼 수 있다.
      */
-    private LegModes modesFor(TransportPref pref, double straightM) {
+    static LegModes modesFor(List<TransportPref> prefs, double straightM) {
         // 5분 거리에 대중교통·택시를 물어봐야 답도 도보와 다르지 않다. 호출을 통째로 생략한다.
         if (straightM < NEAR_METERS) {
             return new LegModes(false, List.of(RoadMode.WALK));
         }
 
         List<RoadMode> road = new ArrayList<>();
-        // 프로젝트 생성 시 선호를 고르지 않을 수 있다(nullable). 대중교통이 더 보편적인 기본값이다.
-        boolean transit = pref != TransportPref.CAR;
-        if (!transit) {
+        boolean car = prefs != null && prefs.contains(TransportPref.CAR);
+        // 선호 미선택(빈/null) → 대중교통이 보편적 기본(기존 동작 유지)
+        boolean transit = prefs == null || prefs.isEmpty() || prefs.contains(TransportPref.PUBLIC);
+        if (car) {
             road.add(RoadMode.CAR);
         }
         road.add(RoadMode.TAXI);
@@ -409,7 +412,8 @@ public class TransitCandidateServiceImpl implements TransitCandidateService {
      * 고속버스 39,700원 4시간은 사용자가 실제로 저울질하는 대안이라 하나로 뭉치면 그 선택이 사라진다.
      */
     private TransitCandidateResDTO.Segment intercitySegment(
-            Pair pair, RoadResult road, LocalTime reference, LocalDate date, Duration timetableBudget) {
+            Pair pair, RoadResult road, LocalTime reference, LocalDate date, Duration timetableBudget,
+            boolean multiPref) {
         String from = road.firstStartStation();
         String to = road.lastEndStation();
 
@@ -429,7 +433,7 @@ public class TransitCandidateServiceImpl implements TransitCandidateService {
                 .intercity(true)
                 .timetableApplied(true)
                 .referenceAt(reference.format(HHMM))
-                .defaultMode(defaultModeOf(candidates))
+                .defaultMode(multiPref ? null : defaultModeOf(candidates))
                 .candidates(candidates)
                 .build();
     }
@@ -445,7 +449,7 @@ public class TransitCandidateServiceImpl implements TransitCandidateService {
      * 조회를 안 한 것이지 실패한 것이 아니므로 {@code available=true}다.
      */
     private TransitCandidateResDTO.Segment intercitySegmentWithoutTimetable(
-            Pair pair, RoadResult road, String reason) {
+            Pair pair, RoadResult road, String reason, boolean multiPref) {
         List<Candidate> candidates = new ArrayList<>();
         for (TransitMode mode : INTERCITY_MODES) {
             candidates.add(departureCandidate(
@@ -460,12 +464,12 @@ public class TransitCandidateServiceImpl implements TransitCandidateService {
                 .timetableApplied(false)
                 .timetableSkipReason(reason)
                 .referenceAt(null)
-                .defaultMode(defaultModeOf(candidates))
+                .defaultMode(multiPref ? null : defaultModeOf(candidates))
                 .candidates(candidates)
                 .build();
     }
 
-    private TransitCandidateResDTO.Segment citySegment(Pair pair, RoadResult road) {
+    private TransitCandidateResDTO.Segment citySegment(Pair pair, RoadResult road, boolean multiPref) {
         List<Candidate> candidates = new ArrayList<>();
         if (road.transitRequested()) {
             candidates.addAll(transitCandidates(road.paths()));
@@ -477,7 +481,7 @@ public class TransitCandidateServiceImpl implements TransitCandidateService {
                 .toBlockId(pair.to().getId())
                 .intercity(false)
                 .timetableApplied(false)
-                .defaultMode(defaultModeOf(candidates))
+                .defaultMode(multiPref ? null : defaultModeOf(candidates))
                 .candidates(candidates)
                 .build();
     }
@@ -924,7 +928,7 @@ public class TransitCandidateServiceImpl implements TransitCandidateService {
      * 예외를 던지는 arm이 생긴다 — 그 순간 "여기 닿지 않는다"는 보장이 컴파일 시점에서 런타임으로
      * 내려앉는다. 시외 수단을 담을 수 없는 타입을 쓰면 그 보장이 타입으로 돌아온다.
      */
-    private enum RoadMode {
+    enum RoadMode {
         TAXI(TransitMode.TAXI),
         CAR(TransitMode.CAR),
         WALK(TransitMode.WALK);
@@ -944,7 +948,7 @@ public class TransitCandidateServiceImpl implements TransitCandidateService {
      * 한 구간에서 다룰 수단. 시내 대중교통은 경로 목록을 2단이 후보 여러 개로 나누므로
      * 여기서는 "물어볼지 말지"만 들고 있다.
      */
-    private record LegModes(boolean transit, List<RoadMode> road) {
+    record LegModes(boolean transit, List<RoadMode> road) {
     }
 
     /**

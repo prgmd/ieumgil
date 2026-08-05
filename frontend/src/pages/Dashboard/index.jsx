@@ -1827,10 +1827,14 @@ export function DashboardPage() {
           return;
         }
         // 구간별 초기 선택 = 서버 추천(defaultMode) → 첫 이용 가능 후보 → 제외(null)
-        // choices[pairKey] = {candidate, departure} | null(제외) — departure 는
-        // 시외에서 고른 편(시내면 null), candidate 의 첫 편으로 초기화한다.
+        // defaultMode 가 null 이면(교통수단 선호 둘 다 선택) 자동 선택하지 않는다 —
+        // choices 에 키를 아예 넣지 않는다(= "제외"와 구분되는 "미선택" 상태),
+        // 사용자가 카드에서 직접 골라야 한다.
+        // choices[pairKey] = {candidate, departure} | null(제외) | undefined(미선택)
+        // — departure 는 시외에서 고른 편(시내면 null), candidate 의 첫 편으로 초기화한다.
         const choices = {};
         segments.forEach((s) => {
+          if (s.defaultMode == null) return;
           const initial =
             s.candidates?.find(
               (c) => c.mode === s.defaultMode && c.available,
@@ -2085,10 +2089,16 @@ export function DashboardPage() {
           showToast("두 장소 사이의 경로를 찾지 못했어요.");
           return;
         }
+        // defaultMode 가 null 이면(교통수단 선호 둘 다 선택) 자동 선택하지 않는다 —
+        // 사용자가 카드에서 직접 골라야 한다.
         const initialCandidate =
-          candidates.find((c) => c.mode === segment.defaultMode && c.available) ??
-          candidates.find((c) => c.available) ??
-          null;
+          segment.defaultMode == null
+            ? null
+            : candidates.find(
+                (c) => c.mode === segment.defaultMode && c.available,
+              ) ??
+              candidates.find((c) => c.available) ??
+              null;
         // 생성하지 않고 선택 모달을 연다 — 생성은 confirmTransitChoice 가 한다
         setTransitPicker({
           dayKey,
@@ -2417,7 +2427,8 @@ export function DashboardPage() {
         break;
       case "PROJECT_UPDATED":
         if (own) break; // 자기 변경으로 보드 전체를 재시드할 이유가 없다
-        // 이름·기간·movedToPool — Day 탭 수 등 훅 소유 파생에 걸쳐 있어 재시드가 정확하다
+        // 이름·기간·이동수단·movedToPool — Day 탭 수 등 훅 소유 파생에 걸쳐 있어 재시드가 정확하다.
+        // reload() 가 스냅샷을 통째로 다시 받아오므로 project.transportPrefs 도 이 한 번으로 갱신된다.
         reload();
         break;
       case "PROJECT_DELETED":

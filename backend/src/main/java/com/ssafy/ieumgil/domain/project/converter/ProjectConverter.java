@@ -27,7 +27,7 @@ public class ProjectConverter {
                 .destination(request.destination())
                 .budgetHeadcount(request.budgetHeadcount())
                 .targetBudget(request.targetBudget())
-                .transportPref(request.transportPref())
+                .transportPrefs(request.transportPrefs())
                 .build();
     }
 
@@ -56,7 +56,7 @@ public class ProjectConverter {
                 .endDate(project.getEndDate())
                 .destination(project.getDestination())
                 .budgetHeadcount(project.getBudgetHeadcount())
-                .transportPref(project.getTransportPref())
+                .transportPrefs(project.getTransportPrefs())
                 .status(project.getStatus())
                 .themeColor(project.getThemeColor())
                 .build();
@@ -70,7 +70,7 @@ public class ProjectConverter {
                 .destination(project.getDestination())
                 .startDate(project.getStartDate())
                 .endDate(project.getEndDate())
-                .transportPref(project.getTransportPref())
+                .transportPrefs(project.getTransportPrefs())
                 .budgetHeadcount(project.getBudgetHeadcount())
                 .targetBudget(project.getTargetBudget())
                 .keywords(project.getKeywords() != null ? project.getKeywords() : List.of())

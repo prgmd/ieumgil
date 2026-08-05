@@ -40,9 +40,9 @@ public final class TripContextBuilder {
                 .append('\n');
         block.append("headcount: ").append(headcount != null ? headcount : UNSET).append('\n');
 
-        TransportPref transportPref = project.getTransportPref();
-        if (transportPref != null) {
-            block.append("transport: ").append(toTransportLabel(transportPref)).append('\n');
+        List<TransportPref> transportPrefs = project.getTransportPrefs();
+        if (transportPrefs != null && !transportPrefs.isEmpty()) {
+            block.append("transport: ").append(toTransportLabel(transportPrefs)).append('\n');
         }
 
         Integer targetBudget = project.getTargetBudget();
@@ -64,10 +64,13 @@ public final class TripContextBuilder {
     }
 
     /** enum 이름을 그대로 노출하면 모델이 "CAR"라고 답할 여지가 있어 사람이 읽는 말로 바꾼다 */
-    private static String toTransportLabel(TransportPref transportPref) {
-        return switch (transportPref) {
+    private static String toTransportLabel(List<TransportPref> prefs) {
+        if (prefs == null || prefs.isEmpty()) {
+            return "대중교통";
+        }
+        return prefs.stream().map(p -> switch (p) {
             case CAR -> "자가용";
             case PUBLIC -> "대중교통";
-        };
+        }).collect(java.util.stream.Collectors.joining(", "));
     }
 }

@@ -3,12 +3,17 @@ import Modal from '../../My/shared/ui/Modal';
 import { useToastStore } from '../../../global/stores/toastStore';
 
 const TRANSPORT_LABEL = { CAR: '자차 (렌트)', PUBLIC: '대중교통' };
+// PROJECT.transport_pref는 CAR | PUBLIC 두 값뿐이다 (ERD.md). CreateProjectModal 과 동일.
+const TRANSPORT_OPTIONS = Object.entries(TRANSPORT_LABEL).map(([value, label]) => ({
+  value,
+  label,
+}));
 
 /**
  * 프로젝트 수정 모달 (PRJ-02).
  *
- * 수정 가능한 건 서버가 PATCH /projects/{id} 로 받는 이름·시작일·종료일 세 개다.
- * 목적지·인원·이동수단은 수정 API 가 없어 값만 보여주고 잠가둔다 — 편집되는 것처럼
+ * 수정 가능한 건 서버가 PATCH /projects/{id} 로 받는 이름·시작일·종료일·이동수단이다.
+ * 목적지·인원은 수정 API 가 없어 값만 보여주고 잠가둔다 — 편집되는 것처럼
  * 보이면 새로고침 때 되돌아가서 오히려 버그로 읽힌다.
  *
  * @param onUpdate (projectId, form) => Promise<updated> — 목록을 소유한 페이지가 내려준다.
@@ -24,6 +29,7 @@ export default function EditProjectModal({ open, onClose, project, onUpdate }) {
     name: project?.name ?? '',
     startDate: project?.startDate ?? '',
     endDate: project?.endDate ?? '',
+    transportPrefs: project?.transportPrefs ?? [],
   });
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -43,6 +49,10 @@ export default function EditProjectModal({ open, onClose, project, onUpdate }) {
     }
     if (form.startDate > form.endDate) {
       setError('종료일은 시작일보다 빠를 수 없어요.');
+      return;
+    }
+    if (form.transportPrefs.length < 1) {
+      setError('주요 이동수단을 선택해주세요.');
       return;
     }
 
@@ -106,13 +116,28 @@ export default function EditProjectModal({ open, onClose, project, onUpdate }) {
         </div>
       </div>
 
-      <label>주요 이동수단</label>
-      <input value={TRANSPORT_LABEL[project.transportPref] ?? '-'} disabled />
+      <fieldset>
+        <legend>주요 이동수단 * (복수 선택)</legend>
+        {TRANSPORT_OPTIONS.map((opt) => (
+          <label key={opt.value}>
+            <input
+              type="checkbox"
+              checked={form.transportPrefs.includes(opt.value)}
+              onChange={(e) => {
+                setForm((f) => ({
+                  ...f,
+                  transportPrefs: e.target.checked
+                    ? [...f.transportPrefs, opt.value]
+                    : f.transportPrefs.filter((v) => v !== opt.value),
+                }));
+              }}
+            />
+            {opt.label}
+          </label>
+        ))}
+      </fieldset>
 
-      <div className="note">
-        목적지·인원·이동수단은 아직 수정 API가 없어 잠겨 있어요. 바꿔야 하면 프로젝트를
-        새로 만들어주세요.
-      </div>
+      <div className="note">목적지·인원은 아직 수정 API가 없어 잠겨 있어요. 바꿔야 하면 프로젝트를 새로 만들어주세요.</div>
 
       {error && <div className="code-err">{error}</div>}
 

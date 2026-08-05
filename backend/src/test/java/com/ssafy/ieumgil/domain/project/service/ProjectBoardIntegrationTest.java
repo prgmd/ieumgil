@@ -78,7 +78,7 @@ class ProjectBoardIntegrationTest extends IntegrationTestSupport {
 
         // 3일 → 1일로 축소 + 이름도 같이 변경 (벌크 순서 함정을 함께 검증)
         ProjectResDTO.Updated result = projectCommandService.updateProject(user.getId(), project.getId(), null,
-                new ProjectReqDTO.Update("이름변경", null, LocalDate.of(2026, 8, 10)));
+                new ProjectReqDTO.Update("이름변경", null, LocalDate.of(2026, 8, 10), null));
 
         // 범위 밖(day3)만 이동 — day1과 기존 POOL 블록은 건드리지 않는다
         assertThat(result.movedToPool()).containsExactly(day3.getId());
@@ -137,7 +137,7 @@ class ProjectBoardIntegrationTest extends IntegrationTestSupport {
         seedBlock(project, user, 1, "a0");
 
         ProjectResDTO.Updated result = projectCommandService.updateProject(user.getId(), project.getId(), null,
-                new ProjectReqDTO.Update(null, null, LocalDate.of(2026, 8, 10)));
+                new ProjectReqDTO.Update(null, null, LocalDate.of(2026, 8, 10), null));
 
         assertThat(result.movedToPool()).isEmpty();
     }

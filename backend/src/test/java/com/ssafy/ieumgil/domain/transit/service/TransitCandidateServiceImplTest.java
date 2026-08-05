@@ -131,7 +131,7 @@ class TransitCandidateServiceImplTest {
 
     private void givenProject(TransportPref pref) {
         given(projectRepository.findByIdAndDeletedAtIsNull(PROJECT_ID))
-                .willReturn(Optional.of(Project.builder().transportPref(pref).build()));
+                .willReturn(Optional.of(Project.builder().transportPrefs(List.of(pref)).build()));
     }
 
     /** ODsay 경로 목록 응답 하나를 durationMin·fare·intervalMin·distanceM만으로 단순화해 만든다. */
@@ -689,6 +689,29 @@ class TransitCandidateServiceImplTest {
     }
 
     @Test
+    @DisplayName("자차·대중교통을 모두 선택하면 시외 구간도 기본 수단을 강제하지 않는다")
+    void bothPrefs_segmentDefaultModeIsNull() {
+        given(blockRepository.findAllByIdInAndProject_IdAndDeletedAtIsNull(List.of(1L, 2L), PROJECT_ID))
+                .willReturn(List.of(seoulBlock(), busanBlock()));
+        given(projectRepository.findByIdAndDeletedAtIsNull(PROJECT_ID))
+                .willReturn(Optional.of(projectWithPrefs(List.of(TransportPref.CAR, TransportPref.PUBLIC))));
+        given(publicTransitQueryService.getCombinedRoutes(anyDouble(), anyDouble(), anyDouble(), anyDouble()))
+                .willReturn(List.of(trainPath()));
+        given(transitScheduleQueryService.searchTrainStation("서울"))
+                .willReturn(Optional.of(terminal(3300128, "서울")));
+        given(transitScheduleQueryService.searchTrainStation("부산"))
+                .willReturn(Optional.of(terminal(3300108, "부산")));
+        given(transitScheduleQueryService.getTrainSchedule(eq(3300128), eq(3300108), any(LocalDate.class)))
+                .willReturn(List.of(train("KTX", 1, "16:00", "18:37", 59800)));
+
+        TransitCandidateResDTO.Result result =
+                service.calculate(PROJECT_ID, List.of(1L, 2L), LocalTime.of(14, 0));
+
+        assertThat(result.segments())
+                .allSatisfy(segment -> assertThat(segment.defaultMode()).isNull());
+    }
+
+    @Test
     @DisplayName("기준 시각보다 이른 편은 후보에서 뺀다")
     void 기준_시각_이전_편은_제외한다() {
         given(blockRepository.findAllByIdInAndProject_IdAndDeletedAtIsNull(List.of(1L, 2L), PROJECT_ID))
@@ -1099,7 +1122,15 @@ class TransitCandidateServiceImplTest {
     /** 시외 구간의 여행 날짜(startDate + dayNo-1)를 유도할 수 있는 프로젝트 */
     private Project publicProject() {
         return Project.builder()
-                .transportPref(TransportPref.PUBLIC)
+                .transportPrefs(List.of(TransportPref.PUBLIC))
+                .startDate(LocalDate.of(2026, 8, 10))
+                .build();
+    }
+
+    /** 임의의 선호 목록(다중 선택 포함)을 가진 프로젝트. 시외 구간 여행 날짜는 publicProject()와 동일 */
+    private Project projectWithPrefs(List<TransportPref> prefs) {
+        return Project.builder()
+                .transportPrefs(prefs)
                 .startDate(LocalDate.of(2026, 8, 10))
                 .build();
     }

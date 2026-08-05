@@ -23,7 +23,7 @@ class TripContextBuilderTest {
                 .destination("제주")
                 .startDate(LocalDate.of(2026, 8, 10))
                 .endDate(LocalDate.of(2026, 8, 13))
-                .transportPref(TransportPref.CAR)
+                .transportPrefs(List.of(TransportPref.CAR))
                 .keywords(List.of("오름", "카페"))
                 .build();
 
@@ -53,7 +53,7 @@ class TripContextBuilderTest {
     void publicTransportIsLocalized() {
         Project project = Project.builder()
                 .destination("서울")
-                .transportPref(TransportPref.PUBLIC)
+                .transportPrefs(List.of(TransportPref.PUBLIC))
                 .build();
 
         assertThat(TripContextBuilder.build(project, 3)).contains("transport: 대중교통");
