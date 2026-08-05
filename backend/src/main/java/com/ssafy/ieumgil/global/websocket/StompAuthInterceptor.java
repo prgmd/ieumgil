@@ -29,6 +29,10 @@ import java.util.regex.Pattern;
  *   통과한 projectId는 세션 어트리뷰트에 캐시한다 — cursor처럼 초당 수십 건 오는
  *   프레임마다 DB를 칠 수는 없다. 탈퇴 시 세션 강제 종료는 WsSessionRegistry가 맡는다.
  *
+ * <p><b>두 커맨드는 허용 목적지가 다르다</b> — 같은 규칙으로 묶으면 안 된다.
+ * SUBSCRIBE는 /topic/project/{id}/**(+ 개인 큐 /user/**)를, SEND는 /app/project/{id}/** 만
+ * 허용한다. /topic·/user로의 SEND가 왜 방화벽 구멍인지는 authorizeSend의 주석에 적어 두었다.
+ *
  * <p><b>토큰 만료 (GRP-09)</b>: CONNECT 이후 프레임에는 토큰이 실리지 않으므로, CONNECT 때
  * 만료 시각을 세션에 남겨 매 프레임 다시 본다. 이것이 없으면 유효 토큰으로 한 번 연결한 세션은
  * 만료·로그아웃과 무관하게 영원히 살아 있는 채널이 된다.
@@ -43,9 +47,13 @@ import java.util.regex.Pattern;
 @RequiredArgsConstructor
 public class StompAuthInterceptor implements ChannelInterceptor {
 
-    /** /topic/project/{id}(/...) 와 /app/project/{id}(/...) 모두에서 projectId를 뽑는다 */
-    private static final Pattern PROJECT_DESTINATION =
-            Pattern.compile("^/(?:topic|app)/project/(\\d+)(?:/.*)?$");
+    /** 구독 가능한 브로드캐스트 토픽 — /topic/project/{id}(/presence|/cursor) */
+    private static final Pattern SUBSCRIBE_DESTINATION =
+            Pattern.compile("^/topic/project/(\\d+)(?:/.*)?$");
+
+    /** 전송 가능한 애플리케이션 목적지 — /app/project/{id}/... (반드시 @MessageMapping을 거친다) */
+    private static final Pattern SEND_DESTINATION =
+            Pattern.compile("^/app/project/(\\d+)(?:/.*)?$");
 
     private static final String AUTHORIZED_PROJECTS_ATTR = "authorizedProjectIds";
 
@@ -65,7 +73,8 @@ public class StompAuthInterceptor implements ChannelInterceptor {
 
         switch (accessor.getCommand()) {
             case CONNECT -> authenticate(accessor);
-            case SUBSCRIBE, SEND -> authorize(accessor);
+            case SUBSCRIBE -> authorizeSubscribe(accessor);
+            case SEND -> authorizeSend(accessor);
             default -> { /* ACK, DISCONNECT 등은 통과 */ }
         }
         return message;
@@ -87,22 +96,47 @@ public class StompAuthInterceptor implements ChannelInterceptor {
         attributes.put(TOKEN_EXPIRY_ATTR, jwtProvider.getAccessTokenExpiry(token));
     }
 
-    private void authorize(StompHeaderAccessor accessor) {
+    /**
+     * 구독 인가 — 프로젝트 토픽(멤버십 확인)과 본인 개인 큐만 허용한다.
+     */
+    private void authorizeSubscribe(StompHeaderAccessor accessor) {
         requireUnexpiredToken(accessor);
+        String destination = requireDestination(accessor);
 
-        String destination = accessor.getDestination();
-        if (destination == null) {
-            throw new IllegalArgumentException("destination이 없습니다.");
-        }
-
-        // 개인 큐(/user/queue/...)는 Spring이 Principal 기준으로 라우팅하므로
+        // 개인 큐(/user/queue/...) 구독은 Spring이 Principal 기준으로 라우팅하므로
         // 남의 것을 구독할 방법 자체가 없다 — 인증만 확인하고 통과시킨다.
+        // 이 근거는 SUBSCRIBE에만 성립한다(authorizeSend 참고).
         if (destination.startsWith("/user/")) {
             requirePrincipal(accessor);
             return;
         }
 
-        Matcher matcher = PROJECT_DESTINATION.matcher(destination);
+        authorizeProject(accessor, destination, SUBSCRIBE_DESTINATION);
+    }
+
+    /**
+     * 전송 인가 — /app/project/{id}/** 만 허용한다. /topic·/user는 <b>수신 전용</b>이다.
+     *
+     * <p>구독과 같은 규칙으로 통과시키면 안 된다:
+     * <ul>
+     *   <li><b>/topic</b>: SimpleBroker가 직접 담당하는 prefix라, 클라이언트 SEND는
+     *       {@code @MessageMapping}을 타지 않고 브로커가 원문 그대로 전 구독자에게 뿌린다.
+     *       멤버 한 명이 서버가 발행한 것처럼 op(seq·actorId 포함)를 위조할 수 있고,
+     *       DB는 무변경이라 서버 로그에도 흔적이 남지 않는다.</li>
+     *   <li><b>/user</b>: DefaultUserDestinationResolver가 <i>목적지에 적힌</i> 사용자명으로
+     *       해석해 그 사용자의 큐로 배달한다. 남의 userId를 적으면 그대로 도달하므로
+     *       RealtimeRelayController의 대상 멤버십 검증이 통째로 우회된다.</li>
+     * </ul>
+     * 프론트가 실제로 SEND하는 곳은 cursor와 voice/signal 둘뿐이고 모두 /app/** 이다.
+     */
+    private void authorizeSend(StompHeaderAccessor accessor) {
+        requireUnexpiredToken(accessor);
+        authorizeProject(accessor, requireDestination(accessor), SEND_DESTINATION);
+    }
+
+    /** 목적지에서 projectId를 뽑아 멤버십을 확인한다. 통과한 projectId는 세션에 캐시한다 */
+    private void authorizeProject(StompHeaderAccessor accessor, String destination, Pattern allowed) {
+        Matcher matcher = allowed.matcher(destination);
         if (!matcher.matches()) {
             throw new IllegalArgumentException("허용되지 않은 destination: " + destination);
         }
@@ -122,6 +156,14 @@ public class StompAuthInterceptor implements ChannelInterceptor {
         if (authorized != null) {
             authorized.add(projectId);
         }
+    }
+
+    private String requireDestination(StompHeaderAccessor accessor) {
+        String destination = accessor.getDestination();
+        if (destination == null) {
+            throw new IllegalArgumentException("destination이 없습니다.");
+        }
+        return destination;
     }
 
     /**
