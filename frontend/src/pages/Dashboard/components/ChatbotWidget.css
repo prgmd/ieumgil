@@ -244,12 +244,6 @@
   align-self: flex-start;
   max-width: 100%;
 }
-.cbw-chips-note {
-  flex-basis: 100%;
-  font-size: 11px;
-  color: #8a776a;
-  margin-bottom: 2px;
-}
 .cbw-chip {
   padding: 6px 12px;
   border: 1px solid #e6dec8;

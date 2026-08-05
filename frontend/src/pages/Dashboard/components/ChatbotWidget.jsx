@@ -95,6 +95,10 @@ export function ChatbotWidget({ projectId, getMapBounds }) {
   const suppressToggleRef = useRef(false);
 
   const handleFabPointerDown = (e) => {
+    // 새 제스처 시작 — 이전 드래그가 pointercancel 등으로 click 없이 끝나
+    // suppressToggleRef 가 true 로 남아있었다면 여기서 초기화한다.
+    suppressToggleRef.current = false;
+
     const start = {
       x: e.clientX,
       y: e.clientY,
@@ -117,13 +121,24 @@ export function ChatbotWidget({ projectId, getMapBounds }) {
         ),
       });
     };
-    const onUp = () => {
+    // 브라우저가 터치 스크롤/제스처 가로채기 등으로 pointercancel 을 쏘면
+    // pointerup 없이 제스처가 끝난다 — cleanup 을 못 하면 리스너가 계속 붙어
+    // 있어 이후의 단순 hover 에서도 onMove 가 불려 FAB 가 커서를 따라다닌다.
+    const cleanup = () => {
       window.removeEventListener("pointermove", onMove);
       window.removeEventListener("pointerup", onUp);
+      window.removeEventListener("pointercancel", onCancel);
+    };
+    const onUp = () => {
+      cleanup();
       if (start.moved) suppressToggleRef.current = true;
+    };
+    const onCancel = () => {
+      cleanup();
     };
     window.addEventListener("pointermove", onMove);
     window.addEventListener("pointerup", onUp);
+    window.addEventListener("pointercancel", onCancel);
   };
 
   const handleFabClick = () => {
@@ -288,11 +303,6 @@ export function ChatbotWidget({ projectId, getMapBounds }) {
                 클릭하면 입력창에 텍스트만 채운다(전송은 사용자가 확인 후 직접). */}
             {messages.length === 0 && (
               <div className="cbw-chips">
-                {activeTab === "map" && (
-                  <div className="cbw-chips-note">
-                    🗺️ 지도를 원하는 지역으로 옮긴 뒤 물어보세요
-                  </div>
-                )}
                 {(activeTab === "map" ? MAP_CHIPS : GENERAL_CHIPS).map(
                   (chip) => (
                     <button
