@@ -13,6 +13,17 @@ const CAT_LABEL = {
   TRANSPORT: "교통",
 };
 
+// 모드별 예시 프롬프트 — intro 시점(대화 시작 전)에만 노출되는 칩.
+// 클릭하면 입력창에 텍스트만 채우고 전송은 하지 않는다(사용자가 수정/확인 후 전송).
+const GENERAL_CHIPS = [
+  "부산 가볼만한 곳 추천",
+  "이번 주 근처 축제 알려줘",
+  "서울에서 부산 기차 시간표",
+  "여기서 숙소까지 택시비",
+  "지금 일정 요약해줘",
+];
+const MAP_CHIPS = ["이 근처 카페 추천", "주변 관광지 알려줘"];
+
 /**
  * 드래그해서 후보 목록으로 옮기는 추천 카드 — 카카오 검색 결과(SearchResultDraggable)와
  * 같은 문법. 드롭 처리(블록 생성)는 대시보드의 handleDragEnd 가 from:"chatbot" 으로
@@ -242,12 +253,14 @@ export function ChatbotWidget({ projectId, getMapBounds }) {
             <button
               className={`cbw-tab ${activeTab === "general" ? "on" : ""}`}
               onClick={() => setActiveTab("general")}
+              title="장소·축제·교통·일정 무엇이든 물어보세요"
             >
               💬 일반 채팅
             </button>
             <button
               className={`cbw-tab ${activeTab === "map" ? "on" : ""}`}
               onClick={() => setActiveTab("map")}
+              title="현재 지도 범위에서 장소를 추천받아요"
             >
               🗺️ 지도 기반 추천
             </button>
@@ -257,16 +270,43 @@ export function ChatbotWidget({ projectId, getMapBounds }) {
             <div className="cbw-bubble">
               {activeTab === "map" ? (
                 <>
-                  지금 <b>지도에 보이는 범위 안</b>에서 추천해드려요 — 지도를
-                  원하는 동네로 옮긴 뒤 물어보세요.
+                  지금 <b>지도에 보이는 범위 안</b>에서 장소를 추천해드려요 —
+                  지도를 원하는 동네로 옮긴 뒤 물어보세요. 마음에 드는 추천을{" "}
+                  <b>끌어다 후보 목록에</b> 담으세요.
                 </>
               ) : (
                 <>
-                  안녕하세요, 이음이예요! 여행지·맛집·일정 뭐든 물어보세요 —
-                  마음에 드는 추천을 <b>끌어다 후보 목록에</b> 담으세요.
+                  안녕하세요, 이음이예요! 장소 검색, 축제 추천, 버스·기차·항공
+                  시간표, 택시·도보 경로와 요금, 지금 일정 요약까지 뭐든
+                  물어보세요 — 마음에 드는 추천을 <b>끌어다 후보 목록에</b>{" "}
+                  담으세요.
                 </>
               )}
             </div>
+
+            {/* 예시 프롬프트 칩 — 대화가 시작되기 전(intro 시점)에만 노출.
+                클릭하면 입력창에 텍스트만 채운다(전송은 사용자가 확인 후 직접). */}
+            {messages.length === 0 && (
+              <div className="cbw-chips">
+                {activeTab === "map" && (
+                  <div className="cbw-chips-note">
+                    🗺️ 지도를 원하는 지역으로 옮긴 뒤 물어보세요
+                  </div>
+                )}
+                {(activeTab === "map" ? MAP_CHIPS : GENERAL_CHIPS).map(
+                  (chip) => (
+                    <button
+                      key={chip}
+                      type="button"
+                      className="cbw-chip"
+                      onClick={() => setInputValue(chip)}
+                    >
+                      {chip}
+                    </button>
+                  ),
+                )}
+              </div>
+            )}
 
             {messages.map((m) => (
               <div key={m.id}>
