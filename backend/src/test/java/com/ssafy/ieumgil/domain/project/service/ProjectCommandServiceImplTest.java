@@ -63,7 +63,7 @@ class ProjectCommandServiceImplTest {
         when(projectRepository.findByIdAndDeletedAtIsNull(1L)).thenReturn(Optional.of(project));
 
         service.updateProject(1L, 1L, "client-1",
-                new ProjectReqDTO.Update(null, null, null,
+                new ProjectReqDTO.Update(null, null, null, null,
                         List.of(TransportPref.CAR, TransportPref.PUBLIC)));
 
         assertThat(project.getTransportPrefs())
