@@ -17,6 +17,15 @@ const fareText = (fare, fareConfidence) => {
 
 const INTERCITY_MODES = new Set(["TRAIN", "EXPRESS_BUS", "AIR"]);
 
+// 고를 수 없는 상태의 문구. 셋을 한 문구로 뭉개면 안 된다 — 사용자가 할 행동이 다르다.
+// NO_ROUTE 는 몇 번을 다시 물어도 같은 답이라 재시도가 헛수고고, LOOKUP_FAILED 만
+// 재시도가 유효하다. 예전에는 셋 다 "조회 실패"로 나가서 울릉도 사용자가 계속 재시도했다.
+const STATUS_TEXT = {
+  NO_SERVICE: "이 시각 이후 운행 없음",
+  NO_ROUTE: "대중교통 경로가 없어요",
+  LOOKUP_FAILED: "조회에 실패했어요",
+};
+
 function LegsInline({ legs }) {
   if (!legs || legs.length === 0) return null;
   return (
@@ -69,11 +78,31 @@ function DepartureRow({ departure, selected, selectable, onSelect }) {
         {departure.arrivalAt ? `→${departure.arrivalAt}` : ""}
       </span>
       {fare && <span className="tcc-dep-fare">{fare}</span>}
+      {/* 대기 시간을 보여주는 이유: 후보의 door-to-door 소요에 이 값이 들어 있는데
+          내역이 안 보이면 "왜 12시간인가"를 설명할 수단이 없다 */}
+      {departure.waitMin != null && (
+        <span className="tcc-dep-wait">대기 {departure.waitMin}분</span>
+      )}
       {departure.labels?.length > 0 && (
         <span className="tcc-dep-labels">
           {departure.labels.map((l) => (
             <em key={l}>{l}</em>
           ))}
+        </span>
+      )}
+      {/* 환승 연결편. 이걸 감추면 사용자는 안동→목포 여정을 "KTX 708 12:01→14:11"
+          두 시간짜리 기차로 오해한다 — 실제로는 수서에서 갈아타 21:47에 닿는다 */}
+      {departure.connection && (
+        <span className="tcc-dep-conn">
+          ↳ {departure.connection.fromStation ?? "환승"} 환승
+          {departure.connection.transferMin != null &&
+            ` · 대기 ${departure.connection.transferMin}분`}
+          {" · "}
+          {departure.connection.name}
+          {" "}
+          {departure.connection.departureAt ?? "?"}
+          {departure.connection.arrivalAt ? `→${departure.connection.arrivalAt}` : ""}
+          {departure.connection.toStation ? ` · ${departure.connection.toStation} 도착` : ""}
         </span>
       )}
     </Tag>
@@ -126,7 +155,11 @@ export function TransitCandidateCard({
       >
         <span className="tcc-ico">{meta.ico}</span>
         <span className="tcc-name">{c.label || meta.nm}</span>
-        {!isOk && <em className="tcc-fail">조회 실패</em>}
+        {!isOk && (
+          <em className={`tcc-fail ${c.status === "LOOKUP_FAILED" ? "is-retryable" : ""}`}>
+            {STATUS_TEXT[c.status] ?? "고를 수 없어요"}
+          </em>
+        )}
         {isOk && c.durationMin != null && (
           <span className="tcc-dur">{c.durationMin}분</span>
         )}
@@ -153,10 +186,17 @@ export function TransitCandidateCard({
         </div>
       )}
 
-      {(c.transferCount != null || c.walkMeters != null) && (
+      {(c.transferCount != null ||
+        c.walkMeters != null ||
+        c.accessMin != null ||
+        c.egressMin != null) && (
         <div className="tcc-sub">
           {c.transferCount != null && <span>환승 {c.transferCount}회</span>}
           {c.walkMeters != null && <span>도보 {c.walkMeters}m</span>}
+          {/* 승차 지점까지 가는 시간·하차 지점에서 나오는 시간. 후보의 소요에 이미
+              포함돼 있으므로, 안 보여주면 "역까지 가는 시간은 빠진 건가"를 알 수 없다 */}
+          {c.accessMin != null && <span>승차지까지 {c.accessMin}분</span>}
+          {c.egressMin != null && <span>하차 후 {c.egressMin}분</span>}
         </div>
       )}
 
