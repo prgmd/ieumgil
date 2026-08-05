@@ -61,6 +61,51 @@ class WebSearchInterceptorTest {
         assertThat(hasWebSearch(outgoing)).isTrue();
     }
 
+    @Test
+    @DisplayName("GENERAL 요청: web_search 주입 후 tools 마지막 요소(=web_search)에 cache_control을 단다")
+    void marksCacheControlOnLastToolForGeneralRequest() throws IOException {
+        JsonNode outgoing = outgoingBody("""
+                {"tools":[{"name":"searchPlaces"},{"name":"getBoard"}]}
+                """);
+
+        JsonNode tools = outgoing.get("tools");
+        JsonNode last = tools.get(tools.size() - 1);
+        // 주입 순서상 마지막은 web_search이며, 여기에 캐시 브레이크포인트가 달려야 한다.
+        assertThat(last.path("type").asText()).isEqualTo(WEB_SEARCH_TYPE);
+        assertThat(last.path("cache_control").path("type").asText()).isEqualTo("ephemeral");
+        // 앞선 custom tool에는 cache_control이 없다(브레이크포인트는 마지막 하나뿐).
+        assertThat(tools.get(0).has("cache_control")).isFalse();
+    }
+
+    @Test
+    @DisplayName("MAP 요청: web_search는 스킵하되 뷰포트 tool(마지막)에 cache_control을 단다")
+    void marksCacheControlOnLastToolForMapRequest() throws IOException {
+        JsonNode outgoing = outgoingBody("""
+                {"tools":[{"name":"searchPlacesInView","input_schema":{}}]}
+                """);
+
+        assertThat(hasWebSearch(outgoing)).isFalse();
+        JsonNode tools = outgoing.get("tools");
+        assertThat(tools).hasSize(1);
+        assertThat(tools.get(0).path("cache_control").path("type").asText()).isEqualTo("ephemeral");
+    }
+
+    @Test
+    @DisplayName("system 평문 프리픽스를 text 블록 배열로 바꿔 cache_control을 단다 (tools+system 캐시)")
+    void marksCacheControlOnSystemPrefix() throws IOException {
+        JsonNode outgoing = outgoingBody("""
+                {"system":"너는 이음이","tools":[{"name":"searchPlaces"}]}
+                """);
+
+        JsonNode system = outgoing.get("system");
+        assertThat(system.isArray()).isTrue();
+        JsonNode block = system.get(system.size() - 1);
+        assertThat(block.path("type").asText()).isEqualTo("text");
+        // 원문이 보존돼야 프리픽스 의미가 바뀌지 않는다.
+        assertThat(block.path("text").asText()).isEqualTo("너는 이음이");
+        assertThat(block.path("cache_control").path("type").asText()).isEqualTo("ephemeral");
+    }
+
     /** interceptor를 통과시키고 실제로 나가는 wire body(JSON)를 캡처해 돌려준다. */
     private JsonNode outgoingBody(String requestBody) throws IOException {
         HttpRequest request = mock(HttpRequest.class);

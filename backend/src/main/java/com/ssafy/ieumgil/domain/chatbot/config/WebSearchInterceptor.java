@@ -55,32 +55,94 @@ public class WebSearchInterceptor implements ClientHttpRequestInterceptor {
     }
 
     /**
-     * 나가는 body의 tools 배열에 web_search 서버tool을 추가한다. 실패 시 원본 그대로.
+     * 나가는 body의 tools 배열에 web_search 서버tool을 추가하고, tools 프리픽스에 프롬프트 캐싱
+     * 브레이크포인트를 단다. 실패 시 원본 그대로.
      *
-     * <p>단, MAP 모드 요청(뷰포트 검색 tool 하나만 등록된 시그니처)에는 주입하지 않는다.
+     * <p>단, MAP 모드 요청(뷰포트 검색 tool 하나만 등록된 시그니처)에는 web_search를 주입하지 않는다.
      * web_search를 함께 노출하면 모델이 뷰포트 tool 대신 web_search로 산문 답을 내 추천 카드
      * (뷰포트 tool 호출의 side-effect)가 사라지기 때문이다. interceptor는 mode 신호를 받지
      * 못하므로 나가는 tools 배열을 sniff해 판정한다.
+     *
+     * <p>web_search 주입/스킵을 끝낸 <b>최종</b> tools 배열의 마지막 요소, 그리고 그 뒤에 렌더되는
+     * system 프리픽스에 캐싱 브레이크포인트를 붙인다. 렌더 순서는 tools → system → messages다.
+     * <b>haiku 4.5의 최소 캐시 프리픽스는 4096 토큰</b>인데, 실측 결과 tool 정의만으로는(~3.5-4k)
+     * 이 floor를 넘지 못해 tools 단독 브레이크포인트는 캐시를 쓰지 못한다(cache_creation=0). 그래서
+     * system 블록에도 브레이크포인트를 둬 <b>tools + system</b>(실측 ~5.3k 토큰)을 한 번에 캐시한다 —
+     * 이 프리픽스는 대화 내(같은 프로젝트·모드) 바이트 불변이라 이후 턴이 캐시읽기(~0.1× 단가)로
+     * 재사용한다. tools 마지막 마커는 floor 미달로 지금은 실효가 없지만, tool 정의가 커지는 경우를
+     * 대비한 더 촘촘한 브레이크포인트로 남겨 둔다(브레이크포인트 최대 4개 중 2개).
      */
     private byte[] injectWebSearchTool(byte[] body) {
         try {
             ObjectNode root = (ObjectNode) MAPPER.readTree(body);
             JsonNode existing = root.get("tools");
-            if (existing != null && existing.isArray() && isMapModeRequest((ArrayNode) existing)) {
-                return body;
+            boolean mapMode = existing != null && existing.isArray() && isMapModeRequest((ArrayNode) existing);
+
+            ArrayNode tools;
+            if (mapMode) {
+                tools = (ArrayNode) existing;
+            } else {
+                tools = existing != null && existing.isArray()
+                        ? (ArrayNode) existing
+                        : root.putArray("tools");
+                ObjectNode ws = MAPPER.createObjectNode();
+                ws.put("type", WEB_SEARCH_TYPE);
+                ws.put("name", "web_search");
+                ws.put("max_uses", MAX_USES);
+                tools.add(ws);
             }
-            ArrayNode tools = existing != null && existing.isArray()
-                    ? (ArrayNode) existing
-                    : root.putArray("tools");
-            ObjectNode ws = MAPPER.createObjectNode();
-            ws.put("type", WEB_SEARCH_TYPE);
-            ws.put("name", "web_search");
-            ws.put("max_uses", MAX_USES);
-            tools.add(ws);
+
+            markCacheBreakpoint(tools);
+            markSystemCacheBreakpoint(root);
             return MAPPER.writeValueAsBytes(root);
         } catch (Exception e) {
-            log.warn("web_search tool 주입 실패, 원본 요청 사용", e);
+            log.warn("web_search tool 주입/캐시 브레이크포인트 설정 실패, 원본 요청 사용", e);
             return body;
+        }
+    }
+
+    /**
+     * tools 배열의 마지막 요소에 캐싱 브레이크포인트({@code cache_control: ephemeral})를 단다.
+     * tool이 없으면 붙일 대상이 없으므로 건너뛴다.
+     */
+    private void markCacheBreakpoint(ArrayNode tools) {
+        if (tools == null || tools.isEmpty()) {
+            return;
+        }
+        JsonNode last = tools.get(tools.size() - 1);
+        if (last instanceof ObjectNode lastTool) {
+            lastTool.set("cache_control", MAPPER.createObjectNode().put("type", "ephemeral"));
+        }
+    }
+
+    /**
+     * system 프리픽스에 캐싱 브레이크포인트를 단다. Spring AI는 {@code system}을 평문 문자열로 보내므로,
+     * cache_control을 실을 수 있도록 {@code [{"type":"text","text":...,"cache_control":...}]} 배열 블록으로
+     * 바꾼다. 이 브레이크포인트는 렌더 순서상 앞선 tools까지 포함한 tools+system 프리픽스를 캐시한다.
+     * 이미 배열이면 마지막 블록에 붙이고, system이 없거나 빈 문자열이면 건너뛴다.
+     */
+    private void markSystemCacheBreakpoint(ObjectNode root) {
+        JsonNode system = root.get("system");
+        if (system == null) {
+            return;
+        }
+        if (system.isTextual()) {
+            String text = system.asText();
+            if (text.isEmpty()) {
+                return;
+            }
+            ObjectNode block = MAPPER.createObjectNode();
+            block.put("type", "text");
+            block.put("text", text);
+            block.set("cache_control", MAPPER.createObjectNode().put("type", "ephemeral"));
+            ArrayNode arr = MAPPER.createArrayNode();
+            arr.add(block);
+            root.set("system", arr);
+        } else if (system.isArray() && !system.isEmpty()) {
+            JsonNode last = system.get(system.size() - 1);
+            if (last instanceof ObjectNode lastBlock) {
+                lastBlock.set("cache_control", MAPPER.createObjectNode().put("type", "ephemeral"));
+            }
         }
     }
 
