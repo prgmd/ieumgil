@@ -19,7 +19,7 @@ public final class HomepageUrlExtractor {
             return null;
         }
         Matcher href = HREF.matcher(rawHomepage);
-        if (href.find()) {
+        if (href.find() && isHttpUrl(href.group(1))) {
             return href.group(1);
         }
         Matcher plain = PLAIN_URL.matcher(rawHomepage);
@@ -27,6 +27,10 @@ public final class HomepageUrlExtractor {
             return plain.group(1);
         }
         return null;
+    }
+
+    private static boolean isHttpUrl(String url) {
+        return url.startsWith("http://") || url.startsWith("https://");
     }
 
     private HomepageUrlExtractor() {
