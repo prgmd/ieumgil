@@ -71,6 +71,8 @@ public class Festival extends BaseTimeEntity {
         this.eventStartDate = eventStartDate;
         this.eventEndDate = eventEndDate;
         this.firstImage = firstImage;
-        this.homepage = homepage;
+        if (homepage != null) {
+            this.homepage = homepage;
+        }
     }
 }

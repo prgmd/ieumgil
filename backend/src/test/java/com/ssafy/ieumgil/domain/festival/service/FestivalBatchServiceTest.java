@@ -175,6 +175,61 @@ class FestivalBatchServiceTest {
     }
 
     @Test
+    @DisplayName("재싱크에서 상세 조회가 실패해도 기존 homepage는 유지된다")
+    void 재싱크_상세_실패해도_기존_홈페이지_유지() {
+        festivalBatchService = new FestivalBatchService(tourApiClient, festivalRepository);
+        TourApiResponse.Item item = new TourApiResponse.Item(
+                "123", "머드축제", "보령시", "", "126.5", "36.3",
+                "20260701", "20260710", "http://img", "44", "44130", "축제");
+        Festival existing = Festival.builder()
+                .contentId("123").title("머드축제").category("축제")
+                .lDongRegnCd("44").lDongSignguCd("44130").addr("보령시")
+                .lat(36.3).lng(126.5)
+                .eventStartDate(LocalDate.of(2026, 7, 1)).eventEndDate(LocalDate.of(2026, 7, 10))
+                .homepage("http://mud.example.com")
+                .build();
+        when(tourApiClient.fetchTotalCount(anyString())).thenReturn(1);
+        when(tourApiClient.searchFestivals(anyString(), eq(1), anyInt())).thenReturn(List.of(item));
+        when(festivalRepository.findByContentId("123")).thenReturn(Optional.of(existing));
+        when(tourApiClient.fetchDetailHomepage("123"))
+                .thenThrow(new com.ssafy.ieumgil.domain.festival.exception.FestivalException(
+                        com.ssafy.ieumgil.domain.festival.exception.FestivalErrorCode.TOUR_API_CALL_FAILED));
+
+        festivalBatchService.syncFestivals();
+
+        ArgumentCaptor<Festival> captor = ArgumentCaptor.forClass(Festival.class);
+        verify(festivalRepository).save(captor.capture());
+        assertThat(captor.getValue().getHomepage()).isEqualTo("http://mud.example.com");
+    }
+
+    @Test
+    @DisplayName("재싱크에서 새 homepage가 정상 조회되면 갱신된다")
+    void 재싱크_정상_조회면_홈페이지_갱신() {
+        festivalBatchService = new FestivalBatchService(tourApiClient, festivalRepository);
+        TourApiResponse.Item item = new TourApiResponse.Item(
+                "123", "머드축제", "보령시", "", "126.5", "36.3",
+                "20260701", "20260710", "http://img", "44", "44130", "축제");
+        Festival existing = Festival.builder()
+                .contentId("123").title("머드축제").category("축제")
+                .lDongRegnCd("44").lDongSignguCd("44130").addr("보령시")
+                .lat(36.3).lng(126.5)
+                .eventStartDate(LocalDate.of(2026, 7, 1)).eventEndDate(LocalDate.of(2026, 7, 10))
+                .homepage("http://old.example.com")
+                .build();
+        when(tourApiClient.fetchTotalCount(anyString())).thenReturn(1);
+        when(tourApiClient.searchFestivals(anyString(), eq(1), anyInt())).thenReturn(List.of(item));
+        when(festivalRepository.findByContentId("123")).thenReturn(Optional.of(existing));
+        when(tourApiClient.fetchDetailHomepage("123"))
+                .thenReturn("<a href=\"http://new.example.com\">머드</a>");
+
+        festivalBatchService.syncFestivals();
+
+        ArgumentCaptor<Festival> captor = ArgumentCaptor.forClass(Festival.class);
+        verify(festivalRepository).save(captor.capture());
+        assertThat(captor.getValue().getHomepage()).isEqualTo("http://new.example.com");
+    }
+
+    @Test
     @DisplayName("총건수 기준으로 페이지 수를 정하고 끝까지 돈다")
     void paginatesByTotalCount() {
         festivalBatchService = new FestivalBatchService(tourApiClient, festivalRepository);
