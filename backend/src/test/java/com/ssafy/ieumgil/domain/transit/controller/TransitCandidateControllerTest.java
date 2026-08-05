@@ -2,6 +2,7 @@ package com.ssafy.ieumgil.domain.transit.controller;
 
 import com.ssafy.ieumgil.domain.transit.dto.TransitCandidateResDTO;
 import com.ssafy.ieumgil.domain.transit.service.TransitCandidateService;
+import com.ssafy.ieumgil.global.security.ActiveUserChecker;
 import com.ssafy.ieumgil.global.security.jwt.JwtProvider;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -37,6 +38,9 @@ class TransitCandidateControllerTest {
 
     @MockitoBean
     private JwtProvider jwtProvider;
+    // 필터가 계정 생존 확인(탈퇴 차단)까지 하므로 이 빈도 슬라이스에 없다
+    @MockitoBean
+    private ActiveUserChecker activeUserChecker;
 
     @Test
     @DisplayName("후보 계산 결과를 CustomResponse로 감싸 반환한다")

@@ -20,6 +20,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.Map;
 
 @Service
@@ -172,7 +173,15 @@ public class GroupCommandServiceImpl implements GroupCommandService {
             throw new CustomException(GroupErrorCode.GROUP_NAME_MISMATCH);
         }
 
+        // 삭제 전에 확보한다 — 뒤에서 멤버십이 정리되면 끊을 대상을 알 수 없다
+        List<Long> memberIds = groupMemberRepository.findUserIdsByGroupId(groupId);
+
         group.softDelete();
+
+        // 요청자 한 명만 끊으면 나머지 멤버는 삭제된 그룹의 op·커서·presence를 계속 받는다 —
+        // 이미 성립한 구독은 인바운드 인터셉터를 타지 않아 인가가 다시 평가되지 않고,
+        // 세션의 authorizedProjectIds 캐시도 그대로 남기 때문이다.
+        memberIds.forEach(wsSessionRegistry::disconnect);
     }
 
     /**
