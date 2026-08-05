@@ -550,8 +550,12 @@ public class TransitCandidateServiceImpl implements TransitCandidateService {
         Map<TransitMode, IntercityLegs> legsByMode = IntercityLegs.pick(road.paths());
         List<Candidate> candidates = new ArrayList<>();
         for (TransitMode mode : INTERCITY_MODES) {
-            candidates.add(noTimetableCandidate(
-                    mode, legsByMode.get(mode), road.firstStartStation(), road.lastEndStation()));
+            Candidate candidate = noTimetableCandidate(
+                    mode, legsByMode.get(mode), road.firstStartStation(), road.lastEndStation());
+            // ODsay가 이 수단의 경로를 주지 않으면 후보 자체가 없다 — null을 걸러낸다
+            if (candidate != null) {
+                candidates.add(candidate);
+            }
         }
         candidates.addAll(road.roadCandidates());
 
@@ -567,15 +571,22 @@ public class TransitCandidateServiceImpl implements TransitCandidateService {
     }
 
     /**
-     * 시간표를 적용하지 않는 시외 후보 하나. {@code legs}가 없으면(ODsay 응답에 이 수단의 경로
-     * 자체가 없음) {@link #departureCandidate}의 빈 편 목록 분기와 같은 모양으로 낸다 — 지어낼
-     * 근거가 없다. 있으면 그 경로 자신의 시각·leg을 채운다(브리프 상태 분기 3:
-     * "시간표 미적용 → OK, ODsay 시외 leg 시간 사용"). 접근·이탈은 채우지 않는다 — 그건 시간표가
-     * 붙어야 기준 시각을 만들 수 있는 door-to-door({@link #doorToDoorCandidate})의 몫이다.
+     * 시간표를 적용하지 않는 시외 후보 하나.
+     *
+     * <p>{@code legs}가 있으면 그 경로 자신의 시각·leg을 채운다 — 시간표를 못 붙인 것이
+     * "아무것도 모른다"는 뜻은 아니다. 접근·이탈은 채우지 않는다: 그건 시간표가 붙어야 기준
+     * 시각을 만들 수 있는 door-to-door({@link #doorToDoorCandidate})의 몫이다.
+     *
+     * <p>{@code legs}가 없으면(ODsay 응답에 이 수단의 경로 자체가 없음) {@code null}이다 —
+     * 호출자가 걸러낸다. 예전에는 빈 편 목록을 가진 {@code status=OK} 후보를 남겼다. 그
+     * 근거는 "서울→부산→제주에서 뒤 구간만 항공이 사라지면 제주에 배로 가라는 말이 된다"였는데,
+     * 그 논리는 <b>경로는 있고 시간표만 못 붙인</b> 경우를 지키는 것이고 ODsay가 애초에 경로를
+     * 주지 않은 수단까지 덮지 않는다. 서울→제주에서 빈 고속버스 슬롯을 내면 버스로 제주에 갈 수
+     * 있다는 말이 된다.
      */
     private Candidate noTimetableCandidate(TransitMode mode, IntercityLegs legs, String from, String to) {
         if (legs == null) {
-            return departureCandidate(mode, List.of(), from, to, 0);
+            return null;
         }
         return Candidate.builder()
                 .mode(mode)
@@ -720,9 +731,14 @@ public class TransitCandidateServiceImpl implements TransitCandidateService {
     }
 
     /**
-     * 수단별 시외 후보. {@code legs}가 없으면(=ODsay 응답에 이 수단의 경로가 없거나 첫 leg의
-     * 역 ID 대역을 판별할 수 없음) 조회 자체를 시도하지 않고 조회 실패로 낸다 — 이름 검색으로
-     * 대체하지 않는다.
+     * 수단별 시외 후보. 어느 쪽으로든 이름 검색으로 대체하지 않는다.
+     *
+     * <p>{@code legs}가 없으면(=ODsay 응답에 <b>이 수단의 경로가 아예 없음</b>) 후보를 만들지
+     * 않고 {@code null}이다 — 조회가 실패한 것이 아니라 그런 경로가 없다. 제주에 기차로 갈 수
+     * 없는 것은 몇 번을 물어도 같은 답이라 {@code LOOKUP_FAILED}로 내면 프론트가 회색 "조회 실패"
+     * 행을 그리고 사용자는 영원히 재시도한다. 반대로 첫 leg의 <b>역 ID 대역을 판별하지 못한</b>
+     * 경우는 {@code LOOKUP_FAILED}다 — 그건 경로가 없는 것이 아니라 우리가 판별하지 못한 것이고,
+     * 그 구분을 뭉개면 실제 장애가 "여기엔 그 수단이 없다"로 위장된다.
      *
      * <p>환승 경로(leg 2개)는 첫 leg 후보를 만든 뒤 {@link #withConnections}가 두 번째 leg
      * 시간표를 붙인다. 첫 leg 조회 자체가 실패했으면(조회 실패) 두 번째 leg를 붙일 수 없으므로
@@ -745,7 +761,7 @@ public class TransitCandidateServiceImpl implements TransitCandidateService {
             TransitMode mode, IntercityLegs legs, Pair pair, int base, LocalDate startDate, int dayNo,
             String from, String to) {
         if (legs == null) {
-            return Candidate.lookupFailed(mode);
+            return null;
         }
         Optional<TransitMode> boardingMode = modeOfLeg(legs.legs().get(0));
         if (boardingMode.isEmpty()) {

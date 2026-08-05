@@ -703,8 +703,10 @@ class TransitCandidateServiceImplTest {
         given(blockRepository.findAllByIdInAndProject_IdAndDeletedAtIsNull(List.of(1L, 2L), PROJECT_ID))
                 .willReturn(List.of(seoulBlock(), busanBlock()));
         given(projectRepository.findByIdAndDeletedAtIsNull(PROJECT_ID)).willReturn(Optional.of(publicProject()));
+        // 기차·고속버스 두 경로를 준다 — 후보 순서(INTERCITY_MODES) 보장을 검증하려면 수단이
+        // 둘 이상 있어야 한다. 항공 경로는 없으므로 항공 후보는 아예 만들어지지 않는다.
         given(publicTransitQueryService.getCombinedRoutes(anyDouble(), anyDouble(), anyDouble(), anyDouble()))
-                .willReturn(List.of(trainPath()));  // pathType=11
+                .willReturn(List.of(trainPath(), expressBusPath()));  // pathType=11, 12
         givenZeroAccessEgress(LAT_SEOUL, LNG_SEOUL, LAT_BUSAN, LNG_BUSAN);
         given(transitScheduleQueryService.getTrainSchedule(eq(3300128), eq(3300108), any(LocalDate.class)))
                 .willReturn(List.of(
@@ -718,9 +720,12 @@ class TransitCandidateServiceImplTest {
         TransitCandidateResDTO.Segment segment = result.segments().get(0);
         assertThat(segment.intercity()).isTrue();
         assertThat(segment.timetableApplied()).isTrue();
-        // 세 수단을 동시에 조회하지만 후보 순서는 기차·고속버스·항공 그대로다
+        // 수단을 동시에 조회하지만 후보 순서는 INTERCITY_MODES(기차·고속버스·항공) 그대로다
         assertThat(segment.candidates()).extracting(Candidate::mode)
-                .startsWith(TransitMode.TRAIN, TransitMode.EXPRESS_BUS, TransitMode.AIR);
+                .startsWith(TransitMode.TRAIN, TransitMode.EXPRESS_BUS);
+        // ODsay가 항공 경로를 주지 않았으므로 항공 슬롯은 없다 — 조회 실패도, 빈 OK도 아니다
+        assertThat(segment.candidates()).extracting(Candidate::mode)
+                .doesNotContain(TransitMode.AIR);
 
         Candidate train = candidateOf(result, TransitMode.TRAIN);
         assertThat(train.departures()).hasSize(3);
@@ -803,7 +808,11 @@ class TransitCandidateServiceImplTest {
         // 표시 이름은 leg 순서대로 이어 붙인다 — "항공"만 쓰면 서울에서 기차를 먼저 타야 하는
         // 사실이 화면에서 사라지고, "기차"만 쓰면 제주에 기차로 갈 수 있다는 말이 된다
         assertThat(air.label()).isEqualTo("기차+항공");
-        assertThat(candidateOf(result, TransitMode.TRAIN).status()).isEqualTo(CandidateStatus.LOOKUP_FAILED);
+        // ODsay가 기차만으로 가는 경로를 주지 않았다 — 조회가 실패한 게 아니라 그런 경로가 없다.
+        // LOOKUP_FAILED로 내면 프론트가 회색 "조회 실패" 행을 그리고 사용자는 영원히 재시도한다
+        assertThat(result.segments().get(0).candidates())
+                .extracting(Candidate::mode)
+                .doesNotContain(TransitMode.TRAIN, TransitMode.EXPRESS_BUS);
         // 기준 시각도 실제로 탑승하는 첫 leg의 여유(기차 10분)다 — base 14:00 + 10분.
         // 대표 수단(항공 40분)을 쓰면 14:40이 된다
         assertThat(air.referenceAt()).isEqualTo("14:10");
@@ -1202,6 +1211,25 @@ class TransitCandidateServiceImplTest {
     }
 
     @Test
+    @DisplayName("첫 leg의 대역을 판별하지 못하면 부재가 아니라 LOOKUP_FAILED다 — 판별 실패와 경로 없음은 다르다")
+    void 첫_leg_대역_판별_실패는_부재가_아니라_조회_실패다() {
+        given(blockRepository.findAllByIdInAndProject_IdAndDeletedAtIsNull(List.of(1L, 3L), PROJECT_ID))
+                .willReturn(List.of(seoulBlock(), jejuBlock()));
+        given(projectRepository.findByIdAndDeletedAtIsNull(PROJECT_ID)).willReturn(Optional.of(publicProject()));
+        given(publicTransitQueryService.getCombinedRoutes(anyDouble(), anyDouble(), anyDouble(), anyDouble()))
+                .willReturn(List.of(unknownFirstLegAirPath()));
+
+        TransitCandidateResDTO.Result result = service.calculate(PROJECT_ID, List.of(1L, 3L));
+
+        // ODsay는 이 수단의 경로를 줬다 — 없는 게 아니라 우리가 첫 leg의 대역을 판별하지 못했다.
+        // 부재로 내면 실제 장애가 "여기엔 항공이 없다"로 위장되고 사용자는 재시도할 기회를 잃는다
+        Candidate air = candidateOf(result, TransitMode.AIR);
+        assertThat(air.status()).isEqualTo(CandidateStatus.LOOKUP_FAILED);
+        // 대역을 못 판별했다고 이름 검색으로 대체하지 않는다 — 시간표 API 자체를 부르지 않는다
+        verifyNoInteractions(transitScheduleQueryService);
+    }
+
+    @Test
     @DisplayName("접근 경로 조회가 실패하면 그 수단은 후보 목록에서 완전히 빠진다 — accessMin을 0으로 지어내지 않는다")
     void 접근_경로_조회가_실패하면_그_수단_후보를_만들지_않는다() {
         given(blockRepository.findAllByIdInAndProject_IdAndDeletedAtIsNull(List.of(1L, 2L), PROJECT_ID))
@@ -1489,6 +1517,11 @@ class TransitCandidateServiceImplTest {
         assertThat(train.departures()).isEmpty();
         assertThat(train.legs()).hasSize(1);
         assertThat(train.durationMin()).isEqualTo(157);
+        // 반대로 ODsay가 경로 자체를 주지 않은 수단은 슬롯도 남기지 않는다 — 채울 근거가 없는
+        // 빈 껍데기를 status=OK로 내면 "고속버스로 갈 수 있다"로 읽힌다
+        assertThat(segment.candidates())
+                .extracting(Candidate::mode)
+                .doesNotContain(TransitMode.EXPRESS_BUS, TransitMode.AIR);
     }
 
     @Test
@@ -1687,6 +1720,25 @@ class TransitCandidateServiceImplTest {
                 List.of(
                         new OdsayRouteResponse.SubPath(4, 157, 300000, "서울역", "광주송정", null,
                                 3300128, 3300140, LNG_SEOUL, LAT_SEOUL, null, null,
+                                null, null, null, null, null, null),
+                        new OdsayRouteResponse.SubPath(7, 63, 400000, "광주공항", "제주공항", null,
+                                3500008, 3500003, null, null, LNG_JEJU, LAT_JEJU,
+                                null, null, null, null, null, null)));
+    }
+
+    /**
+     * 마지막 leg의 대역은 알려졌지만(3500xxx 공항) <b>첫 leg</b>의 역 ID가 알려진 대역 밖인 복합 경로.
+     *
+     * <p>{@link IntercityLegs#of}는 마지막 leg로 대표 수단을 정하므로 이 경로는 항공 후보로 잡히고,
+     * 그 다음 첫 leg의 대역 판별에서 걸린다 — {@code legsByMode}가 통째로 비는
+     * {@link #unknownBandTrainPath()}로는 닿지 않는 분기다.
+     */
+    private OdsayRouteResponse.Path unknownFirstLegAirPath() {
+        return new OdsayRouteResponse.Path(20,
+                new OdsayRouteResponse.Info(220, null, null, 400000, null, null, null, "서울", "제주", 119800, 1),
+                List.of(
+                        new OdsayRouteResponse.SubPath(4, 157, 300000, "알 수 없는 역", "광주송정", null,
+                                9_999_999, 3300140, LNG_SEOUL, LAT_SEOUL, null, null,
                                 null, null, null, null, null, null),
                         new OdsayRouteResponse.SubPath(7, 63, 400000, "광주공항", "제주공항", null,
                                 3500008, 3500003, null, null, LNG_JEJU, LAT_JEJU,

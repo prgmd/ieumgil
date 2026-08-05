@@ -611,7 +611,7 @@
 | `legs` | ○ | ○\*(접근+시외+이탈) | ○\*(접근+시외+이탈) | ○\*(접근+시외+이탈) | null | null | null |
 | `departures` | null | ○(0~3개) | ○(0~3개) | ○(0~3개) | null | null | null |
 
-\* `TRAIN`/`EXPRESS_BUS`/`AIR`는 "편은 있는데 아직 못 고른 것"이 아니라 **후보 자체가 슬롯**이다 — 시간표를 적용하지 않은 구간에서도 세 수단은 그대로 남는다(`status:"OK"`, `departures: []`). 수단 자체를 지우면 "제주는 배로만 가라"는 뜻이 되기 때문이다. 그런 후보의 `durationMin`·`legs`는 ODsay 경로 자신의 값이고(시간표를 못 붙였을 뿐 경로는 안다), ODsay조차 그 수단의 경로를 주지 않았으면 `durationMin: null`·`legs: []`다. `departures`가 있어도 `durationMin`/`fare`가 `null`일 수 있다 — 도착 시각이나 요금을 ODsay가 주지 않는 편이 있고, 지어내지 않는다. `distanceM`은 세 수단 모두 항상 `null`이다(시간표 API가 거리를 주지 않는다).
+\* `TRAIN`/`EXPRESS_BUS`/`AIR`는 **ODsay가 그 수단의 경로를 준 구간에만 나타난다.** 시간표를 적용하지 못한 구간에서도 경로를 받은 수단은 그대로 남는다(`status:"OK"`, `departures: []`, `durationMin`·`legs`는 ODsay 경로 자신의 값 — 시간표를 못 붙였을 뿐 경로는 안다). 하지만 **ODsay가 애초에 경로를 주지 않은 수단은 `candidates`에서 빠진다** — 서울→제주에 기차·고속버스 슬롯을 남기면 기차로 제주에 갈 수 있다는 말이 되고, 프론트는 `status`와 무관하게 모든 후보를 그리므로 빈 슬롯이 회색 "조회 실패" 줄로 남는다. 반대로 우리가 **역 ID 대역을 판별하지 못한** 경우는 부재가 아니라 `LOOKUP_FAILED`다 — 경로가 없는 것과 판별에 실패한 것을 뭉개면 실제 장애가 "여기엔 그 수단이 없다"로 위장된다. `departures`가 있어도 `durationMin`/`fare`가 `null`일 수 있다 — 도착 시각이나 요금을 ODsay가 주지 않는 편이 있고, 지어내지 않는다. `distanceM`은 세 수단 모두 항상 `null`이다(시간표 API가 거리를 주지 않는다).
 
 > **접근·이탈 경로를 얻지 못한 수단은 후보 목록에서 아예 빠진다.** 접근 소요를 0분으로 추측하면 탈 수 없는 편을 확정처럼 내밀게 되므로, 그 수단을 만들지 않는다 — `status`로 표시되지 않고 `candidates`에 없다.
 
@@ -684,7 +684,7 @@
 | `project.startDate`가 없음 | `"프로젝트 시작일이 없어 운행 요일을 확인할 수 없습니다"` | 오늘 날짜로 갈음하지 않는다 — 실제 여행일과 무관한 시간표를 확정처럼 낼 수 없다 |
 | 시간표 조회 공유 예산 소진 | `"다른 Day의 시간표 조회가 시간을 다 써서 확인하지 못했습니다"` | 2단의 20초 상한은 요청 전체(모든 구간·모든 Day)가 공유한다 — 앞선 구간의 조회가 오래 걸려 예산을 다 썼으면 이 구간은 조회 자체를 시도하지 않는다 |
 
-세 스킵 케이스 모두 `TRAIN`/`EXPRESS_BUS`/`AIR` 세 수단 슬롯이 그대로 남되(`status:"OK"`) `departures: []`이고 `accessMin`·`egressMin`·`referenceAt`은 `null`이다. `durationMin`·`legs`는 ODsay가 그 수단의 경로를 줬다면 그 경로 자신의 값이고, 안 줬으면 `null`·`[]`다. 프론트는 이 구간에서 편 선택 UI 대신 `timetableSkipReason`을 그대로 안내 문구로 보여주면 된다.
+세 스킵 케이스 모두 **ODsay가 경로를 준 수단만** 후보로 남되(`status:"OK"`) `departures: []`이고 `accessMin`·`egressMin`·`referenceAt`은 `null`이다. `durationMin`·`legs`는 그 경로 자신의 값이다. ODsay가 경로를 주지 않은 수단은 후보에 없다. 프론트는 이 구간에서 편 선택 UI 대신 `timetableSkipReason`을 그대로 안내 문구로 보여주면 된다.
 
 **차로 갈 수 없는 목적지(ODsay 시외 경로가 전부 항공을 거치는 구간)에는 자차·택시 후보가 아예 없다.** `status`로 감추지 않고 `candidates`에서 빠진다 — 프론트는 `status`와 무관하게 모든 후보를 그리므로, 만들어 두면 "조회 실패" 회색 줄로 남는다. 카카오 길찾기도 부르지 않는다(버릴 답이라 쿼터만 쓴다). 판정은 **시외 경로가 하나 이상 있고 그 전부가 항공 leg를 포함할 때**만이며, 항공 leg는 `trafficType`이 아니라 역 ID 대역(`3500xxx`)으로 판별한다:
 
