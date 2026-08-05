@@ -39,6 +39,7 @@ import java.util.HashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.Callable;
@@ -59,6 +60,16 @@ import java.util.stream.Collectors;
  * {@link #OVERALL_TIMEOUT}(20초)까지, 2단은 시외 구간마다의 시간표 조회로(예산은 요청 전체가 공유)
  * {@link #TIMETABLE_TIMEOUT}(20초)까지 걸릴 수 있다 — 두 단계는 순차이므로 <b>최악 40초</b>다.
  * 두 상한 모두 가상 스레드 {@code invokeAll}로 강제하며, 상한을 넘긴 조회는 "조회 실패"로 내려간다.
+ *
+ * <p>2단의 "시간표 조회"는 시간표 API 호출뿐 아니라 수단별 접근·이탈 경로 조회
+ * ({@link #accessLegsOf})까지 포함한다 — 수단마다 승차·하차 지점이 달라 접근·이탈이 실제로
+ * 다르므로, 시외 경로 하나가 door-to-door로 확정되기까지 {@code getCombinedRoutes}를 최대
+ * 7회(1단의 본 leg 1회 + 최대 3개 수단 × 접근·이탈 2회) 부를 수 있다. 이 추가 호출은
+ * 1단({@link #fetchRoadResults})의 {@link #distinctLegsOf} 중복 제거·
+ * {@value #MAX_CONCURRENT_CALLS}개 세마포어를 거치지 않고, {@link #TIMETABLE_TIMEOUT} 예산을
+ * 시간표 조회와 그대로 나눠 쓴다 — 이름은 "시간표 타임아웃"이지만 2단 전체(접근·이탈 포함)의
+ * 예산이다. 이 증폭은 구조적이다(수단마다 접근 지점이 다르므로 캐시로 없앨 수 없다) —
+ * 경로 캐시는 별도 과업이다.
  *
  * <p>트랜잭션을 열어 두면 그동안 DB 커넥션을 붙잡아 몇 개의 동시 요청만으로 커넥션 풀이 고갈된다.
  */
@@ -459,7 +470,8 @@ public class TransitCandidateServiceImpl implements TransitCandidateService {
             log.warn("시외 경로에서 역 ID 대역을 판별할 수 없다: from={}, to={}", from, to);
             INTERCITY_MODES.forEach(mode -> candidates.add(Candidate.lookupFailed(mode)));
         } else {
-            candidates.addAll(intercityCandidates(legsByMode, base, startDate, dayNo, timetableBudget, from, to));
+            candidates.addAll(intercityCandidates(legsByMode, pair, base, startDate, dayNo, timetableBudget, from, to)
+                    .stream().filter(Objects::nonNull).toList());
         }
         candidates.addAll(road.roadCandidates());   // 자차·택시. 1단에서 이미 만들어졌다
 
@@ -482,13 +494,20 @@ public class TransitCandidateServiceImpl implements TransitCandidateService {
      * <p>그래도 <b>수단 슬롯은 남긴다</b> — 서울→부산→제주에서 뒤 구간만 항공이 사라지면
      * 제주에 배로 가라는 말이 된다. 편 목록만 비고({@code departures=[]}) 수단은 그대로다.
      * 조회를 안 한 것이지 실패한 것이 아니므로 {@code status=OK}다.
+     *
+     * <p>ODsay가 이 수단의 경로를 줬으면({@link IntercityLegs#pick}에 그 수단이 있으면) 시간표는
+     * 못 붙여도 ODsay 경로 자신의 시각·leg은 있다 — {@code durationMin}은 그 경로의
+     * {@code info().totalTime()}, {@code legs}는 그 경로의 subPath 그대로 채운다. 시간표
+     * 미적용이 "아무것도 모른다"는 뜻은 아니다. ODsay조차 이 수단의 경로를 안 줬으면(맵에 없음)
+     * 채울 근거가 없어 편 목록·leg 모두 비운다.
      */
     private TransitCandidateResDTO.Segment intercitySegmentWithoutTimetable(
             Pair pair, RoadResult road, String reason) {
+        Map<TransitMode, IntercityLegs> legsByMode = IntercityLegs.pick(road.paths());
         List<Candidate> candidates = new ArrayList<>();
         for (TransitMode mode : INTERCITY_MODES) {
-            candidates.add(departureCandidate(
-                    mode, List.of(), road.firstStartStation(), road.lastEndStation(), 0));
+            candidates.add(noTimetableCandidate(
+                    mode, legsByMode.get(mode), road.firstStartStation(), road.lastEndStation()));
         }
         candidates.addAll(road.roadCandidates());
 
@@ -500,6 +519,29 @@ public class TransitCandidateServiceImpl implements TransitCandidateService {
                 .timetableSkipReason(reason)
                 .defaultMode(defaultModeOf(candidates))
                 .candidates(candidates)
+                .build();
+    }
+
+    /**
+     * 시간표를 적용하지 않는 시외 후보 하나. {@code legs}가 없으면(ODsay 응답에 이 수단의 경로
+     * 자체가 없음) {@link #departureCandidate}의 빈 편 목록 분기와 같은 모양으로 낸다 — 지어낼
+     * 근거가 없다. 있으면 그 경로 자신의 시각·leg을 채운다(브리프 상태 분기 3:
+     * "시간표 미적용 → OK, ODsay 시외 leg 시간 사용"). 접근·이탈은 채우지 않는다 — 그건 시간표가
+     * 붙어야 기준 시각을 만들 수 있는 door-to-door({@link #doorToDoorCandidate})의 몫이다.
+     */
+    private Candidate noTimetableCandidate(TransitMode mode, IntercityLegs legs, String from, String to) {
+        if (legs == null) {
+            return departureCandidate(mode, List.of(), from, to, 0);
+        }
+        return Candidate.builder()
+                .mode(mode)
+                .label(mode.label())
+                .status(CandidateStatus.OK)
+                .durationMin(legs.path().info().totalTime())
+                .fareConfidence(TransitResDTO.FareConfidence.UNKNOWN)
+                .transferCount(legs.legs().size() - 1)
+                .legs(TransitLegResDTO.fromSubPaths(legs.legs()))
+                .departures(List.of())
                 .build();
     }
 
@@ -580,11 +622,11 @@ public class TransitCandidateServiceImpl implements TransitCandidateService {
      *                   {@link #candidateFor}가 그 경우를 조회 실패로 낸다.
      */
     private List<Candidate> intercityCandidates(
-            Map<TransitMode, IntercityLegs> legsByMode, int base, LocalDate startDate, int dayNo, Duration budget,
-            String from, String to) {
+            Map<TransitMode, IntercityLegs> legsByMode, Pair pair, int base, LocalDate startDate, int dayNo,
+            Duration budget, String from, String to) {
         List<Callable<Candidate>> tasks = INTERCITY_MODES.stream()
                 .<Callable<Candidate>>map(mode -> () ->
-                        candidateFor(mode, legsByMode.get(mode), base, startDate, dayNo, from, to))
+                        candidateFor(mode, legsByMode.get(mode), pair, base, startDate, dayNo, from, to))
                 .toList();
 
         ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
@@ -630,17 +672,144 @@ public class TransitCandidateServiceImpl implements TransitCandidateService {
      * <p>환승 경로(leg 2개)는 첫 leg 후보를 만든 뒤 {@link #withConnections}가 두 번째 leg
      * 시간표를 붙인다. 첫 leg 조회 자체가 실패했으면(조회 실패) 두 번째 leg를 붙일 수 없으므로
      * 그대로 반환한다.
+     *
+     * <p>접근·이탈 경로({@link #accessLegsOf})부터 구한다 — 첫 leg의 기준 시각 자체가
+     * 접근 소요를 반영해야 하기 때문이다({@link #referenceFor}). 접근 경로가 없으면(조회
+     * 실패·경로 없음) 시간표를 조회해 보지도 않고 {@code null}을 반환한다 — 그 수단 후보를
+     * 만들지 않는다(접근시간을 0으로 추측하지 않는다). 호출자({@link #intercityCandidates})가
+     * 이 {@code null}을 걸러낸다.
      */
     private Candidate candidateFor(
-            TransitMode mode, IntercityLegs legs, int base, LocalDate startDate, int dayNo, String from, String to) {
+            TransitMode mode, IntercityLegs legs, Pair pair, int base, LocalDate startDate, int dayNo,
+            String from, String to) {
         if (legs == null) {
             return Candidate.lookupFailed(mode);
         }
-        Candidate firstLegCandidate = timetableCandidateFor(mode, legs.legs().get(0), base, startDate, dayNo, from, to);
-        if (!legs.isTransfer() || firstLegCandidate.status() != CandidateStatus.OK) {
+        Optional<AccessLegs> access = accessLegsOf(pair, legs);
+        if (access.isEmpty()) {
+            return null;
+        }
+        int accessArrival = base + access.get().accessMin();
+        Candidate firstLegCandidate =
+                timetableCandidateFor(mode, legs.legs().get(0), accessArrival, startDate, dayNo, from, to);
+        if (firstLegCandidate.status() != CandidateStatus.OK) {
             return firstLegCandidate;
         }
-        return withConnections(mode, legs, firstLegCandidate, base, startDate, dayNo, from, to);
+        Candidate legCandidate = legs.isTransfer()
+                ? withConnections(mode, legs, firstLegCandidate, base, startDate, dayNo, from, to)
+                : firstLegCandidate;
+        if (legCandidate.status() != CandidateStatus.OK) {
+            return legCandidate;
+        }
+        return doorToDoorCandidate(mode, legs, access.get(), legCandidate, base, startDate, dayNo);
+    }
+
+    /**
+     * 접근·대기·시외(환승 포함)·이탈을 door-to-door로 합친 최종 후보.
+     *
+     * <p>{@code legCandidate}는 시간표가 적용된 leg 후보({@link #timetableCandidateFor} 또는
+     * 환승이면 {@link #withConnections}의 결과)다 — 대표 편(첫 편)·연결편은 이미 정해져 있다.
+     * 여기서는 그 편에 {@code waitMin}을 채우고, top-level {@code durationMin}·{@code fare}를
+     * 접근·이탈까지 반영한 door-to-door 값으로 다시 계산한다.
+     *
+     * <p>편이 하나도 없으면(막차 지남) {@code status=NO_SERVICE}다 — 접근 경로 조회와 시간표
+     * 조회 자체는 성공했으니 {@code LOOKUP_FAILED}가 아니다. 그래도 {@code legs}·{@code fare}·
+     * {@code accessMin}·{@code egressMin}·{@code referenceAt}은 채운다 — 그 값들은 특정 편에
+     * 좌우되지 않는 구조적인 값이다. {@code durationMin}만 편이 있어야 계산되므로 null이다.
+     */
+    private Candidate doorToDoorCandidate(
+            TransitMode mode, IntercityLegs legs, AccessLegs access, Candidate legCandidate,
+            int base, LocalDate startDate, int dayNo) {
+        List<TransitLegResDTO.Leg> allLegs = new ArrayList<>();
+        allLegs.addAll(access.access());
+        allLegs.addAll(TransitLegResDTO.fromSubPaths(legs.legs()));
+        allLegs.addAll(access.egress());
+
+        int transferCount = vehicleLegCountOf(allLegs) - 1;
+        Integer fare = fareOf(access, legs);
+        TransitResDTO.FareConfidence fareConfidence = fareConfidenceOf(access, legs);
+        String referenceAt = referenceFor(startDate, dayNo, base + access.accessMin(), mode).time().format(HHMM);
+
+        Candidate.CandidateBuilder builder = Candidate.builder()
+                .mode(mode)
+                .label(mode.label())
+                .fare(fare)
+                .fareConfidence(fareConfidence)
+                .transferCount(transferCount)
+                .legs(allLegs)
+                .accessMin(access.accessMin())
+                .egressMin(access.egressMin())
+                .referenceAt(referenceAt);
+
+        int accessArrivalMinuteOfDay = (base + access.accessMin()) % 1440;
+        List<TransitCandidateResDTO.Departure> withWait = legCandidate.departures().stream()
+                .map(departure -> departure.toBuilder()
+                        .waitMin(waitMinutesOf(departure, accessArrivalMinuteOfDay))
+                        .build())
+                .toList();
+
+        if (withWait.isEmpty()) {
+            return builder.status(CandidateStatus.NO_SERVICE).departures(List.of()).build();
+        }
+        TransitCandidateResDTO.Departure first = withWait.get(0);
+        return builder.status(CandidateStatus.OK)
+                .durationMin(doorToDoorDurationOf(first, access.egressMin(), base % 1440))
+                .departures(withWait)
+                .build();
+    }
+
+    /** 접근·이탈 leg를 뺀 실제 탈것 leg 수. 도보는 "환승"으로 세지 않는다({@link TransitLegResDTO.LegType#WALK}) */
+    private int vehicleLegCountOf(List<TransitLegResDTO.Leg> legs) {
+        return (int) legs.stream().filter(leg -> leg.type() != TransitLegResDTO.LegType.WALK).count();
+    }
+
+    /**
+     * door-to-door 요금. 세 조각(접근 payment·시외 totalPayment·이탈 payment) 중 하나라도 없으면
+     * null이다 — 0으로 채워 더하지 않는다({@link #fareConfidenceOf}와 같은 근거).
+     */
+    private Integer fareOf(AccessLegs access, IntercityLegs legs) {
+        Integer accessFare = access.accessFare();
+        Integer intercityFare = legs.path().info().totalPayment();
+        Integer egressFare = access.egressFare();
+        if (accessFare == null || intercityFare == null || egressFare == null) {
+            return null;
+        }
+        return accessFare + intercityFare + egressFare;
+    }
+
+    /** 세 조각이 모두 있어야 CONFIRMED다. 하나라도 없으면 UNKNOWN — 0으로 채우고 CONFIRMED를 붙이지 않는다. */
+    private TransitResDTO.FareConfidence fareConfidenceOf(AccessLegs access, IntercityLegs legs) {
+        boolean allPresent = access.accessFare() != null
+                && legs.path().info().totalPayment() != null
+                && access.egressFare() != null;
+        return allPresent ? TransitResDTO.FareConfidence.CONFIRMED : TransitResDTO.FareConfidence.UNKNOWN;
+    }
+
+    /** 접근 도착({@code base+accessMin}) → 이 편 출발까지 대기(분). 자정을 넘기면 다음 날로 넘어간다 */
+    private int waitMinutesOf(TransitCandidateResDTO.Departure departure, int accessArrivalMinuteOfDay) {
+        int wait = minutesOf(departure.departureAt()) - accessArrivalMinuteOfDay;
+        return wait < 0 ? wait + 1440 : wait;
+    }
+
+    /**
+     * door-to-door 소요(분) = (마지막 도착시각 − base) + egressMin. 환승이면 연결편의 도착시각을
+     * 쓴다. 도착시각을 모르면(고속버스인데 소요시간마저 없음) null이다 — 지어내지 않는다.
+     */
+    private Integer doorToDoorDurationOf(TransitCandidateResDTO.Departure first, int egressMin, int baseMinuteOfDay) {
+        String lastArrivalAt = first.connection() != null ? first.connection().arrivalAt() : first.arrivalAt();
+        if (lastArrivalAt == null) {
+            return null;
+        }
+        int elapsed = minutesOf(lastArrivalAt) - baseMinuteOfDay;
+        if (elapsed < 0) {
+            elapsed += 1440;
+        }
+        return elapsed + egressMin;
+    }
+
+    private int minutesOf(String hhmm) {
+        LocalTime time = LocalTime.parse(hhmm);
+        return time.getHour() * 60 + time.getMinute();
     }
 
     /**

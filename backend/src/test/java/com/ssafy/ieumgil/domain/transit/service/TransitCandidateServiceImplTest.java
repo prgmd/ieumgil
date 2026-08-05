@@ -158,6 +158,20 @@ class TransitCandidateServiceImplTest {
                 List.of());
     }
 
+    /**
+     * 시외 후보의 접근·이탈을 0분·0원으로 단순화한다. 승하차 지점이 곧 블록 좌표와 같다고
+     * 둬(access/egress 호출이 같은 좌표를 시작·끝으로 받는다) 대기시간·door-to-door 소요 계산에
+     * 접근·이탈이 끼어들지 않게 한다 — 시간표 필터링(기준 시각 이후 편)을 정확히 검증하려는
+     * 기존 테스트들이 접근 소요 때문에 편을 놓치지 않도록 한다.
+     */
+    private void givenZeroAccessEgress(
+            double boardingLat, double boardingLng, double alightingLat, double alightingLng) {
+        given(publicTransitQueryService.getCombinedRoutes(boardingLat, boardingLng, boardingLat, boardingLng))
+                .willReturn(List.of(pathOf(0, 0, null, null)));
+        given(publicTransitQueryService.getCombinedRoutes(alightingLat, alightingLng, alightingLat, alightingLng))
+                .willReturn(List.of(pathOf(0, 0, null, null)));
+    }
+
     @Test
     @DisplayName("PUBLIC 프로젝트의 먼 구간은 대중교통이 기본이다")
     void publicPrefDefaultsToTransit() {
@@ -592,6 +606,7 @@ class TransitCandidateServiceImplTest {
         given(projectRepository.findByIdAndDeletedAtIsNull(PROJECT_ID)).willReturn(Optional.of(publicProject()));
         given(publicTransitQueryService.getCombinedRoutes(anyDouble(), anyDouble(), anyDouble(), anyDouble()))
                 .willReturn(List.of(airPath()));
+        givenZeroAccessEgress(LAT_BUSAN, LNG_BUSAN, LAT_JEJU, LNG_JEJU);
         // 카카오 길찾기 자체가 실패한다 — driving==null이 택시 후보를 status=LOOKUP_FAILED로 남기는
         // 유일한 이유다(roadUnreachable 삭제 후에도 이 경로는 그대로 살아 있어야 한다).
         given(placeQueryService.getTaxiRoute(anyDouble(), anyDouble(), anyDouble(), anyDouble()))
@@ -610,8 +625,9 @@ class TransitCandidateServiceImplTest {
         assertThat(taxi.status()).isEqualTo(CandidateStatus.LOOKUP_FAILED);
         assertThat(segment.candidates()).extracting(Candidate::mode).contains(TransitMode.AIR);
         assertThat(segment.defaultMode()).isEqualTo(TransitMode.AIR);
-        // durationMin도 실제 항공편에서 그대로 온다(10:30~11:35 = 65분)
-        assertThat(candidateOf(result, TransitMode.AIR).durationMin()).isEqualTo(65);
+        // door-to-door 소요다: 접근·이탈은 0분이지만 대기(09:00 종료+공항 여유 40분 기준 10:30발 =
+        // 90분 대기)가 실제 항공편 소요(65분)에 더해진다(90+65=155)
+        assertThat(candidateOf(result, TransitMode.AIR).durationMin()).isEqualTo(155);
     }
 
     @Test
@@ -622,6 +638,7 @@ class TransitCandidateServiceImplTest {
         given(projectRepository.findByIdAndDeletedAtIsNull(PROJECT_ID)).willReturn(Optional.of(publicProject()));
         given(publicTransitQueryService.getCombinedRoutes(anyDouble(), anyDouble(), anyDouble(), anyDouble()))
                 .willReturn(List.of(trainPath()));  // pathType=11
+        givenZeroAccessEgress(LAT_SEOUL, LNG_SEOUL, LAT_BUSAN, LNG_BUSAN);
         given(transitScheduleQueryService.getTrainSchedule(eq(3300128), eq(3300108), any(LocalDate.class)))
                 .willReturn(List.of(
                         train("KTX", 1, "16:00", "18:37", 59800),
@@ -653,9 +670,15 @@ class TransitCandidateServiceImplTest {
         assertThat(train.departures().get(0).fareOptions().standing()).isEqualTo(54800);
         assertThat(train.departures().get(0).fareConfidence())
                 .isEqualTo(TransitResDTO.FareConfidence.CONFIRMED);
-        // 후보의 대표값은 첫 편에서 온다
-        assertThat(train.durationMin()).isEqualTo(157);
+        // durationMin·fare는 이제 door-to-door다. 접근·이탈은 0분·0원으로 단순화했으니
+        // durationMin은 대기(14:10 기준 16:00발 = 120분)+열차 소요(157분)=277분이고,
+        // fare는 접근(0)+시외 totalPayment(59800)+이탈(0)=59800이다
+        assertThat(train.durationMin()).isEqualTo(277);
         assertThat(train.fare()).isEqualTo(59800);
+        assertThat(train.fareConfidence()).isEqualTo(TransitResDTO.FareConfidence.CONFIRMED);
+        assertThat(train.accessMin()).isEqualTo(0);
+        assertThat(train.egressMin()).isEqualTo(0);
+        assertThat(train.referenceAt()).isEqualTo("14:10");
         // ID가 그대로 들어간 것이 위 eq(3300128), eq(3300108) 스텁 매칭으로 이미 증명됐다 —
         // 이름 검색을 쓰지 않았다는 것도 함께 못 박는다
         verify(transitScheduleQueryService, never()).searchTrainStation(anyString());
@@ -673,6 +696,7 @@ class TransitCandidateServiceImplTest {
         given(projectRepository.findByIdAndDeletedAtIsNull(PROJECT_ID)).willReturn(Optional.of(publicProject()));
         given(publicTransitQueryService.getCombinedRoutes(anyDouble(), anyDouble(), anyDouble(), anyDouble()))
                 .willReturn(List.of(transferTrainAirPath()));
+        givenZeroAccessEgress(LAT_SEOUL, LNG_SEOUL, LAT_JEJU, LNG_JEJU);
         // 첫 leg에 편을 둘 둔다 — 두 번째 leg 시간표 조회가 첫 편마다 다시 불리는 N×M 회귀라면
         // 아래 verify(times(1))가 잡아낸다(편이 하나뿐이면 한 번 호출과 구분되지 않는다).
         given(transitScheduleQueryService.getTrainSchedule(eq(3300128), eq(3300140), any(LocalDate.class)))
@@ -714,9 +738,11 @@ class TransitCandidateServiceImplTest {
         assertThat(connection.toStation()).isEqualTo("제주공항");
         // transferMin은 실제 대기(18:37→20:00)다: 83분
         assertThat(connection.transferMin()).isEqualTo(83);
-        // 첫 leg 대표값(157분·59,800원)은 그대로 top-level 값이다 — door-to-door 합산은 이 과업의 범위가 아니다
-        assertThat(train.durationMin()).isEqualTo(157);
-        assertThat(train.fare()).isEqualTo(59800);
+        // door-to-door: 접근·이탈은 0분이지만 대기(14:10 기준 16:00발=120분)+기차(157분)+
+        // 환승대기(83분)+항공(60분)=420분이다. fare는 접근(0)+시외 totalPayment(119800)+이탈(0)
+        assertThat(train.durationMin()).isEqualTo(420);
+        assertThat(train.fare()).isEqualTo(119800);
+        assertThat(train.fareConfidence()).isEqualTo(TransitResDTO.FareConfidence.CONFIRMED);
         // 두 번째 leg 시간표는 첫 leg 편이 둘이어도 한 번만 조회된다
         verify(transitScheduleQueryService, times(1))
                 .getFlightSchedule(eq(3500008), eq(3500003), any(LocalDate.class));
@@ -730,6 +756,7 @@ class TransitCandidateServiceImplTest {
         given(projectRepository.findByIdAndDeletedAtIsNull(PROJECT_ID)).willReturn(Optional.of(publicProject()));
         given(publicTransitQueryService.getCombinedRoutes(anyDouble(), anyDouble(), anyDouble(), anyDouble()))
                 .willReturn(List.of(interCityBusPath()));  // trafficType=6(시외버스), 대역 3600→4000
+        givenZeroAccessEgress(LAT_SEOUL, LNG_SEOUL, LAT_BUSAN, LNG_BUSAN);
         given(transitScheduleQueryService.getIntercityBusSchedule(eq(3600210), eq(4000135), any(LocalDate.class)))
                 .willReturn(List.of(bus(2, "16:00", 140, 20900)));
 
@@ -754,6 +781,7 @@ class TransitCandidateServiceImplTest {
         given(projectRepository.findByIdAndDeletedAtIsNull(PROJECT_ID)).willReturn(Optional.of(publicProject()));
         given(publicTransitQueryService.getCombinedRoutes(anyDouble(), anyDouble(), anyDouble(), anyDouble()))
                 .willReturn(List.of(airPath()));  // startID=3500005(청주공항)·endID=3500003(제주공항)
+        givenZeroAccessEgress(LAT_BUSAN, LNG_BUSAN, LAT_JEJU, LNG_JEJU);
         given(transitScheduleQueryService.getFlightSchedule(eq(3500005), eq(3500003), any(LocalDate.class)))
                 .willReturn(List.of(TransitScheduleResDTO.FlightSchedule.builder()
                         .airline("제주항공").flightNo("7C101")
@@ -777,6 +805,7 @@ class TransitCandidateServiceImplTest {
         given(projectRepository.findByIdAndDeletedAtIsNull(PROJECT_ID)).willReturn(Optional.of(publicProject()));
         given(publicTransitQueryService.getCombinedRoutes(anyDouble(), anyDouble(), anyDouble(), anyDouble()))
                 .willReturn(List.of(trainPath()));
+        givenZeroAccessEgress(LAT_SEOUL, LNG_SEOUL, LAT_BUSAN, LNG_BUSAN);
         given(transitScheduleQueryService.getTrainSchedule(anyInt(), anyInt(), any(LocalDate.class)))
                 .willReturn(List.of(
                         train("KTX", 1, "05:13", "07:50", 59800),
@@ -811,6 +840,12 @@ class TransitCandidateServiceImplTest {
         given(projectRepository.findByIdAndDeletedAtIsNull(PROJECT_ID)).willReturn(Optional.of(publicProject()));
         given(publicTransitQueryService.getCombinedRoutes(anyDouble(), anyDouble(), anyDouble(), anyDouble()))
                 .willReturn(List.of(trainPath()));
+        // trainPath()의 승차 지점은 LAT_SEOUL·LNG_SEOUL이다 — 블록2는 LAT_A·LNG_A라 접근 호출이
+        // 서로 다른 좌표쌍(비-대칭)이다. 하차 지점은 블록3(LAT_BUSAN·LNG_BUSAN)과 같아 이탈은 0분이면 된다.
+        given(publicTransitQueryService.getCombinedRoutes(LAT_A, LNG_A, LAT_SEOUL, LNG_SEOUL))
+                .willReturn(List.of(pathOf(0, 0, null, null)));
+        given(publicTransitQueryService.getCombinedRoutes(LAT_BUSAN, LNG_BUSAN, LAT_BUSAN, LNG_BUSAN))
+                .willReturn(List.of(pathOf(0, 0, null, null)));
         given(transitScheduleQueryService.getTrainSchedule(anyInt(), anyInt(), any(LocalDate.class)))
                 .willReturn(List.of(
                         train("KTX", 1, "10:00", "12:37", 59800),
@@ -882,7 +917,10 @@ class TransitCandidateServiceImplTest {
         Candidate train = segment1.candidates().stream()
                 .filter(c -> c.mode() == TransitMode.TRAIN).findFirst().orElseThrow();
         assertThat(train.departures()).isEmpty();
-        assertThat(train.legs()).isEmpty();
+        // 시간표는 못 붙였지만 ODsay가 이 수단(기차)의 경로 자체는 줬다 — 그 경로 자신의
+        // 시각·leg은 채운다(브리프 상태 분기 3: "시간표 미적용 → OK, ODsay 시외 leg 시간 사용")
+        assertThat(train.legs()).hasSize(1);
+        assertThat(train.durationMin()).isEqualTo(157);
     }
 
     @Test
@@ -926,6 +964,13 @@ class TransitCandidateServiceImplTest {
         given(projectRepository.findByIdAndDeletedAtIsNull(PROJECT_ID)).willReturn(Optional.of(publicProject()));
         given(publicTransitQueryService.getCombinedRoutes(anyDouble(), anyDouble(), anyDouble(), anyDouble()))
                 .willReturn(List.of(airPath()));
+        // airPath()의 승차 지점은 LAT_BUSAN·LNG_BUSAN이라 접근이 비대칭 좌표쌍이다(청주→부산).
+        // 접근을 0분으로 두지 않으면 airPath() 자신의 totalTime(356)이 재사용돼 base가 그 자체로
+        // 자정을 넘겨 버려 — 이 테스트가 지키려는 "여유(margin)가 자정을 넘긴다" 전제가 깨진다.
+        given(publicTransitQueryService.getCombinedRoutes(LAT_CHEONGJU, LNG_CHEONGJU, LAT_BUSAN, LNG_BUSAN))
+                .willReturn(List.of(pathOf(0, 0, null, null)));
+        given(publicTransitQueryService.getCombinedRoutes(LAT_JEJU, LNG_JEJU, LAT_JEJU, LNG_JEJU))
+                .willReturn(List.of(pathOf(0, 0, null, null)));
         given(transitScheduleQueryService.getFlightSchedule(anyInt(), anyInt(), any(LocalDate.class)))
                 .willReturn(List.of(TransitScheduleResDTO.FlightSchedule.builder()
                         .airline("대한항공").flightNo("KE1801")
@@ -993,6 +1038,7 @@ class TransitCandidateServiceImplTest {
             given(projectRepository.findByIdAndDeletedAtIsNull(PROJECT_ID)).willReturn(Optional.of(publicProject()));
             given(publicTransitQueryService.getCombinedRoutes(anyDouble(), anyDouble(), anyDouble(), anyDouble()))
                     .willReturn(List.of(trainPath()));
+            givenZeroAccessEgress(LAT_SEOUL, LNG_SEOUL, LAT_BUSAN, LNG_BUSAN);
             // Day1은 350ms 걸려도 자기 예산(600ms, 새 예산) 안에 끝나 정상 응답한다. 그 350ms를
             // 쓰고 나면 공유 예산에는 약 250ms만 남는다. Day2는 450ms가 걸리는데, 이건 "남은
             // ~250ms"로는 못 끝내지만(→ 취소되어 LOOKUP_FAILED) "새 600ms"라면 넉넉히 끝난다
@@ -1051,13 +1097,38 @@ class TransitCandidateServiceImplTest {
     }
 
     @Test
-    @DisplayName("기준 시각 이후 편이 없으면 status=OK에 빈 departures다")
-    void 남은_편이_없으면_빈_목록이다() {
+    @DisplayName("접근 경로 조회가 실패하면 그 수단은 후보 목록에서 완전히 빠진다 — accessMin을 0으로 지어내지 않는다")
+    void 접근_경로_조회가_실패하면_그_수단_후보를_만들지_않는다() {
         given(blockRepository.findAllByIdInAndProject_IdAndDeletedAtIsNull(List.of(1L, 2L), PROJECT_ID))
                 .willReturn(List.of(seoulBlock(), busanBlock()));
         given(projectRepository.findByIdAndDeletedAtIsNull(PROJECT_ID)).willReturn(Optional.of(publicProject()));
         given(publicTransitQueryService.getCombinedRoutes(anyDouble(), anyDouble(), anyDouble(), anyDouble()))
                 .willReturn(List.of(trainPath()));
+        // trainPath()의 승차 지점은 LAT_SEOUL·LNG_SEOUL이다 — 접근 조회 자체가 실패한다
+        given(publicTransitQueryService.getCombinedRoutes(LAT_SEOUL, LNG_SEOUL, LAT_SEOUL, LNG_SEOUL))
+                .willThrow(new TransitException(TransitErrorCode.ROUTE_NOT_FOUND));
+
+        TransitCandidateResDTO.Result result = service.calculate(PROJECT_ID, List.of(1L, 2L), null);
+
+        // accessLegsOf가 empty를 반환하면 candidateFor는 null을 반환하고, 그 null은 후보
+        // 목록에서 걸러진다 — LOOKUP_FAILED로도, accessMin=0인 OK로도 남지 않는다
+        assertThat(result.segments().get(0).candidates())
+                .extracting(Candidate::mode)
+                .doesNotContain(TransitMode.TRAIN);
+        // 접근이 실패했으므로 시간표 조회 자체를 시도하지 않는다
+        verify(transitScheduleQueryService, never())
+                .getTrainSchedule(anyInt(), anyInt(), any(LocalDate.class));
+    }
+
+    @Test
+    @DisplayName("기준 시각 이후 편이 없으면 status=NO_SERVICE에 빈 departures다")
+    void 남은_편이_없으면_NO_SERVICE다() {
+        given(blockRepository.findAllByIdInAndProject_IdAndDeletedAtIsNull(List.of(1L, 2L), PROJECT_ID))
+                .willReturn(List.of(seoulBlock(), busanBlock()));
+        given(projectRepository.findByIdAndDeletedAtIsNull(PROJECT_ID)).willReturn(Optional.of(publicProject()));
+        given(publicTransitQueryService.getCombinedRoutes(anyDouble(), anyDouble(), anyDouble(), anyDouble()))
+                .willReturn(List.of(trainPath()));
+        givenZeroAccessEgress(LAT_SEOUL, LNG_SEOUL, LAT_BUSAN, LNG_BUSAN);
         given(transitScheduleQueryService.getTrainSchedule(anyInt(), anyInt(), any(LocalDate.class)))
                 .willReturn(List.of(train("KTX", 1, "05:13", "07:50", 59800)));
 
@@ -1065,8 +1136,16 @@ class TransitCandidateServiceImplTest {
                 service.calculate(PROJECT_ID, List.of(1L, 2L), LocalTime.of(22, 0));
 
         Candidate train = candidateOf(result, TransitMode.TRAIN);
-        assertThat(train.status()).isEqualTo(CandidateStatus.OK);
+        assertThat(train.status()).isEqualTo(CandidateStatus.NO_SERVICE);
         assertThat(train.departures()).isEmpty();
+        assertThat(train.durationMin()).isNull();
+        // NO_SERVICE는 durationMin만 비운다 — legs·fare·accessMin·egressMin·referenceAt은
+        // 특정 편에 좌우되지 않는 구조적인 값이라 여전히 채운다({@code doorToDoorCandidate})
+        assertThat(train.legs()).hasSize(1);
+        assertThat(train.fare()).isEqualTo(59800);
+        assertThat(train.accessMin()).isEqualTo(0);
+        assertThat(train.egressMin()).isEqualTo(0);
+        assertThat(train.referenceAt()).isEqualTo("14:10");
     }
 
     @Test
@@ -1131,6 +1210,7 @@ class TransitCandidateServiceImplTest {
         given(projectRepository.findByIdAndDeletedAtIsNull(PROJECT_ID)).willReturn(Optional.of(publicProject()));
         given(publicTransitQueryService.getCombinedRoutes(anyDouble(), anyDouble(), anyDouble(), anyDouble()))
                 .willReturn(List.of(expressBusPath()));
+        givenZeroAccessEgress(LAT_SEOUL, LNG_SEOUL, LAT_BUSAN, LNG_BUSAN);
         // 편이 셋이어야 selectThree가 최저가 축까지 실제로 돈다 — 둘이면 시각순에서 끝나
         // "최저 요금 라벨이 없다"는 단정이 저절로 통과해 버린다
         given(transitScheduleQueryService.getIntercityBusSchedule(anyInt(), anyInt(), any(LocalDate.class)))
@@ -1162,6 +1242,122 @@ class TransitCandidateServiceImplTest {
                 .allSatisfy(d -> assertThat(d.labels()).doesNotContain("최저 요금"));
     }
 
+    /**
+     * 접근 지점(김포공항역 인근). {@code from} 블록(서울 시내)과 다른 좌표라 접근이 0분이
+     * 아니라 실제 도보+지하철 소요(52분)를 갖는다 — Task 10이 채우는 door-to-door 필드를
+     * 전부 실제로 검증하려면 접근·이탈이 0이 아닌 픽스처가 필요하다.
+     */
+    private static final double LAT_BOARDING = 37.5583, LNG_BOARDING = 126.8010;
+    /** 하차 지점(제주공항). {@code to} 블록(제주 숙소, {@link #LAT_JEJU}·{@link #LNG_JEJU})과 다른 좌표다 */
+    private static final double LAT_ALIGHTING = 33.5104, LNG_ALIGHTING = 126.4930;
+
+    /** 서울 시내 출발지. {@link #LAT_BOARDING}과 달라야 접근이 0분이 아니게 된다 */
+    private Block hotelBlock() {
+        return blockAt(1L, 37.5000, 127.0000, 1, LocalTime.of(16, 0));  // 16:00+60분=base 17:00
+    }
+
+    /** 제주 숙소. {@link #LAT_ALIGHTING}과 달라야 이탈이 0분이 아니게 된다 */
+    private Block jejuLodgingBlock() {
+        return blockAt(2L, LAT_JEJU, LNG_JEJU);
+    }
+
+    /** 도보(3)+지하철(1) 접근 경로. 52분·1,550원 */
+    private OdsayRouteResponse.Path accessRoute() {
+        return new OdsayRouteResponse.Path(1,
+                new OdsayRouteResponse.Info(52, 1550, null, null, null, null, null, "호텔", "김포공항역"),
+                List.of(new OdsayRouteResponse.SubPath(3, 10, null, "호텔", "환승역", null),
+                        new OdsayRouteResponse.SubPath(1, 42, null, "환승역", "김포공항역", null)));
+    }
+
+    /** 도보(3)+버스(2) 이탈 경로. 25분·1,200원 */
+    private OdsayRouteResponse.Path egressRoute() {
+        return new OdsayRouteResponse.Path(1,
+                new OdsayRouteResponse.Info(25, 1200, null, null, null, null, null, "제주공항", "숙소"),
+                List.of(new OdsayRouteResponse.SubPath(2, 10, null, "제주공항", "버스정류장", null),
+                        new OdsayRouteResponse.SubPath(3, 15, null, "버스정류장", "숙소", null)));
+    }
+
+    /** 항공(pathType=13, 단일 leg). 승하차 지점이 {@link #LAT_BOARDING}·{@link #LAT_ALIGHTING}이다 */
+    private OdsayRouteResponse.Path airRouteWithBoardingPoints() {
+        return new OdsayRouteResponse.Path(13,
+                new OdsayRouteResponse.Info(70, null, null, null, null, null, null,
+                        "김포공항", "제주공항", 120200, 0),
+                List.of(new OdsayRouteResponse.SubPath(7, 70, null, "김포공항", "제주공항", null,
+                        3500010, 3500011, LNG_BOARDING, LAT_BOARDING, LNG_ALIGHTING, LAT_ALIGHTING,
+                        null, null, null, null, null, null)));
+    }
+
+    @Test
+    @DisplayName("시외 후보는 접근·대기·시외·이탈을 door-to-door로 합친다(legs 5개·transferCount 2)")
+    void 시외_후보는_door_to_door_전체_경로를_담는다() {
+        Block from = hotelBlock();
+        Block to = jejuLodgingBlock();
+        given(blockRepository.findAllByIdInAndProject_IdAndDeletedAtIsNull(List.of(1L, 2L), PROJECT_ID))
+                .willReturn(List.of(from, to));
+        given(projectRepository.findByIdAndDeletedAtIsNull(PROJECT_ID)).willReturn(Optional.of(publicProject()));
+        given(publicTransitQueryService.getCombinedRoutes(
+                37.5000, 127.0000, LAT_JEJU, LNG_JEJU))
+                .willReturn(List.of(airRouteWithBoardingPoints()));
+        given(publicTransitQueryService.getCombinedRoutes(37.5000, 127.0000, LAT_BOARDING, LNG_BOARDING))
+                .willReturn(List.of(accessRoute()));
+        given(publicTransitQueryService.getCombinedRoutes(LAT_ALIGHTING, LNG_ALIGHTING, LAT_JEJU, LNG_JEJU))
+                .willReturn(List.of(egressRoute()));
+        // base(17:00=1020) + accessMin(52) = accessArrival 17:52. AIR 여유(40분)를 더한
+        // 기준(18:32) 이후 편만 남아야 하므로 18:40발을 둔다
+        given(transitScheduleQueryService.getFlightSchedule(eq(3500010), eq(3500011), any(LocalDate.class)))
+                .willReturn(List.of(TransitScheduleResDTO.FlightSchedule.builder()
+                        .airline("제주항공").flightNo("7C300")
+                        .departureTime("18:40").arrivalTime("19:50").runDay("매일")
+                        .build()));
+
+        TransitCandidateResDTO.Result result = service.calculate(PROJECT_ID, List.of(1L, 2L), null);
+
+        Candidate air = candidateOf(result, TransitMode.AIR);
+        assertThat(air.status()).isEqualTo(CandidateStatus.OK);
+        assertThat(air.accessMin()).isEqualTo(52);
+        assertThat(air.egressMin()).isEqualTo(25);
+        // 기준 시각 = 접근 도착(17:52) + 항공 탑승 여유(40분) = 18:32
+        assertThat(air.referenceAt()).isEqualTo("18:32");
+        assertThat(air.departures()).hasSize(1);
+        TransitCandidateResDTO.Departure departure = air.departures().get(0);
+        // 대기 = 출발(18:40) - 접근 도착(17:52) = 48분
+        assertThat(departure.waitMin()).isEqualTo(48);
+        // legs = 접근 2개(도보·지하철) + 시외 1개(항공) + 이탈 2개(도보·버스) = 5개
+        assertThat(air.legs()).hasSize(5);
+        assertThat(air.legs()).extracting(TransitLegResDTO.Leg::type).containsExactly(
+                TransitLegResDTO.LegType.WALK, TransitLegResDTO.LegType.SUBWAY,
+                TransitLegResDTO.LegType.AIR,
+                TransitLegResDTO.LegType.BUS, TransitLegResDTO.LegType.WALK);
+        // 환승 횟수 = 탈것 leg 수(지하철·항공·버스=3) - 1 = 2. 도보는 세지 않는다
+        assertThat(air.transferCount()).isEqualTo(2);
+        // 요금 = 접근(1550) + 시외 totalPayment(120200) + 이탈(1200) = 122950
+        assertThat(air.fare()).isEqualTo(122950);
+        assertThat(air.fareConfidence()).isEqualTo(TransitResDTO.FareConfidence.CONFIRMED);
+        // durationMin == (마지막 도착시각(19:50) - base(17:00)) + egressMin(25) = 170+25 = 195
+        assertThat(air.durationMin()).isEqualTo(195);
+    }
+
+    @Test
+    @DisplayName("접근·시외·이탈 요금 중 하나라도 없으면 fareConfidence는 UNKNOWN이고 fare는 null이다")
+    void 요금_한_조각이라도_없으면_UNKNOWN이다() {
+        given(blockRepository.findAllByIdInAndProject_IdAndDeletedAtIsNull(List.of(1L, 2L), PROJECT_ID))
+                .willReturn(List.of(seoulBlock(), busanBlock()));
+        given(projectRepository.findByIdAndDeletedAtIsNull(PROJECT_ID)).willReturn(Optional.of(publicProject()));
+        given(publicTransitQueryService.getCombinedRoutes(anyDouble(), anyDouble(), anyDouble(), anyDouble()))
+                .willReturn(List.of(trainPath()));
+        given(publicTransitQueryService.getCombinedRoutes(LAT_SEOUL, LNG_SEOUL, LAT_SEOUL, LNG_SEOUL))
+                .willReturn(List.of(pathOf(0, 0, null, null)));           // 접근 요금은 있다(0원)
+        given(publicTransitQueryService.getCombinedRoutes(LAT_BUSAN, LNG_BUSAN, LAT_BUSAN, LNG_BUSAN))
+                .willReturn(List.of(pathOf(0, null, null, null)));        // 이탈 요금이 없다
+        given(transitScheduleQueryService.getTrainSchedule(anyInt(), anyInt(), any(LocalDate.class)))
+                .willReturn(List.of(train("KTX", 1, "16:00", "18:37", 59800)));
+
+        Candidate train = candidateOf(service.calculate(PROJECT_ID, List.of(1L, 2L), null), TransitMode.TRAIN);
+
+        assertThat(train.fare()).isNull();
+        assertThat(train.fareConfidence()).isEqualTo(TransitResDTO.FareConfidence.UNKNOWN);
+    }
+
     @Test
     @DisplayName("시작일이 없는 프로젝트는 시간표를 붙이지 않고 이유를 남긴다")
     void 시작일이_없으면_시간표를_건너뛴다() {
@@ -1181,11 +1377,13 @@ class TransitCandidateServiceImplTest {
                 .isEqualTo("프로젝트 시작일이 없어 운행 요일을 확인할 수 없습니다");
         // 오늘 요일로 편을 거르고 요금을 고르느니 아예 묻지 않는다
         verifyNoInteractions(transitScheduleQueryService);
-        // 수단 슬롯은 남되 탈 편이 정해지지 않았으므로 구간(leg)도 그리지 않는다
+        // 수단 슬롯은 남되 탈 편은 정해지지 않았다 — 그래도 ODsay가 이 수단의 경로 자체는 줬으므로
+        // 그 경로 자신의 시각·leg은 채운다(브리프 상태 분기 3: "시간표 미적용 → OK, ODsay 시외
+        // leg 시간 사용")
         Candidate train = candidateOf(result, TransitMode.TRAIN);
         assertThat(train.departures()).isEmpty();
-        assertThat(train.legs()).isEmpty();
-        assertThat(train.durationMin()).isNull();
+        assertThat(train.legs()).hasSize(1);
+        assertThat(train.durationMin()).isEqualTo(157);
     }
 
     @Test
@@ -1247,7 +1445,9 @@ class TransitCandidateServiceImplTest {
     }
 
     /**
-     * 기차 경로(pathType=11). ODsay는 시외 경로에 payment를 주지 않는다.
+     * 기차 경로(pathType=11). ODsay는 시외 경로에 payment를 주지 않지만 totalPayment는 준다
+     * (실측 216/216) — 승하차 지점은 {@link #LAT_SEOUL}·{@link #LAT_BUSAN}과 같은 좌표라
+     * 접근·이탈이 0분·0원인 경로로 단순화할 수 있다({@code givenZeroAccessEgress}).
      *
      * <p>startID·endID(3300128 서울역·3300108 부산역)는 실측 픽스처
      * ({@code schedule-train.json})와 같은 값이다 — 이름 검색 없이 이 ID가 그대로
@@ -1255,9 +1455,10 @@ class TransitCandidateServiceImplTest {
      */
     private OdsayRouteResponse.Path trainPath() {
         return new OdsayRouteResponse.Path(11,
-                new OdsayRouteResponse.Info(157, null, null, 325000, 800, null, null, "서울", "부산"),
+                new OdsayRouteResponse.Info(157, null, null, 325000, 800, null, null, "서울", "부산", 59800, 0),
                 List.of(new OdsayRouteResponse.SubPath(4, 157, 325000, "서울", "부산", null,
-                        3300128, 3300108, null, null, null, null, null, null, null, null, null, null)));
+                        3300128, 3300108, LNG_SEOUL, LAT_SEOUL, LNG_BUSAN, LAT_BUSAN,
+                        null, null, null, null, null, null)));
     }
 
     /**
@@ -1278,10 +1479,11 @@ class TransitCandidateServiceImplTest {
     private OdsayRouteResponse.Path expressBusPath() {
         return new OdsayRouteResponse.Path(12,
                 new OdsayRouteResponse.Info(240, null, null, null, null, null, null,
-                        "서울고속버스터미널", "부산종합버스터미널"),
+                        "서울고속버스터미널", "부산종합버스터미널", 39700, 0),
                 List.of(new OdsayRouteResponse.SubPath(5, 240, null,
                         "서울고속버스터미널", "부산종합버스터미널", null,
-                        4000057, 4000156, null, null, null, null, null, null, null, null, null, null)));
+                        4000057, 4000156, LNG_SEOUL, LAT_SEOUL, LNG_BUSAN, LAT_BUSAN,
+                        null, null, null, null, null, null)));
     }
 
     /**
@@ -1292,10 +1494,11 @@ class TransitCandidateServiceImplTest {
     private OdsayRouteResponse.Path interCityBusPath() {
         return new OdsayRouteResponse.Path(12,
                 new OdsayRouteResponse.Info(140, null, null, null, null, null, null,
-                        "서부정류장", "광주종합버스터미널"),
+                        "서부정류장", "광주종합버스터미널", 20900, 0),
                 List.of(new OdsayRouteResponse.SubPath(6, 140, null,
                         "서부정류장", "광주종합버스터미널", null,
-                        3600210, 4000135, null, null, null, null, null, null, null, null, null, null)));
+                        3600210, 4000135, LNG_SEOUL, LAT_SEOUL, LNG_BUSAN, LAT_BUSAN,
+                        null, null, null, null, null, null)));
     }
 
     /** 해운 경로(pathType=14). 기차와 마찬가지로 요금도 환승 수도 없다 */
@@ -1353,9 +1556,10 @@ class TransitCandidateServiceImplTest {
      */
     private OdsayRouteResponse.Path airPath() {
         return new OdsayRouteResponse.Path(20,
-                new OdsayRouteResponse.Info(356, null, null, 436642, null, null, null, "청주", "제주"),
+                new OdsayRouteResponse.Info(356, null, null, 436642, null, null, null, "청주", "제주", 120200, 0),
                 List.of(new OdsayRouteResponse.SubPath(7, 356, 436642, "청주공항", "제주공항", null,
-                        3500005, 3500003, null, null, null, null, null, null, null, null, null, null)));
+                        3500005, 3500003, LNG_BUSAN, LAT_BUSAN, LNG_JEJU, LAT_JEJU,
+                        null, null, null, null, null, null)));
     }
 
     /**
@@ -1366,12 +1570,14 @@ class TransitCandidateServiceImplTest {
      */
     private OdsayRouteResponse.Path transferTrainAirPath() {
         return new OdsayRouteResponse.Path(20,
-                new OdsayRouteResponse.Info(220, null, null, 400000, null, null, null, "서울", "제주", null, 1),
+                new OdsayRouteResponse.Info(220, null, null, 400000, null, null, null, "서울", "제주", 119800, 1),
                 List.of(
                         new OdsayRouteResponse.SubPath(4, 157, 300000, "서울역", "광주송정", null,
-                                3300128, 3300140, null, null, null, null, null, null, null, null, null, null),
+                                3300128, 3300140, LNG_SEOUL, LAT_SEOUL, null, null,
+                                null, null, null, null, null, null),
                         new OdsayRouteResponse.SubPath(7, 63, 400000, "광주공항", "제주공항", null,
-                                3500008, 3500003, null, null, null, null, null, null, null, null, null, null)));
+                                3500008, 3500003, null, null, LNG_JEJU, LAT_JEJU,
+                                null, null, null, null, null, null)));
     }
 
     /** 버스로만 이어지는 순수 육로 경로 */

@@ -81,7 +81,18 @@ public class TransitCandidateResDTO {
             Integer distanceM,
             /** 시내 대중교통 후보의 선정 이유("최단 시간" 등). 나머지 수단은 null */
             List<String> labels,
-            /** 환승 횟수. 시외 직통은 0, 환승(leg 2개)은 1, 자차·택시·도보는 null */
+            /**
+             * 환승 횟수.
+             *
+             * <p>시내 대중교통은 ODsay가 준 버스·지하철 환승 수 그대로다.
+             *
+             * <p>시외 door-to-door 후보(시간표 적용)는 <b>접근·시외·이탈을 통틀어</b> 탈것
+             * leg 수 − 1이다 — {@code legs} 전체에서 도보만 뺀 나머지를 센다. 시외 자체가
+             * 직통이어도 접근이 지하철이면 0이 아니라 1 이상이 된다("환승 0회"가 아니다).
+             * 시간표 미적용 후보는 접근·이탈 정보가 없어 시외 leg 수 − 1이다.
+             *
+             * <p>자차·택시·도보는 null.
+             */
             Integer transferCount,
             /** 도보 거리(m). 시내 대중교통만 */
             Integer walkMeters,
@@ -97,11 +108,14 @@ public class TransitCandidateResDTO {
             List<TransitLegResDTO.Leg> legs,
             /** 시외 출발편 후보. 시내·자차·택시·도보는 null */
             List<Departure> departures,
-            /** 승차 지점까지 접근 소요(분). 아직 어떤 후보도 채우지 않는다(추후 과업) */
+            /** 승차 지점까지 접근 소요(분). 시외 door-to-door 후보만 채운다. 시내·자차·택시·도보는 null */
             Integer accessMin,
-            /** 하차 지점에서 목적지까지 이탈 소요(분). 아직 어떤 후보도 채우지 않는다(추후 과업) */
+            /** 하차 지점에서 목적지까지 이탈 소요(분). 시외 door-to-door 후보만 채운다. 시내·자차·택시·도보는 null */
             Integer egressMin,
-            /** 이 후보의 출발편 선정 기준 시각(HH:mm). 아직 어떤 후보도 채우지 않는다(추후 과업) */
+            /**
+             * 이 후보의 출발편 선정 기준 시각(HH:mm) = 접근 도착({@code base+accessMin}) + 수단별
+             * 탑승 여유({@code BoardingMargin}). 시외 door-to-door 후보만 채운다. 시내·자차·택시·도보는 null
+             */
             String referenceAt
     ) {
 
@@ -160,7 +174,7 @@ public class TransitCandidateResDTO {
             FareOptions fareOptions,
             /** "최저 요금" 등 이 편이 뽑힌 이유 */
             List<String> labels,
-            /** 접근 도착 → 이 편 출발까지 대기(분). 아직 어떤 후보도 채우지 않는다(추후 과업) */
+            /** 접근 도착({@code base+accessMin}) → 이 편 출발까지 대기(분). 편마다 다르다 */
             Integer waitMin,
             /** 환승 연결편. 직통이면 null */
             Connection connection
