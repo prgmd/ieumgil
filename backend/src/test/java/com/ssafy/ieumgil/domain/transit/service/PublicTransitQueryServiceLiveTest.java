@@ -1,6 +1,7 @@
 package com.ssafy.ieumgil.domain.transit.service;
 
 import com.ssafy.ieumgil.domain.transit.client.OdsayClient;
+import com.ssafy.ieumgil.domain.transit.client.TransitApiCache;
 import com.ssafy.ieumgil.domain.transit.client.OdsayProperties;
 import com.ssafy.ieumgil.domain.transit.dto.TransitResDTO;
 import org.junit.jupiter.api.Assumptions;
@@ -53,7 +54,7 @@ class PublicTransitQueryServiceLiveTest {
 	private PublicTransitQueryService liveService() throws IOException {
 		String key = readKeyFromDotenv("ODSAY_API_KEY");
 		Assumptions.assumeTrue(key != null && !key.isBlank(), "ODSAY_API_KEY 없음 — .env 확인 필요");
-		OdsayClient client = new OdsayClient(RestClient.builder(), new OdsayProperties(key, BASE_URL));
+		OdsayClient client = new OdsayClient(RestClient.builder(), new OdsayProperties(key, BASE_URL), TransitApiCache.disabled());
 		return new PublicTransitQueryServiceImpl(client);
 	}
 

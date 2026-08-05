@@ -10,12 +10,14 @@ import com.ssafy.ieumgil.domain.transit.exception.OdsayNoRouteException;
 import com.ssafy.ieumgil.domain.transit.exception.OdsayTooCloseException;
 import com.ssafy.ieumgil.domain.transit.exception.TransitErrorCode;
 import com.ssafy.ieumgil.domain.transit.exception.TransitException;
+import com.fasterxml.jackson.core.type.TypeReference;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
 
 import java.net.URI;
+import java.time.Duration;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
@@ -40,16 +42,48 @@ public class OdsayClient {
      */
     private static final String TOO_CLOSE_CODE = "-98";
 
+    /**
+     * 경로 캐시 TTL. 시간표만큼 길게 두지 않는 이유는 경로 목록에 배차 간격·소요가 섞여 있고
+     * 그 값이 시간대에 따라 달라지기 때문이다.
+     */
+    private static final Duration ROUTE_TTL = Duration.ofHours(1);
+    /** 시간표 TTL. 하루 단위로 거의 바뀌지 않지만, 임시 감편을 반나절 넘게 모르고 있으면 안 된다 */
+    private static final Duration SCHEDULE_TTL = Duration.ofHours(6);
+    /**
+     * "경로 없음"·"700m 이내" TTL. 영구적인 답이지만 짧게 둔다 — ODsay가 노선을 새로 넣으면
+     * 답이 바뀌고, 그걸 하루 내내 모르고 있을 이유가 없다.
+     */
+    private static final Duration NEGATIVE_TTL = Duration.ofMinutes(10);
+
     private final RestClient restClient;
     private final OdsayProperties properties;
+    private final TransitApiCache cache;
 
-    public OdsayClient(RestClient.Builder builder, OdsayProperties properties) {
+    public OdsayClient(RestClient.Builder builder, OdsayProperties properties, TransitApiCache cache) {
         this.properties = properties;
+        this.cache = cache;
         this.restClient = builder.build();
     }
 
+    /**
+     * 대중교통 경로 조회. 캐시를 먼저 본다 — 같은 구간을 다시 물으면 ODsay를 부르지 않는다.
+     *
+     * <p>이 메서드가 캐시 지점인 이유: 1단 구간 조회와 접근·이탈 조회가 모두 여기로 모인다.
+     * 특히 <b>접근·이탈은 역·터미널 좌표가 고정값</b>이라 같은 역을 쓰는 모든 구간이 한 엔트리를
+     * 공유한다 — 히트율이 가장 높은 자리다. 시외 구간 하나가 경로 조회 7회(1단 1 + 수단 3종 ×
+     * 접근·이탈 2)를 쓰고 그 호출들이 요청 내 중복 제거를 우회하므로, 캐시가 없으면 여러 구간을
+     * 담은 요청이 ODsay 레이트 리밋(429)에 걸린다(실측).
+     *
+     * <p>"경로 없음"·"700m 이내"도 캐시하되 진짜 장애는 캐시하지 않는다({@link CachedRoute}).
+     */
     public List<OdsayRouteResponse.Path> searchPublicTransitRoute(
             double startLat, double startLng, double endLat, double endLng, String mode) {
+        String cacheKey = TransitCacheKeys.route(startLat, startLng, endLat, endLng, mode);
+        Optional<CachedRoute> cached = cache.read(cacheKey, new TypeReference<CachedRoute>() {
+        });
+        if (cached.isPresent()) {
+            return cached.get().pathsOrThrow();
+        }
         try {
             int searchPathType = "BUS".equals(mode) ? 2 : "SUBWAY".equals(mode) ? 1 : 0;
             URI uri = URI.create(properties.baseUrl() + "/searchPubTransPathT"
@@ -62,10 +96,18 @@ public class OdsayClient {
                     .retrieve()
                     .body(OdsayRouteResponse.class);
             checkRouteError(response);
-            if (response == null || response.result() == null || response.result().path() == null) {
-                return List.of();
-            }
-            return response.result().path();
+            List<OdsayRouteResponse.Path> paths =
+                    response == null || response.result() == null || response.result().path() == null
+                            ? List.of()
+                            : response.result().path();
+            cache.write(cacheKey, CachedRoute.ok(paths), ROUTE_TTL);
+            return paths;
+        } catch (OdsayNoRouteException e) {
+            cache.write(cacheKey, CachedRoute.noRoute(), NEGATIVE_TTL);
+            throw e;
+        } catch (OdsayTooCloseException e) {
+            cache.write(cacheKey, CachedRoute.tooClose(), NEGATIVE_TTL);
+            throw e;
         } catch (RestClientException | IllegalArgumentException e) {
             log.warn("ODsay 대중교통 길찾기 실패: {}", e.getMessage());
             throw new TransitException(TransitErrorCode.ODSAY_API_CALL_FAILED);
@@ -138,6 +180,12 @@ public class OdsayClient {
     }
 
     public List<OdsayTrainScheduleResponse.Train> getTrainSchedule(int startStationId, int endStationId) {
+        String cacheKey = TransitCacheKeys.schedule("train", startStationId, endStationId);
+        Optional<List<OdsayTrainScheduleResponse.Train>> cached = cache.read(cacheKey, new TypeReference<List<OdsayTrainScheduleResponse.Train>>() {
+        });
+        if (cached.isPresent()) {
+            return cached.get();
+        }
         try {
             URI uri = URI.create(properties.baseUrl() + "/trainServiceTime"
                     + "?startStationID=" + startStationId
@@ -148,10 +196,12 @@ public class OdsayClient {
                     .retrieve()
                     .body(OdsayTrainScheduleResponse.class);
             checkForError(response == null ? null : response.error());
-            if (response == null || response.result() == null || response.result().station() == null) {
-                return List.of();
-            }
-            return response.result().station();
+            List<OdsayTrainScheduleResponse.Train> schedule =
+                    response == null || response.result() == null || response.result().station() == null
+                            ? List.of()
+                            : response.result().station();
+            cache.write(cacheKey, schedule, SCHEDULE_TTL);
+            return schedule;
         } catch (RestClientException | IllegalArgumentException e) {
             log.warn("ODsay 기차 시간표 조회 실패: {}", e.getMessage());
             throw new TransitException(TransitErrorCode.ODSAY_API_CALL_FAILED);
@@ -159,6 +209,12 @@ public class OdsayClient {
     }
 
     public List<OdsayBusScheduleResponse.Bus> getIntercityBusSchedule(int startStationId, int endStationId) {
+        String cacheKey = TransitCacheKeys.schedule("bus", startStationId, endStationId);
+        Optional<List<OdsayBusScheduleResponse.Bus>> cached = cache.read(cacheKey, new TypeReference<List<OdsayBusScheduleResponse.Bus>>() {
+        });
+        if (cached.isPresent()) {
+            return cached.get();
+        }
         try {
             URI uri = URI.create(properties.baseUrl() + "/searchInterBusSchedule"
                     + "?startStationID=" + startStationId
@@ -169,10 +225,12 @@ public class OdsayClient {
                     .retrieve()
                     .body(OdsayBusScheduleResponse.class);
             checkForError(response == null ? null : response.error());
-            if (response == null || response.result() == null || response.result().schedule() == null) {
-                return List.of();
-            }
-            return response.result().schedule();
+            List<OdsayBusScheduleResponse.Bus> schedule =
+                    response == null || response.result() == null || response.result().schedule() == null
+                            ? List.of()
+                            : response.result().schedule();
+            cache.write(cacheKey, schedule, SCHEDULE_TTL);
+            return schedule;
         } catch (RestClientException | IllegalArgumentException e) {
             log.warn("ODsay 고속/시외버스 시간표 조회 실패: {}", e.getMessage());
             throw new TransitException(TransitErrorCode.ODSAY_API_CALL_FAILED);
@@ -180,6 +238,12 @@ public class OdsayClient {
     }
 
     public List<OdsayFlightScheduleResponse.Flight> getFlightSchedule(int startStationId, int endStationId) {
+        String cacheKey = TransitCacheKeys.schedule("air", startStationId, endStationId);
+        Optional<List<OdsayFlightScheduleResponse.Flight>> cached = cache.read(cacheKey, new TypeReference<List<OdsayFlightScheduleResponse.Flight>>() {
+        });
+        if (cached.isPresent()) {
+            return cached.get();
+        }
         try {
             URI uri = URI.create(properties.baseUrl() + "/airServiceTime"
                     + "?startStationID=" + startStationId
@@ -190,10 +254,12 @@ public class OdsayClient {
                     .retrieve()
                     .body(OdsayFlightScheduleResponse.class);
             checkForError(response == null ? null : response.error());
-            if (response == null || response.result() == null || response.result().station() == null) {
-                return List.of();
-            }
-            return response.result().station();
+            List<OdsayFlightScheduleResponse.Flight> schedule =
+                    response == null || response.result() == null || response.result().station() == null
+                            ? List.of()
+                            : response.result().station();
+            cache.write(cacheKey, schedule, SCHEDULE_TTL);
+            return schedule;
         } catch (RestClientException | IllegalArgumentException e) {
             log.warn("ODsay 국내선 항공 시간표 조회 실패: {}", e.getMessage());
             throw new TransitException(TransitErrorCode.ODSAY_API_CALL_FAILED);
