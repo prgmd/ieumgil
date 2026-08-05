@@ -1201,6 +1201,20 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
+/* 교통 블록의 경로 줄 — 노선명이 길어 잘리기 쉬우니 카테고리 색으로 눈에 띄게 하고,
+   전체 문구는 title 툴팁으로 받친다(카드 높이를 늘리지 않기 위해 한 줄 유지) */
+.card .addr-route {
+  color: var(--dc);
+  font-weight: 500;
+}
+.card .addr-transfers {
+  margin-left: 6px;
+  padding: 1px 6px;
+  border-radius: 99px;
+  background: var(--cb);
+  font-size: 11px;
+  font-weight: bold;
+}
 .card .ctl {
   margin-top: auto;
   padding-top: 8px;
@@ -1919,30 +1933,18 @@
   gap: 8px;
   padding: 14px 18px;
 }
-.rv-transit-head {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  width: 100%;
+/* 교통 카드 안의 후보 카드(.tcc)는 자기 흰 배경·테두리를 갖는다 — 읽기 모드에서는
+   교통 색 카드 위에 흰 상자가 하나 더 얹혀 이중 박스로 보였다. 여기서만 벗겨
+   바깥 카드와 한 덩어리로 만든다(피커 모달의 .tcc 는 그대로 둔다). */
+.rv-transit .tcc {
   padding: 0;
   border: none;
   background: none;
-  cursor: pointer;
-  text-align: left;
-  font: inherit;
-  color: #333;
+  gap: 5px;
 }
-.rv-transit-head b {
+.rv-transit .tcc-name {
   font-size: 15px;
-}
-.rv-transit-caret {
-  margin-left: auto;
-  color: var(--dc);
-}
-.rv-transit-body {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
+  font-weight: bold;
 }
 .panel {
   background: var(--bg2, #fdfbf7);

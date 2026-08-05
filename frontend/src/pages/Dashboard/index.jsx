@@ -36,6 +36,7 @@ import {
   dayKeysOf,
   dayDate,
 } from "./dashboardHelpers";
+import { planPinImage, searchPinImage, ROUTE_LINE_COLOR } from "./mapPins";
 import {
   DndContext,
   DragOverlay,
@@ -797,23 +798,31 @@ export function DashboardPage() {
   // 갱신하되, 카메라 이동(범위 맞춤)은 "지도 준비·Day 전환 때 한 번"만 한다 —
   // 블록을 만질 때마다 지도가 움직이면 검색하려고 옮겨 둔 화면을 뺏는다.
   const chainMarkersRef = useRef([]);
+  const routeLinesRef = useRef([]);
   const lastMapFitRef = useRef(null); // { map, day } — 카메라를 이미 맞춘 조합
   useEffect(() => {
     if (!map || !window.kakao?.maps) return;
 
     chainMarkersRef.current.forEach((m) => m.setMap(null));
     chainMarkersRef.current = [];
+    routeLinesRef.current.forEach((l) => l.setMap(null));
+    routeLinesRef.current = [];
 
     const chainPoints = (chains[activeDay] || [])
       .map((id) => items[id])
       .filter((it) => it?.lat != null && it?.lng != null);
 
-    chainPoints.forEach((it) => {
+    chainPoints.forEach((it, idx) => {
       const position = new window.kakao.maps.LatLng(it.lat, it.lng);
       const marker = new window.kakao.maps.Marker({
         map,
         position,
         title: it.name,
+        // 초록 + 방문 순번 = 이미 일정에 넣은 곳 (검색 결과는 번호 없는 파랑).
+        // 순번은 그날 좌표 있는 블록 기준 — 좌표 없는 교통 블록은 건너뛴다.
+        // zIndex 로 검색 핀 위에 둔다: 같은 자리에 겹쳐도 계획이 가려지지 않는다.
+        image: planPinImage(idx + 1),
+        zIndex: 5,
       });
       // 핀 클릭 = 검색 결과 클릭과 같은 상세 말풍선
       window.kakao.maps.event.addListener(marker, "click", () => {
@@ -833,6 +842,50 @@ export function DashboardPage() {
         infoWindowRef.current.open(map);
       });
       chainMarkersRef.current.push(marker);
+    });
+
+    // ── 이동 경로 선 ──
+    // 교통 블록이 낀 구간만 잇는다 — 단순히 이웃한 두 장소를 잇는 게 아니라
+    // "이동 수단을 정해 둔 구간"만 그려야 계획한 동선과 아직 빈 구간이 구분된다.
+    // 교통 블록 자체에는 좌표가 없으므로(경로 조회 결과에 legs 의 정거장 '이름'만
+    // 오고 좌표는 없다) 앞뒤 장소를 직선으로 잇는다 — 실제 도로·선로 모양이 아니다.
+    const chainItems = (chains[activeDay] || [])
+      .map((id) => items[id])
+      .filter(Boolean);
+    const hasCoords = (it) => it?.lat != null && it?.lng != null;
+
+    chainItems.forEach((it, i) => {
+      if (it.cat !== "trans") return;
+
+      let from = null;
+      for (let k = i - 1; k >= 0; k -= 1) {
+        if (hasCoords(chainItems[k])) {
+          from = chainItems[k];
+          break;
+        }
+      }
+      let to = null;
+      for (let k = i + 1; k < chainItems.length; k += 1) {
+        if (hasCoords(chainItems[k])) {
+          to = chainItems[k];
+          break;
+        }
+      }
+      if (!from || !to) return; // 한쪽 끝의 좌표를 모르면 그릴 수 없다
+
+      const line = new window.kakao.maps.Polyline({
+        map,
+        path: [
+          new window.kakao.maps.LatLng(from.lat, from.lng),
+          new window.kakao.maps.LatLng(to.lat, to.lng),
+        ],
+        strokeWeight: 4,
+        strokeColor: ROUTE_LINE_COLOR,
+        strokeOpacity: 0.75,
+        // 실제 경로가 아니라 "이 두 곳을 이동한다"는 표시라 점선으로 둔다
+        strokeStyle: "shortdash",
+      });
+      routeLinesRef.current.push(line);
     });
 
     // 카메라 맞춤 — 이 (지도, Day) 조합에서 아직 안 맞췄을 때만.
@@ -870,6 +923,45 @@ export function DashboardPage() {
   // (시작 지점 블록은 이제 프로젝트 생성 모달에서 출발지점을 고를 때 함께
   //  만들어진다 — 입장 시 지오코딩하던 부트스트랩은 실패·동시 입장 중복의
   //  여지가 있어 생성 시점으로 옮기며 제거했다. CreateProjectModal 참조.)
+
+  /**
+   * 계획표 블록을 눌렀을 때 — 상세 모달을 열면서 지도도 그 장소로 옮긴다.
+   *
+   * 모달이 화면을 덮지만 카메라는 그동안 옮겨져 있어, 닫는 즉시 그 장소가 보인다.
+   * 좌표가 없는 블록(교통·기타)은 옮길 곳이 없으므로 모달만 연다.
+   * 카메라 자동 맞춤(lastMapFitRef)과 달리 이건 사용자가 직접 누른 결과라
+   * "화면을 뺏는다"는 문제가 없다.
+   */
+  const openBlockDetail = useCallback(
+    (id) => {
+      setEditingBlockId(id);
+
+      const item = items[id];
+      if (!map || !window.kakao?.maps) return;
+      if (item?.lat == null || item?.lng == null) return;
+
+      const position = new window.kakao.maps.LatLng(item.lat, item.lng);
+      // 너무 멀리 있으면 당겨 준다 — 이미 가까우면 지금 배율을 그대로 둔다
+      if (map.getLevel() > 5) map.setLevel(5);
+      map.panTo(position);
+
+      if (!infoWindowRef.current) {
+        infoWindowRef.current = new window.kakao.maps.InfoWindow({
+          zIndex: 1,
+          removable: true,
+        });
+      }
+      infoWindowRef.current.setContent(
+        `<div style="padding:12px;font-size:13px;color:#333;min-width:180px;">
+           <b style="display:block;margin-bottom:4px;color:#d97e3c;">${item.name ?? ""}</b>
+           ${item.address ? `<span>${item.address}</span>` : ""}
+         </div>`,
+      );
+      infoWindowRef.current.setPosition(position);
+      infoWindowRef.current.open(map);
+    },
+    [map, items],
+  );
 
   const handleSearchPlace = (e) => {
     e.preventDefault();
@@ -912,6 +1004,10 @@ export function DashboardPage() {
             const marker = new window.kakao.maps.Marker({
               map: map,
               position: position,
+              title: place.place_name,
+              // 파랑 = 아직 후보 (타임라인에 들어간 블록은 초록)
+              image: searchPinImage(),
+              zIndex: 3,
             });
             // 마커 클릭 = 상세 말풍선
             window.kakao.maps.event.addListener(marker, "click", () => {
@@ -3395,7 +3491,7 @@ export function DashboardPage() {
                                 onResizeStart={handleResizeStart}
                                 dayStartMins={timelineStart}
                                 boundTop={boundTop}
-                                onEditBlock={setEditingBlockId}
+                                onEditBlock={openBlockDetail}
                                 lockedBy={lockBadgeOf(data.id)}
                                 editor={editorBadgeOf(data.id)}
                               />

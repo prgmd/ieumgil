@@ -1,13 +1,10 @@
-import { useState } from "react";
 import { TransitCandidateCard } from "./TransitCandidateCard";
-import { TRANSIT_MODE_META } from "../transitMeta";
 import {
   won,
   catOf,
   dayDate,
   fmtTime,
   effectiveCostOf,
-  isPerPersonFare,
 } from "../dashboardHelpers";
 
 export function ReadModeView({ chains, items, dayKeys, project }) {
@@ -23,17 +20,6 @@ export function ReadModeView({ chains, items, dayKeys, project }) {
       0,
     );
   const totalCost = dayKeys.reduce((sum, day) => sum + dayCostOf(day), 0);
-
-  // 교통 블록 접기 카드 — 행(block)별 펼침 상태. Day 전체가 아니라 블록별로 접는다.
-  const [expandedIds, setExpandedIds] = useState(() => new Set());
-  const toggleExpanded = (id) => {
-    setExpandedIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  };
 
   return (
     <div className="dash-body read-view">
@@ -86,48 +72,26 @@ export function ReadModeView({ chains, items, dayKeys, project }) {
                     <div className="rv-time">{fmtTime(startMins)}</div>
                     <div className="rv-dot" />
                     {isTransport ? (
+                      // 읽기 모드는 "하루의 흐름을 훑는" 화면이다 — 어느 노선을
+                      // 타고 어디서 갈아타는지가 접혀 있으면 그 목적을 못 채운다.
+                      // 접기 없이 항상 펼쳐 둔다.
+                      //
+                      // 머리줄(아이콘·수단명·요금)을 따로 두지 않는다 —
+                      // TransitCandidateCard 가 같은 것을 이미 그려서 아이콘과
+                      // "대중교통"이 두 번 나왔다. 카드 하나만 남겨 통일한다.
                       <div className="rv-card rv-transit">
-                        <button
-                          type="button"
-                          className="rv-transit-head"
-                          onClick={() => toggleExpanded(id)}
-                        >
-                          <span className="tcc-ico">
-                            {TRANSIT_MODE_META[item.transportMeta.chosen.mode]?.ico ??
-                              "🚏"}
-                          </span>
-                          <b>{item.transportMeta.chosen.label ?? item.name}</b>
-                          {item.transportMeta.chosen.departureName && (
-                            <span> {item.transportMeta.chosen.departureName}</span>
-                          )}
-                          {item.cost > 0 && (
-                            <span className="rv-cost">
-                              {won(item.cost)}
-                              {isPerPersonFare(item) && (
-                                <span className="cost-unit">/인</span>
-                              )}
-                            </span>
-                          )}
-                          <span className="rv-transit-caret">
-                            {expandedIds.has(id) ? "▲" : "▼"}
-                          </span>
-                        </button>
-                        {expandedIds.has(id) && (
-                          <div className="rv-transit-body">
-                            <TransitCandidateCard
-                              candidate={item.transportMeta.chosen}
-                              mode="view"
-                              selectedDepartureName={
-                                item.transportMeta.chosen.departureName ?? null
-                              }
-                            />
-                            {item.transportMeta.segment?.referenceAt && (
-                              <p className="tp-banner">
-                                기준: {item.transportMeta.segment.referenceAt} 이후
-                                출발
-                              </p>
-                            )}
-                          </div>
+                        <TransitCandidateCard
+                          candidate={item.transportMeta.chosen}
+                          mode="view"
+                          selectedDepartureName={
+                            item.transportMeta.chosen.departureName ?? null
+                          }
+                        />
+                        {item.transportMeta.segment?.referenceAt && (
+                          <p className="tp-banner">
+                            기준: {item.transportMeta.segment.referenceAt} 이후
+                            출발
+                          </p>
                         )}
                       </div>
                     ) : (

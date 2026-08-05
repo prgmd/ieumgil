@@ -1,4 +1,5 @@
 import { fmtTime, won, fmtDur, catOf, isPerPersonFare } from "../dashboardHelpers";
+import { transitRouteSummary } from "../transitMeta";
 
 // 카드에 보일 소분류 — 교통 블록은 transportMeta.chosen.label 을 우선한다.
 // 이동 수단 재선택은 transportMeta 만 바꿀 수 있어서(subCategory 는 생성 시 고정,
@@ -18,6 +19,8 @@ function CardBody({
   lockedBy,
 }) {
   const catStyle = catOf(item);
+  // 교통 블록이면 경로 요약(노선·환승), 아니면 null
+  const route = transitRouteSummary(item);
 
   if (mode !== "timeline") {
     return (
@@ -32,7 +35,10 @@ function CardBody({
         </div>
         {/* 💡 연필 아이콘 삭제, 글씨 두께만 강조 */}
         <div className="nm">{item?.name}</div>
-        <div className="sub">{item?.detail || item?.address}</div>
+        {/* 타임라인 카드와 같은 규칙 — 교통이면 경로, 아니면 메모·주소 */}
+        <div className="sub">
+          {route ? route.text : item?.detail || item?.address}
+        </div>
       </>
     );
   }
@@ -69,7 +75,19 @@ function CardBody({
           </span>
         )}
       </div>
-      <div className="addr">📍 {item?.address || "위치 정보 없음"}</div>
+      {/* 교통 블록은 주소(출발지 좌표)보다 "어느 노선을 타고 어디서 갈아타는지"가
+          훨씬 쓸모 있다 — 그 정보가 상세 모달에만 있어서 카드만 보고는 알 수 없었다.
+          경로가 없는 블록(택시·구버전 등)은 기존대로 주소를 보여준다. */}
+      {route ? (
+        <div className="addr addr-route" title={route.text}>
+          🚏 {route.text}
+          {route.transfers != null && (
+            <span className="addr-transfers">환승 {route.transfers}회</span>
+          )}
+        </div>
+      ) : (
+        <div className="addr">📍 {item?.address || "위치 정보 없음"}</div>
+      )}
       <div className="ctl">
         {/* 리사이즈 중에는 안내 문구가 카테고리 색으로 강조된다(.dur.is-resizing) */}
         <span className={`dur ${isThisResizing ? "is-resizing" : ""}`}>

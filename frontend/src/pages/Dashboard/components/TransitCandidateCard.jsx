@@ -7,6 +7,7 @@
 
 import "./TransitCandidateCard.css";
 import { TRANSIT_MODE_META } from "../transitMeta";
+import { isPerPersonMode } from "../dashboardHelpers";
 
 const fareText = (fare, fareConfidence) => {
   if (fare == null) return null;
@@ -129,7 +130,14 @@ export function TransitCandidateCard({
           <span className="tcc-dur">{c.durationMin}분</span>
         )}
         {c.available && fareText(c.fare, c.fareConfidence) && (
-          <span className="tcc-fare">{fareText(c.fare, c.fareConfidence)}</span>
+          <span className="tcc-fare">
+            {fareText(c.fare, c.fareConfidence)}
+            {/* 표를 사람 수만큼 끊는 수단은 1인 요금이다 — 예산 패널 총액은
+                인원만큼 곱해 들어가므로, 여기서 밝히지 않으면 안 맞아 보인다 */}
+            {c.fare > 0 && isPerPersonMode(c.mode) && (
+              <span className="cost-unit">/인</span>
+            )}
+          </span>
         )}
         {c.intervalMin != null && (
           <span className="tcc-interval">배차 ~{c.intervalMin}분</span>

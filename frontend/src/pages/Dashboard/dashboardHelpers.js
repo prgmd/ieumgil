@@ -63,9 +63,11 @@ const PER_PERSON_FARE_MODES = new Set([
   "AIR",
 ]);
 
+/** 이동수단 코드만으로 판정 — 블록이 아니라 후보(candidate)를 다룰 때 쓴다 */
+export const isPerPersonMode = (mode) => PER_PERSON_FARE_MODES.has(mode);
+
 export const isPerPersonFare = (item) =>
-  item?.cat === "trans" &&
-  PER_PERSON_FARE_MODES.has(item?.transportMeta?.chosen?.mode);
+  item?.cat === "trans" && isPerPersonMode(item?.transportMeta?.chosen?.mode);
 
 /**
  * 예산에 실제로 잡히는 금액.

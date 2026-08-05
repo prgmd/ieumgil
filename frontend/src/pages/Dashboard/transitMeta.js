@@ -36,3 +36,48 @@ export const buildTransportMeta = (segment, chosenCandidate, chosenDeparture) =>
     : null,
   candidates: segment?.candidates ?? [],
 });
+
+/** 구간 하나(leg)를 한 조각 문자열로. 도보는 노선명이 없다. */
+const legText = (leg) => {
+  if (leg?.type === "WALK") return `도보 ${leg.durationMin}분`;
+  const line = leg?.lineName ? `${leg.lineName} ` : "";
+  return `${line}${leg?.from ?? "?"}→${leg?.to ?? "?"}`;
+};
+
+/**
+ * 교통 블록 카드에 한 줄로 띄울 경로 요약.
+ *
+ * 상세 모달을 열어야만 "어느 버스를 타고 어디서 갈아타는지" 보이던 정보를,
+ * 타임라인 카드에서 바로 읽히게 하려고 만든다. 카드 한 줄이라 전부 담을 수는
+ * 없으니 노선·환승 골자만 남기고 나머지(요금 옵션·출발편 목록 등)는 모달에 둔다.
+ *
+ * @param {object} item 화면 블록
+ * @returns {{ text: string, transfers: number|null } | null}
+ *          경로 정보가 없으면 null — 호출부가 기존 주소 표시로 되돌린다.
+ */
+export const transitRouteSummary = (item) => {
+  const chosen = item?.transportMeta?.chosen;
+  if (!chosen) return null;
+
+  // 시내 대중교통 — 승·하차 구간(legs)이 곧 경로다
+  if (chosen.legs?.length > 0) {
+    return {
+      text: chosen.legs.map(legText).join(" · "),
+      transfers: chosen.transferCount ?? null,
+    };
+  }
+
+  // 시외(기차·고속버스·항공) — 고른 편 하나가 경로 전부다
+  const departure = (chosen.departures ?? []).find(
+    (d) => d.name === chosen.departureName,
+  );
+  if (departure) {
+    const time = departure.departureAt
+      ? ` ${departure.departureAt}${departure.arrivalAt ? `→${departure.arrivalAt}` : ""}`
+      : "";
+    return { text: `${departure.name}${time}`, transfers: null };
+  }
+
+  // 좌표만 있고 경로 상세가 없는 수단(택시·자가용·도보)
+  return chosen.label ? { text: chosen.label, transfers: null } : null;
+};
