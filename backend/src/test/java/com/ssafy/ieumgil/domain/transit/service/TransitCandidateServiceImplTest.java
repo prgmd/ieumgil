@@ -122,10 +122,20 @@ class TransitCandidateServiceImplTest {
     }
 
     private Block blockAt(long id, double lat, double lng, int dayNo) {
+        return blockAt(id, lat, lng, dayNo, null);
+    }
+
+    /**
+     * startTime을 지정하는 오버로드. 시외 구간의 기준 시각(base = startTime + durationMin)이
+     * from 블록의 저장된 시각에서 나오므로, 시간표가 붙는 시외 구간을 테스트할 때는 이 오버로드로
+     * from 블록의 startTime을 채워야 한다.
+     */
+    private Block blockAt(long id, double lat, double lng, int dayNo, LocalTime startTime) {
         return Block.builder()
                 .id(id).dayNo(dayNo).orderKey("a" + id).name("블록" + id)
                 .category(BlockCategory.SPOT).durationMin(60).budget(0)
                 .lat(BigDecimal.valueOf(lat)).lng(BigDecimal.valueOf(lng))
+                .startTime(startTime)
                 .source(BlockSource.KAKAO)
                 .build();
     }
@@ -596,7 +606,7 @@ class TransitCandidateServiceImplTest {
         assertThat(taxi.status()).isEqualTo(CandidateStatus.LOOKUP_FAILED);
         assertThat(segment.candidates()).extracting(Candidate::mode).contains(TransitMode.AIR);
         assertThat(segment.defaultMode()).isEqualTo(TransitMode.AIR);
-        // 기준 시각 누적(SegmentClock)이 쓸 소요시간도 실제 항공편에서 온다(10:30~11:35 = 65분)
+        // durationMin도 실제 항공편에서 그대로 온다(10:30~11:35 = 65분)
         assertThat(candidateOf(result, TransitMode.AIR).durationMin()).isEqualTo(65);
     }
 
@@ -671,8 +681,47 @@ class TransitCandidateServiceImplTest {
     }
 
     @Test
-    @DisplayName("두 번째 시외 구간은 시간표를 적용하지 않고 이유를 남긴다")
-    void 두번째_시외_구간은_시간표를_건너뛴다() {
+    @DisplayName("블록 사이 공백이 기준 시각에 반영된다 — 누적 모델의 버그")
+    void 공백이_기준_시각에_반영된다() {
+        // 10:00~11:00 관람 블록(1) 다음에 3시간 공백을 두고 14:00에 시작하는 블록(2)이 온다
+        // (durationMin=0 — 도착과 동시에 출발해야 하는 지점). 시외 구간(2->3)의 기준은 블록2의
+        // 저장된 종료 시각(14:00)이어야 한다. 앞 구간에서 이동시간만 누적하던 옛 모델은 이 공백을 보지 못하고
+        // dayStart(09:00 기본값)에서 이동시간만 더해 훨씬 이른 시각(09:45)을 기준으로 삼았다 —
+        // 그래서 실제로는 탈 수 없는 10:00발 열차까지 후보에 남겼다.
+        Block block1 = blockAt(1L, LAT_A, LNG_A, 1, LocalTime.of(10, 0));
+        Block block2 = Block.builder()
+                .id(2L).dayNo(1).orderKey("a2").name("블록2")
+                .category(BlockCategory.SPOT).durationMin(0).budget(0)
+                .lat(BigDecimal.valueOf(LAT_A)).lng(BigDecimal.valueOf(LNG_A))
+                .startTime(LocalTime.of(14, 0))
+                .source(BlockSource.KAKAO)
+                .build();
+        Block block3 = blockAt(3L, LAT_BUSAN, LNG_BUSAN, 1);
+        given(blockRepository.findAllByIdInAndProject_IdAndDeletedAtIsNull(List.of(1L, 2L, 3L), PROJECT_ID))
+                .willReturn(List.of(block1, block2, block3));
+        given(projectRepository.findByIdAndDeletedAtIsNull(PROJECT_ID)).willReturn(Optional.of(publicProject()));
+        given(publicTransitQueryService.getCombinedRoutes(anyDouble(), anyDouble(), anyDouble(), anyDouble()))
+                .willReturn(List.of(trainPath()));
+        given(transitScheduleQueryService.searchTrainStation(anyString()))
+                .willReturn(Optional.of(terminal(3300128, "서울")));
+        given(transitScheduleQueryService.getTrainSchedule(anyInt(), anyInt(), any(LocalDate.class)))
+                .willReturn(List.of(
+                        train("KTX", 1, "10:00", "12:37", 59800),
+                        train("KTX", 99, "15:00", "17:37", 59800)));
+
+        TransitCandidateResDTO.Result result =
+                service.calculate(PROJECT_ID, List.of(1L, 2L, 3L), null);
+
+        // 기준은 블록2의 종료 시각(14:00) + 기차 탑승 여유(10분) = 14:10이다. 10:00발은 그 이전이라
+        // 빠지고 15:00발만 남아야 한다.
+        Candidate train = result.segments().get(1).candidates().stream()
+                .filter(c -> c.mode() == TransitMode.TRAIN).findFirst().orElseThrow();
+        assertThat(train.departures()).extracting(d -> d.departureAt()).containsExactly("15:00");
+    }
+
+    @Test
+    @DisplayName("한 Day에 시외 구간이 둘이어도 둘 다 시간표가 붙는다")
+    void 시외_구간_둘_다_시간표가_붙는다() {
         given(blockRepository.findAllByIdInAndProject_IdAndDeletedAtIsNull(List.of(1L, 2L, 3L), PROJECT_ID))
                 .willReturn(List.of(seoulBlock(), busanBlock(), jejuBlock()));
         given(projectRepository.findByIdAndDeletedAtIsNull(PROJECT_ID)).willReturn(Optional.of(publicProject()));
@@ -684,25 +733,111 @@ class TransitCandidateServiceImplTest {
                 .willReturn(List.of(train("KTX", 1, "16:00", "18:37", 59800)));
 
         TransitCandidateResDTO.Result result =
-                service.calculate(PROJECT_ID, List.of(1L, 2L, 3L), LocalTime.of(9, 0));
+                service.calculate(PROJECT_ID, List.of(1L, 2L, 3L), null);
 
-        assertThat(result.segments().get(0).timetableApplied()).isTrue();
-        assertThat(result.segments().get(1).timetableApplied()).isFalse();
-        assertThat(result.segments().get(1).timetableSkipReason())
-                .isEqualTo("앞선 시외 구간의 편이 확정되지 않았습니다");
-        // 편만 비고 수단은 남는다 — 부산→제주에서 항공이 사라지면 배로 가라는 말이 된다
-        assertThat(result.segments().get(1).candidates()).extracting(Candidate::mode)
-                .contains(TransitMode.TRAIN, TransitMode.EXPRESS_BUS, TransitMode.AIR);
-        Candidate air = result.segments().get(1).candidates().stream()
-                .filter(c -> c.mode() == TransitMode.AIR).findFirst().orElseThrow();
-        assertThat(air.status()).isEqualTo(CandidateStatus.OK);
-        assertThat(air.departures()).isEmpty();
-        // 탈 편이 없으면 구간도 그리지 않는다 — 0분짜리 leg는 "즉시 도착"으로 읽힌다
-        assertThat(air.legs()).isEmpty();
-        assertThat(air.durationMin()).isNull();
-        // 고를 편이 없는 수단은 기본이 될 수 없다
-        assertThat(result.segments().get(1).defaultMode()).isNotIn(
-                TransitMode.TRAIN, TransitMode.EXPRESS_BUS, TransitMode.AIR);
+        // 고쳐지기 전에는 두 번째 구간이 timetableApplied=false·
+        // skipReason="앞선 시외 구간의 편이 확정되지 않았습니다"였다 — 각 구간이 앞 구간의 확정과
+        // 무관하게 자기 from 블록의 저장된 시각으로만 기준을 만드는 지금은 그 restriction이 사라졌다.
+        assertThat(result.segments()).hasSize(2);
+        assertThat(result.segments()).allSatisfy(
+                segment -> assertThat(segment.timetableApplied()).isTrue());
+        // Day 하나에 시외 구간이 둘이면 시간표도 구간마다 한 번씩, 총 두 번 조회한다
+        verify(transitScheduleQueryService, times(2))
+                .getTrainSchedule(anyInt(), anyInt(), any(LocalDate.class));
+    }
+
+    @Test
+    @DisplayName("from 블록에 시작 시각이 없으면 앞 구간 값으로 대체하지 않고 시간표를 건너뛴다")
+    void 시작_시각이_없으면_앞_구간으로_대체하지_않는다() {
+        // 서울(1, 시각 있음)->부산(2, 시각 없음)->제주(3). 두 번째 구간(부산->제주)의 from인
+        // 부산 블록에 시각이 없으므로, 앞 구간(서울->부산)이 정상적으로 만든 기준으로 대체되면
+        // 안 된다 — 그게 바로 공백을 무시하던 누적 모델의 버그였다.
+        Block busanNoStartTime = blockAt(2L, LAT_BUSAN, LNG_BUSAN);
+        given(blockRepository.findAllByIdInAndProject_IdAndDeletedAtIsNull(List.of(1L, 2L, 3L), PROJECT_ID))
+                .willReturn(List.of(seoulBlock(), busanNoStartTime, jejuBlock()));
+        given(projectRepository.findByIdAndDeletedAtIsNull(PROJECT_ID)).willReturn(Optional.of(publicProject()));
+        given(publicTransitQueryService.getCombinedRoutes(anyDouble(), anyDouble(), anyDouble(), anyDouble()))
+                .willReturn(List.of(trainPath()));
+        given(transitScheduleQueryService.searchTrainStation(anyString()))
+                .willReturn(Optional.of(terminal(3300128, "서울")));
+        given(transitScheduleQueryService.getTrainSchedule(anyInt(), anyInt(), any(LocalDate.class)))
+                .willReturn(List.of(train("KTX", 1, "16:00", "18:37", 59800)));
+
+        TransitCandidateResDTO.Result result =
+                service.calculate(PROJECT_ID, List.of(1L, 2L, 3L), null);
+
+        assertThat(result.segments()).hasSize(2);
+        assertThat(result.segments().get(0).timetableApplied()).isTrue();  // 서울->부산: 정상
+        TransitCandidateResDTO.Segment segment1 = result.segments().get(1);  // 부산->제주
+        assertThat(segment1.timetableApplied()).isFalse();
+        assertThat(segment1.timetableSkipReason())
+                .isEqualTo("출발 블록에 시작 시각이 없어 기준 시각을 계산할 수 없습니다");
+        // 앞 구간의 기준으로 대체됐다면 두 번째 구간도 조회가 일어났을 것이다 — 한 번만
+        // 조회됐다는 것이 대체하지 않았다는 증거다
+        verify(transitScheduleQueryService, times(1))
+                .getTrainSchedule(anyInt(), anyInt(), any(LocalDate.class));
+        Candidate train = segment1.candidates().stream()
+                .filter(c -> c.mode() == TransitMode.TRAIN).findFirst().orElseThrow();
+        assertThat(train.departures()).isEmpty();
+        assertThat(train.legs()).isEmpty();
+    }
+
+    @Test
+    @DisplayName("from 블록의 저장 시각이 자정을 넘기면(base>=1440) 다음 날 날짜로 시간표를 조회한다")
+    void base가_자정을_넘기면_다음_날_날짜로_조회한다() {
+        // 23:50 시작 + 90분 체류 = base 1520분(24:20) — from 블록 자체의 저장 시각만으로도
+        // 자정을 넘긴다(수단 여유를 더하기 전에 이미 그렇다).
+        Block lateBlock = Block.builder()
+                .id(1L).dayNo(1).orderKey("a1").name("블록1")
+                .category(BlockCategory.SPOT).durationMin(90).budget(0)
+                .lat(BigDecimal.valueOf(LAT_SEOUL)).lng(BigDecimal.valueOf(LNG_SEOUL))
+                .startTime(LocalTime.of(23, 50))
+                .source(BlockSource.KAKAO)
+                .build();
+        given(blockRepository.findAllByIdInAndProject_IdAndDeletedAtIsNull(List.of(1L, 2L), PROJECT_ID))
+                .willReturn(List.of(lateBlock, busanBlock()));
+        given(projectRepository.findByIdAndDeletedAtIsNull(PROJECT_ID)).willReturn(Optional.of(publicProject()));
+        given(publicTransitQueryService.getCombinedRoutes(anyDouble(), anyDouble(), anyDouble(), anyDouble()))
+                .willReturn(List.of(trainPath()));
+        given(transitScheduleQueryService.searchTrainStation(anyString()))
+                .willReturn(Optional.of(terminal(3300128, "서울")));
+        given(transitScheduleQueryService.getTrainSchedule(anyInt(), anyInt(), any(LocalDate.class)))
+                .willReturn(List.of());
+
+        service.calculate(PROJECT_ID, List.of(1L, 2L), null);
+
+        // publicProject().startDate == 2026-08-10. base가 자정을 하루 넘겼으므로 조회 날짜는
+        // 08-11이어야 한다.
+        verify(transitScheduleQueryService)
+                .getTrainSchedule(anyInt(), anyInt(), eq(LocalDate.of(2026, 8, 11)));
+    }
+
+    @Test
+    @DisplayName("base 자체는 자정 전이어도 수단 여유를 더하면 자정을 넘길 수 있다 — 그때도 날짜가 함께 넘어가야 한다")
+    void 기준_시각이_수단_여유로_자정을_넘기면_조회_날짜도_같이_넘어간다() {
+        // from 블록이 23:50에 끝난다(base=1430, 그 자체는 자정 전). 항공 여유(40분)를 더한
+        // 절대 기준(1470)은 자정을 넘겨 다음 날 00:30이다 — 시각만 다음 날로 넘기고 조회 날짜는
+        // base 하나만 보고 오늘로 두면(고쳐지기 전 버그), 오늘 이미 지나간 항공편까지
+        // "기준 이후"로 통과해 버린다(시각 필터가 00:xx 기준이라 그날 편이면 전부 통과한다).
+        Block lateBlock = blockAt(1L, LAT_CHEONGJU, LNG_CHEONGJU, 1, LocalTime.of(22, 50));
+        given(blockRepository.findAllByIdInAndProject_IdAndDeletedAtIsNull(List.of(1L, 3L), PROJECT_ID))
+                .willReturn(List.of(lateBlock, jejuBlock()));
+        given(projectRepository.findByIdAndDeletedAtIsNull(PROJECT_ID)).willReturn(Optional.of(publicProject()));
+        given(publicTransitQueryService.getCombinedRoutes(anyDouble(), anyDouble(), anyDouble(), anyDouble()))
+                .willReturn(List.of(airPath()));
+        given(transitScheduleQueryService.getFlightSchedule(anyInt(), anyInt(), any(LocalDate.class)))
+                .willReturn(List.of(TransitScheduleResDTO.FlightSchedule.builder()
+                        .airline("대한항공").flightNo("KE1801")
+                        .departureTime("08:00").arrivalTime("09:05").runDay("매일")
+                        .build()));
+
+        service.calculate(PROJECT_ID, List.of(1L, 3L), null);
+
+        // publicProject().startDate == 2026-08-10. base(1430)+항공 여유(40)=1470이 자정을
+        // 넘기므로 조회 날짜는 08-11이어야 한다 — base만 보고 08-10으로 조회하면(고쳐지기 전)
+        // 이 verify가 실패한다.
+        verify(transitScheduleQueryService)
+                .getFlightSchedule(anyInt(), anyInt(), eq(LocalDate.of(2026, 8, 11)));
     }
 
     @Test
@@ -714,8 +849,8 @@ class TransitCandidateServiceImplTest {
         // 체인으로 보낸 상황을 재현한다.
         given(blockRepository.findAllByIdInAndProject_IdAndDeletedAtIsNull(List.of(1L, 2L, 2L, 3L), PROJECT_ID))
                 .willReturn(List.of(
-                        blockAt(1L, LAT_SEOUL, LNG_SEOUL, 1),
-                        blockAt(2L, LAT_BUSAN, LNG_BUSAN, 2),
+                        blockAt(1L, LAT_SEOUL, LNG_SEOUL, 1, LocalTime.of(13, 0)),
+                        blockAt(2L, LAT_BUSAN, LNG_BUSAN, 2, LocalTime.of(8, 0)),
                         blockAt(3L, LAT_JEJU, LNG_JEJU, 2)));
         given(projectRepository.findByIdAndDeletedAtIsNull(PROJECT_ID)).willReturn(Optional.of(publicProject()));
         given(publicTransitQueryService.getCombinedRoutes(anyDouble(), anyDouble(), anyDouble(), anyDouble()))
@@ -753,8 +888,8 @@ class TransitCandidateServiceImplTest {
         try {
             given(blockRepository.findAllByIdInAndProject_IdAndDeletedAtIsNull(List.of(1L, 2L, 2L, 3L), PROJECT_ID))
                     .willReturn(List.of(
-                            blockAt(1L, LAT_SEOUL, LNG_SEOUL, 1),
-                            blockAt(2L, LAT_BUSAN, LNG_BUSAN, 2),
+                            blockAt(1L, LAT_SEOUL, LNG_SEOUL, 1, LocalTime.of(13, 0)),
+                            blockAt(2L, LAT_BUSAN, LNG_BUSAN, 2, LocalTime.of(8, 0)),
                             blockAt(3L, LAT_JEJU, LNG_JEJU, 2)));
             given(projectRepository.findByIdAndDeletedAtIsNull(PROJECT_ID)).willReturn(Optional.of(publicProject()));
             given(publicTransitQueryService.getCombinedRoutes(anyDouble(), anyDouble(), anyDouble(), anyDouble()))
@@ -796,29 +931,6 @@ class TransitCandidateServiceImplTest {
         } finally {
             TransitCandidateServiceImpl.TIMETABLE_TIMEOUT = original;
         }
-    }
-
-    @Test
-    @DisplayName("시간표는 첫 시외 구간에서 한 번만 조회한다 — 기준 시각이 두 번째 구간을 감당하지 못한다")
-    void 시간표는_한_구간에만_조회한다() {
-        given(blockRepository.findAllByIdInAndProject_IdAndDeletedAtIsNull(List.of(1L, 2L, 3L), PROJECT_ID))
-                .willReturn(List.of(seoulBlock(), busanBlock(), jejuBlock()));
-        given(projectRepository.findByIdAndDeletedAtIsNull(PROJECT_ID)).willReturn(Optional.of(publicProject()));
-        given(publicTransitQueryService.getCombinedRoutes(anyDouble(), anyDouble(), anyDouble(), anyDouble()))
-                .willReturn(List.of(trainPath()));
-        given(transitScheduleQueryService.searchTrainStation(anyString()))
-                .willReturn(Optional.of(terminal(3300128, "서울")));
-        given(transitScheduleQueryService.getTrainSchedule(anyInt(), anyInt(), any(LocalDate.class)))
-                .willReturn(List.of(train("KTX", 1, "16:00", "18:37", 59800)));
-
-        service.calculate(PROJECT_ID, List.of(1L, 2L, 3L), LocalTime.of(9, 0));
-
-        // SegmentClock은 실제 탑승 시각(16:00)이 아니라 기준 시각(09:45)에서 이동시간만 누적한다.
-        // 두 번째 시외 구간에 그 커서로 다시 기준 시각을 뽑으면 이미 지나간 시각을 준다 —
-        // intercityUsed 가드가 그것을 막는다. 이 verify가 가드가 사라지면 깨진다(2회가 된다).
-        verify(transitScheduleQueryService, times(1))
-                .getTrainSchedule(anyInt(), anyInt(), any(LocalDate.class));
-        verify(transitScheduleQueryService, times(2)).searchTrainStation(anyString());
     }
 
     @Test
@@ -996,7 +1108,7 @@ class TransitCandidateServiceImplTest {
         TransitCandidateResDTO.Result result =
                 service.calculate(PROJECT_ID, List.of(1L, 2L, 3L), LocalTime.of(9, 0));
 
-        // 첫 구간에서 시간표를 붙인 적이 없으므로 intercityUsed가 서지 않는다 — 두 번째 구간도
+        // 각 구간은 앞 구간과 무관하게 독립적으로 project.startDate를 확인한다 — 두 번째 구간도
         // "앞선 시외 구간의 편이 확정되지 않았습니다"가 아니라 진짜 이유를 받아야 한다
         assertThat(result.segments()).hasSize(2);
         assertThat(result.segments()).allSatisfy(segment -> {
@@ -1016,12 +1128,14 @@ class TransitCandidateServiceImplTest {
         return blockAt(3L, LAT_JEJU, LNG_JEJU);
     }
 
+    /** 시외 구간의 기준 시각(base)이 13:00+60분=14:00이 되도록 startTime을 채운다 */
     private Block seoulBlock() {
-        return blockAt(1L, LAT_SEOUL, LNG_SEOUL);
+        return blockAt(1L, LAT_SEOUL, LNG_SEOUL, 1, LocalTime.of(13, 0));
     }
 
+    /** 시외 구간의 기준 시각(base)이 08:00+60분=09:00이 되도록 startTime을 채운다 */
     private Block busanBlock() {
-        return blockAt(2L, LAT_BUSAN, LNG_BUSAN);
+        return blockAt(2L, LAT_BUSAN, LNG_BUSAN, 1, LocalTime.of(8, 0));
     }
 
     private Block blockA() {

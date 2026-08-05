@@ -19,8 +19,8 @@ import com.ssafy.ieumgil.domain.transit.dto.TransitResDTO;
 import com.ssafy.ieumgil.domain.transit.dto.TransitScheduleResDTO;
 import com.ssafy.ieumgil.domain.transit.exception.TransitErrorCode;
 import com.ssafy.ieumgil.domain.transit.exception.TransitException;
+import com.ssafy.ieumgil.domain.transit.util.BoardingMargin;
 import com.ssafy.ieumgil.domain.transit.util.Haversine;
-import com.ssafy.ieumgil.domain.transit.util.SegmentClock;
 import com.ssafy.ieumgil.global.exception.CustomException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -37,7 +37,6 @@ import java.util.HashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.Callable;
@@ -55,7 +54,7 @@ import java.util.stream.Collectors;
  * 다른 QueryServiceImpl과 달리 {@code @Transactional(readOnly = true)}를 의도적으로 붙이지 않는다.
  *
  * <p>이 서비스는 외부 API 호출 구간을 두 단계로 감싼다. 1단은 모든 구간의 경로·길찾기 조회로
- * {@link #OVERALL_TIMEOUT}(20초)까지, 2단은 첫 시외 구간의 시간표 조회로
+ * {@link #OVERALL_TIMEOUT}(20초)까지, 2단은 시외 구간마다의 시간표 조회로(예산은 요청 전체가 공유)
  * {@link #TIMETABLE_TIMEOUT}(20초)까지 걸릴 수 있다 — 두 단계는 순차이므로 <b>최악 40초</b>다.
  * 두 상한 모두 가상 스레드 {@code invokeAll}로 강제하며, 상한을 넘긴 조회는 "조회 실패"로 내려간다.
  *
@@ -83,8 +82,7 @@ public class TransitCandidateServiceImpl implements TransitCandidateService {
      * 잠깐 줄여 썼다가 되돌릴 수 있어야 한다. 프로덕션에서 이 값을 바꾸는 코드는 없다.
      */
     static Duration TIMETABLE_TIMEOUT = Duration.ofSeconds(20);
-    private static final LocalTime DEFAULT_DAY_START = LocalTime.of(9, 0);
-    private static final String SKIP_REASON_PRIOR_INTERCITY = "앞선 시외 구간의 편이 확정되지 않았습니다";
+    private static final String SKIP_REASON_NO_START_TIME = "출발 블록에 시작 시각이 없어 기준 시각을 계산할 수 없습니다";
     private static final String SKIP_REASON_NO_START_DATE = "프로젝트 시작일이 없어 운행 요일을 확인할 수 없습니다";
     /** 시간표 조회 예산({@link #TIMETABLE_TIMEOUT})을 다른 Day가 이미 다 써서 이 Day는 조회를 시도조차 못 할 때 */
     private static final String SKIP_REASON_TIMETABLE_BUDGET_EXHAUSTED =
@@ -118,62 +116,90 @@ public class TransitCandidateServiceImpl implements TransitCandidateService {
         // 1단: 구간마다 시내 경로·자차·택시를 병렬로 모은다. 시외 여부는 여기서 받은 pathType으로 판정된다.
         Map<Leg, RoadResult> roadByLeg = fetchRoadResults(distinctLegsOf(pairs), project.getTransportPref());
 
-        // 2단: 순서대로 훑으며 기준 시각을 누적하고, Day마다 첫 시외 구간에만 시간표를 붙인다.
-        // blockIds는 여러 Day를 한 체인으로 이어 보낼 수 있다(요청 크기 상한 30의 근거 자체가
-        // "3일 일정에 Day당 10블록"이다) — 그래서 기준 시각과 시외 확정 플래그는 요청 전체가 아니라
-        // Day 하나에서만 유지해야 한다. 그렇지 않으면 Day2의 시외 구간이 Day1의 확정 때문에
-        // "앞선 시외 구간의 편이 확정되지 않았습니다"로 잘못 건너뛰어진다.
+        // 2단: 구간마다 독립적으로 기준 시각을 구해 시간표를 붙인다. 블록은 연속적이지 않다 —
+        // resolveOverlaps가 블록 사이 공백을 그대로 보존하므로(BLK 이동 추가 칩의 근거), 구간의
+        // 기준 시각은 앞 구간에서 누적한 값이 아니라 이 구간의 from 블록에 저장된 시각 그대로다
+        // ({@link #baseMinutesOf}). 그래서 한 Day에 시외 구간이 여러 개여도 서로의 확정 여부와
+        // 무관하게 각자 자기 시간표를 받는다 — 뒤 구간의 기준이 앞 구간이 고른 편에 좌우되지 않기
+        // 때문이다.
         //
-        // 시간표 조회 예산({@link #TIMETABLE_TIMEOUT})은 반대로 Day별로 다시 주지 않는다 — 여기서
-        // 데드라인을 한 번만 잡고 Day마다 "남은" 시간만 쓰게 한다. Day마다 새 20초를 주면 3일
-        // 일정에서 최악 20(1단) + 20×3(2단) = 80초가 되어 클래스 Javadoc의 "최악 40초" 계약이
-        // 깨진다 — 예산을 요청 전체가 공유해야 그 상한이 몇 Day를 담든 유지된다.
+        // 시간표 조회 예산({@link #TIMETABLE_TIMEOUT})은 요청 전체가 공유한다 — 여기서 데드라인을
+        // 한 번만 잡고 구간마다 "남은" 시간만 쓰게 한다. 구간마다 새 20초를 주면 여러 시외 구간을
+        // 담은 요청에서 클래스 Javadoc의 "최악 40초" 계약이 깨진다.
         Instant timetableDeadline = Instant.now().plus(TIMETABLE_TIMEOUT);
-        Integer currentDayNo = null;
-        SegmentClock clock = null;
-        boolean intercityUsed = false;
         List<TransitCandidateResDTO.Segment> segments = new ArrayList<>();
 
         for (Pair pair : pairs) {
-            int dayNo = dayNoOf(pair.from());
-            if (!Objects.equals(currentDayNo, dayNo)) {
-                // 새 Day로 넘어가면 기준 시각과 시외 확정 플래그를 다시 시작한다 — 이전 Day가
-                // 얼마나 늦게 끝났든 이 Day와는 무관하다. dayStart는 요청 하나에 하나뿐이라
-                // 모든 Day에 같은 값(또는 기본값)을 그대로 적용한다 — Day별로 다른 시작 시각을
-                // 받으려면 요청 계약이 바뀌어야 한다(별도 논의 필요).
-                clock = new SegmentClock(dayStart == null ? DEFAULT_DAY_START : dayStart);
-                intercityUsed = false;
-                currentDayNo = dayNo;
-            }
             RoadResult road = roadByLeg.get(legOf(pair.from(), pair.to()));
 
             TransitCandidateResDTO.Segment segment;
             if (!road.isIntercity()) {
                 segment = citySegment(pair, road);
-            } else if (intercityUsed) {
-                segment = intercitySegmentWithoutTimetable(pair, road, SKIP_REASON_PRIOR_INTERCITY);
             } else {
-                LocalDate date = dateOf(project, pair);
-                Duration timetableBudget = remainingBudget(timetableDeadline);
-                if (date == null) {
-                    // 시작일을 모르면 다음 시외 구간도 마찬가지다 — intercityUsed를 세우지 않아
-                    // 뒤 구간에도 "앞 구간 때문"이 아닌 진짜 이유가 붙는다.
+                Integer base = baseMinutesOf(pair.from());
+                if (base == null) {
+                    // from 블록에 시각이 없으면 이 구간의 기준을 만들 수 없다. 앞 구간에서 값을
+                    // 끌어오지 않는다 — 그게 바로 공백을 무시하던 누적 모델의 버그다.
+                    segment = intercitySegmentWithoutTimetable(pair, road, SKIP_REASON_NO_START_TIME);
+                } else if (project.getStartDate() == null) {
+                    // 여기서는 시작일이 있는지만 본다 — 실제 여행 날짜는 수단마다 다를 수 있어
+                    // (자정 경계, referenceFor 참고) 수단별로 따로 계산한다. 시작일이 없을 때
+                    // 오늘로 갈음하지 않는다 — 오늘 요일로 운행 편을 거르고 요일별 요금을 고르면
+                    // 실제 여행일과 무관한 시간표를 timetableApplied=true·CONFIRMED로 내보내게
+                    // 된다. 모른다는 사실을 그대로 내보내는 편이 낫다.
                     segment = intercitySegmentWithoutTimetable(pair, road, SKIP_REASON_NO_START_DATE);
-                } else if (timetableBudget.isZero()) {
-                    // 다른 Day(또는 이 Day 안의 앞선 조회)가 공유 예산을 이미 다 썼다. intercityUsed를
-                    // 세우지 않는다 — 시작일 미상 케이스와 같은 이유로, 뒤따르는 시외 구간도 "앞 구간
-                    // 확정" 대신 같은 예산 소진 이유를 받아야 한다(예산은 요청 전체가 공유하므로 이후
-                    // Day도 마찬가지다).
-                    segment = intercitySegmentWithoutTimetable(pair, road, SKIP_REASON_TIMETABLE_BUDGET_EXHAUSTED);
                 } else {
-                    segment = intercitySegment(pair, road, clock.reference(), date, timetableBudget);
-                    intercityUsed = true;
+                    Duration timetableBudget = remainingBudget(timetableDeadline);
+                    if (timetableBudget.isZero()) {
+                        // 다른 구간(또는 다른 Day)이 공유 예산을 이미 다 썼다.
+                        segment = intercitySegmentWithoutTimetable(
+                                pair, road, SKIP_REASON_TIMETABLE_BUDGET_EXHAUSTED);
+                    } else {
+                        segment = intercitySegment(
+                                pair, road, base, project.getStartDate(), dayNoOf(pair.from()), timetableBudget);
+                    }
                 }
             }
             segments.add(segment);
-            clock.advance(defaultDurationOf(segment), stayMinutesOf(pair.to()));
         }
         return TransitCandidateResDTO.Result.builder().segments(segments).build();
+    }
+
+    /**
+     * 이 구간을 떠날 수 있는 시각(자정 기준 분). {@code from} 블록의 저장된 종료 시각이다.
+     *
+     * <p>앞 구간의 결과를 누적하지 않는다 — 블록은 연속적이지 않고 사이 공백이 실재하므로,
+     * 이 구간이 볼 수 있는 진실은 {@code from} 블록 자신에 저장된 시각뿐이다. 시각 없는(느슨한)
+     * 블록은 기준을 만들 수 없어 {@code null}이다.
+     */
+    private Integer baseMinutesOf(Block from) {
+        LocalTime start = from.getStartTime();
+        if (start == null) {
+            return null;
+        }
+        return start.getHour() * 60 + start.getMinute() + from.getDurationMin();
+    }
+
+    /**
+     * 수단별 출발 기준의 날짜와 시각. {@code base}(from 블록의 저장된 종료 시각, 자정 기준 분)에
+     * 수단별 탑승 여유({@link BoardingMargin})를 더한 값 하나(절대 분)에서 날짜·시각을 함께
+     * 뽑는다.
+     *
+     * <p>날짜와 시각을 각자 다른 값으로 계산하면 안 된다 — from 블록이 23:20에 끝나고 항공
+     * 여유가 40분이면 절대 기준은 다음 날 00:00이다. 시각만 다음 날로 넘기고 날짜는 base
+     * 하나만 보고 정하면(예: 오늘로 남으면), 오늘 이미 지나간 항공편이 "기준 이후"로 잘못
+     * 통과해 버린다. 그래서 이 메서드가 날짜·시각을 항상 같은 절대값에서 함께 만든다.
+     */
+    private Reference referenceFor(LocalDate startDate, int dayNo, int base, TransitMode mode) {
+        int absoluteMinutes = base + BoardingMargin.minutesFor(mode);
+        LocalDate date = startDate.plusDays(dayNo - 1L + absoluteMinutes / 1440);
+        int minuteOfDay = absoluteMinutes % 1440;
+        LocalTime time = LocalTime.of(minuteOfDay / 60, minuteOfDay % 60);
+        return new Reference(date, time);
+    }
+
+    /** {@link #referenceFor}가 함께 만들어 낸 날짜·시각 — 자정 경계에서 서로 어긋나지 않게 묶는다. */
+    private record Reference(LocalDate date, LocalTime time) {
     }
 
     /**
@@ -184,23 +210,6 @@ public class TransitCandidateServiceImpl implements TransitCandidateService {
     private Duration remainingBudget(Instant deadline) {
         Duration remaining = Duration.between(Instant.now(), deadline);
         return remaining.isNegative() ? Duration.ZERO : remaining;
-    }
-
-    /**
-     * 여행 날짜. {@code project.startDate + (dayNo - 1)}이며, 시작일이 없으면 {@code null}이다.
-     *
-     * <p>요청으로 받지 않는다 — 클라이언트가 보내면 서버 값과 어긋날 여지만 생기고,
-     * 블록의 {@code dayNo}와 프로젝트 시작일이 이미 서버에 있다.
-     *
-     * <p>시작일이 없을 때 오늘로 갈음하지 않는다. 오늘의 요일로 운행 편을 거르고 요일별 요금을
-     * 고르면, 실제 여행일과 무관한 시간표를 {@code timetableApplied=true}·{@code CONFIRMED}로
-     * 내보내게 된다. 모른다는 사실을 그대로 내보내는 편이 낫다.
-     */
-    private LocalDate dateOf(Project project, Pair pair) {
-        if (project.getStartDate() == null) {
-            return null;
-        }
-        return project.getStartDate().plusDays(dayNoOf(pair.from()) - 1L);
     }
 
     /** 블록의 dayNo. 미설정(null)이면 1일차로 본다 — Day 경계 판정과 여행 날짜 계산이 같은 규칙을 쓴다. */
@@ -390,7 +399,7 @@ public class TransitCandidateServiceImpl implements TransitCandidateService {
      * 고속버스 39,700원 4시간은 사용자가 실제로 저울질하는 대안이라 하나로 뭉치면 그 선택이 사라진다.
      */
     private TransitCandidateResDTO.Segment intercitySegment(
-            Pair pair, RoadResult road, LocalTime reference, LocalDate date, Duration timetableBudget) {
+            Pair pair, RoadResult road, int base, LocalDate startDate, int dayNo, Duration timetableBudget) {
         String from = road.firstStartStation();
         String to = road.lastEndStation();
 
@@ -400,7 +409,7 @@ public class TransitCandidateServiceImpl implements TransitCandidateService {
             log.warn("시외 경로에 역 이름이 없다: from={}, to={}", from, to);
             INTERCITY_MODES.forEach(mode -> candidates.add(Candidate.lookupFailed(mode)));
         } else {
-            candidates.addAll(intercityCandidates(from, to, reference, date, timetableBudget));
+            candidates.addAll(intercityCandidates(from, to, base, startDate, dayNo, timetableBudget));
         }
         candidates.addAll(road.roadCandidates());   // 자차·택시. 1단에서 이미 만들어졌다
 
@@ -417,8 +426,8 @@ public class TransitCandidateServiceImpl implements TransitCandidateService {
     /**
      * 시간표를 적용하지 않는 시외 구간.
      *
-     * <p>앞 구간에 138분 기차가 들어가면 뒤 블록의 시각이 밀려 기준이 이미 지나간 시각이 된다.
-     * 조용히 틀린 시각을 주는 대신 이유를 남겨 프론트가 재계산을 안내하게 한다.
+     * <p>from 블록에 시각이 없거나, 프로젝트 시작일을 모르거나, 시간표 조회 예산이 이미
+     * 소진됐을 때 여기로 온다. 조용히 틀린 시각을 주는 대신 이유를 남겨 프론트가 안내하게 한다.
      *
      * <p>그래도 <b>수단 슬롯은 남긴다</b> — 서울→부산→제주에서 뒤 구간만 항공이 사라지면
      * 제주에 배로 가라는 말이 된다. 편 목록만 비고({@code departures=[]}) 수단은 그대로다.
@@ -502,21 +511,26 @@ public class TransitCandidateServiceImpl implements TransitCandidateService {
      * 동시에 부른다.
      *
      * <p>상한은 {@link #TIMETABLE_TIMEOUT} 그 자체가 아니라 호출한 쪽이 넘겨준 {@code budget}이다
-     * — 여러 Day를 담은 요청이면 이 메서드가 Day마다 다시 불리는데, 예산은 요청 전체가
-     * {@link #remainingBudget}로 공유하므로 두 번째 이후 Day는 남은 시간만큼만 받는다(항상
+     * — 여러 시외 구간을 담은 요청이면 이 메서드가 구간마다 다시 불리는데, 예산은 요청 전체가
+     * {@link #remainingBudget}로 공유하므로 두 번째 이후 구간은 남은 시간만큼만 받는다(항상
      * 0보다 크다 — 호출자가 0이면 아예 부르지 않고 예산 소진 사유로 건너뛴다).
      *
      * <p>세마포어를 걸지 않는 이유: 2단은 1단이 끝난 뒤에 돌고 동시 호출이 세 개뿐이라
      * {@value #MAX_CONCURRENT_CALLS}개 상한 안이다.
      *
      * <p>순서는 {@link #INTERCITY_MODES} 그대로다 — 후보 순서가 곧 화면 순서다.
+     *
+     * <p>{@code base}(from 블록의 저장된 종료 시각, 자정 기준 분)는 세 수단에 그대로 공유되지만,
+     * 각 수단이 실제로 거르는 기준 날짜·시각은 여기서 다시 계산하지 않는다 — {@link #referenceFor}가
+     * 수단별 탑승 여유({@link BoardingMargin})를 각자 더하므로 기차·고속버스·항공의 기준이 서로 다르고,
+     * 자정을 넘기면 날짜도 수단마다 달라질 수 있다.
      */
     private List<Candidate> intercityCandidates(
-            String from, String to, LocalTime reference, LocalDate date, Duration budget) {
+            String from, String to, int base, LocalDate startDate, int dayNo, Duration budget) {
         List<Callable<Candidate>> tasks = List.of(
-                () -> trainCandidate(from, to, reference, date),
-                () -> expressBusCandidate(from, to, reference, date),
-                () -> airCandidate(from, to, reference, date));
+                () -> trainCandidate(from, to, base, startDate, dayNo),
+                () -> expressBusCandidate(from, to, base, startDate, dayNo),
+                () -> airCandidate(from, to, base, startDate, dayNo));
 
         ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
         try {
@@ -560,7 +574,7 @@ public class TransitCandidateServiceImpl implements TransitCandidateService {
      * {@code firstStartStation: "오송"}처럼 역 이름을 주고, 시간표 API가 이름 검색을 지원한다.
      * 우리가 다시 고르면 ODsay가 계산한 경로와 다른 역을 집을 수 있다.
      */
-    private Candidate trainCandidate(String from, String to, LocalTime reference, LocalDate date) {
+    private Candidate trainCandidate(String from, String to, int base, LocalDate startDate, int dayNo) {
         try {
             Optional<TransitScheduleResDTO.TerminalSearchResult> start =
                     transitScheduleQueryService.searchTrainStation(from);
@@ -570,19 +584,20 @@ public class TransitCandidateServiceImpl implements TransitCandidateService {
                 return Candidate.lookupFailed(TransitMode.TRAIN);
             }
 
+            Reference reference = referenceFor(startDate, dayNo, base, TransitMode.TRAIN);
             List<TransitCandidateResDTO.Departure> all = transitScheduleQueryService
-                    .getTrainSchedule(start.get().stationId(), end.get().stationId(), date).stream()
+                    .getTrainSchedule(start.get().stationId(), end.get().stationId(), reference.date()).stream()
                     .map(this::toTrainDeparture)
                     .toList();
             return departureCandidate(TransitMode.TRAIN,
-                    DepartureSelector.selectThree(afterReference(all, reference), true), from, to);
+                    DepartureSelector.selectThree(afterReference(all, reference.time()), true), from, to);
         } catch (RuntimeException e) {
             log.warn("기차 시간표 조회 실패 {} -> {}", from, to, e);
             return Candidate.lookupFailed(TransitMode.TRAIN);
         }
     }
 
-    private Candidate expressBusCandidate(String from, String to, LocalTime reference, LocalDate date) {
+    private Candidate expressBusCandidate(String from, String to, int base, LocalDate startDate, int dayNo) {
         try {
             Optional<TransitScheduleResDTO.TerminalSearchResult> start =
                     transitScheduleQueryService.searchExpressBusTerminal(from);
@@ -592,12 +607,14 @@ public class TransitCandidateServiceImpl implements TransitCandidateService {
                 return Candidate.lookupFailed(TransitMode.EXPRESS_BUS);
             }
 
+            Reference reference = referenceFor(startDate, dayNo, base, TransitMode.EXPRESS_BUS);
             List<TransitCandidateResDTO.Departure> all = transitScheduleQueryService
-                    .getIntercityBusSchedule(start.get().stationId(), end.get().stationId(), date).stream()
+                    .getIntercityBusSchedule(start.get().stationId(), end.get().stationId(), reference.date())
+                    .stream()
                     .map(this::toBusDeparture)
                     .toList();
             return departureCandidate(TransitMode.EXPRESS_BUS,
-                    DepartureSelector.selectThree(afterReference(all, reference), true), from, to);
+                    DepartureSelector.selectThree(afterReference(all, reference.time()), true), from, to);
         } catch (RuntimeException e) {
             log.warn("고속버스 시간표 조회 실패 {} -> {}", from, to, e);
             return Candidate.lookupFailed(TransitMode.EXPRESS_BUS);
@@ -605,7 +622,7 @@ public class TransitCandidateServiceImpl implements TransitCandidateService {
     }
 
     /** 공항은 ODsay 검색 API가 아니라 {@link DomesticAirport} 목록으로 찾는다 — 국내선 공항은 14개뿐이다. */
-    private Candidate airCandidate(String from, String to, LocalTime reference, LocalDate date) {
+    private Candidate airCandidate(String from, String to, int base, LocalDate startDate, int dayNo) {
         try {
             Optional<DomesticAirport> start = DomesticAirport.findByName(from);
             Optional<DomesticAirport> end = DomesticAirport.findByName(to);
@@ -613,13 +630,14 @@ public class TransitCandidateServiceImpl implements TransitCandidateService {
                 return Candidate.lookupFailed(TransitMode.AIR);
             }
 
+            Reference reference = referenceFor(startDate, dayNo, base, TransitMode.AIR);
             List<TransitCandidateResDTO.Departure> all = transitScheduleQueryService
-                    .getFlightSchedule(start.get().stationId(), end.get().stationId(), date).stream()
+                    .getFlightSchedule(start.get().stationId(), end.get().stationId(), reference.date()).stream()
                     .map(this::toFlightDeparture)
                     .toList();
             // 요금이 없어 최저가 축을 쓸 수 없다. 시각순 3편이다.
             return departureCandidate(TransitMode.AIR,
-                    DepartureSelector.selectThree(afterReference(all, reference), false), from, to);
+                    DepartureSelector.selectThree(afterReference(all, reference.time()), false), from, to);
         } catch (RuntimeException e) {
             log.warn("항공 시간표 조회 실패 {} -> {}", from, to, e);
             return Candidate.lookupFailed(TransitMode.AIR);
@@ -770,8 +788,7 @@ public class TransitCandidateServiceImpl implements TransitCandidateService {
      * 앞에서부터 살아있는 첫 후보가 기본이다. 전부 실패했으면 null — 프론트가 그 구간만 비워 둔다.
      *
      * <p>탈 수 있는 편이 없는 시외 후보는 건너뛴다. 조회는 성공했으니 {@code status=OK}지만
-     * ({@link #departureCandidate}), 고를 편이 없는 수단을 기본으로 내밀 수는 없다. 소요시간도
-     * 없어 {@link #defaultDurationOf}가 0을 주므로 기준 시각이 그 구간만큼 밀리지 않는다.
+     * ({@link #departureCandidate}), 고를 편이 없는 수단을 기본으로 내밀 수는 없다.
      */
     private TransitMode defaultModeOf(List<Candidate> candidates) {
         return candidates.stream()
@@ -780,24 +797,6 @@ public class TransitCandidateServiceImpl implements TransitCandidateService {
                 .map(Candidate::mode)
                 .findFirst()
                 .orElse(null);
-    }
-
-    /** 기준 시각 누적에 쓸 이 구간의 이동시간. 기본 수단의 값이며 알 수 없으면 0이다. */
-    private int defaultDurationOf(TransitCandidateResDTO.Segment segment) {
-        if (segment.defaultMode() == null) {
-            return 0;
-        }
-        return segment.candidates().stream()
-                .filter(candidate -> candidate.mode() == segment.defaultMode())
-                .map(Candidate::durationMin)
-                .filter(Objects::nonNull)
-                .findFirst()
-                .orElse(0);
-    }
-
-    /** 뒤 블록에 머무는 시간. 다음 구간의 출발 기준 시각은 그만큼 뒤로 밀린다. */
-    private int stayMinutesOf(Block block) {
-        return block.getDurationMin() == null ? 0 : block.getDurationMin();
     }
 
     /** 실패는 후보 하나가 비는 것으로 끝난다 — 한 수단이 죽었다고 구간 전체를 못 내면 안 된다. */
