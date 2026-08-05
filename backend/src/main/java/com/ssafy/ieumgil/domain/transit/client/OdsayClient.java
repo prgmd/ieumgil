@@ -7,6 +7,7 @@ import com.ssafy.ieumgil.domain.transit.dto.OdsayRouteResponse;
 import com.ssafy.ieumgil.domain.transit.dto.OdsayTrainScheduleResponse;
 import com.ssafy.ieumgil.domain.transit.dto.OdsayTrainTerminalResponse;
 import com.ssafy.ieumgil.domain.transit.exception.OdsayNoRouteException;
+import com.ssafy.ieumgil.domain.transit.exception.OdsayTooCloseException;
 import com.ssafy.ieumgil.domain.transit.exception.TransitErrorCode;
 import com.ssafy.ieumgil.domain.transit.exception.TransitException;
 import lombok.extern.slf4j.Slf4j;
@@ -32,6 +33,12 @@ public class OdsayClient {
      * {@code 3} 출발지 정류장 없음(백령도). 실측 157경로 중 38개(도서 전량)가 이 둘이다.
      */
     private static final Set<String> NO_ROUTE_CODES = Set.of("-99", "3");
+    /**
+     * ODsay가 "출·도착지가 700m 이내"라고 답하는 코드. 경로가 없는 것이 아니라 걸어갈 거리라
+     * 낼 경로가 없다는 뜻이므로 {@link #NO_ROUTE_CODES}와 섞지 않는다
+     * ({@link OdsayTooCloseException}).
+     */
+    private static final String TOO_CLOSE_CODE = "-98";
 
     private final RestClient restClient;
     private final OdsayProperties properties;
@@ -215,6 +222,10 @@ public class OdsayClient {
         if (NO_ROUTE_CODES.contains(code)) {
             log.info("ODsay 경로 없음: code={}", code);
             throw new OdsayNoRouteException();
+        }
+        if (TOO_CLOSE_CODE.equals(code)) {
+            log.info("ODsay 700m 이내 — 걸어갈 거리라 경로를 주지 않는다: code={}", code);
+            throw new OdsayTooCloseException();
         }
         log.warn("ODsay 응답 에러: code={}", code);
         throw new TransitException(TransitErrorCode.ODSAY_API_CALL_FAILED);

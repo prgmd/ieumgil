@@ -7,6 +7,7 @@ import com.ssafy.ieumgil.domain.transit.dto.OdsayRouteResponse;
 import com.ssafy.ieumgil.domain.transit.dto.OdsayTrainScheduleResponse;
 import com.ssafy.ieumgil.domain.transit.dto.OdsayTrainTerminalResponse;
 import com.ssafy.ieumgil.domain.transit.exception.OdsayNoRouteException;
+import com.ssafy.ieumgil.domain.transit.exception.OdsayTooCloseException;
 import com.ssafy.ieumgil.domain.transit.exception.TransitException;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -198,6 +199,24 @@ class OdsayClientTest {
         assertThatThrownBy(() ->
                 odsayClient.searchPublicTransitRoute(37.4979, 127.0276, 37.5665, 127.1054, "BUS"))
                 .isInstanceOf(OdsayNoRouteException.class);
+    }
+
+    @Test
+    @DisplayName("[실측] 700m 이내(code -98)는 '경로 없음'이 아니다 — 걸어갈 거리라는 뜻이다")
+    void 칠백미터_이내는_경로없음이_아니다() {
+        // 실측: 속초시외버스터미널 → 속초시청. {"error":{"msg":"출, 도착지가 700m이내입니다.","code":"-98"}}
+        // 이 둘을 뭉갰다가 서울→속초에서 고속버스 후보가 통째로 사라졌다 — 하차 지점이 목적지에서
+        // 700m 이내라 이탈 조회가 실패로 취급됐고, 목적지가 터미널 근처인 최선의 경우가 수단을 지웠다.
+        String errorResponse = """
+                { "error": { "msg": "출, 도착지가 700m이내입니다.", "code": "-98" } }
+                """;
+        server.expect(requestTo("https://api.odsay.com/v1/api/searchPubTransPathT?SX=127.0276&SY=37.4979&EX=127.1054&EY=37.5665&apiKey=test-key&SearchPathType=2"))
+                .andRespond(withSuccess(errorResponse, MediaType.APPLICATION_JSON));
+
+        assertThatThrownBy(() ->
+                odsayClient.searchPublicTransitRoute(37.4979, 127.0276, 37.5665, 127.1054, "BUS"))
+                .isInstanceOf(OdsayTooCloseException.class)
+                .isNotInstanceOf(OdsayNoRouteException.class);
     }
 
     @Test

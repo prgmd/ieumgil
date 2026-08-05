@@ -19,6 +19,7 @@ import com.ssafy.ieumgil.domain.transit.dto.TransitLegResDTO;
 import com.ssafy.ieumgil.domain.transit.dto.TransitResDTO;
 import com.ssafy.ieumgil.domain.transit.dto.TransitScheduleResDTO;
 import com.ssafy.ieumgil.domain.transit.exception.OdsayNoRouteException;
+import com.ssafy.ieumgil.domain.transit.exception.OdsayTooCloseException;
 import com.ssafy.ieumgil.domain.transit.exception.TransitErrorCode;
 import com.ssafy.ieumgil.domain.transit.exception.TransitException;
 import com.ssafy.ieumgil.domain.transit.util.IntercityLegs;
@@ -1333,6 +1334,73 @@ class TransitCandidateServiceImplTest {
         verify(routeSelector, never()).selectTop5(anyList());
         assertThat(segment.candidates()).extracting(Candidate::mode)
                 .doesNotContain(TransitMode.TRANSIT);
+    }
+
+    @Test
+    @DisplayName("[실측] 심야편(24:10 표기)이 섞여도 그 수단 후보가 죽지 않는다")
+    void 자정_넘김_표기가_섞여도_후보가_죽지_않는다() {
+        given(blockRepository.findAllByIdInAndProject_IdAndDeletedAtIsNull(List.of(1L, 2L), PROJECT_ID))
+                .willReturn(List.of(seoulBlock(), busanBlock()));
+        given(projectRepository.findByIdAndDeletedAtIsNull(PROJECT_ID)).willReturn(Optional.of(publicProject()));
+        given(publicTransitQueryService.getCombinedRoutes(anyDouble(), anyDouble(), anyDouble(), anyDouble()))
+                .willReturn(List.of(expressBusPath()));
+        givenZeroAccessEgress(LAT_SEOUL, LNG_SEOUL, LAT_BUSAN, LNG_BUSAN);
+        // 실측: 서울고속버스터미널→부산종합버스터미널 51편 중 8편이 "24:00"~"26:00" 표기다.
+        // LocalTime.parse는 이 표기에서 던지고, 그 예외 하나가 고속버스 후보 전체를
+        // LOOKUP_FAILED로 만들었다 — 편 하나를 못 읽는 것이 수단을 지우는 근거가 될 수 없다.
+        given(transitScheduleQueryService.getIntercityBusSchedule(anyInt(), anyInt(), any(LocalDate.class)))
+                .willReturn(List.of(
+                        bus(2, "16:00", 240, 39700),
+                        bus(2, "24:10", 240, 39700),
+                        bus(2, "26:00", 240, 39700)));
+
+        TransitCandidateResDTO.Result result =
+                service.calculate(PROJECT_ID, List.of(1L, 2L));
+
+        Candidate expressBus = candidateOf(result, TransitMode.EXPRESS_BUS);
+        assertThat(expressBus.status()).isEqualTo(CandidateStatus.OK);
+        assertThat(expressBus.departures()).hasSize(3);
+        // 심야편은 1440분 이상이라 기준 시각보다 항상 뒤이고 정렬도 맨 뒤다
+        assertThat(expressBus.departures()).extracting(TransitCandidateResDTO.Departure::departureAt)
+                .containsExactly("16:00", "24:10", "26:00");
+        // 도착 시각도 접지 않는다 — 24:10 + 240분은 "04:10"이 아니라 "28:10"이다.
+        // %1440으로 접으면 다음 날 편이 오늘 새벽 편으로 보인다
+        assertThat(expressBus.departures().get(1).arrivalAt()).isEqualTo("28:10");
+    }
+
+    @Test
+    @DisplayName("[실측] 하차 지점이 목적지에서 700m 이내면 이탈을 도보로 채운다 — 그 수단을 지우지 않는다")
+    void 칠백미터_이내_이탈은_도보로_채운다() {
+        given(blockRepository.findAllByIdInAndProject_IdAndDeletedAtIsNull(List.of(1L, 2L), PROJECT_ID))
+                .willReturn(List.of(seoulBlock(), busanBlock()));
+        given(projectRepository.findByIdAndDeletedAtIsNull(PROJECT_ID)).willReturn(Optional.of(publicProject()));
+        given(publicTransitQueryService.getCombinedRoutes(anyDouble(), anyDouble(), anyDouble(), anyDouble()))
+                .willReturn(List.of(expressBusPath()));
+        // 접근은 정상, 이탈은 700m 이내다 — 실측 서울→속초에서 하차 지점(속초시외버스터미널)이
+        // 목적지(속초시청) 700m 안이라 이 예외가 났고, 고속버스 후보가 통째로 사라졌다
+        given(publicTransitQueryService.getCombinedRoutes(LAT_SEOUL, LNG_SEOUL, LAT_SEOUL, LNG_SEOUL))
+                .willReturn(List.of(pathOf(0, 0, null, null)));
+        given(publicTransitQueryService.getCombinedRoutes(LAT_BUSAN, LNG_BUSAN, LAT_BUSAN, LNG_BUSAN))
+                .willThrow(new OdsayTooCloseException());
+        given(placeQueryService.getWalkingRoute(LAT_BUSAN, LNG_BUSAN, LAT_BUSAN, LNG_BUSAN))
+                .willReturn(Optional.of(new PlaceResDTO.WalkingRoute(650, 9)));
+        given(transitScheduleQueryService.getIntercityBusSchedule(anyInt(), anyInt(), any(LocalDate.class)))
+                .willReturn(List.of(bus(2, "16:00", 240, 39700)));
+
+        TransitCandidateResDTO.Result result =
+                service.calculate(PROJECT_ID, List.of(1L, 2L));
+
+        Candidate expressBus = candidateOf(result, TransitMode.EXPRESS_BUS);
+        assertThat(expressBus.status()).isEqualTo(CandidateStatus.OK);
+        // 도보 소요는 카카오 실측값이다 — 0분으로 두면 그만큼 이른 편을 탈 수 있다고 내밀게 된다
+        assertThat(expressBus.egressMin()).isEqualTo(9);
+        // door-to-door 소요에 그 9분이 실제로 더해진다 — base 14:00(seoulBlock 13:00 + 60분),
+        // 16:00 출발 20:00 도착이므로 (20:00 − 14:00) 360분 + 도보 9분이다.
+        // 도보를 0분으로 두면 360분이 되어 이 단정이 깨진다
+        assertThat(expressBus.durationMin()).isEqualTo(369);
+        assertThat(expressBus.legs()).last()
+                .extracting(TransitLegResDTO.Leg::type)
+                .isEqualTo(TransitLegResDTO.LegType.WALK);
     }
 
     @Test
