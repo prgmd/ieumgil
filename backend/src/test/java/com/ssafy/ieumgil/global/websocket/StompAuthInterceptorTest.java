@@ -157,4 +157,84 @@ class StompAuthInterceptorTest {
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("그룹 멤버가 아닙니다");
     }
+
+    /**
+     * SUBSCRIBE와 SEND는 허용 목적지가 다르다. 둘을 같은 규칙으로 묶으면 브로커가 담당하는
+     * prefix(/topic, /user)로 클라이언트가 직접 쓸 수 있게 되고,
+     * 그 프레임은 서버 핸들러(@MessageMapping)를 아예 거치지 않는다.
+     */
+    @Test
+    @DisplayName("SEND /topic/** 은 멤버여도 거부한다 — 브로커 직행 = 서버를 사칭한 op 위조 경로")
+    void rejectsSendToTopic() {
+        Map<String, Object> session = connectedSession(Instant.now().plus(30, ChronoUnit.MINUTES));
+
+        assertThatThrownBy(() -> interceptor.preSend(
+                frame(StompCommand.SEND, session, "/topic/project/1"), channel))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("허용되지 않은 destination");
+        // 멤버십을 보기도 전에 막아야 한다 — "멤버면 통과"로 되돌리는 회귀를 여기서 잡는다
+        verifyNoInteractions(projectMembership);
+    }
+
+    @Test
+    @DisplayName("SEND /topic/**/cursor 도 거부한다 — 하위 경로로도 새어 나가지 않는다")
+    void rejectsSendToTopicSubPath() {
+        Map<String, Object> session = connectedSession(Instant.now().plus(30, ChronoUnit.MINUTES));
+
+        assertThatThrownBy(() -> interceptor.preSend(
+                frame(StompCommand.SEND, session, "/topic/project/1/cursor"), channel))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("허용되지 않은 destination");
+        verifyNoInteractions(projectMembership);
+    }
+
+    /**
+     * 구독은 Principal 기준 라우팅이라 남의 것을 볼 수 없지만, 전송은 다르다 —
+     * DefaultUserDestinationResolver가 목적지에 적힌 사용자명으로 해석해 그 큐로 배달하므로
+     * RealtimeRelayController의 대상 멤버십 검증이 통째로 우회된다.
+     */
+    @Test
+    @DisplayName("SEND /user/{남}/queue/voice 는 거부한다 — 릴레이의 멤버십 검증 우회 경로")
+    void rejectsSendToOtherUserQueue() {
+        Map<String, Object> session = connectedSession(Instant.now().plus(30, ChronoUnit.MINUTES));
+
+        assertThatThrownBy(() -> interceptor.preSend(
+                frame(StompCommand.SEND, session, "/user/9/queue/voice"), channel))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("허용되지 않은 destination");
+        verifyNoInteractions(projectMembership);
+    }
+
+    @Test
+    @DisplayName("정상 SEND(/app/project/{id}/**)는 멤버면 그대로 통과한다")
+    void allowsSendToAppDestination() {
+        Map<String, Object> session = connectedSession(Instant.now().plus(30, ChronoUnit.MINUTES));
+        given(projectMembership.isMember(PROJECT_ID, USER_ID)).willReturn(true);
+
+        assertThatCode(() -> interceptor.preSend(
+                frame(StompCommand.SEND, session, "/app/project/1/voice/signal"), channel))
+                .doesNotThrowAnyException();
+    }
+
+    @Test
+    @DisplayName("정상 SUBSCRIBE(개인 큐)는 그대로 통과한다 — voice 수신이 막히면 안 된다")
+    void allowsUserQueueSubscribe() {
+        Map<String, Object> session = connectedSession(Instant.now().plus(30, ChronoUnit.MINUTES));
+
+        assertThatCode(() -> interceptor.preSend(
+                frame(StompCommand.SUBSCRIBE, session, "/user/queue/voice"), channel))
+                .doesNotThrowAnyException();
+        verifyNoInteractions(projectMembership);   // 개인 큐는 프로젝트 개념이 없다
+    }
+
+    @Test
+    @DisplayName("정상 SUBSCRIBE(토픽 하위 경로)도 그대로 통과한다 — presence·cursor 구독")
+    void allowsTopicSubPathSubscribe() {
+        Map<String, Object> session = connectedSession(Instant.now().plus(30, ChronoUnit.MINUTES));
+        given(projectMembership.isMember(PROJECT_ID, USER_ID)).willReturn(true);
+
+        assertThatCode(() -> interceptor.preSend(
+                frame(StompCommand.SUBSCRIBE, session, "/topic/project/1/presence"), channel))
+                .doesNotThrowAnyException();
+    }
 }
