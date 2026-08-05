@@ -80,7 +80,7 @@
 ## 6. 전체 화면 구성 및 흐름
 
 ```
-①  메인 페이지         카카오·네이버 소셜 로그인 (자체 회원가입 절차 생략)
+①  메인 페이지         카카오 소셜 로그인 (자체 회원가입 절차 생략)
         ↓
 ②  마이 페이지         소속 그룹 목록 조회, 생성, 수정 및 삭제
         ↓
@@ -111,9 +111,9 @@
 | **백엔드** | Spring Boot, PostgreSQL, Redis |
 | **프론트엔드** | React, JavaScript |
 | **실시간 통신** | WebSocket, STOMP |
-| **음성 통신** | WebRTC (P2P 통신, 최대 6인 동시 지원) |
+| **음성 통신** | WebRTC (P2P mesh, 6인 권장 — 상한 미적용) |
 | **인프라 환경** | Amazon EC2, Docker |
-| **인증 및 보안** | Social OAuth 2.0 (Kakao, Naver), JWT |
+| **인증 및 보안** | Social OAuth 2.0 (Kakao), JWT |
 | **외부 연동 API** | Kakao Maps SDK, Kakao Local API, Kakao Mobility(도보·차량 길찾기), ODsay(대중교통 길찾기 + 기차·버스·항공 시간표), TourAPI(지역 축제), 오피넷(유가), LLM API |
 
 ## 9. 팀 구성
