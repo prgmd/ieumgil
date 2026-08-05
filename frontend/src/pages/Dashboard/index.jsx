@@ -1809,18 +1809,10 @@ export function DashboardPage() {
       try {
         // 모든 연속 구간의 후보를 한 번의 호출로 받는다.
         // 서버는 블록을 만들지 않는다 — 생성은 모달에서 적용을 눌러야(confirmBulkTransit).
-        // 출발편 기준 시각 = 첫 실블록이 끝나는 시각(= 첫 구간의 출발 시각).
-        // 시각 없는 블록이면 09:00 으로 받친다. (시작 시각 개념이 사라져 dayStart 없음)
-        const firstBlock = items[realIds[0]];
-        const referenceAt = blockApi.minsToTime(
-          firstBlock?.startMins != null
-            ? firstBlock.startMins + (firstBlock.dur || 0)
-            : 540,
-        );
+        // 출발편 기준 시각은 서버가 구간마다 from 블록의 시각에서 직접 구한다(응답의 referenceAt).
         const { segments = [] } = await blockApi.calculateTransitCandidates(
           projectId,
           realIds,
-          referenceAt,
         );
         if (!segments.some((s) => s.candidates?.some((c) => c.status === "OK"))) {
           showToast("이동 가능한 경로를 찾지 못했어요.");
@@ -2067,17 +2059,10 @@ export function DashboardPage() {
       setIsGeneratingTransport(true);
       try {
         // 두 블록 사이 한 구간만 계산 — blockIds 에 그 둘만 넘긴다.
-        // 출발편 기준 시각 = 출발 블록이 끝나는 시각(그때 이동을 시작하니까)
-        const fromBlock = items[currentId];
-        const referenceAt = blockApi.minsToTime(
-          fromBlock?.startMins != null
-            ? fromBlock.startMins + (fromBlock.dur || 0)
-            : 540,
-        );
+        // 출발편 기준 시각은 서버가 from 블록의 시각에서 직접 구한다(응답의 referenceAt).
         const { segments = [] } = await blockApi.calculateTransitCandidates(
           projectId,
           [currentId, nextId],
-          referenceAt,
         );
         const segment = segments[0];
         const candidates = segment?.candidates ?? [];
@@ -2108,7 +2093,7 @@ export function DashboardPage() {
         setIsGeneratingTransport(false);
       }
     },
-    [isGeneratingTransport, transitPicker, chains, items, projectId, showToast],
+    [isGeneratingTransport, transitPicker, chains, projectId, showToast],
   );
 
   // 피커에서 다른 후보/편을 고른다 (아직 생성하지 않는다 — confirmTransitChoice 가 한다)

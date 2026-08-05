@@ -122,7 +122,7 @@ public class TransitCandidateServiceImpl implements TransitCandidateService {
     private final TransitRouteSelector routeSelector;
 
     @Override
-    public TransitCandidateResDTO.Result calculate(Long projectId, List<Long> blockIds, LocalTime dayStart) {
+    public TransitCandidateResDTO.Result calculate(Long projectId, List<Long> blockIds) {
         Project project = projectRepository.findByIdAndDeletedAtIsNull(projectId)
                 .orElseThrow(() -> new CustomException(ProjectErrorCode.PROJECT_NOT_FOUND));
         List<Pair> pairs = pairsOf(blockIds, loadBlocks(projectId, blockIds));

@@ -262,7 +262,6 @@ export async function fetchChatbotHistory(projectId) {
  * ⚠️ 서버는 블록을 생성하지 않는다 — 교통 블록 생성·저장은 기존대로 클라이언트 몫.
  *
  * @param {number[]} blockIds 체인 순서의 서버 블록 id (최대 30개)
- * @param {string} [dayStart] Day 시작 시각("HH:mm"). 미지정 시 서버 기본값 09:00.
  * @returns {Promise<{segments: Array<{
  *   fromBlockId: number, toBlockId: number,
  *   intercity: boolean,
@@ -290,11 +289,11 @@ export async function fetchChatbotHistory(projectId) {
  * CAR/TAXI는 육로 경로가 없는 구간(도서 목적지)에서 candidates 배열에 아예 나타나지
  * 않는다 — caution 필드는 현재 어떤 후보도 채우지 않는다(폐기된 필드, 재사용 대비 보존).
  */
-export async function calculateTransitCandidates(projectId, blockIds, dayStart) {
+export async function calculateTransitCandidates(projectId, blockIds) {
   try {
     const { data } = await axiosInstance.post(
       `/projects/${projectId}/transit-candidates`,
-      { blockIds, ...(dayStart ? { dayStart } : {}) },
+      { blockIds },
       // 외부 경로 API 를 여러 구간 조회할 수 있어 전역 기본(10초)보다 넉넉히
       { timeout: 30000 },
     );

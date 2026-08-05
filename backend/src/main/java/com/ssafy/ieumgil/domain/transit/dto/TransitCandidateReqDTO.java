@@ -1,11 +1,9 @@
 package com.ssafy.ieumgil.domain.transit.dto;
 
-import com.fasterxml.jackson.annotation.JsonFormat;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 
-import java.time.LocalTime;
 import java.util.List;
 
 public class TransitCandidateReqDTO {
@@ -21,15 +19,7 @@ public class TransitCandidateReqDTO {
             @Schema(description = "구간을 만들 블록 id 목록 (체인 순서)", example = "[101, 105, 107]")
             @NotNull(message = "blockIds는 필수입니다.")
             @Size(max = 30, message = "한 번에 30개까지만 계산할 수 있습니다.")
-            List<Long> blockIds,
-
-            /*
-             * 시외 구간의 출발편을 고르려면 "이 구간을 몇 시 이후에 떠날 수 있는가"가 필요하다.
-             * 날짜는 받지 않는다 — 프로젝트 시작일과 블록 dayNo로 서버가 유도한다.
-             */
-            @Schema(description = "Day 시작 시각(HH:mm). 미지정 시 09:00", example = "09:00")
-            @JsonFormat(pattern = "HH:mm")
-            LocalTime dayStart
+            List<Long> blockIds
     ) {
     }
 }

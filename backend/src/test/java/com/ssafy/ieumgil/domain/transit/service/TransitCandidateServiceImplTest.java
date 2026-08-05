@@ -184,7 +184,7 @@ class TransitCandidateServiceImplTest {
         given(placeQueryService.getTaxiRoute(LAT_A, LNG_A, LAT_B, LNG_B))
                 .willReturn(Optional.of(new PlaceResDTO.TaxiRoute(8900, 0, 6800, 12)));
 
-        TransitCandidateResDTO.Result result = service.calculate(PROJECT_ID, List.of(1L, 2L), null);
+        TransitCandidateResDTO.Result result = service.calculate(PROJECT_ID, List.of(1L, 2L));
 
         TransitCandidateResDTO.Segment segment = result.segments().get(0);
         assertThat(segment.fromBlockId()).isEqualTo(1L);
@@ -212,7 +212,7 @@ class TransitCandidateServiceImplTest {
         given(placeQueryService.getTaxiRoute(LAT_A, LNG_A, LAT_B, LNG_B))
                 .willReturn(Optional.of(new PlaceResDTO.TaxiRoute(8900, 0, 6800, 12)));
 
-        TransitCandidateResDTO.Result result = service.calculate(PROJECT_ID, List.of(1L, 2L), null);
+        TransitCandidateResDTO.Result result = service.calculate(PROJECT_ID, List.of(1L, 2L));
 
         TransitCandidateResDTO.Segment segment = result.segments().get(0);
         assertThat(segment.defaultMode()).isEqualTo(TransitMode.CAR);
@@ -230,7 +230,7 @@ class TransitCandidateServiceImplTest {
         given(placeQueryService.getWalkingRoute(LAT_A, LNG_A, nearLat, LNG_A))
                 .willReturn(Optional.of(new PlaceResDTO.WalkingRoute(170, 3)));
 
-        TransitCandidateResDTO.Result result = service.calculate(PROJECT_ID, List.of(1L, 2L), null);
+        TransitCandidateResDTO.Result result = service.calculate(PROJECT_ID, List.of(1L, 2L));
 
         TransitCandidateResDTO.Segment segment = result.segments().get(0);
         assertThat(segment.defaultMode()).isEqualTo(TransitMode.WALK);
@@ -254,7 +254,7 @@ class TransitCandidateServiceImplTest {
         given(placeQueryService.getTaxiRoute(LAT_A, LNG_A, LAT_B, LNG_B))
                 .willReturn(Optional.of(new PlaceResDTO.TaxiRoute(8900, 0, 6800, 12)));
 
-        TransitCandidateResDTO.Result result = service.calculate(PROJECT_ID, List.of(1L, 2L), null);
+        TransitCandidateResDTO.Result result = service.calculate(PROJECT_ID, List.of(1L, 2L));
 
         assertThat(result.segments().get(0).candidates())
                 .extracting(TransitCandidateResDTO.Candidate::mode)
@@ -274,7 +274,7 @@ class TransitCandidateServiceImplTest {
         given(placeQueryService.getTaxiRoute(LAT_A, LNG_A, LAT_B, LNG_B))
                 .willReturn(Optional.of(new PlaceResDTO.TaxiRoute(8900, 0, 6800, 12)));
 
-        TransitCandidateResDTO.Result result = service.calculate(PROJECT_ID, List.of(1L, 2L), null);
+        TransitCandidateResDTO.Result result = service.calculate(PROJECT_ID, List.of(1L, 2L));
 
         TransitCandidateResDTO.Segment segment = result.segments().get(0);
         assertThat(segment.defaultMode()).isEqualTo(TransitMode.TAXI);
@@ -298,7 +298,7 @@ class TransitCandidateServiceImplTest {
         given(placeQueryService.getTaxiRoute(LAT_A, LNG_A, LAT_B, LNG_B))
                 .willReturn(Optional.of(new PlaceResDTO.TaxiRoute(8900, 0, 6800, 12)));
 
-        TransitCandidateResDTO.Result result = service.calculate(PROJECT_ID, List.of(1L, 2L), null);
+        TransitCandidateResDTO.Result result = service.calculate(PROJECT_ID, List.of(1L, 2L));
 
         TransitCandidateResDTO.Segment segment = result.segments().get(0);
         assertThat(segment.candidates())
@@ -321,7 +321,7 @@ class TransitCandidateServiceImplTest {
         given(placeQueryService.getTaxiRoute(LAT_A, LNG_A, LAT_B, LNG_B))
                 .willReturn(Optional.empty());
 
-        TransitCandidateResDTO.Result result = service.calculate(PROJECT_ID, List.of(1L, 2L), null);
+        TransitCandidateResDTO.Result result = service.calculate(PROJECT_ID, List.of(1L, 2L));
 
         TransitCandidateResDTO.Segment segment = result.segments().get(0);
         assertThat(segment.defaultMode()).isNull();
@@ -345,7 +345,7 @@ class TransitCandidateServiceImplTest {
         given(placeQueryService.getTaxiRoute(LAT_B, LNG_B, LAT_A, LNG_A))
                 .willReturn(Optional.of(new PlaceResDTO.TaxiRoute(9100, 0, 6800, 13)));
 
-        TransitCandidateResDTO.Result result = service.calculate(PROJECT_ID, List.of(1L, 2L, 1L, 2L), null);
+        TransitCandidateResDTO.Result result = service.calculate(PROJECT_ID, List.of(1L, 2L, 1L, 2L));
 
         assertThat(result.segments()).hasSize(3);
         verify(publicTransitQueryService, times(1)).getCombinedRoutes(LAT_A, LNG_A, LAT_B, LNG_B);
@@ -362,7 +362,7 @@ class TransitCandidateServiceImplTest {
                 .willReturn(Optional.of(new PlaceResDTO.TaxiRoute(8900, 2400, 8300, 22)));
         given(fuelPriceProvider.pricePerLiter()).willReturn(1700);
 
-        TransitCandidateResDTO.Result result = service.calculate(PROJECT_ID, List.of(1L, 2L), null);
+        TransitCandidateResDTO.Result result = service.calculate(PROJECT_ID, List.of(1L, 2L));
 
         TransitCandidateResDTO.Candidate car = result.segments().get(0).candidates().get(0);
         assertThat(car.mode()).isEqualTo(TransitMode.CAR);
@@ -381,7 +381,7 @@ class TransitCandidateServiceImplTest {
         given(blockRepository.findAllByIdInAndProject_IdAndDeletedAtIsNull(List.of(1L, 2L), PROJECT_ID))
                 .willReturn(List.of(blockAt(1L, LAT_A, LNG_A)));
 
-        assertThatThrownBy(() -> service.calculate(PROJECT_ID, List.of(1L, 2L), null))
+        assertThatThrownBy(() -> service.calculate(PROJECT_ID, List.of(1L, 2L)))
                 .isInstanceOf(CustomException.class)
                 .hasFieldOrPropertyWithValue("code", TransitErrorCode.INVALID_BLOCKS);
     }
@@ -399,7 +399,7 @@ class TransitCandidateServiceImplTest {
         given(blockRepository.findAllByIdInAndProject_IdAndDeletedAtIsNull(List.of(1L, 2L), PROJECT_ID))
                 .willReturn(List.of(blockAt(1L, LAT_A, LNG_A), noCoordinates));
 
-        assertThatThrownBy(() -> service.calculate(PROJECT_ID, List.of(1L, 2L), null))
+        assertThatThrownBy(() -> service.calculate(PROJECT_ID, List.of(1L, 2L)))
                 .isInstanceOf(CustomException.class)
                 .hasFieldOrPropertyWithValue("code", TransitErrorCode.COORDINATE_REQUIRED);
     }
@@ -411,7 +411,7 @@ class TransitCandidateServiceImplTest {
         given(blockRepository.findAllByIdInAndProject_IdAndDeletedAtIsNull(List.of(1L), PROJECT_ID))
                 .willReturn(List.of(blockAt(1L, LAT_A, LNG_A)));
 
-        TransitCandidateResDTO.Result result = service.calculate(PROJECT_ID, List.of(1L), null);
+        TransitCandidateResDTO.Result result = service.calculate(PROJECT_ID, List.of(1L));
 
         assertThat(result.segments()).isEmpty();
         verifyNoInteractions(publicTransitQueryService);
@@ -427,7 +427,7 @@ class TransitCandidateServiceImplTest {
         given(publicTransitQueryService.getCombinedRoutes(LAT_A, LNG_A, LAT_B, LNG_B))
                 .willReturn(List.of(pathOf(44, 1500, 9, 12841)));
 
-        TransitCandidateResDTO.Result result = service.calculate(PROJECT_ID, List.of(1L, 2L), null);
+        TransitCandidateResDTO.Result result = service.calculate(PROJECT_ID, List.of(1L, 2L));
 
         TransitCandidateResDTO.Candidate transit = result.segments().get(0).candidates().stream()
                 .filter(c -> c.mode() == TransitMode.TRANSIT).findFirst().orElseThrow();
@@ -447,7 +447,7 @@ class TransitCandidateServiceImplTest {
         given(placeQueryService.getWalkingRoute(LAT_A, LNG_A, LAT_MID, LNG_A))
                 .willReturn(Optional.of(new PlaceResDTO.WalkingRoute(1400, 21)));
 
-        TransitCandidateResDTO.Result result = service.calculate(PROJECT_ID, List.of(1L, 2L), null);
+        TransitCandidateResDTO.Result result = service.calculate(PROJECT_ID, List.of(1L, 2L));
 
         TransitCandidateResDTO.Segment segment = result.segments().get(0);
         // 걸을 수는 있는 거리지만(도보 후보가 목록에 있다) 기본은 선호 수단이다.
@@ -476,7 +476,7 @@ class TransitCandidateServiceImplTest {
                 .willReturn(Optional.of(new PlaceResDTO.WalkingRoute(1400, 21)));
         given(fuelPriceProvider.pricePerLiter()).willReturn(1869);
 
-        TransitCandidateResDTO.Result result = service.calculate(PROJECT_ID, List.of(1L, 2L), null);
+        TransitCandidateResDTO.Result result = service.calculate(PROJECT_ID, List.of(1L, 2L));
 
         TransitCandidateResDTO.Segment segment = result.segments().get(0);
         assertThat(segment.defaultMode()).isEqualTo(TransitMode.CAR);
@@ -497,7 +497,7 @@ class TransitCandidateServiceImplTest {
         given(placeQueryService.getWalkingRoute(LAT_A, LNG_A, LAT_JUST_OVER_NEAR, LNG_A))
                 .willReturn(Optional.of(new PlaceResDTO.WalkingRoute(360, 6)));
 
-        TransitCandidateResDTO.Result result = service.calculate(PROJECT_ID, List.of(1L, 2L), null);
+        TransitCandidateResDTO.Result result = service.calculate(PROJECT_ID, List.of(1L, 2L));
 
         assertThat(result.segments().get(0).candidates()).extracting(TransitCandidateResDTO.Candidate::mode)
                 .containsExactly(TransitMode.TRANSIT, TransitMode.TAXI, TransitMode.WALK);
@@ -515,7 +515,7 @@ class TransitCandidateServiceImplTest {
         given(placeQueryService.getWalkingRoute(LAT_A, LNG_A, LAT_JUST_UNDER_NEAR, LNG_A))
                 .willReturn(Optional.of(new PlaceResDTO.WalkingRoute(330, 5)));
 
-        TransitCandidateResDTO.Result result = service.calculate(PROJECT_ID, List.of(1L, 2L), null);
+        TransitCandidateResDTO.Result result = service.calculate(PROJECT_ID, List.of(1L, 2L));
 
         assertThat(result.segments().get(0).candidates()).extracting(TransitCandidateResDTO.Candidate::mode)
                 .containsExactly(TransitMode.WALK);
@@ -537,7 +537,7 @@ class TransitCandidateServiceImplTest {
         given(placeQueryService.getTaxiRoute(LAT_A, LNG_A, LAT_JUST_OVER_WALK, LNG_A))
                 .willReturn(Optional.of(new PlaceResDTO.TaxiRoute(5800, 0, 2600, 9)));
 
-        TransitCandidateResDTO.Result result = service.calculate(PROJECT_ID, List.of(1L, 2L), null);
+        TransitCandidateResDTO.Result result = service.calculate(PROJECT_ID, List.of(1L, 2L));
 
         assertThat(result.segments().get(0).candidates()).extracting(TransitCandidateResDTO.Candidate::mode)
                 .containsExactly(TransitMode.TRANSIT, TransitMode.TAXI);
@@ -558,7 +558,7 @@ class TransitCandidateServiceImplTest {
         given(placeQueryService.getWalkingRoute(LAT_A, LNG_A, LAT_JUST_UNDER_WALK, LNG_A))
                 .willReturn(Optional.of(new PlaceResDTO.WalkingRoute(2400, 34)));
 
-        TransitCandidateResDTO.Result result = service.calculate(PROJECT_ID, List.of(1L, 2L), null);
+        TransitCandidateResDTO.Result result = service.calculate(PROJECT_ID, List.of(1L, 2L));
 
         assertThat(result.segments().get(0).candidates()).extracting(TransitCandidateResDTO.Candidate::mode)
                 .containsExactly(TransitMode.TRANSIT, TransitMode.TAXI, TransitMode.WALK);
@@ -576,7 +576,7 @@ class TransitCandidateServiceImplTest {
         given(placeQueryService.getTaxiRoute(anyDouble(), anyDouble(), anyDouble(), anyDouble()))
                 .willReturn(Optional.of(new PlaceResDTO.TaxiRoute(14900, 0, 10327, 32)));
 
-        TransitCandidateResDTO.Result result = service.calculate(PROJECT_ID, List.of(1L, 2L), null);
+        TransitCandidateResDTO.Result result = service.calculate(PROJECT_ID, List.of(1L, 2L));
 
         TransitCandidateResDTO.Candidate taxi = candidateOf(result, TransitMode.TAXI);
         assertThat(taxi.caution()).isNull();
@@ -597,7 +597,7 @@ class TransitCandidateServiceImplTest {
         given(placeQueryService.getTaxiRoute(anyDouble(), anyDouble(), anyDouble(), anyDouble()))
                 .willReturn(Optional.of(new PlaceResDTO.TaxiRoute(556600, 9900, 436642, 356)));
 
-        TransitCandidateResDTO.Result result = service.calculate(PROJECT_ID, List.of(1L, 3L), null);
+        TransitCandidateResDTO.Result result = service.calculate(PROJECT_ID, List.of(1L, 3L));
 
         TransitCandidateResDTO.Candidate taxi = candidateOf(result, TransitMode.TAXI);
         assertThat(taxi.status()).isEqualTo(CandidateStatus.OK);
@@ -617,7 +617,7 @@ class TransitCandidateServiceImplTest {
         given(placeQueryService.getTaxiRoute(anyDouble(), anyDouble(), anyDouble(), anyDouble()))
                 .willReturn(Optional.empty());
 
-        TransitCandidateResDTO.Result result = service.calculate(PROJECT_ID, List.of(1L, 2L), null);
+        TransitCandidateResDTO.Result result = service.calculate(PROJECT_ID, List.of(1L, 2L));
 
         TransitCandidateResDTO.Candidate taxi = candidateOf(result, TransitMode.TAXI);
         assertThat(taxi.status()).isEqualTo(CandidateStatus.LOOKUP_FAILED);
@@ -643,7 +643,7 @@ class TransitCandidateServiceImplTest {
                         .departureTime("10:30").arrivalTime("11:35").runDay("매일")
                         .build()));
 
-        TransitCandidateResDTO.Result result = service.calculate(PROJECT_ID, List.of(2L, 3L), null);
+        TransitCandidateResDTO.Result result = service.calculate(PROJECT_ID, List.of(2L, 3L));
 
         TransitCandidateResDTO.Segment segment = result.segments().get(0);
         // 택시는 후보에서 사라지지 않는다 — driving==null이라 status=LOOKUP_FAILED로 남을 뿐이다
@@ -672,7 +672,7 @@ class TransitCandidateServiceImplTest {
                         train("무궁화", 1203, "18:10", "23:41", 28600)));
 
         TransitCandidateResDTO.Result result =
-                service.calculate(PROJECT_ID, List.of(1L, 2L), LocalTime.of(14, 0));
+                service.calculate(PROJECT_ID, List.of(1L, 2L));
 
         TransitCandidateResDTO.Segment segment = result.segments().get(0);
         assertThat(segment.intercity()).isTrue();
@@ -744,7 +744,7 @@ class TransitCandidateServiceImplTest {
                                 .build()));
 
         TransitCandidateResDTO.Result result =
-                service.calculate(PROJECT_ID, List.of(1L, 3L), null);
+                service.calculate(PROJECT_ID, List.of(1L, 3L));
 
         Candidate train = candidateOf(result, TransitMode.TRAIN);
         assertThat(train.transferCount()).isEqualTo(1);
@@ -787,7 +787,7 @@ class TransitCandidateServiceImplTest {
                 .willReturn(List.of(bus(2, "16:00", 140, 20900)));
 
         TransitCandidateResDTO.Result result =
-                service.calculate(PROJECT_ID, List.of(1L, 2L), LocalTime.of(9, 0));
+                service.calculate(PROJECT_ID, List.of(1L, 2L));
 
         Candidate expressBus = candidateOf(result, TransitMode.EXPRESS_BUS);
         assertThat(expressBus.status()).isEqualTo(CandidateStatus.OK);
@@ -815,7 +815,7 @@ class TransitCandidateServiceImplTest {
                         .build()));
 
         TransitCandidateResDTO.Result result =
-                service.calculate(PROJECT_ID, List.of(2L, 3L), LocalTime.of(9, 0));
+                service.calculate(PROJECT_ID, List.of(2L, 3L));
 
         Candidate air = candidateOf(result, TransitMode.AIR);
         assertThat(air.status()).isEqualTo(CandidateStatus.OK);
@@ -838,7 +838,7 @@ class TransitCandidateServiceImplTest {
                         train("KTX", 99, "16:00", "18:37", 59800)));
 
         TransitCandidateResDTO.Result result =
-                service.calculate(PROJECT_ID, List.of(1L, 2L), LocalTime.of(14, 0));
+                service.calculate(PROJECT_ID, List.of(1L, 2L));
 
         Candidate train = candidateOf(result, TransitMode.TRAIN);
         assertThat(train.departures()).extracting(d -> d.departureAt()).containsExactly("16:00");
@@ -850,8 +850,7 @@ class TransitCandidateServiceImplTest {
         // 10:00~11:00 관람 블록(1) 다음에 3시간 공백을 두고 14:00에 시작하는 블록(2)이 온다
         // (durationMin=0 — 도착과 동시에 출발해야 하는 지점). 시외 구간(2->3)의 기준은 블록2의
         // 저장된 종료 시각(14:00)이어야 한다. 앞 구간에서 이동시간만 누적하던 옛 모델은 이 공백을 보지 못하고
-        // dayStart(09:00 기본값)에서 이동시간만 더해 훨씬 이른 시각(09:45)을 기준으로 삼았다 —
-        // 그래서 실제로는 탈 수 없는 10:00발 열차까지 후보에 남겼다.
+        // 훨씬 이른 시각을 기준으로 삼아 실제로는 탈 수 없는 10:00발 열차까지 후보에 남겼다.
         Block block1 = blockAt(1L, LAT_A, LNG_A, 1, LocalTime.of(10, 0));
         Block block2 = Block.builder()
                 .id(2L).dayNo(1).orderKey("a2").name("블록2")
@@ -878,7 +877,7 @@ class TransitCandidateServiceImplTest {
                         train("KTX", 99, "15:00", "17:37", 59800)));
 
         TransitCandidateResDTO.Result result =
-                service.calculate(PROJECT_ID, List.of(1L, 2L, 3L), null);
+                service.calculate(PROJECT_ID, List.of(1L, 2L, 3L));
 
         // 기준은 블록2의 종료 시각(14:00) + 기차 탑승 여유(10분) = 14:10이다. 10:00발은 그 이전이라
         // 빠지고 15:00발만 남아야 한다.
@@ -899,7 +898,7 @@ class TransitCandidateServiceImplTest {
                 .willReturn(List.of(train("KTX", 1, "16:00", "18:37", 59800)));
 
         TransitCandidateResDTO.Result result =
-                service.calculate(PROJECT_ID, List.of(1L, 2L, 3L), null);
+                service.calculate(PROJECT_ID, List.of(1L, 2L, 3L));
 
         // 고쳐지기 전에는 두 번째 구간이 timetableApplied=false·
         // skipReason="앞선 시외 구간의 편이 확정되지 않았습니다"였다 — 각 구간이 앞 구간의 확정과
@@ -928,7 +927,7 @@ class TransitCandidateServiceImplTest {
                 .willReturn(List.of(train("KTX", 1, "16:00", "18:37", 59800)));
 
         TransitCandidateResDTO.Result result =
-                service.calculate(PROJECT_ID, List.of(1L, 2L, 3L), null);
+                service.calculate(PROJECT_ID, List.of(1L, 2L, 3L));
 
         assertThat(result.segments()).hasSize(2);
         assertThat(result.segments().get(0).timetableApplied()).isTrue();  // 서울->부산: 정상
@@ -969,7 +968,7 @@ class TransitCandidateServiceImplTest {
         given(transitScheduleQueryService.getTrainSchedule(anyInt(), anyInt(), any(LocalDate.class)))
                 .willReturn(List.of());
 
-        service.calculate(PROJECT_ID, List.of(1L, 2L), null);
+        service.calculate(PROJECT_ID, List.of(1L, 2L));
 
         // publicProject().startDate == 2026-08-10. base가 자정을 하루 넘겼으므로 조회 날짜는
         // 08-11이어야 한다.
@@ -1003,7 +1002,7 @@ class TransitCandidateServiceImplTest {
                         .departureTime("08:00").arrivalTime("09:05").runDay("매일")
                         .build()));
 
-        service.calculate(PROJECT_ID, List.of(1L, 3L), null);
+        service.calculate(PROJECT_ID, List.of(1L, 3L));
 
         // publicProject().startDate == 2026-08-10. base(1430)+항공 여유(40)=1470이 자정을
         // 넘기므로 조회 날짜는 08-11이어야 한다 — base만 보고 08-10으로 조회하면(고쳐지기 전)
@@ -1031,7 +1030,7 @@ class TransitCandidateServiceImplTest {
                 .willReturn(List.of(train("KTX", 1, "16:00", "18:37", 59800)));
 
         TransitCandidateResDTO.Result result =
-                service.calculate(PROJECT_ID, List.of(1L, 2L, 2L, 3L), LocalTime.of(9, 0));
+                service.calculate(PROJECT_ID, List.of(1L, 2L, 2L, 3L));
 
         assertThat(result.segments()).hasSize(2);
         TransitCandidateResDTO.Segment day1Segment = result.segments().get(0);
@@ -1081,7 +1080,7 @@ class TransitCandidateServiceImplTest {
                     });
 
             TransitCandidateResDTO.Result result =
-                    service.calculate(PROJECT_ID, List.of(1L, 2L, 2L, 3L), LocalTime.of(9, 0));
+                    service.calculate(PROJECT_ID, List.of(1L, 2L, 2L, 3L));
 
             assertThat(result.segments()).hasSize(2);
             Candidate day1Train = result.segments().get(0).candidates().stream()
@@ -1113,7 +1112,7 @@ class TransitCandidateServiceImplTest {
                 .willReturn(Optional.of(new PlaceResDTO.TaxiRoute(374600, 0, 401839, 310)));
 
         TransitCandidateResDTO.Result result =
-                service.calculate(PROJECT_ID, List.of(1L, 2L), LocalTime.of(9, 0));
+                service.calculate(PROJECT_ID, List.of(1L, 2L));
 
         Candidate train = candidateOf(result, TransitMode.TRAIN);
         assertThat(train.status()).isEqualTo(CandidateStatus.LOOKUP_FAILED);
@@ -1134,7 +1133,7 @@ class TransitCandidateServiceImplTest {
         given(publicTransitQueryService.getCombinedRoutes(LAT_SEOUL, LNG_SEOUL, LAT_SEOUL, LNG_SEOUL))
                 .willThrow(new TransitException(TransitErrorCode.ROUTE_NOT_FOUND));
 
-        TransitCandidateResDTO.Result result = service.calculate(PROJECT_ID, List.of(1L, 2L), null);
+        TransitCandidateResDTO.Result result = service.calculate(PROJECT_ID, List.of(1L, 2L));
 
         // accessLegsOf가 empty를 반환하면 candidateFor는 null을 반환하고, 그 null은 후보
         // 목록에서 걸러진다 — LOOKUP_FAILED로도, accessMin=0인 OK로도 남지 않는다
@@ -1159,7 +1158,7 @@ class TransitCandidateServiceImplTest {
                 .willReturn(List.of(train("KTX", 1, "05:13", "07:50", 59800)));
 
         TransitCandidateResDTO.Result result =
-                service.calculate(PROJECT_ID, List.of(1L, 2L), LocalTime.of(22, 0));
+                service.calculate(PROJECT_ID, List.of(1L, 2L));
 
         Candidate train = candidateOf(result, TransitMode.TRAIN);
         assertThat(train.status()).isEqualTo(CandidateStatus.NO_SERVICE);
@@ -1184,7 +1183,7 @@ class TransitCandidateServiceImplTest {
                 .willReturn(List.of(busPath(), subwayPath(), cheapPath()));
 
         TransitCandidateResDTO.Result result =
-                service.calculate(PROJECT_ID, List.of(1L, 2L), LocalTime.of(9, 0));
+                service.calculate(PROJECT_ID, List.of(1L, 2L));
 
         TransitCandidateResDTO.Segment segment = result.segments().get(0);
         assertThat(segment.intercity()).isFalse();
@@ -1217,7 +1216,7 @@ class TransitCandidateServiceImplTest {
                 .willReturn(List.of(busPath(), intercityPath));
 
         TransitCandidateResDTO.Result result =
-                service.calculate(PROJECT_ID, List.of(1L, 2L), LocalTime.of(9, 0));
+                service.calculate(PROJECT_ID, List.of(1L, 2L));
 
         TransitCandidateResDTO.Segment segment = result.segments().get(0);
         assertThat(segment.intercity()).isTrue();
@@ -1246,7 +1245,7 @@ class TransitCandidateServiceImplTest {
                         bus(1, "18:00", 300, null)));
 
         TransitCandidateResDTO.Result result =
-                service.calculate(PROJECT_ID, List.of(1L, 2L), LocalTime.of(9, 0));
+                service.calculate(PROJECT_ID, List.of(1L, 2L));
 
         Candidate expressBus = candidateOf(result, TransitMode.EXPRESS_BUS);
         TransitCandidateResDTO.Departure known = expressBus.departures().get(0);
@@ -1336,7 +1335,7 @@ class TransitCandidateServiceImplTest {
                         .departureTime("18:40").arrivalTime("19:50").runDay("매일")
                         .build()));
 
-        TransitCandidateResDTO.Result result = service.calculate(PROJECT_ID, List.of(1L, 2L), null);
+        TransitCandidateResDTO.Result result = service.calculate(PROJECT_ID, List.of(1L, 2L));
 
         Candidate air = candidateOf(result, TransitMode.AIR);
         assertThat(air.status()).isEqualTo(CandidateStatus.OK);
@@ -1378,7 +1377,7 @@ class TransitCandidateServiceImplTest {
         given(transitScheduleQueryService.getTrainSchedule(anyInt(), anyInt(), any(LocalDate.class)))
                 .willReturn(List.of(train("KTX", 1, "16:00", "18:37", 59800)));
 
-        Candidate train = candidateOf(service.calculate(PROJECT_ID, List.of(1L, 2L), null), TransitMode.TRAIN);
+        Candidate train = candidateOf(service.calculate(PROJECT_ID, List.of(1L, 2L)), TransitMode.TRAIN);
 
         assertThat(train.fare()).isNull();
         assertThat(train.fareConfidence()).isEqualTo(TransitResDTO.FareConfidence.UNKNOWN);
@@ -1394,7 +1393,7 @@ class TransitCandidateServiceImplTest {
                 .willReturn(List.of(trainPath()));
 
         TransitCandidateResDTO.Result result =
-                service.calculate(PROJECT_ID, List.of(1L, 2L), LocalTime.of(9, 0));
+                service.calculate(PROJECT_ID, List.of(1L, 2L));
 
         TransitCandidateResDTO.Segment segment = result.segments().get(0);
         assertThat(segment.intercity()).isTrue();
@@ -1422,7 +1421,7 @@ class TransitCandidateServiceImplTest {
                 .willReturn(List.of(trainPath()));
 
         TransitCandidateResDTO.Result result =
-                service.calculate(PROJECT_ID, List.of(1L, 2L, 3L), LocalTime.of(9, 0));
+                service.calculate(PROJECT_ID, List.of(1L, 2L, 3L));
 
         // 각 구간은 앞 구간과 무관하게 독립적으로 project.startDate를 확인한다 — 두 번째 구간도
         // "앞선 시외 구간의 편이 확정되지 않았습니다"가 아니라 진짜 이유를 받아야 한다
