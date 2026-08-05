@@ -1,6 +1,7 @@
 package com.ssafy.ieumgil.domain.transit.dto;
 
 import com.ssafy.ieumgil.domain.transit.dto.TransitCandidateResDTO.Candidate;
+import com.ssafy.ieumgil.domain.transit.dto.TransitCandidateResDTO.CandidateStatus;
 import com.ssafy.ieumgil.domain.transit.dto.TransitCandidateResDTO.TransitMode;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -12,17 +13,36 @@ import static org.assertj.core.api.Assertions.assertThat;
 class TransitCandidateResDTOTest {
 
     @Test
-    @DisplayName("unavailable은 mode·label만 채우고 나머지를 비운다")
+    @DisplayName("status는 네 값이다 — NO_ROUTE가 LOOKUP_FAILED와 구별된다")
+    void status는_네_값이다() {
+        assertThat(CandidateStatus.values()).containsExactly(
+                CandidateStatus.OK, CandidateStatus.NO_SERVICE,
+                CandidateStatus.NO_ROUTE, CandidateStatus.LOOKUP_FAILED);
+    }
+
+    @Test
+    @DisplayName("lookupFailed는 mode·label만 채우고 나머지를 비운다")
     void 조회_실패_후보는_값이_비어_있다() {
-        Candidate candidate = Candidate.unavailable(TransitMode.TRAIN);
+        Candidate candidate = Candidate.lookupFailed(TransitMode.TRAIN);
 
         assertThat(candidate.mode()).isEqualTo(TransitMode.TRAIN);
         assertThat(candidate.label()).isEqualTo("기차");
-        assertThat(candidate.available()).isFalse();
+        assertThat(candidate.status()).isEqualTo(CandidateStatus.LOOKUP_FAILED);
         assertThat(candidate.durationMin()).isNull();
         assertThat(candidate.fare()).isNull();
         assertThat(candidate.legs()).isNull();
         assertThat(candidate.departures()).isNull();
+    }
+
+    @Test
+    @DisplayName("noRoute는 mode·label만 채우고 나머지를 비운다")
+    void 경로_없음_후보는_값이_비어_있다() {
+        Candidate candidate = Candidate.noRoute(TransitMode.CAR);
+
+        assertThat(candidate.mode()).isEqualTo(TransitMode.CAR);
+        assertThat(candidate.label()).isEqualTo("자차");
+        assertThat(candidate.status()).isEqualTo(CandidateStatus.NO_ROUTE);
+        assertThat(candidate.durationMin()).isNull();
     }
 
     @Test

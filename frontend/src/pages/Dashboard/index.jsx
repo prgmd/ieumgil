@@ -1822,7 +1822,7 @@ export function DashboardPage() {
           realIds,
           referenceAt,
         );
-        if (!segments.some((s) => s.candidates?.some((c) => c.available))) {
+        if (!segments.some((s) => s.candidates?.some((c) => c.status === "OK"))) {
           showToast("이동 가능한 경로를 찾지 못했어요.");
           return;
         }
@@ -1833,9 +1833,9 @@ export function DashboardPage() {
         segments.forEach((s) => {
           const initial =
             s.candidates?.find(
-              (c) => c.mode === s.defaultMode && c.available,
+              (c) => c.mode === s.defaultMode && c.status === "OK",
             ) ??
-            s.candidates?.find((c) => c.available) ??
+            s.candidates?.find((c) => c.status === "OK") ??
             null;
           choices[`${s.fromBlockId}-${s.toBlockId}`] = initial
             ? { candidate: initial, departure: initial.departures?.[0] ?? null }
@@ -1901,7 +1901,7 @@ export function DashboardPage() {
           rebuilt.push(id);
           if (i < realIds.length - 1) {
             const chosen = choices[`${id}-${realIds[i + 1]}`];
-            if (!chosen?.candidate?.available) return; // 제외했거나 모르는 구간 — 만들지 않는다
+            if (chosen?.candidate?.status !== "OK") return; // 제외했거나 모르는 구간 — 만들지 않는다
             const info = {
               mode: chosen.candidate.label || chosen.candidate.mode,
               dur: transitDurOf(chosen.candidate, chosen.departure),
@@ -2081,13 +2081,13 @@ export function DashboardPage() {
         );
         const segment = segments[0];
         const candidates = segment?.candidates ?? [];
-        if (!candidates.some((c) => c.available)) {
+        if (!candidates.some((c) => c.status === "OK")) {
           showToast("두 장소 사이의 경로를 찾지 못했어요.");
           return;
         }
         const initialCandidate =
-          candidates.find((c) => c.mode === segment.defaultMode && c.available) ??
-          candidates.find((c) => c.available) ??
+          candidates.find((c) => c.mode === segment.defaultMode && c.status === "OK") ??
+          candidates.find((c) => c.status === "OK") ??
           null;
         // 생성하지 않고 선택 모달을 연다 — 생성은 confirmTransitChoice 가 한다
         setTransitPicker({
@@ -2126,7 +2126,7 @@ export function DashboardPage() {
       const picker = transitPicker;
       setTransitPicker(null);
       const chosen = picker?.chosenCandidate;
-      if (!picker || !chosen?.available) return;
+      if (!picker || chosen?.status !== "OK") return;
 
       const { dayKey, currentId } = picker;
       const currentChain = [...(chains[dayKey] || [])];
@@ -2801,7 +2801,7 @@ export function DashboardPage() {
   const applyReselectTransport = useCallback(async () => {
     const picker = transportReselectPicker;
     const chosen = picker?.chosenCandidate;
-    if (!picker || !chosen?.available) return;
+    if (!picker || chosen?.status !== "OK") return;
     const block = items[picker.blockId];
     if (!block) {
       setTransportReselectPicker(null);
@@ -4409,7 +4409,7 @@ export function DashboardPage() {
               {bulkTransitPicker.segments.map((s) => {
                 const pairKey = `${s.fromBlockId}-${s.toBlockId}`;
                 const chosen = bulkTransitPicker.choices[pairKey];
-                const routable = s.candidates?.some((c) => c.available);
+                const routable = s.candidates?.some((c) => c.status === "OK");
                 return (
                   <div key={pairKey} className="tp-seg">
                     <div className="tp-seg-route">
@@ -4546,7 +4546,7 @@ export function DashboardPage() {
               <button
                 type="button"
                 className="tp-apply"
-                disabled={!transitPicker.chosenCandidate?.available}
+                disabled={transitPicker.chosenCandidate?.status !== "OK"}
                 onClick={confirmTransitChoice}
               >
                 이 수단으로 추가
@@ -4600,7 +4600,7 @@ export function DashboardPage() {
               <button
                 type="button"
                 className="tp-apply"
-                disabled={!transportReselectPicker.chosenCandidate?.available}
+                disabled={transportReselectPicker.chosenCandidate?.status !== "OK"}
                 onClick={applyReselectTransport}
               >
                 저장

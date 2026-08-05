@@ -12,6 +12,7 @@ import com.ssafy.ieumgil.domain.project.repository.ProjectRepository;
 import com.ssafy.ieumgil.domain.transit.dto.OdsayRouteResponse;
 import com.ssafy.ieumgil.domain.transit.dto.TransitCandidateResDTO;
 import com.ssafy.ieumgil.domain.transit.dto.TransitCandidateResDTO.Candidate;
+import com.ssafy.ieumgil.domain.transit.dto.TransitCandidateResDTO.CandidateStatus;
 import com.ssafy.ieumgil.domain.transit.dto.TransitCandidateResDTO.TransitMode;
 import com.ssafy.ieumgil.domain.transit.dto.TransitResDTO;
 import com.ssafy.ieumgil.domain.transit.dto.TransitScheduleResDTO;
@@ -247,8 +248,10 @@ class TransitCandidateServiceImplTest {
         TransitCandidateResDTO.Segment segment = result.segments().get(0);
         assertThat(segment.defaultMode()).isEqualTo(TransitMode.TAXI);
         assertThat(segment.candidates())
-                .extracting(TransitCandidateResDTO.Candidate::mode, TransitCandidateResDTO.Candidate::available)
-                .containsExactly(tuple(TransitMode.TRANSIT, false), tuple(TransitMode.TAXI, true));
+                .extracting(TransitCandidateResDTO.Candidate::mode, TransitCandidateResDTO.Candidate::status)
+                .containsExactly(
+                        tuple(TransitMode.TRANSIT, CandidateStatus.LOOKUP_FAILED),
+                        tuple(TransitMode.TAXI, CandidateStatus.OK));
     }
 
     @Test
@@ -267,7 +270,7 @@ class TransitCandidateServiceImplTest {
         TransitCandidateResDTO.Segment segment = result.segments().get(0);
         assertThat(segment.defaultMode()).isNull();
         assertThat(segment.candidates()).isNotEmpty()
-                .allSatisfy(candidate -> assertThat(candidate.available()).isFalse());
+                .allSatisfy(candidate -> assertThat(candidate.status()).isEqualTo(CandidateStatus.LOOKUP_FAILED));
     }
 
     @Test
@@ -523,7 +526,7 @@ class TransitCandidateServiceImplTest {
         assertThat(taxi.caution()).isNull();
         assertThat(taxi.fareConfidence()).isEqualTo(TransitResDTO.FareConfidence.CONFIRMED);
         TransitCandidateResDTO.Candidate car = candidateOf(result, TransitMode.CAR);
-        assertThat(car.available()).isTrue();
+        assertThat(car.status()).isEqualTo(CandidateStatus.OK);
     }
 
     @Test
@@ -541,14 +544,14 @@ class TransitCandidateServiceImplTest {
         TransitCandidateResDTO.Result result = service.calculate(PROJECT_ID, List.of(1L, 3L), null);
 
         TransitCandidateResDTO.Candidate taxi = candidateOf(result, TransitMode.TAXI);
-        assertThat(taxi.available()).isTrue();
+        assertThat(taxi.status()).isEqualTo(CandidateStatus.OK);
         assertThat(taxi.fareConfidence()).isEqualTo(TransitResDTO.FareConfidence.CONFIRMED);
         TransitCandidateResDTO.Candidate car = candidateOf(result, TransitMode.CAR);
-        assertThat(car.available()).isTrue();
+        assertThat(car.status()).isEqualTo(CandidateStatus.OK);
     }
 
     @Test
-    @DisplayName("드라이빙 조회만 실패해 available=false인 후보는 육로 판정과 무관하게 그대로 남는다")
+    @DisplayName("드라이빙 조회만 실패해 status=LOOKUP_FAILED인 후보는 육로 판정과 무관하게 그대로 남는다")
     void 드라이빙_조회만_실패하면_available_false다() {
         givenProject(TransportPref.CAR);
         given(blockRepository.findAllByIdInAndProject_IdAndDeletedAtIsNull(List.of(1L, 2L), PROJECT_ID))
@@ -561,7 +564,7 @@ class TransitCandidateServiceImplTest {
         TransitCandidateResDTO.Result result = service.calculate(PROJECT_ID, List.of(1L, 2L), null);
 
         TransitCandidateResDTO.Candidate taxi = candidateOf(result, TransitMode.TAXI);
-        assertThat(taxi.available()).isFalse();
+        assertThat(taxi.status()).isEqualTo(CandidateStatus.LOOKUP_FAILED);
         assertThat(taxi.caution()).isNull();
     }
 
@@ -575,7 +578,7 @@ class TransitCandidateServiceImplTest {
                 .willReturn(List.of(airPath()));
         given(transitScheduleQueryService.searchTrainStation(anyString())).willReturn(Optional.empty());
         given(transitScheduleQueryService.searchExpressBusTerminal(anyString())).willReturn(Optional.empty());
-        // 카카오 길찾기 자체가 실패한다 — driving==null이 택시 후보를 available=false로 남기는
+        // 카카오 길찾기 자체가 실패한다 — driving==null이 택시 후보를 status=LOOKUP_FAILED로 남기는
         // 유일한 이유다(roadUnreachable 삭제 후에도 이 경로는 그대로 살아 있어야 한다).
         given(placeQueryService.getTaxiRoute(anyDouble(), anyDouble(), anyDouble(), anyDouble()))
                 .willReturn(Optional.empty());
@@ -588,9 +591,9 @@ class TransitCandidateServiceImplTest {
         TransitCandidateResDTO.Result result = service.calculate(PROJECT_ID, List.of(2L, 3L), null);
 
         TransitCandidateResDTO.Segment segment = result.segments().get(0);
-        // 택시는 후보에서 사라지지 않는다 — driving==null이라 available=false로 남을 뿐이다
+        // 택시는 후보에서 사라지지 않는다 — driving==null이라 status=LOOKUP_FAILED로 남을 뿐이다
         TransitCandidateResDTO.Candidate taxi = candidateOf(result, TransitMode.TAXI);
-        assertThat(taxi.available()).isFalse();
+        assertThat(taxi.status()).isEqualTo(CandidateStatus.LOOKUP_FAILED);
         assertThat(segment.candidates()).extracting(Candidate::mode).contains(TransitMode.AIR);
         assertThat(segment.defaultMode()).isEqualTo(TransitMode.AIR);
         // 기준 시각 누적(SegmentClock)이 쓸 소요시간도 실제 항공편에서 온다(10:30~11:35 = 65분)
@@ -621,7 +624,6 @@ class TransitCandidateServiceImplTest {
         TransitCandidateResDTO.Segment segment = result.segments().get(0);
         assertThat(segment.intercity()).isTrue();
         assertThat(segment.timetableApplied()).isTrue();
-        assertThat(segment.referenceAt()).isEqualTo("14:45");
         // 세 수단을 동시에 조회하지만 후보 순서는 기차·고속버스·항공 그대로다
         assertThat(segment.candidates()).extracting(Candidate::mode)
                 .startsWith(TransitMode.TRAIN, TransitMode.EXPRESS_BUS, TransitMode.AIR);
@@ -688,13 +690,12 @@ class TransitCandidateServiceImplTest {
         assertThat(result.segments().get(1).timetableApplied()).isFalse();
         assertThat(result.segments().get(1).timetableSkipReason())
                 .isEqualTo("앞선 시외 구간의 편이 확정되지 않았습니다");
-        assertThat(result.segments().get(1).referenceAt()).isNull();
         // 편만 비고 수단은 남는다 — 부산→제주에서 항공이 사라지면 배로 가라는 말이 된다
         assertThat(result.segments().get(1).candidates()).extracting(Candidate::mode)
                 .contains(TransitMode.TRAIN, TransitMode.EXPRESS_BUS, TransitMode.AIR);
         Candidate air = result.segments().get(1).candidates().stream()
                 .filter(c -> c.mode() == TransitMode.AIR).findFirst().orElseThrow();
-        assertThat(air.available()).isTrue();
+        assertThat(air.status()).isEqualTo(CandidateStatus.OK);
         assertThat(air.departures()).isEmpty();
         // 탈 편이 없으면 구간도 그리지 않는다 — 0분짜리 leg는 "즉시 도착"으로 읽힌다
         assertThat(air.legs()).isEmpty();
@@ -732,15 +733,11 @@ class TransitCandidateServiceImplTest {
         TransitCandidateResDTO.Segment day2Segment = result.segments().get(1);
 
         assertThat(day1Segment.timetableApplied()).isTrue();
-        assertThat(day1Segment.referenceAt()).isEqualTo("09:45");
 
         // 고쳐지기 전에는 day2Segment가 timetableApplied=false·
-        // skipReason="앞선 시외 구간의 편이 확정되지 않았습니다"·referenceAt=null이었다.
+        // skipReason="앞선 시외 구간의 편이 확정되지 않았습니다"였다.
         assertThat(day2Segment.timetableApplied()).isTrue();
         assertThat(day2Segment.timetableSkipReason()).isNull();
-        // Day2도 자기 dayStart(09:00)에서 새로 45분 버퍼를 계산한다 — Day1의 누적 시각을
-        // 물려받지 않는다.
-        assertThat(day2Segment.referenceAt()).isEqualTo("09:45");
         // Day마다 시간표를 한 번씩, 총 두 번 조회한다
         verify(transitScheduleQueryService, times(2))
                 .getTrainSchedule(anyInt(), anyInt(), any(LocalDate.class));
@@ -767,8 +764,8 @@ class TransitCandidateServiceImplTest {
             given(transitScheduleQueryService.searchExpressBusTerminal(anyString())).willReturn(Optional.empty());
             // Day1은 350ms 걸려도 자기 예산(600ms, 새 예산) 안에 끝나 정상 응답한다. 그 350ms를
             // 쓰고 나면 공유 예산에는 약 250ms만 남는다. Day2는 450ms가 걸리는데, 이건 "남은
-            // ~250ms"로는 못 끝내지만(→ 취소되어 unavailable) "새 600ms"라면 넉넉히 끝난다
-            // (→ available) — 그래서 이 둘의 결과가 갈리는 것 자체가 예산이 Day끼리 공유되는지
+            // ~250ms"로는 못 끝내지만(→ 취소되어 LOOKUP_FAILED) "새 600ms"라면 넉넉히 끝난다
+            // (→ OK) — 그래서 이 둘의 결과가 갈리는 것 자체가 예산이 Day끼리 공유되는지
             // 아닌지를 실측으로 가른다.
             given(transitScheduleQueryService.getTrainSchedule(anyInt(), anyInt(), any(LocalDate.class)))
                     .willAnswer(invocation -> {
@@ -789,13 +786,13 @@ class TransitCandidateServiceImplTest {
             Candidate day2Train = result.segments().get(1).candidates().stream()
                     .filter(c -> c.mode() == TransitMode.TRAIN).findFirst().orElseThrow();
 
-            assertThat(day1Train.available()).as("Day1은 자기 예산(600ms) 안에 끝난다").isTrue();
+            assertThat(day1Train.status()).as("Day1은 자기 예산(600ms) 안에 끝난다").isEqualTo(CandidateStatus.OK);
             assertThat(day1Train.departures()).isNotEmpty();
-            // 고쳐지기 전(Day마다 새 20초)이었다면 450ms < 600ms라 Day2도 available=true였다.
+            // 고쳐지기 전(Day마다 새 20초)이었다면 450ms < 600ms라 Day2도 status=OK였다.
             // 남은 예산(~250ms)을 받는 지금은 450ms가 그 예산을 넘겨 취소된다.
-            assertThat(day2Train.available())
+            assertThat(day2Train.status())
                     .as("Day2는 Day1이 쓰고 남은 예산만 받아 시간 안에 못 끝나고 취소된다")
-                    .isFalse();
+                    .isEqualTo(CandidateStatus.LOOKUP_FAILED);
         } finally {
             TransitCandidateServiceImpl.TIMETABLE_TIMEOUT = original;
         }
@@ -825,24 +822,6 @@ class TransitCandidateServiceImplTest {
     }
 
     @Test
-    @DisplayName("dayStart가 없으면 09:00을 기준으로 삼는다")
-    void dayStart가_없으면_아홉시다() {
-        given(blockRepository.findAllByIdInAndProject_IdAndDeletedAtIsNull(List.of(1L, 2L), PROJECT_ID))
-                .willReturn(List.of(seoulBlock(), busanBlock()));
-        given(projectRepository.findByIdAndDeletedAtIsNull(PROJECT_ID)).willReturn(Optional.of(publicProject()));
-        given(publicTransitQueryService.getCombinedRoutes(anyDouble(), anyDouble(), anyDouble(), anyDouble()))
-                .willReturn(List.of(trainPath()));
-        given(transitScheduleQueryService.searchTrainStation(anyString()))
-                .willReturn(Optional.of(terminal(3300128, "서울")));
-        given(transitScheduleQueryService.getTrainSchedule(anyInt(), anyInt(), any(LocalDate.class)))
-                .willReturn(List.of(train("KTX", 1, "16:00", "18:37", 59800)));
-
-        TransitCandidateResDTO.Result result = service.calculate(PROJECT_ID, List.of(1L, 2L), null);
-
-        assertThat(result.segments().get(0).referenceAt()).isEqualTo("09:45");
-    }
-
-    @Test
     @DisplayName("역 이름을 못 찾으면 그 수단만 제외하고 나머지는 유지한다")
     void 역_검색_실패는_그_수단만_뺀다() {
         given(blockRepository.findAllByIdInAndProject_IdAndDeletedAtIsNull(List.of(1L, 2L), PROJECT_ID))
@@ -858,12 +837,12 @@ class TransitCandidateServiceImplTest {
                 service.calculate(PROJECT_ID, List.of(1L, 2L), LocalTime.of(9, 0));
 
         Candidate train = candidateOf(result, TransitMode.TRAIN);
-        assertThat(train.available()).isFalse();
-        assertThat(candidateOf(result, TransitMode.TAXI).available()).isTrue();
+        assertThat(train.status()).isEqualTo(CandidateStatus.LOOKUP_FAILED);
+        assertThat(candidateOf(result, TransitMode.TAXI).status()).isEqualTo(CandidateStatus.OK);
     }
 
     @Test
-    @DisplayName("기준 시각 이후 편이 없으면 available=true에 빈 departures다")
+    @DisplayName("기준 시각 이후 편이 없으면 status=OK에 빈 departures다")
     void 남은_편이_없으면_빈_목록이다() {
         given(blockRepository.findAllByIdInAndProject_IdAndDeletedAtIsNull(List.of(1L, 2L), PROJECT_ID))
                 .willReturn(List.of(seoulBlock(), busanBlock()));
@@ -879,7 +858,7 @@ class TransitCandidateServiceImplTest {
                 service.calculate(PROJECT_ID, List.of(1L, 2L), LocalTime.of(22, 0));
 
         Candidate train = candidateOf(result, TransitMode.TRAIN);
-        assertThat(train.available()).isTrue();
+        assertThat(train.status()).isEqualTo(CandidateStatus.OK);
         assertThat(train.departures()).isEmpty();
     }
 
@@ -996,7 +975,6 @@ class TransitCandidateServiceImplTest {
         assertThat(segment.timetableApplied()).isFalse();
         assertThat(segment.timetableSkipReason())
                 .isEqualTo("프로젝트 시작일이 없어 운행 요일을 확인할 수 없습니다");
-        assertThat(segment.referenceAt()).isNull();
         // 오늘 요일로 편을 거르고 요금을 고르느니 아예 묻지 않는다
         verifyNoInteractions(transitScheduleQueryService);
         // 수단 슬롯은 남되 탈 편이 정해지지 않았으므로 구간(leg)도 그리지 않는다

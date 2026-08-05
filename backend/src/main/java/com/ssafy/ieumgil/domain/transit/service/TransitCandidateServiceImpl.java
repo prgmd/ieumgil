@@ -12,6 +12,7 @@ import com.ssafy.ieumgil.domain.transit.client.DomesticAirport;
 import com.ssafy.ieumgil.domain.transit.dto.OdsayRouteResponse;
 import com.ssafy.ieumgil.domain.transit.dto.TransitCandidateResDTO;
 import com.ssafy.ieumgil.domain.transit.dto.TransitCandidateResDTO.Candidate;
+import com.ssafy.ieumgil.domain.transit.dto.TransitCandidateResDTO.CandidateStatus;
 import com.ssafy.ieumgil.domain.transit.dto.TransitCandidateResDTO.TransitMode;
 import com.ssafy.ieumgil.domain.transit.dto.TransitLegResDTO;
 import com.ssafy.ieumgil.domain.transit.dto.TransitResDTO;
@@ -290,7 +291,7 @@ public class TransitCandidateServiceImpl implements TransitCandidateService {
     private RoadResult unavailableFor(Leg leg, TransportPref pref) {
         LegModes modes = modesFor(pref, straightDistanceOf(leg));
         return new RoadResult(List.of(), modes.transit(),
-                modes.road().stream().map(mode -> Candidate.unavailable(mode.mode())).toList());
+                modes.road().stream().map(mode -> Candidate.lookupFailed(mode.mode())).toList());
     }
 
     /**
@@ -336,7 +337,7 @@ public class TransitCandidateServiceImpl implements TransitCandidateService {
             road.add(RoadMode.CAR);
         }
         road.add(RoadMode.TAXI);
-        // 먼 구간의 도보는 목록에서 빠진다 — available=false가 아니라 부재다.
+        // 먼 구간의 도보는 목록에서 빠진다 — status=LOOKUP_FAILED가 아니라 부재다.
         // 둘을 뭉개면 프론트가 "먼 것인가 API가 죽은 것인가"를 구분하지 못한다.
         if (straightM <= WALK_MAX_METERS) {
             road.add(RoadMode.WALK);
@@ -397,7 +398,7 @@ public class TransitCandidateServiceImpl implements TransitCandidateService {
         if (from == null || to == null) {
             // ODsay가 역 이름을 주지 않았다. 시간표 API에 넘길 대상이 없으므로 세 수단 모두 조회 실패다.
             log.warn("시외 경로에 역 이름이 없다: from={}, to={}", from, to);
-            INTERCITY_MODES.forEach(mode -> candidates.add(Candidate.unavailable(mode)));
+            INTERCITY_MODES.forEach(mode -> candidates.add(Candidate.lookupFailed(mode)));
         } else {
             candidates.addAll(intercityCandidates(from, to, reference, date, timetableBudget));
         }
@@ -408,7 +409,6 @@ public class TransitCandidateServiceImpl implements TransitCandidateService {
                 .toBlockId(pair.to().getId())
                 .intercity(true)
                 .timetableApplied(true)
-                .referenceAt(reference.format(HHMM))
                 .defaultMode(defaultModeOf(candidates))
                 .candidates(candidates)
                 .build();
@@ -422,7 +422,7 @@ public class TransitCandidateServiceImpl implements TransitCandidateService {
      *
      * <p>그래도 <b>수단 슬롯은 남긴다</b> — 서울→부산→제주에서 뒤 구간만 항공이 사라지면
      * 제주에 배로 가라는 말이 된다. 편 목록만 비고({@code departures=[]}) 수단은 그대로다.
-     * 조회를 안 한 것이지 실패한 것이 아니므로 {@code available=true}다.
+     * 조회를 안 한 것이지 실패한 것이 아니므로 {@code status=OK}다.
      */
     private TransitCandidateResDTO.Segment intercitySegmentWithoutTimetable(
             Pair pair, RoadResult road, String reason) {
@@ -439,7 +439,6 @@ public class TransitCandidateServiceImpl implements TransitCandidateService {
                 .intercity(true)
                 .timetableApplied(false)
                 .timetableSkipReason(reason)
-                .referenceAt(null)
                 .defaultMode(defaultModeOf(candidates))
                 .candidates(candidates)
                 .build();
@@ -465,13 +464,13 @@ public class TransitCandidateServiceImpl implements TransitCandidateService {
     /**
      * 시내 대중교통 후보. 첫 경로 하나만 쓰지 않고 {@link TransitRouteSelector}로 최대 5개를 고른다.
      *
-     * <p>경로 목록이 비어 있으면(조회 실패 포함) 후보 하나를 {@code available=false}로 남긴다 —
+     * <p>경로 목록이 비어 있으면(조회 실패 포함) 후보 하나를 {@code status=LOOKUP_FAILED}로 남긴다 —
      * 목록에서 아예 빼면 프론트가 "먼 것인가 API가 죽은 것인가"를 구분하지 못한다.
      */
     private List<Candidate> transitCandidates(List<OdsayRouteResponse.Path> paths) {
         List<TransitRouteSelector.Selected> selected = routeSelector.selectTop5(paths);
         if (selected.isEmpty()) {
-            return List.of(Candidate.unavailable(TransitMode.TRANSIT));
+            return List.of(Candidate.lookupFailed(TransitMode.TRANSIT));
         }
         return selected.stream().map(this::transitCandidate).toList();
     }
@@ -481,7 +480,7 @@ public class TransitCandidateServiceImpl implements TransitCandidateService {
         return Candidate.builder()
                 .mode(TransitMode.TRANSIT)
                 .label(TransitMode.TRANSIT.label())
-                .available(true)
+                .status(CandidateStatus.OK)
                 .durationMin(info.totalTime())
                 .fare(info.payment())
                 .fareConfidence(TransitResDTO.confidenceOf(info.payment()))
@@ -531,7 +530,7 @@ public class TransitCandidateServiceImpl implements TransitCandidateService {
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             log.warn("시외 시간표 조회 인터럽트 {} -> {}", from, to);
-            return INTERCITY_MODES.stream().map(Candidate::unavailable).toList();
+            return INTERCITY_MODES.stream().map(Candidate::lookupFailed).toList();
         } finally {
             executor.shutdownNow();
         }
@@ -544,13 +543,13 @@ public class TransitCandidateServiceImpl implements TransitCandidateService {
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             log.warn("시외 시간표 조회 인터럽트: mode={}", mode);
-            return Candidate.unavailable(mode);
+            return Candidate.lookupFailed(mode);
         } catch (CancellationException e) {
             log.warn("시외 시간표 조회 타임아웃 취소({}초): mode={}", budget.toSeconds(), mode);
-            return Candidate.unavailable(mode);
+            return Candidate.lookupFailed(mode);
         } catch (ExecutionException e) {
             log.warn("시외 시간표 조회 실패: mode={}", mode, e.getCause());
-            return Candidate.unavailable(mode);
+            return Candidate.lookupFailed(mode);
         }
     }
 
@@ -568,7 +567,7 @@ public class TransitCandidateServiceImpl implements TransitCandidateService {
             Optional<TransitScheduleResDTO.TerminalSearchResult> end =
                     transitScheduleQueryService.searchTrainStation(to);
             if (start.isEmpty() || end.isEmpty()) {
-                return Candidate.unavailable(TransitMode.TRAIN);
+                return Candidate.lookupFailed(TransitMode.TRAIN);
             }
 
             List<TransitCandidateResDTO.Departure> all = transitScheduleQueryService
@@ -579,7 +578,7 @@ public class TransitCandidateServiceImpl implements TransitCandidateService {
                     DepartureSelector.selectThree(afterReference(all, reference), true), from, to);
         } catch (RuntimeException e) {
             log.warn("기차 시간표 조회 실패 {} -> {}", from, to, e);
-            return Candidate.unavailable(TransitMode.TRAIN);
+            return Candidate.lookupFailed(TransitMode.TRAIN);
         }
     }
 
@@ -590,7 +589,7 @@ public class TransitCandidateServiceImpl implements TransitCandidateService {
             Optional<TransitScheduleResDTO.TerminalSearchResult> end =
                     transitScheduleQueryService.searchExpressBusTerminal(to);
             if (start.isEmpty() || end.isEmpty()) {
-                return Candidate.unavailable(TransitMode.EXPRESS_BUS);
+                return Candidate.lookupFailed(TransitMode.EXPRESS_BUS);
             }
 
             List<TransitCandidateResDTO.Departure> all = transitScheduleQueryService
@@ -601,7 +600,7 @@ public class TransitCandidateServiceImpl implements TransitCandidateService {
                     DepartureSelector.selectThree(afterReference(all, reference), true), from, to);
         } catch (RuntimeException e) {
             log.warn("고속버스 시간표 조회 실패 {} -> {}", from, to, e);
-            return Candidate.unavailable(TransitMode.EXPRESS_BUS);
+            return Candidate.lookupFailed(TransitMode.EXPRESS_BUS);
         }
     }
 
@@ -611,7 +610,7 @@ public class TransitCandidateServiceImpl implements TransitCandidateService {
             Optional<DomesticAirport> start = DomesticAirport.findByName(from);
             Optional<DomesticAirport> end = DomesticAirport.findByName(to);
             if (start.isEmpty() || end.isEmpty()) {
-                return Candidate.unavailable(TransitMode.AIR);
+                return Candidate.lookupFailed(TransitMode.AIR);
             }
 
             List<TransitCandidateResDTO.Departure> all = transitScheduleQueryService
@@ -623,7 +622,7 @@ public class TransitCandidateServiceImpl implements TransitCandidateService {
                     DepartureSelector.selectThree(afterReference(all, reference), false), from, to);
         } catch (RuntimeException e) {
             log.warn("항공 시간표 조회 실패 {} -> {}", from, to, e);
-            return Candidate.unavailable(TransitMode.AIR);
+            return Candidate.lookupFailed(TransitMode.AIR);
         }
     }
 
@@ -711,8 +710,8 @@ public class TransitCandidateServiceImpl implements TransitCandidateService {
     /**
      * 후보의 대표값은 첫 출발편에서 가져온다.
      *
-     * <p>편이 없어도 {@code available=true}다 — 조회는 성공했고 "그 시각 이후에는 없다"가
-     * 유효한 답이다. {@code available=false}는 조회 실패에만 쓴다(기존 규칙).
+     * <p>편이 없어도 {@code status=OK}다 — 조회는 성공했고 "그 시각 이후에는 없다"가
+     * 유효한 답이다. {@code status=LOOKUP_FAILED}는 조회 실패에만 쓴다(기존 규칙).
      *
      * <p>편이 없으면 leg도 없다. 탈 편이 정해지지 않았는데 구간을 그리면 소요시간을 0분으로
      * 채우게 되고("즉시 도착"), 역 이름조차 없는 경우 {@code from}·{@code to}가 null인 구간이 남는다.
@@ -723,7 +722,7 @@ public class TransitCandidateServiceImpl implements TransitCandidateService {
             return Candidate.builder()
                     .mode(mode)
                     .label(mode.label())
-                    .available(true)
+                    .status(CandidateStatus.OK)
                     .fareConfidence(TransitResDTO.FareConfidence.UNKNOWN)
                     .transferCount(0)
                     .legs(List.of())
@@ -735,7 +734,7 @@ public class TransitCandidateServiceImpl implements TransitCandidateService {
         return Candidate.builder()
                 .mode(mode)
                 .label(mode.label())
-                .available(true)
+                .status(CandidateStatus.OK)
                 .durationMin(first.durationMin())
                 .fare(first.fare())
                 .fareConfidence(first.fareConfidence())
@@ -770,13 +769,13 @@ public class TransitCandidateServiceImpl implements TransitCandidateService {
     /**
      * 앞에서부터 살아있는 첫 후보가 기본이다. 전부 실패했으면 null — 프론트가 그 구간만 비워 둔다.
      *
-     * <p>탈 수 있는 편이 없는 시외 후보는 건너뛴다. 조회는 성공했으니 {@code available=true}지만
+     * <p>탈 수 있는 편이 없는 시외 후보는 건너뛴다. 조회는 성공했으니 {@code status=OK}지만
      * ({@link #departureCandidate}), 고를 편이 없는 수단을 기본으로 내밀 수는 없다. 소요시간도
      * 없어 {@link #defaultDurationOf}가 0을 주므로 기준 시각이 그 구간만큼 밀리지 않는다.
      */
     private TransitMode defaultModeOf(List<Candidate> candidates) {
         return candidates.stream()
-                .filter(Candidate::available)
+                .filter(candidate -> candidate.status() == CandidateStatus.OK)
                 .filter(candidate -> candidate.departures() == null || !candidate.departures().isEmpty())
                 .map(Candidate::mode)
                 .findFirst()
@@ -815,12 +814,12 @@ public class TransitCandidateServiceImpl implements TransitCandidateService {
 
     private Candidate taxiCandidate(PlaceResDTO.TaxiRoute driving) {
         if (driving == null) {
-            return Candidate.unavailable(TransitMode.TAXI);
+            return Candidate.lookupFailed(TransitMode.TAXI);
         }
         return Candidate.builder()
                 .mode(TransitMode.TAXI)
                 .label(TransitMode.TAXI.label())
-                .available(true)
+                .status(CandidateStatus.OK)
                 .durationMin(driving.durationMin())
                 .fare(driving.fare())
                 .fareConfidence(TransitResDTO.FareConfidence.CONFIRMED)
@@ -834,12 +833,12 @@ public class TransitCandidateServiceImpl implements TransitCandidateService {
      */
     private Candidate carCandidate(PlaceResDTO.TaxiRoute driving) {
         if (driving == null) {
-            return Candidate.unavailable(TransitMode.CAR);
+            return Candidate.lookupFailed(TransitMode.CAR);
         }
         return Candidate.builder()
                 .mode(TransitMode.CAR)
                 .label(TransitMode.CAR.label())
-                .available(true)
+                .status(CandidateStatus.OK)
                 .durationMin(driving.durationMin())
                 .fare(driving.toll() + estimateFuelCost(driving.distance()))
                 .fareConfidence(TransitResDTO.FareConfidence.ESTIMATE)
@@ -866,13 +865,13 @@ public class TransitCandidateServiceImpl implements TransitCandidateService {
                 .map(r -> Candidate.builder()
                         .mode(TransitMode.WALK)
                         .label(TransitMode.WALK.label())
-                        .available(true)
+                        .status(CandidateStatus.OK)
                         .durationMin(r.durationMin())
                         .fare(0)
                         .fareConfidence(TransitResDTO.FareConfidence.CONFIRMED)
                         .distanceM(r.distance())
                         .build())
-                .orElseGet(() -> Candidate.unavailable(TransitMode.WALK));
+                .orElseGet(() -> Candidate.lookupFailed(TransitMode.WALK));
     }
 
     private double straightDistanceOf(Leg leg) {

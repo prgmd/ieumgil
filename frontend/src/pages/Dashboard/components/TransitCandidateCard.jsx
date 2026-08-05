@@ -98,20 +98,21 @@ export function TransitCandidateCard({
   const meta = TRANSIT_MODE_META[c.mode] ?? { ico: "🚏", nm: c.mode };
   const selectable = mode === "select";
   const isIntercity = INTERCITY_MODES.has(c.mode);
-  const clickable = selectable && c.available;
+  const isOk = c.status === "OK";
+  const clickable = selectable && isOk;
 
   return (
     // 선택 모드에선 카드 전체가 클릭 범위다 — 머리줄만 버튼이면 라벨·경로 영역을
     // 누른 사용자가 "왜 선택이 안 되지"가 된다. 출발편 행만 자기 선택을 위해
     // 전파를 끊는다(DepartureRow 참조).
     <div
-      className={`tcc ${selected ? "on" : ""} ${!c.available ? "is-unavailable" : ""} ${clickable ? "is-clickable" : ""}`}
+      className={`tcc ${selected ? "on" : ""} ${!isOk ? "is-unavailable" : ""} ${clickable ? "is-clickable" : ""}`}
       onClick={clickable ? () => onSelectCandidate?.(c) : undefined}
     >
       <button
         type="button"
         className="tcc-head"
-        disabled={!selectable || !c.available}
+        disabled={!selectable || !isOk}
         // 루트가 같은 선택을 처리한다 — 두 번 발화하지 않게 여기서 끊는다
         onClick={
           selectable
@@ -124,11 +125,11 @@ export function TransitCandidateCard({
       >
         <span className="tcc-ico">{meta.ico}</span>
         <span className="tcc-name">{c.label || meta.nm}</span>
-        {!c.available && <em className="tcc-fail">조회 실패</em>}
-        {c.available && c.durationMin != null && (
+        {!isOk && <em className="tcc-fail">조회 실패</em>}
+        {isOk && c.durationMin != null && (
           <span className="tcc-dur">{c.durationMin}분</span>
         )}
-        {c.available && fareText(c.fare, c.fareConfidence) && (
+        {isOk && fareText(c.fare, c.fareConfidence) && (
           <span className="tcc-fare">{fareText(c.fare, c.fareConfidence)}</span>
         )}
         {c.intervalMin != null && (
@@ -153,7 +154,7 @@ export function TransitCandidateCard({
 
       <LegsInline legs={c.legs} />
 
-      {isIntercity && c.available && (() => {
+      {isIntercity && isOk && (() => {
         // view(열람) 모드는 확정된 편 하나만 보여준다 — 다른 편은 편집 모드 전용이다.
         // select(피커) 모드는 고르는 중이라 전체 목록을 그대로 보여준다.
         const departuresToShow =
