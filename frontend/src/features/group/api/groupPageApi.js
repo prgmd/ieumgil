@@ -35,7 +35,7 @@ export async function fetchProjects(groupId) {
 
 /**
  * 프로젝트 부분 수정. PATCH /projects/{projectId} 는 보낸 필드만 반영한다
- * (ProjectReqDTO.Update — name·startDate·endDate).
+ * (ProjectReqDTO.Update — name·startDate·endDate·destination·transportPrefs).
  *
  * 응답은 { projectId, name, startDate, endDate, movedToPool } 이다.
  * movedToPool 은 기간이 줄어 후보로 밀려난 블록 id 목록으로, 대시보드가 블록을
@@ -44,6 +44,23 @@ export async function fetchProjects(groupId) {
 export async function updateProject(projectId, patch) {
   try {
     const { data } = await axiosInstance.patch(`/projects/${projectId}`, patch);
+    return unwrap(data);
+  } catch (error) {
+    unwrapError(error);
+  }
+}
+
+/**
+ * 정산 인원 수정 — 전용 엔드포인트다(PATCH /projects/{id}/budget-headcount).
+ * 위 Update DTO 에 없는 값이라 같은 요청에 실을 수 없다.
+ * headcount null 은 "그룹 멤버 수 연동으로 복귀"라는 명시적 의도(BGT-03).
+ */
+export async function updateBudgetHeadcount(projectId, headcount) {
+  try {
+    const { data } = await axiosInstance.patch(
+      `/projects/${projectId}/budget-headcount`,
+      { headcount },
+    );
     return unwrap(data);
   } catch (error) {
     unwrapError(error);

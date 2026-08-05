@@ -1,34 +1,38 @@
 import { useState } from 'react';
 import Modal from '../../My/shared/ui/Modal';
+import TransportPicker from '../../My/shared/ui/TransportPicker';
 import { useToastStore } from '../../../global/stores/toastStore';
-
-const TRANSPORT_LABEL = { CAR: '자차 (렌트)', PUBLIC: '대중교통' };
-// PROJECT.transport_pref는 CAR | PUBLIC 두 값뿐이다 (ERD.md). CreateProjectModal 과 동일.
-const TRANSPORT_OPTIONS = Object.entries(TRANSPORT_LABEL).map(([value, label]) => ({
-  value,
-  label,
-}));
 
 /**
  * 프로젝트 수정 모달 (PRJ-02).
  *
- * 수정 가능한 건 서버가 PATCH /projects/{id} 로 받는 이름·시작일·종료일·이동수단이다.
- * 목적지·인원은 수정 API 가 없어 값만 보여주고 잠가둔다 — 편집되는 것처럼
- * 보이면 새로고침 때 되돌아가서 오히려 버그로 읽힌다.
+ * 이름·기간·목적지·이동수단은 PATCH /projects/{id} 로, 여행 인원은 전용 엔드포인트
+ * PATCH /projects/{id}/budget-headcount 로 저장된다 — 두 요청을 useProjects.updateProject
+ * 가 한 번에 묶어 보내므로 이 화면은 폼 하나만 다룬다.
  *
  * @param onUpdate (projectId, form) => Promise<updated> — 목록을 소유한 페이지가 내려준다.
+ * @param onSaved  (선택) 저장 성공 후 호출 — 대시보드처럼 자체 스냅샷을 다시 읽어야
+ *                 하는 화면이 쓴다.
  *
- * 폼 초기값은 마운트 시점의 project 로 한 번만 잡는다. 호출부(GroupPage)가 수정할
- * 프로젝트가 있을 때만 이 컴포넌트를 렌더하므로, 다른 카드의 ✎ 를 누르면 새로
- * 마운트되면서 그 프로젝트의 값으로 다시 채워진다 — 동기화 effect 가 필요 없다.
+ * 폼 초기값은 마운트 시점의 project 로 한 번만 잡는다. 호출부가 수정할 프로젝트가
+ * 있을 때만 이 컴포넌트를 렌더하므로, 다른 카드의 ✎ 를 누르면 새로 마운트되면서
+ * 그 프로젝트의 값으로 다시 채워진다 — 동기화 effect 가 필요 없다.
  */
-export default function EditProjectModal({ open, onClose, project, onUpdate }) {
+export default function EditProjectModal({
+  open,
+  onClose,
+  project,
+  onUpdate,
+  onSaved,
+}) {
   const showToast = useToastStore((s) => s.show);
 
   const [form, setForm] = useState({
     name: project?.name ?? '',
     startDate: project?.startDate ?? '',
     endDate: project?.endDate ?? '',
+    destination: project?.destination ?? '',
+    budgetHeadcount: project?.budgetHeadcount ?? 1,
     transportPrefs: project?.transportPrefs ?? [],
   });
   const [error, setError] = useState('');
@@ -51,6 +55,10 @@ export default function EditProjectModal({ open, onClose, project, onUpdate }) {
       setError('종료일은 시작일보다 빠를 수 없어요.');
       return;
     }
+    if (!form.budgetHeadcount || Number(form.budgetHeadcount) < 1) {
+      setError('여행 인원은 1명 이상이어야 해요.');
+      return;
+    }
     if (form.transportPrefs.length < 1) {
       setError('주요 이동수단을 선택해주세요.');
       return;
@@ -61,6 +69,7 @@ export default function EditProjectModal({ open, onClose, project, onUpdate }) {
     try {
       await onUpdate(project.projectId, form);
       showToast('프로젝트가 수정됐어요 ✓');
+      onSaved?.();
       onClose();
     } catch (e) {
       setError(e?.message ?? '수정에 실패했어요. 잠시 후 다시 시도해주세요.');
@@ -108,36 +117,33 @@ export default function EditProjectModal({ open, onClose, project, onUpdate }) {
       <div className="r2">
         <div>
           <label>목적지</label>
-          <input value={project.destination ?? ''} disabled />
+          <input
+            placeholder="예: 부산"
+            maxLength={100}
+            value={form.destination}
+            onChange={(e) => update('destination', e.target.value)}
+          />
         </div>
         <div>
-          <label>여행 인원</label>
-          <input value={`${project.budgetHeadcount ?? '-'}인`} disabled />
+          <label>여행 인원 *</label>
+          <input
+            type="number"
+            min={1}
+            value={form.budgetHeadcount}
+            onChange={(e) => update('budgetHeadcount', e.target.value)}
+          />
         </div>
       </div>
 
-      <fieldset>
-        <legend>주요 이동수단 * (복수 선택)</legend>
-        {TRANSPORT_OPTIONS.map((opt) => (
-          <label key={opt.value}>
-            <input
-              type="checkbox"
-              checked={form.transportPrefs.includes(opt.value)}
-              onChange={(e) => {
-                setForm((f) => ({
-                  ...f,
-                  transportPrefs: e.target.checked
-                    ? [...f.transportPrefs, opt.value]
-                    : f.transportPrefs.filter((v) => v !== opt.value),
-                }));
-              }}
-            />
-            {opt.label}
-          </label>
-        ))}
-      </fieldset>
+      <TransportPicker
+        value={form.transportPrefs}
+        onChange={(next) => update('transportPrefs', next)}
+      />
 
-      <div className="note">목적지·인원은 아직 수정 API가 없어 잠겨 있어요. 바꿔야 하면 프로젝트를 새로 만들어주세요.</div>
+      <div className="note">
+        여행 인원은 정산(1인당 금액) 기준이에요 — 바꾸면 대시보드 예산 표시도 함께
+        달라져요.
+      </div>
 
       {error && <div className="code-err">{error}</div>}
 

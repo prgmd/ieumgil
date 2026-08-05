@@ -12,6 +12,14 @@
 .md .foot{display:flex;gap:9px;justify-content:flex-end;margin-top:18px}
 .note{background:#fdf3e6;border-left:3px solid #e3b26a;border-radius:0 9px 9px 0;padding:9px 13px;font-size:12px;margin-top:12px}
 
+/* 주요 이동수단 — 칩 토글. 모달의 다른 입력(.md input)과 같은 테두리·라운드·배경을 쓴다 */
+.tp-hint{font-weight:400;color:var(--ink2);font-size:11px}
+.tp-row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.tp-chip{display:flex;align-items:center;justify-content:center;gap:7px;border:1.5px solid var(--line);border-radius:11px;background:#fff;padding:10px 13px;font-family:inherit;font-size:13.5px;color:var(--ink2);cursor:pointer;transition:border-color .15s,background .15s,color .15s}
+.tp-chip:hover{border-color:var(--acc)}
+.tp-chip.on{border-color:var(--acc);background:var(--foodB);color:var(--acc);font-weight:500}
+.tp-ico{font-size:15px;line-height:1}
+
 /* 프로젝트 생성 — 출발지점(선택) 장소 검색 */
 .dep-search{display:flex;gap:8px}
 .dep-search input{flex:1;min-width:0}

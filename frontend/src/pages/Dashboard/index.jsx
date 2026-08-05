@@ -31,6 +31,7 @@ import {
 import { CSS } from "@dnd-kit/utilities";
 import { generateKeyBetween } from "fractional-indexing";
 import { AppBar } from "../My/shared/ui/AppBar";
+import EditProjectModal from "../Group/components/EditProjectModal";
 import { useDashboard } from "../../features/dashboard/hooks/useDashboard";
 import { useProjectOps } from "../../features/dashboard/realtime/useProjectOps";
 import { useVoiceChat } from "../../features/dashboard/voice/useVoiceChat";
@@ -125,6 +126,34 @@ const transitDurOf = (candidate, departure) =>
   Math.max(10, departure?.durationMin ?? candidate?.durationMin ?? 10);
 const transitCostOf = (candidate, departure) =>
   departure?.fare ?? departure?.fareOptions?.general ?? candidate?.fare ?? 0;
+
+/**
+ * 요금이 "1인당"으로 오는 이동수단 — 표를 사람 수만큼 끊어야 한다.
+ * 택시·자가용은 차 한 대 기준(요금을 나눠 내는 쪽)이라 곱하지 않고, 도보는 0원이다.
+ */
+const PER_PERSON_FARE_MODES = new Set([
+  "TRANSIT",
+  "TRAIN",
+  "EXPRESS_BUS",
+  "AIR",
+]);
+
+const isPerPersonFare = (item) =>
+  item?.cat === "trans" &&
+  PER_PERSON_FARE_MODES.has(item?.transportMeta?.chosen?.mode);
+
+/**
+ * 예산에 실제로 잡히는 금액.
+ *
+ * 블록의 cost 는 서버가 준 값 그대로다 — 대중교통·기차·항공은 1인 요금이라 그대로
+ * 더하면 인원과 무관하게 한 명 몫만 잡힌다. 곱하기를 저장 시점이 아니라 합산 시점에
+ * 하는 이유는, 나중에 여행 인원을 바꿔도 예산이 저절로 따라오게 하기 위함이다
+ * (저장해 두면 인원 변경 때 모든 교통 블록을 다시 써야 한다).
+ */
+const effectiveCostOf = (item, headcount) => {
+  const cost = item?.cost || 0;
+  return isPerPersonFare(item) ? cost * Math.max(1, headcount || 1) : cost;
+};
 
 /**
  * 중복 orderKey 에 견디는 키 생성 (QA: 블록 이동 시 ">=" 오류 픽스).
@@ -416,19 +445,6 @@ function dayKeysOf(project) {
   return Array.from({ length: count }, (_, i) => `d${i + 1}`);
 }
 
-/** Date → 'YYYY-MM-DD' (서버·<input type="date"> 가 쓰는 형식). */
-function toISODate(date) {
-  const mm = String(date.getMonth() + 1).padStart(2, "0");
-  const dd = String(date.getDate()).padStart(2, "0");
-  return `${date.getFullYear()}-${mm}-${dd}`;
-}
-
-/** Day n(0-based)의 날짜를 'YYYY-MM-DD' 로. 기간을 모르면 빈 문자열. */
-function dayISODate(project, index) {
-  const start = parseDate(project?.startDate);
-  return start ? toISODate(new Date(start.getTime() + index * DAY_MS)) : "";
-}
-
 /** Day n(0-based)의 실제 날짜. 기간을 모르면 빈 문자열 — 가짜 날짜를 만들지 않는다. */
 function dayDate(project, index, style = "full") {
   const start = parseDate(project?.startDate);
@@ -568,8 +584,15 @@ function CardBody({
         <span className="time">
           {fmtTime(startMins)} – {fmtTime(endMins)}
         </span>
-        {/* 무료(0원)는 표기 자체를 생략한다 (QA 배치2) */}
-        {item?.cost > 0 && <span className="cost">{won(item.cost)}</span>}
+        {/* 무료(0원)는 표기 자체를 생략한다 (QA 배치2).
+            대중교통·기차·항공은 1인 요금이라 "/인"을 붙인다 — 안 붙이면 옆 패널의
+            총액과 안 맞아 보인다(총액에는 인원만큼 곱해 들어간다). */}
+        {item?.cost > 0 && (
+          <span className="cost">
+            {won(item.cost)}
+            {isPerPersonFare(item) && <span className="cost-unit">/인</span>}
+          </span>
+        )}
       </div>
       <div className="addr">📍 {item?.address || "위치 정보 없음"}</div>
       <div className="ctl">
@@ -875,9 +898,14 @@ function ReadModeView({ chains, items, dayKeys, project }) {
   // 배경·좌우 여백은 편집 모드와 같은 껍데기(.dash-shell/.dash-body)가 쥔다 —
   // 여기서 배경을 따로 칠하면 모드를 바꿀 때 화면이 갈라져 보인다.
 
-  // Day별 비용 합계 (QA 배치2) — 편집 모드 예산과 같은 기준(체인 배치 블록만)
+  // Day별 비용 합계 (QA 배치2) — 편집 모드 예산과 같은 기준(체인 배치 블록만 +
+  // 1인 요금 이동수단은 인원만큼 곱한다). 두 화면의 총액이 달라지면 안 된다.
+  const headcount = Math.max(1, project?.budgetHeadcount || 1);
   const dayCostOf = (day) =>
-    (chains[day] || []).reduce((sum, id) => sum + (items[id]?.cost || 0), 0);
+    (chains[day] || []).reduce(
+      (sum, id) => sum + effectiveCostOf(items[id], headcount),
+      0,
+    );
   const totalCost = dayKeys.reduce((sum, day) => sum + dayCostOf(day), 0);
 
   // 교통 블록 접기 카드 — 행(block)별 펼침 상태. Day 전체가 아니라 블록별로 접는다.
@@ -957,7 +985,12 @@ function ReadModeView({ chains, items, dayKeys, project }) {
                             <span> {item.transportMeta.chosen.departureName}</span>
                           )}
                           {item.cost > 0 && (
-                            <span className="rv-cost">{won(item.cost)}</span>
+                            <span className="rv-cost">
+                              {won(item.cost)}
+                              {isPerPersonFare(item) && (
+                                <span className="cost-unit">/인</span>
+                              )}
+                            </span>
                           )}
                           <span className="rv-transit-caret">
                             {expandedIds.has(id) ? "▲" : "▼"}
@@ -1077,8 +1110,8 @@ export function DashboardPage() {
   // 원천은 위 스냅샷 하나다 — 두 소스가 섞이면 날짜 수정 직후 값이 어긋난다.
   const numericGroupId = Number(groupId);
   const { group } = useGroupDetail(numericGroupId);
-  // 날짜 캘린더(handleDayDateChange)의 저장 경로로만 쓴다 — 저장 후 reload() 로
-  // 스냅샷을 다시 읽어야 이 화면의 Day 탭·날짜가 따라 바뀐다.
+  // 제목 옆 ✎(프로젝트 수정 모달)의 저장 경로로만 쓴다 — 저장 후 reload() 로
+  // 스냅샷을 다시 읽어야 이 화면의 제목·Day 탭·날짜가 따라 바뀐다.
   const { updateProject } = useProjects(numericGroupId);
   const currentUser = useAuthStore((s) => s.currentUser);
 
@@ -1090,7 +1123,7 @@ export function DashboardPage() {
   // 보이스 아이콘 펼침 여부. 기본은 접힘 — 평소엔 하단의 작은 타원 토글만 두고,
   // 누를 때만 마이크·스피커 아이콘이 나온다(보드를 가리지 않게).
   const [voiceOpen, setVoiceOpen] = useState(false);
-  const [dateEditOpen, setDateEditOpen] = useState(false); // 날짜 캘린더 열림 여부
+  const [editProjectOpen, setEditProjectOpen] = useState(false); // 프로젝트 수정 모달
   const [selectedDay, setActiveDay] = useState("d1");
   // 기간이 줄어 보고 있던 Day 가 사라지면 첫째 날을 본다 — 상태를 되돌리지 않고
   // 렌더 시점에 정하므로 "없는 Day 를 가리키는 한 프레임"이 생기지 않는다.
@@ -1391,49 +1424,6 @@ export function DashboardPage() {
   //  만들어진다 — 입장 시 지오코딩하던 부트스트랩은 실패·동시 입장 중복의
   //  여지가 있어 생성 시점으로 옮기며 제거했다. CreateProjectModal 참조.)
 
-  // 날짜 팝오버는 Esc 로 닫는다. 브라우저 캘린더를 자동으로 띄우지는 않는다 —
-  // 팝오버가 열리자마자 캘린더가 겹쳐 뜨면 시야를 가려서, 입력칸의 달력 표시를
-  // 눌렀을 때만 열리게 둔다.
-  useEffect(() => {
-    if (!dateEditOpen) return;
-    const onKey = (e) => e.key === "Escape" && setDateEditOpen(false);
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [dateEditOpen]);
-
-  /**
-   * 캘린더에서 고른 날짜를 지금 보고 있는 Day 의 날짜로 삼는다.
-   *
-   * 여행은 이어진 기간이라 Day 하나만 다른 날로 뗄 수 없다 — 고른 날짜에 이 Day 가 오도록
-   * 시작일·종료일을 통째로 옮긴다. 기간 길이는 그대로여서 Day 수와 블록 배치가 흔들리지
-   * 않는다. (며칠짜리 여행인지 자체를 바꾸는 건 그룹 페이지의 수정 폼에서 한다.)
-   */
-  async function handleDayDateChange(picked) {
-    setDateEditOpen(false);
-    const pickedDate = parseDate(picked);
-    if (!pickedDate || !project) return;
-
-    const newStart = new Date(pickedDate.getTime() - activeDayIndex * DAY_MS);
-    const newEnd = new Date(newStart.getTime() + (dayKeys.length - 1) * DAY_MS);
-    const startISO = toISODate(newStart);
-    const endISO = toISODate(newEnd);
-    if (startISO === project.startDate && endISO === project.endDate) return;
-
-    try {
-      await updateProject(projectId, {
-        name: project.name,
-        startDate: startISO,
-        endDate: endISO,
-      });
-      // 이 화면의 project 원천은 스냅샷이다 — 다시 읽어야 Day 탭·날짜가 따라온다.
-      // (기간 밖으로 밀려난 블록의 후보 이동도 서버 응답이 진실이다.)
-      reload();
-      showToast(`여행 일정을 ${startISO} 시작으로 옮겼어요 ✓`);
-    } catch {
-      showToast("날짜를 바꾸지 못했어요. 잠시 후 다시 시도해주세요.");
-    }
-  }
-
   const handleSearchPlace = (e) => {
     e.preventDefault();
     if (!searchKeyword.trim()) {
@@ -1535,13 +1525,19 @@ export function DashboardPage() {
     }
   };
 
+  // 정산·1인 요금 환산의 기준 인원. 프로젝트에 값이 없으면 최소 1명으로 본다.
+  const headcount = Math.max(1, project?.budgetHeadcount || 1);
+
   // 예산은 체인에 배치된 블록만 센다(명세) — 후보(POOL)는 아직 계획이 아니라
   // 검토 중인 카드라서, 합산에 넣으면 "쓸지 말지 모르는 돈"이 예산을 잠식한다.
   const placedIds = Object.values(chains).flat();
   const totalBudget = placedIds.reduce(
-    (sum, id) => sum + (items[id]?.cost || 0),
+    (sum, id) => sum + effectiveCostOf(items[id], headcount),
     0,
   );
+  // 총액을 인원으로 나눈 값 — 대중교통처럼 1인 요금인 항목은 이미 곱해 넣었으므로
+  // 여기서 나누면 다시 1인 몫으로 돌아온다.
+  const perPersonBudget = Math.round(totalBudget / headcount);
   const [targetBudget, setTargetBudget] = useState(0);
 
   // ── 스냅샷 → 로컬 보드 시드 ──────────────────────────
@@ -1643,13 +1639,14 @@ export function DashboardPage() {
         ? totalBudget || 1
         : targetBudget;
 
-    // 총액(totalBudget)과 같은 기준 — 체인에 배치된 블록만 (후보는 계획이 아니다)
+    // 총액(totalBudget)과 같은 기준 — 체인에 배치된 블록만 (후보는 계획이 아니다).
+    // 1인 요금 곱하기도 같은 함수를 써야 칸의 합이 총액과 맞는다.
     const sumByCat = {};
     Object.values(chains)
       .flat()
       .forEach((id) => {
         const item = items[id];
-        const cost = item?.cost || 0;
+        const cost = effectiveCostOf(item, headcount);
         if (cost <= 0) return;
         const cat = catKeyOf(item);
         sumByCat[cat] = (sumByCat[cat] ?? 0) + cost;
@@ -1666,7 +1663,7 @@ export function DashboardPage() {
         shareOfTotal:
           totalBudget > 0 ? (sumByCat[cat] / totalBudget) * 100 : 0,
       }));
-  }, [items, chains, targetBudget, totalBudget, remainingBudget]);
+  }, [items, chains, headcount, targetBudget, totalBudget, remainingBudget]);
 
   // 저장 실패 시 롤백 — "어디서 왔는지"를 복원하는 대신 서버 진실로 보드를
   // 다시 시드한다. 5.5단계 이후엔 교통 블록까지 전부 서버에 있으므로
@@ -3741,6 +3738,19 @@ export function DashboardPage() {
             <h1 className="dash-headbar-title">
               {project?.name ?? "여행 대시보드"}
             </h1>
+            {/* 예전엔 그룹 페이지로 돌아가야만 수정할 수 있었다 — 보고 있는
+                화면에서 바로 열 수 있게 제목 옆에 둔다 */}
+            {project && (
+              <button
+                type="button"
+                className="dash-headbar-edit"
+                title="프로젝트 수정"
+                aria-label="프로젝트 수정"
+                onClick={() => setEditProjectOpen(true)}
+              >
+                ✎
+              </button>
+            )}
             <div className="mode-switch">
               <button
                 className={`mode-tab ${viewMode === "edit" ? "on" : ""}`}
@@ -3804,60 +3814,23 @@ export function DashboardPage() {
                 <div className="board plan-board">
                   <div className="bd-head">
                     <h2>Day {activeDayIndex + 1}</h2>
-                    {/* 날짜를 누르면 캘린더가 열리고, 고른 날짜에 이 Day 가 오도록
-                        여행 일정 전체가 함께 옮겨진다. 프로젝트를 못 불러왔으면 표시만. */}
+                    {/* 날짜는 표시 전용이다 — 여행 기간은 상단바 제목 옆 ✎(프로젝트
+                        수정)에서 바꾼다. 안내 토글을 날짜 바로 옆에 붙여, 예전에
+                        날짜를 누르던 사람이 어디로 가야 하는지 여기서 알게 한다. */}
                     <div className="date-wrap">
-                      {project ? (
-                        <button
-                          type="button"
-                          className="date date-btn"
-                          title="날짜를 눌러 일정을 옮기세요"
-                          onClick={() => setDateEditOpen((v) => !v)}
-                        >
-                          {dayDate(project, activeDayIndex) || "날짜 미정"}
-                          <span className="date-ico">🗓</span>
-                        </button>
-                      ) : (
-                        <span className="date">
-                          {dayDate(project, activeDayIndex) || "날짜 미정"}
-                        </span>
-                      )}
-
-                      {dateEditOpen && (
-                        <>
-                          <div
-                            className="date-pop-back"
-                            onClick={() => setDateEditOpen(false)}
-                          />
-                          <div className="date-pop">
-                            <label htmlFor="day-date-input">
-                              Day {activeDayIndex + 1} 날짜
-                            </label>
-                            <input
-                              id="day-date-input"
-                              type="date"
-                              value={dayISODate(project, activeDayIndex)}
-                              onChange={(e) =>
-                                handleDayDateChange(e.target.value)
-                              }
-                            />
-                            <p>
-                              고른 날짜에 Day {activeDayIndex + 1} 이 오도록 여행{" "}
-                              {dayKeys.length}일 전체가 함께 옮겨져요.
-                            </p>
-                          </div>
-                        </>
-                      )}
+                      <span className="date">
+                        {dayDate(project, activeDayIndex) || "날짜 미정"}
+                      </span>
+                      <span
+                        // tip-down: 헤더 바로 아래라 위로 열면 상단바에 가린다
+                        className="hint-ico tip-down"
+                        tabIndex={0}
+                        aria-label="계획표 사용 안내"
+                        data-tip="후보 블록을 원하는 시간에 끌어다 놓아 일정을 만들어요. 블록의 위·아래 가장자리를 누르면 10분 단위로 길이를 조절하고, 블록 사이 🚗 버튼으로 이동수단을 추가할 수 있어요. 여행 날짜는 위 제목 옆 ✎ 에서 바꿀 수 있어요."
+                      >
+                        ⓘ
+                      </span>
                     </div>
-                    <span
-                      // tip-down: 헤더 바로 아래라 위로 열면 상단바에 가린다
-                      className="hint-ico tip-down"
-                      tabIndex={0}
-                      aria-label="계획표 사용 안내"
-                      data-tip="후보 블록을 원하는 시간에 끌어다 놓아 일정을 만들어요. 블록의 위·아래 가장자리를 누르면 10분 단위로 길이를 조절하고, 블록 사이 🚗 버튼으로 이동수단을 추가할 수 있어요."
-                    >
-                      ⓘ
-                    </span>
                     <div className="right">
                       <button
                         className="auto-transport-btn"
@@ -4104,13 +4077,10 @@ export function DashboardPage() {
                     <span className="bud-total-value">
                       {won(totalBudget) || "0원"}
                     </span>
-                    <span
-                      className="hint-ico"
-                      tabIndex={0}
-                      aria-label="예산 사용 안내"
-                      data-tip="계획표에 배치된 블록들의 비용 합계예요(후보 목록은 제외). 희망 총 예산을 정하면 카테고리별 사용률이 막대로 보여요 — 금액을 클릭하면 직접 입력할 수 있어요."
-                    >
-                      ⓘ
+                    {/* 정산은 결국 1인당 얼마인지가 궁금하다 — 총액 옆에 바로 붙인다 */}
+                    <span className="bud-total-per">
+                      1인당 {won(perPersonBudget) || "0원"}
+                      <span className="bud-total-per-n"> · {headcount}인</span>
                     </span>
                   </div>
 
@@ -4719,6 +4689,18 @@ export function DashboardPage() {
         </button>
       </div>
 
+      {/* 프로젝트 수정 — 그룹 페이지의 ✎ 와 같은 모달을 그대로 쓴다.
+          저장 뒤에는 스냅샷을 다시 읽어야 제목·Day 탭·기간이 따라온다
+          (이 화면의 project 원천은 목록이 아니라 스냅샷이다). */}
+      {editProjectOpen && project && (
+        <EditProjectModal
+          open
+          project={project}
+          onUpdate={updateProject}
+          onSaved={reload}
+          onClose={() => setEditProjectOpen(false)}
+        />
+      )}
     </>
   );
 }

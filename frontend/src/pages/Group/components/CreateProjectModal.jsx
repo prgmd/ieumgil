@@ -1,14 +1,9 @@
 import { useState } from 'react';
 import Modal from '../../My/shared/ui/Modal';
+import TransportPicker from '../../My/shared/ui/TransportPicker';
 import { useToastStore } from '../../../global/stores/toastStore';
 import { searchPlaces } from '../../../features/dashboard/map/addressLookup';
 import { createBlock } from '../../../features/dashboard/api/dashboardApi';
-
-// PROJECT.transport_pref는 CAR | PUBLIC 두 값뿐이다 (ERD.md).
-const TRANSPORT_OPTIONS = [
-  { value: 'CAR', label: '자차 (렌트)' },
-  { value: 'PUBLIC', label: '대중교통' },
-];
 
 function todayISO() {
   return new Date().toISOString().slice(0, 10);
@@ -264,41 +259,20 @@ export default function CreateProjectModal({ open, onClose, onCreate }) {
         </div>
       </div>
 
-      <div className="r2">
-        <div>
-          <fieldset>
-            <legend>주요 이동수단 * (복수 선택)</legend>
-            {TRANSPORT_OPTIONS.map((opt) => (
-              <label key={opt.value}>
-                <input
-                  type="checkbox"
-                  checked={form.transportPrefs.includes(opt.value)}
-                  onChange={(e) => {
-                    setForm((f) => ({
-                      ...f,
-                      transportPrefs: e.target.checked
-                        ? [...f.transportPrefs, opt.value]
-                        : f.transportPrefs.filter((v) => v !== opt.value),
-                    }));
-                  }}
-                />
-                {opt.label}
-              </label>
-            ))}
-          </fieldset>
-        </div>
-        <div>
-          <label>목표 예산 (총액, 원)</label>
-          <input
-            type="number"
-            min={0}
-            step={10000}
-            placeholder="예: 600000"
-            value={form.targetBudget}
-            onChange={(e) => update('targetBudget', e.target.value)}
-          />
-        </div>
-      </div>
+      <TransportPicker
+        value={form.transportPrefs}
+        onChange={(next) => update('transportPrefs', next)}
+      />
+
+      <label>목표 예산 (총액, 원)</label>
+      <input
+        type="number"
+        min={0}
+        step={10000}
+        placeholder="예: 600000"
+        value={form.targetBudget}
+        onChange={(e) => update('targetBudget', e.target.value)}
+      />
 
       {error && <div className="code-err">{error}</div>}
 

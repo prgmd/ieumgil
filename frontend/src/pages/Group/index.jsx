@@ -11,9 +11,7 @@ import EditProjectModal from './components/EditProjectModal';
 import DeleteProjectModal from './components/DeleteProjectModal';
 import { AppBar } from '../My/shared/ui/AppBar';
 import { Avatar } from '../My/shared/ui/Avatar';
-
-// PROJECT.transport_pref — ERD상 CAR | PUBLIC 두 값만 저장하고 표기만 한글로 한다.
-const TRANSPORT_LABEL = { CAR: '자차 (렌트)', PUBLIC: '대중교통' };
+import { TRANSPORT_LABEL } from '../My/shared/ui/transportLabels';
 
 export function GroupPage() {
   // 라우트 파라미터는 문자열 — 서버의 숫자 ID와 맞추려면 변환이 필요하다.
