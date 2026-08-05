@@ -9,7 +9,7 @@ import { useParams, useNavigate } from "react-router-dom";
 import { BlockEditForm } from "./components/BlockEditForm";
 import { ChatbotWidget } from "./components/ChatbotWidget";
 import { RemoteCursorLayer } from "./components/RemoteCursorLayer";
-import { TransitCandidateCard } from "./components/TransitCandidateCard";
+import { TransitPickerModals } from "./components/TransitPickerModals";
 import { hueOf } from "./components/memberColor";
 import { buildTransportMeta } from "./transitMeta";
 import { CardBody } from "./components/CardBody";
@@ -3930,213 +3930,21 @@ export function DashboardPage() {
         </div>
       )}
 
-      {/* 이동수단 자동 생성(통합) — Day 전 구간의 후보를 한 모달에서 고르고
-          "적용"하면 일괄 생성된다 (confirmBulkTransit) */}
-      {bulkTransitPicker && (
-        <div className="blk-modal-ov" onClick={() => setBulkTransitPicker(null)}>
-          <div
-            className="transit-picker tp-bulk"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <h3 className="tp-title">이동수단 자동 생성</h3>
-            <p className="tp-route">
-              구간마다 이동수단을 고르세요 — 기본값은 추천 수단이에요.
-            </p>
-            <div className="tp-seg-list">
-              {bulkTransitPicker.segments.map((s) => {
-                const pairKey = `${s.fromBlockId}-${s.toBlockId}`;
-                const chosen = bulkTransitPicker.choices[pairKey];
-                const routable = s.candidates?.some((c) => c.status === "OK");
-                return (
-                  <div key={pairKey} className="tp-seg">
-                    <div className="tp-seg-route">
-                      {items[s.fromBlockId]?.name ?? "?"} →{" "}
-                      {items[s.toBlockId]?.name ?? "?"}
-                      {!routable && (
-                        <em className="tp-seg-none">경로 없음</em>
-                      )}
-                    </div>
-                    {s.timetableApplied === false && s.timetableSkipReason && (
-                      <p className="tp-banner tp-banner-warn">
-                        {s.timetableSkipReason}
-                      </p>
-                    )}
-                    {routable && (
-                      <div className="tp-chips">
-                        {s.candidates.map((c, idx) => (
-                          <TransitCandidateCard
-                            key={`${c.mode}-${idx}`}
-                            candidate={c}
-                            mode="select"
-                            selected={chosen?.candidate === c}
-                            onSelectCandidate={(cand) =>
-                              setBulkChoice(pairKey, {
-                                candidate: cand,
-                                departure: cand.departures?.[0] ?? null,
-                              })
-                            }
-                            selectedDepartureName={
-                              chosen?.candidate === c
-                                ? (chosen?.departure?.name ?? null)
-                                : null
-                            }
-                            onSelectDeparture={(d) =>
-                              setBulkChoice(pairKey, { candidate: c, departure: d })
-                            }
-                          />
-                        ))}
-                        <button
-                          type="button"
-                          className={`tp-chip tp-chip-skip ${chosen === null ? "on" : ""}`}
-                          onClick={() => setBulkChoice(pairKey, null)}
-                        >
-                          제외
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-            <div className="tp-actions">
-              <button
-                type="button"
-                className="tp-cancel"
-                onClick={() => setBulkTransitPicker(null)}
-              >
-                취소
-              </button>
-              <button
-                type="button"
-                className="tp-apply"
-                onClick={confirmBulkTransit}
-              >
-                {
-                  Object.values(bulkTransitPicker.choices).filter(Boolean)
-                    .length
-                }
-                개 구간 적용
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* 이동수단 선택 — 구간 버튼이 후보를 받아 오면 열린다. 고른 수단으로
-          그 자리에 교통 블록이 생성된다 (confirmTransitChoice) */}
-      {transitPicker && (
-        <div className="blk-modal-ov" onClick={() => setTransitPicker(null)}>
-          <div className="transit-picker" onClick={(e) => e.stopPropagation()}>
-            <h3 className="tp-title">이동수단 선택</h3>
-            <p className="tp-route">
-              {items[transitPicker.currentId]?.name ?? "출발지"} →{" "}
-              {items[transitPicker.nextId]?.name ?? "도착지"}
-            </p>
-            {transitPicker.segment?.timetableApplied === false &&
-              transitPicker.segment?.timetableSkipReason && (
-                <p className="tp-banner tp-banner-warn">
-                  {transitPicker.segment.timetableSkipReason}
-                </p>
-              )}
-            <div className="tp-list">
-              {transitPicker.candidates.map((c, idx) => (
-                <TransitCandidateCard
-                  key={`${c.mode}-${idx}`}
-                  candidate={c}
-                  mode="select"
-                  selected={transitPicker.chosenCandidate === c}
-                  onSelectCandidate={setTransitPickerCandidate}
-                  selectedDepartureName={
-                    transitPicker.chosenCandidate === c
-                      ? (transitPicker.chosenDeparture?.name ?? null)
-                      : null
-                  }
-                  // 편을 고르면 그 편이 속한 후보도 함께 선택된다 — 선택 안 된
-                  // 후보의 편을 바로 눌렀을 때 후보가 안 바뀌던 문제 방지
-                  onSelectDeparture={(d) =>
-                    setTransitPicker((prev) =>
-                      prev
-                        ? { ...prev, chosenCandidate: c, chosenDeparture: d }
-                        : prev,
-                    )
-                  }
-                />
-              ))}
-            </div>
-            <div className="tp-actions">
-              <button
-                type="button"
-                className="tp-cancel"
-                onClick={() => setTransitPicker(null)}
-              >
-                취소
-              </button>
-              <button
-                type="button"
-                className="tp-apply"
-                disabled={transitPicker.chosenCandidate?.status !== "OK"}
-                onClick={confirmTransitChoice}
-              >
-                이 수단으로 추가
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* 교통 블록 편집 재선택 — 저장된 candidates 스냅샷으로 재조회 없이 연다.
-          "저장"을 눌러야 PATCH /blocks/{id}/fields 로 transportMeta 를 통째 교체한다 */}
-      {transportReselectPicker && (
-        <div
-          className="blk-modal-ov"
-          onClick={() => setTransportReselectPicker(null)}
-        >
-          <div className="transit-picker" onClick={(e) => e.stopPropagation()}>
-            <h3 className="tp-title">이동 수단 변경</h3>
-            <div className="tp-list">
-              {transportReselectPicker.candidates.map((c, idx) => (
-                <TransitCandidateCard
-                  key={`${c.mode}-${idx}`}
-                  candidate={c}
-                  mode="select"
-                  selected={transportReselectPicker.chosenCandidate === c}
-                  onSelectCandidate={setReselectCandidate}
-                  selectedDepartureName={
-                    transportReselectPicker.chosenCandidate === c
-                      ? (transportReselectPicker.chosenDeparture?.name ?? null)
-                      : null
-                  }
-                  // 편 선택 = 그 후보 선택까지 (단일 피커와 같은 이유)
-                  onSelectDeparture={(d) =>
-                    setTransportReselectPicker((prev) =>
-                      prev
-                        ? { ...prev, chosenCandidate: c, chosenDeparture: d }
-                        : prev,
-                    )
-                  }
-                />
-              ))}
-            </div>
-            <div className="tp-actions">
-              <button
-                type="button"
-                className="tp-cancel"
-                onClick={() => setTransportReselectPicker(null)}
-              >
-                취소
-              </button>
-              <button
-                type="button"
-                className="tp-apply"
-                disabled={transportReselectPicker.chosenCandidate?.status !== "OK"}
-                onClick={applyReselectTransport}
-              >
-                저장
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <TransitPickerModals
+        items={items}
+        bulkTransitPicker={bulkTransitPicker}
+        setBulkTransitPicker={setBulkTransitPicker}
+        setBulkChoice={setBulkChoice}
+        confirmBulkTransit={confirmBulkTransit}
+        transitPicker={transitPicker}
+        setTransitPicker={setTransitPicker}
+        setTransitPickerCandidate={setTransitPickerCandidate}
+        confirmTransitChoice={confirmTransitChoice}
+        transportReselectPicker={transportReselectPicker}
+        setTransportReselectPicker={setTransportReselectPicker}
+        setReselectCandidate={setReselectCandidate}
+        applyReselectTransport={applyReselectTransport}
+      />
 
       {/* 보이스 위젯 — 화면 맨 아래 가장자리에 붙은 탭(Vue DevTools 의 그 탭처럼).
           평소엔 윗부분만 빼꼼 보이다가 올리면 다 나오고, 누르면 그 위로 마이크·
