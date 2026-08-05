@@ -26,10 +26,10 @@
 | Method | Path | 설명 | Auth |
 |---|---|---|---|
 | POST | `/api/auth/login/kakao` | 카카오 인가 코드로 로그인/회원가입 | No |
-| POST | `/api/auth/login/naver` | 네이버 인가 코드로 로그인/회원가입 | No |
+| POST | `/api/auth/login/naver` | 네이버 인가 코드로 로그인/회원가입 **(⚠️ 미구현 — 네이버 로그인 v1 범위 제외 확정, 백엔드 코드 0건)** | No |
 | POST | `/api/auth/refresh` | Access 재발급 (RTR — refreshToken 교체) | Cookie |
 | POST | `/api/auth/logout` | Refresh 무효화 + 쿠키 만료 | Yes |
-| POST | `/api/auth/test-token` | **dev 전용** — 시드 멤버 JWT 발급 | No (local) |
+| POST | `/api/auth/test-token` | **dev 전용** — 시드 멤버 JWT 발급 **(⚠️ 미구현 — 백엔드 매핑 없음)** | No (local) |
 
 > 내 정보 조회(`GET /api/members/me`)·회원 탈퇴(`DELETE /api/members/me`)는 [my-group-api.md](my-group-api.md)로 이동.
 
@@ -83,6 +83,8 @@
 ---
 
 ### POST /api/auth/login/naver
+
+> ⚠️ **미구현 — v1 범위 제외 확정.** 아래는 계획 명세일 뿐 백엔드 구현이 없다(`AUTH-03`, 코드 0건). 에러코드 `NAVER_AUTH_FAILED`·`SOCIAL_SERVER_ERROR`도 실제 enum에 없다.
 
 네이버 인가 코드로 로그인/회원가입. 흐름은 카카오와 동일.
 
@@ -147,6 +149,8 @@ Refresh 무효화(Redis 삭제) + refreshToken 쿠키 만료.
 ---
 
 ### POST /api/auth/test-token
+
+> ⚠️ **미구현** — 백엔드에 이 매핑이 없다(코드 0건). 아래는 계획 명세다. 동시 편집 수동 검증이 이 엔드포인트를 전제한다면 먼저 구현이 필요하다.
 
 **dev 전용 (`@Profile("local")`)** — 시드 멤버용 진짜 JWT 발급. Swagger에서 소셜 콜백 없이 "멤버 n으로 로그인" 상태를 즉시 구성. 동시 편집 테스트 시 멤버 1·2 토큰을 각각 받아 두 탭으로 검증.
 
