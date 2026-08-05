@@ -662,6 +662,67 @@ class TransitCandidateServiceImplTest {
     }
 
     @Test
+    @DisplayName("환승 시외 구간(pathType 20)은 두 번째 leg 시간표를 붙여 연결편을 계산한다")
+    void 환승_시외_구간은_연결편을_계산한다() {
+        // 이 테스트가 실패해야 하는 회귀: candidateFor가 legs.legs().get(0) 대신
+        // legs.legs().get(size-1)을 써도 기존 단일 leg 픽스처들은 전부 통과한다(leg가 하나뿐이라
+        // get(0)==get(size-1)). 첫 leg(기차·3300xxx)와 두 번째 leg(항공·3500xxx)가 서로 다른
+        // 역 ID 대역·시간표 API를 쓰는 이 픽스처만이 그 스왑을 실제로 잡아낸다.
+        given(blockRepository.findAllByIdInAndProject_IdAndDeletedAtIsNull(List.of(1L, 3L), PROJECT_ID))
+                .willReturn(List.of(seoulBlock(), jejuBlock()));
+        given(projectRepository.findByIdAndDeletedAtIsNull(PROJECT_ID)).willReturn(Optional.of(publicProject()));
+        given(publicTransitQueryService.getCombinedRoutes(anyDouble(), anyDouble(), anyDouble(), anyDouble()))
+                .willReturn(List.of(transferTrainAirPath()));
+        // 첫 leg에 편을 둘 둔다 — 두 번째 leg 시간표 조회가 첫 편마다 다시 불리는 N×M 회귀라면
+        // 아래 verify(times(1))가 잡아낸다(편이 하나뿐이면 한 번 호출과 구분되지 않는다).
+        given(transitScheduleQueryService.getTrainSchedule(eq(3300128), eq(3300140), any(LocalDate.class)))
+                .willReturn(List.of(
+                        train("KTX", 1, "16:00", "18:37", 59800),
+                        train("무궁화", 501, "17:00", "19:30", 28600)));
+        // 19:00발은 18:37 도착 + 10분(기차 여유)과 40분(항공 여유) 사이에 있다 — AIR 여유를 쓰면
+        // 19:17 이전이라 제외되고 20:00발이 남지만, secondMode 대신 첫 leg의 mode(TRAIN, 10분)를
+        // 잘못 쓰면 18:47 이후라 통과해 19:00발이 선택된다. 두 여유를 구분하는 유일한 편이다.
+        given(transitScheduleQueryService.getFlightSchedule(eq(3500008), eq(3500003), any(LocalDate.class)))
+                .willReturn(List.of(
+                        TransitScheduleResDTO.FlightSchedule.builder()
+                                .airline("진에어").flightNo("7C150")
+                                .departureTime("19:00").arrivalTime("19:50").runDay("매일")
+                                .build(),
+                        TransitScheduleResDTO.FlightSchedule.builder()
+                                .airline("제주항공").flightNo("7C200")
+                                .departureTime("20:00").arrivalTime("21:00").runDay("매일")
+                                .build()));
+
+        TransitCandidateResDTO.Result result =
+                service.calculate(PROJECT_ID, List.of(1L, 3L), null);
+
+        Candidate train = candidateOf(result, TransitMode.TRAIN);
+        assertThat(train.transferCount()).isEqualTo(1);
+        // 17:00발(19:30 도착)은 20:10 이후 편이 없어 연결편을 못 찾고 빠진다 — 16:00발만 남는다
+        assertThat(train.departures()).hasSize(1);
+        TransitCandidateResDTO.Departure first = train.departures().get(0);
+        assertThat(first.departureAt()).isEqualTo("16:00");
+        TransitCandidateResDTO.Connection connection = first.connection();
+        assertThat(connection).isNotNull();
+        assertThat(connection.name()).isEqualTo("제주항공 7C200");
+        // 18:37 도착 + 40분(항공 탑승 여유) = 19:17 이후 최속편 → 19:00발은 이르므로 빠지고 20:00
+        assertThat(connection.departureAt()).isEqualTo("20:00");
+        assertThat(connection.arrivalAt()).isEqualTo("21:00");
+        // 환승 지점 이름은 두 번째 leg(항공)의 SubPath에서 온다 — 픽스처 전체에서 "광주공항"은
+        // 이 leg의 startName뿐이라 다른 leg와 뒤바뀌거나 필드가 스왑되면 이 값이 깨진다
+        assertThat(connection.fromStation()).isEqualTo("광주공항");
+        assertThat(connection.toStation()).isEqualTo("제주공항");
+        // transferMin은 실제 대기(18:37→20:00)다: 83분
+        assertThat(connection.transferMin()).isEqualTo(83);
+        // 첫 leg 대표값(157분·59,800원)은 그대로 top-level 값이다 — door-to-door 합산은 이 과업의 범위가 아니다
+        assertThat(train.durationMin()).isEqualTo(157);
+        assertThat(train.fare()).isEqualTo(59800);
+        // 두 번째 leg 시간표는 첫 leg 편이 둘이어도 한 번만 조회된다
+        verify(transitScheduleQueryService, times(1))
+                .getFlightSchedule(eq(3500008), eq(3500003), any(LocalDate.class));
+    }
+
+    @Test
     @DisplayName("[실측 35/35] 시외버스(tt6) leg도 고속버스(tt5)와 같은 searchInterBusSchedule로 간다")
     void 시외버스_leg도_고속버스와_같은_엔드포인트로_간다() {
         given(blockRepository.findAllByIdInAndProject_IdAndDeletedAtIsNull(List.of(1L, 2L), PROJECT_ID))
@@ -1295,6 +1356,22 @@ class TransitCandidateServiceImplTest {
                 new OdsayRouteResponse.Info(356, null, null, 436642, null, null, null, "청주", "제주"),
                 List.of(new OdsayRouteResponse.SubPath(7, 356, 436642, "청주공항", "제주공항", null,
                         3500005, 3500003, null, null, null, null, null, null, null, null, null, null)));
+    }
+
+    /**
+     * 환승 경로(pathType=20). 첫 leg는 기차(서울역 3300128→광주송정 3300140), 두 번째 leg는
+     * 항공(광주공항 3500008→제주공항 3500003)이다 — {@code IntercityLegsTest.복합_경로()}와 같은
+     * ID를 쓴다. 대표 수단은 첫 leg 기준(기차)이고, 두 번째 leg는 서로 다른 역 ID 대역이라
+     * 시간표 API도 다르다 — get(0)↔get(size-1) 스왑을 잡아내는 유일한 픽스처다.
+     */
+    private OdsayRouteResponse.Path transferTrainAirPath() {
+        return new OdsayRouteResponse.Path(20,
+                new OdsayRouteResponse.Info(220, null, null, 400000, null, null, null, "서울", "제주", null, 1),
+                List.of(
+                        new OdsayRouteResponse.SubPath(4, 157, 300000, "서울역", "광주송정", null,
+                                3300128, 3300140, null, null, null, null, null, null, null, null, null, null),
+                        new OdsayRouteResponse.SubPath(7, 63, 400000, "광주공항", "제주공항", null,
+                                3500008, 3500003, null, null, null, null, null, null, null, null, null, null)));
     }
 
     /** 버스로만 이어지는 순수 육로 경로 */

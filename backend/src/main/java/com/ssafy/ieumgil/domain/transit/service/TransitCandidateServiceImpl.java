@@ -19,8 +19,10 @@ import com.ssafy.ieumgil.domain.transit.dto.TransitScheduleResDTO;
 import com.ssafy.ieumgil.domain.transit.exception.TransitErrorCode;
 import com.ssafy.ieumgil.domain.transit.exception.TransitException;
 import com.ssafy.ieumgil.domain.transit.util.BoardingMargin;
+import com.ssafy.ieumgil.domain.transit.util.ConnectionPlanner;
 import com.ssafy.ieumgil.domain.transit.util.Haversine;
 import com.ssafy.ieumgil.domain.transit.util.IntercityLegs;
+import com.ssafy.ieumgil.domain.transit.util.StationIdBands;
 import com.ssafy.ieumgil.global.exception.CustomException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -486,7 +488,7 @@ public class TransitCandidateServiceImpl implements TransitCandidateService {
         List<Candidate> candidates = new ArrayList<>();
         for (TransitMode mode : INTERCITY_MODES) {
             candidates.add(departureCandidate(
-                    mode, List.of(), road.firstStartStation(), road.lastEndStation()));
+                    mode, List.of(), road.firstStartStation(), road.lastEndStation(), 0));
         }
         candidates.addAll(road.roadCandidates());
 
@@ -624,13 +626,76 @@ public class TransitCandidateServiceImpl implements TransitCandidateService {
      * 수단별 시외 후보. {@code legs}가 없으면(=ODsay 응답에 이 수단의 경로가 없거나 첫 leg의
      * 역 ID 대역을 판별할 수 없음) 조회 자체를 시도하지 않고 조회 실패로 낸다 — 이름 검색으로
      * 대체하지 않는다.
+     *
+     * <p>환승 경로(leg 2개)는 첫 leg 후보를 만든 뒤 {@link #withConnections}가 두 번째 leg
+     * 시간표를 붙인다. 첫 leg 조회 자체가 실패했으면(조회 실패) 두 번째 leg를 붙일 수 없으므로
+     * 그대로 반환한다.
      */
     private Candidate candidateFor(
             TransitMode mode, IntercityLegs legs, int base, LocalDate startDate, int dayNo, String from, String to) {
         if (legs == null) {
             return Candidate.lookupFailed(mode);
         }
-        return timetableCandidateFor(mode, legs.legs().get(0), base, startDate, dayNo, from, to);
+        Candidate firstLegCandidate = timetableCandidateFor(mode, legs.legs().get(0), base, startDate, dayNo, from, to);
+        if (!legs.isTransfer() || firstLegCandidate.status() != CandidateStatus.OK) {
+            return firstLegCandidate;
+        }
+        return withConnections(mode, legs, firstLegCandidate, base, startDate, dayNo, from, to);
+    }
+
+    /**
+     * 환승 경로의 두 번째 leg 시간표를 <b>한 번만</b> 불러 첫 leg의 편마다 연결편을 붙인다.
+     *
+     * <p>두 번째 leg의 수단은 첫 leg과 같다고 가정하지 않고 다시 판별한다({@link StationIdBands#modeOf}) —
+     * {@code pathType 20}처럼 두 leg가 서로 다른 수단(기차→항공 등)일 수 있어서다. 판별할 수
+     * 없거나 두 번째 leg 조회 자체가 실패하면 추측하지 않고 조회 실패로 낸다 — 첫 leg만 있는
+     * 반쪽 경로를 직통처럼 내보내지 않는다.
+     */
+    private Candidate withConnections(
+            TransitMode mode, IntercityLegs legs, Candidate firstLegCandidate,
+            int base, LocalDate startDate, int dayNo, String from, String to) {
+        Optional<TransitMode> secondMode = StationIdBands.modeOf(legs.legs().get(1).startID());
+        if (secondMode.isEmpty()) {
+            log.warn("환승 두 번째 leg의 역 ID 대역을 판별할 수 없다: mode={}", mode);
+            return Candidate.lookupFailed(mode);
+        }
+        Candidate secondLegCandidate =
+                timetableCandidateFor(secondMode.get(), legs.legs().get(1), base, startDate, dayNo, from, to);
+        if (secondLegCandidate.status() != CandidateStatus.OK) {
+            return Candidate.lookupFailed(mode);
+        }
+        List<TransitCandidateResDTO.Departure> connected = ConnectionPlanner.connect(
+                firstLegCandidate.departures(), secondLegCandidate.departures(), secondMode.get());
+        List<TransitCandidateResDTO.Departure> withStations =
+                attachTransferStations(connected, legs.legs().get(1));
+        return departureCandidate(mode, withStations, from, to, legs.legs().size() - 1);
+    }
+
+    /**
+     * 연결편에 환승 지점 이름을 붙인다. {@link ConnectionPlanner}는 순수 함수라 역 이름을 모른다 —
+     * 두 leg를 다 아는 이 서비스가 두 번째 leg의 {@code SubPath}에서 이름을 가져와 채운다.
+     * 이름이 없으면(null) 지어내지 않고 그대로 null로 둔다.
+     */
+    private List<TransitCandidateResDTO.Departure> attachTransferStations(
+            List<TransitCandidateResDTO.Departure> departures, OdsayRouteResponse.SubPath secondLeg) {
+        return departures.stream().map(departure -> withTransferStations(departure, secondLeg)).toList();
+    }
+
+    private TransitCandidateResDTO.Departure withTransferStations(
+            TransitCandidateResDTO.Departure departure, OdsayRouteResponse.SubPath secondLeg) {
+        TransitCandidateResDTO.Connection connection = departure.connection();
+        TransitCandidateResDTO.Connection withStations = TransitCandidateResDTO.Connection.builder()
+                .name(connection.name())
+                .grade(connection.grade())
+                .departureAt(connection.departureAt())
+                .arrivalAt(connection.arrivalAt())
+                .durationMin(connection.durationMin())
+                .fare(connection.fare())
+                .transferMin(connection.transferMin())
+                .fromStation(secondLeg.startName())
+                .toStation(secondLeg.endName())
+                .build();
+        return departure.toBuilder().connection(withStations).build();
     }
 
     /**
@@ -641,11 +706,9 @@ public class TransitCandidateServiceImpl implements TransitCandidateService {
      * {@link StationIdBands}로 둘을 하나(EXPRESS_BUS)로 합쳐 판별해 뒀으므로 여기서 다시 나누지 않는다.
      *
      * <p>package-private인 이유는 두 가지다. 첫째 {@code TransitCandidateServiceImplTest}가 직접
-     * 부른다({@link #TIMETABLE_TIMEOUT}과 같은 이유). 둘째, <b>환승 경로(leg 2개)의 첫 leg만</b>
-     * 채운다 — 두 번째 leg는 이어주는 로직(다음 과업)이 이 메서드를
-     * {@code timetableCandidateFor(secondLegMode, legs.legs().get(1), ...)}로 다시 불러 채우면 된다.
-     * {@code secondLegMode}는 두 번째 leg에서 다시 판별해야 할 수 있다({@link StationIdBands#modeOf}) —
-     * {@code pathType 20}처럼 두 leg가 서로 다른 수단일 수 있어서다.
+     * 부른다({@link #TIMETABLE_TIMEOUT}과 같은 이유). 둘째, 이 메서드는 leg 하나만 안다 — 환승
+     * 경로(leg 2개)에서는 {@link #withConnections}가 이 메서드를 첫 leg·두 번째 leg에 각각 한
+     * 번씩 불러 두 후보를 만들고, {@link ConnectionPlanner}로 이어붙인다.
      */
     Candidate timetableCandidateFor(
             TransitMode mode, OdsayRouteResponse.SubPath leg, int base, LocalDate startDate, int dayNo,
@@ -667,7 +730,7 @@ public class TransitCandidateServiceImpl implements TransitCandidateService {
             // 항공은 요금이 없어 최저가 축을 쓸 수 없다(fareAware=false) — 시각순 3편이다.
             boolean fareAware = mode != TransitMode.AIR;
             return departureCandidate(mode,
-                    DepartureSelector.selectThree(afterReference(all, reference.time()), fareAware), from, to);
+                    DepartureSelector.selectThree(afterReference(all, reference.time()), fareAware), from, to, 0);
         } catch (RuntimeException e) {
             log.warn("{} 시간표 조회 실패: startId={}, endId={}", mode.label(), leg.startID(), leg.endID(), e);
             return Candidate.lookupFailed(mode);
@@ -763,16 +826,21 @@ public class TransitCandidateServiceImpl implements TransitCandidateService {
      *
      * <p>편이 없으면 leg도 없다. 탈 편이 정해지지 않았는데 구간을 그리면 소요시간을 0분으로
      * 채우게 되고("즉시 도착"), 역 이름조차 없는 경우 {@code from}·{@code to}가 null인 구간이 남는다.
+     *
+     * @param transferCount 환승 횟수. 직통은 0, 환승 경로는 {@code legs.size() - 1}이다
+     *                      ({@link #withConnections}). 대표값(durationMin·fare·legs)은 여전히
+     *                      첫 편 하나에서만 온다 — door-to-door 합산은 이 메서드의 몫이 아니다.
      */
     private Candidate departureCandidate(
-            TransitMode mode, List<TransitCandidateResDTO.Departure> selected, String from, String to) {
+            TransitMode mode, List<TransitCandidateResDTO.Departure> selected, String from, String to,
+            int transferCount) {
         if (selected.isEmpty()) {
             return Candidate.builder()
                     .mode(mode)
                     .label(mode.label())
                     .status(CandidateStatus.OK)
                     .fareConfidence(TransitResDTO.FareConfidence.UNKNOWN)
-                    .transferCount(0)
+                    .transferCount(transferCount)
                     .legs(List.of())
                     .departures(List.of())
                     .build();
@@ -786,7 +854,7 @@ public class TransitCandidateServiceImpl implements TransitCandidateService {
                 .durationMin(first.durationMin())
                 .fare(first.fare())
                 .fareConfidence(first.fareConfidence())
-                .transferCount(0)
+                .transferCount(transferCount)
                 .legs(List.of(TransitLegResDTO.Leg.builder()
                         .type(legTypeOf(mode))
                         .from(from)

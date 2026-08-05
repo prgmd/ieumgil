@@ -81,7 +81,7 @@ public class TransitCandidateResDTO {
             Integer distanceM,
             /** 시내 대중교통 후보의 선정 이유("최단 시간" 등). 나머지 수단은 null */
             List<String> labels,
-            /** 환승 횟수. 시외는 0, 자차·택시·도보는 null */
+            /** 환승 횟수. 시외 직통은 0, 환승(leg 2개)은 1, 자차·택시·도보는 null */
             Integer transferCount,
             /** 도보 거리(m). 시내 대중교통만 */
             Integer walkMeters,
@@ -139,7 +139,7 @@ public class TransitCandidateResDTO {
     }
 
     @Schema(description = "시외 출발편")
-    @Builder
+    @Builder(toBuilder = true)
     public record Departure(
             /** "KTX 1", "무궁화 1203" 등 사용자에게 보일 이름 */
             String name,
@@ -162,7 +162,7 @@ public class TransitCandidateResDTO {
             List<String> labels,
             /** 접근 도착 → 이 편 출발까지 대기(분). 아직 어떤 후보도 채우지 않는다(추후 과업) */
             Integer waitMin,
-            /** 환승 연결편. 직통이면 null. 아직 어떤 후보도 채우지 않는다(추후 과업) */
+            /** 환승 연결편. 직통이면 null */
             Connection connection
     ) {
     }
