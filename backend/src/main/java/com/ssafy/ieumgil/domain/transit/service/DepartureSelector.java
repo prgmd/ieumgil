@@ -56,17 +56,7 @@ public final class DepartureSelector {
         if (!labels.contains(label)) {
             labels.add(label);
         }
-        return Departure.builder()
-                .name(departure.name())
-                .grade(departure.grade())
-                .departureAt(departure.departureAt())
-                .arrivalAt(departure.arrivalAt())
-                .durationMin(departure.durationMin())
-                .fare(departure.fare())
-                .fareConfidence(departure.fareConfidence())
-                .fareOptions(departure.fareOptions())
-                .labels(List.copyOf(labels))
-                .build();
+        return departure.toBuilder().labels(List.copyOf(labels)).build();
     }
 
     private DepartureSelector() {

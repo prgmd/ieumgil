@@ -37,6 +37,6 @@ public class TransitCandidateController {
             @PathVariable Long projectId,
             @Valid @RequestBody TransitCandidateReqDTO.Calculate request) {
         return CustomResponse.onSuccess(
-                transitCandidateService.calculate(projectId, request.blockIds(), request.dayStart()));
+                transitCandidateService.calculate(projectId, request.blockIds()));
     }
 }

@@ -1,11 +1,13 @@
 package com.ssafy.ieumgil.domain.transit.dto;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import com.fasterxml.jackson.annotation.JsonProperty;
 
 import java.util.List;
+import java.util.Map;
 
 @JsonIgnoreProperties(ignoreUnknown = true)
-public record OdsayRouteResponse(Result result, List<OdsayError> error) {
+public record OdsayRouteResponse(Result result, @JsonProperty("error") Object error) {
 
     @JsonIgnoreProperties(ignoreUnknown = true)
     public record Result(List<Path> path) {
@@ -31,8 +33,18 @@ public record OdsayRouteResponse(Result result, List<OdsayError> error) {
             Integer busTransitCount,
             Integer subwayTransitCount,
             String firstStartStation,
-            String lastEndStation
+            String lastEndStation,
+            /** 시외 경로의 요금. payment와 배타적 — 시내에는 없고 시외에는 있다(실측) */
+            Integer totalPayment,
+            /** 시외 경로의 환승 횟수 */
+            Integer transitCount
     ) {
+        public Info(int totalTime, Integer payment, Integer totalIntervalTime, Integer totalDistance,
+                     Integer totalWalk, Integer busTransitCount, Integer subwayTransitCount,
+                     String firstStartStation, String lastEndStation) {
+            this(totalTime, payment, totalIntervalTime, totalDistance, totalWalk, busTransitCount,
+                    subwayTransitCount, firstStartStation, lastEndStation, null, null);
+        }
     }
 
     @JsonIgnoreProperties(ignoreUnknown = true)
@@ -42,8 +54,29 @@ public record OdsayRouteResponse(Result result, List<OdsayError> error) {
             Integer distance,
             String startName,
             String endName,
-            List<Lane> lane
+            List<Lane> lane,
+            /** 시외 leg의 출발역 ID. 이름 검색 없이 시간표 API에 바로 쓴다(실측) */
+            Integer startID,
+            Integer endID,
+            Double startX,
+            Double startY,
+            Double endX,
+            Double endY,
+            /** 시외 leg의 구간요금. 기차·고속버스·시외버스·항공 전부에 온다(실측) */
+            Integer payment,
+            Integer intervalTime,
+            Integer intervalCount,
+            /** 기차 특실요금 */
+            Integer trainSpSeatPayment,
+            /** 기차 특실 존재 여부 */
+            String trainSpSeatYn,
+            String trainType
     ) {
+        public SubPath(int trafficType, Integer sectionTime, Integer distance,
+                        String startName, String endName, List<Lane> lane) {
+            this(trafficType, sectionTime, distance, startName, endName, lane,
+                    null, null, null, null, null, null, null, null, null, null, null, null);
+        }
     }
 
     @JsonIgnoreProperties(ignoreUnknown = true)
@@ -52,5 +85,25 @@ public record OdsayRouteResponse(Result result, List<OdsayError> error) {
 
     @JsonIgnoreProperties(ignoreUnknown = true)
     public record OdsayError(String code, String message) {
+    }
+
+    /**
+     * ODsay 에러가 두 형태로 온다 — 실측 확인.
+     *   경로 없음: {"error":{"msg":"검색결과가 없습니다.","code":"-99"}}
+     *   인증 실패: {"error":[{"code":"500","message":"..."}]}
+     * 타입을 하나로 못 박으면 한쪽이 Jackson 타입 불일치로 터지고,
+     * 그게 "경로 없음"을 "API 장애"로 위장시킨다.
+     *
+     * @return 에러 코드. 에러가 없으면 null
+     */
+    @SuppressWarnings("unchecked")
+    public String errorCode() {
+        if (error == null) return null;
+        Map<String, Object> first = switch (error) {
+            case List<?> list -> list.isEmpty() ? null : (Map<String, Object>) list.get(0);
+            case Map<?, ?> map -> (Map<String, Object>) map;
+            default -> null;
+        };
+        return first == null ? null : String.valueOf(first.get("code"));
     }
 }

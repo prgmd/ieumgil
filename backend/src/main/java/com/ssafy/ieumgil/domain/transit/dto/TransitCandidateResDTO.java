@@ -54,8 +54,6 @@ public class TransitCandidateResDTO {
             boolean timetableApplied,
             /** timetableApplied=false인 이유. true면 null */
             String timetableSkipReason,
-            /** 출발편 선정 기준 시각(HH:mm). 시간표를 적용하지 않은 구간은 null */
-            String referenceAt,
             /** 모든 조회가 실패하면 null이다 — 프론트는 그 구간만 비워 두고 안내한다 */
             TransitMode defaultMode,
             List<Candidate> candidates
@@ -65,7 +63,7 @@ public class TransitCandidateResDTO {
     /**
      * 한 수단의 계산 결과.
      *
-     * <p>{@code available=false}는 <b>조회 실패</b>에만 쓴다. 거리 때문에 제외된 도보는
+     * <p>{@code status=LOOKUP_FAILED}는 <b>조회 실패</b>에만 쓴다. 거리 때문에 제외된 도보는
      * 이 목록에 아예 없다 — 둘을 같은 플래그로 뭉개면 프론트가 "먼 것인가 API가 죽은 것인가"를
      * 구분하지 못한다.
      */
@@ -74,7 +72,7 @@ public class TransitCandidateResDTO {
     public record Candidate(
             TransitMode mode,
             String label,
-            boolean available,
+            CandidateStatus status,
             Integer durationMin,
             Integer fare,
             TransitResDTO.FareConfidence fareConfidence,
@@ -83,36 +81,81 @@ public class TransitCandidateResDTO {
             Integer distanceM,
             /** 시내 대중교통 후보의 선정 이유("최단 시간" 등). 나머지 수단은 null */
             List<String> labels,
-            /** 환승 횟수. 시외는 0, 자차·택시·도보는 null */
+            /**
+             * 환승 횟수.
+             *
+             * <p>시내 대중교통은 ODsay가 준 버스·지하철 환승 수 그대로다.
+             *
+             * <p>시외 door-to-door 후보(시간표 적용)는 <b>접근·시외·이탈을 통틀어</b> 탈것
+             * leg 수 − 1이다 — {@code legs} 전체에서 도보만 뺀 나머지를 센다. 시외 자체가
+             * 직통이어도 접근이 지하철이면 0이 아니라 1 이상이 된다("환승 0회"가 아니다).
+             * 시간표 미적용 후보는 접근·이탈 정보가 없어 시외 leg 수 − 1이다.
+             *
+             * <p>자차·택시·도보는 null.
+             */
             Integer transferCount,
             /** 도보 거리(m). 시내 대중교통만 */
             Integer walkMeters,
             /**
              * 이 값을 그대로 믿으면 안 되는 이유. 없으면 null.
              *
-             * <p>현재는 어떤 후보도 이 필드를 채우지 않는다 — 육로 경로가 없는 구간(도서 목적지 등)은
-             * 자차·택시 후보 자체를 만들지 않기로 했다(예전의 페리 경고 + ESTIMATE 강등은 폐기했다).
-             * 다른 신뢰도 문제가 생기면 이 필드를 재사용한다.
+             * <p>현재는 어떤 후보도 이 필드를 채우지 않는다 — 예전의 페리 경고 + ESTIMATE 강등을
+             * 폐기했기 때문이다. ODsay가 대중교통 경로를 주지 않는 구간(도서 목적지 등)에서도
+             * 자차·택시는 카카오 길찾기가 따로 답하므로 후보로 그대로 나간다 — 그 구간에서
+             * {@code NO_ROUTE}가 되는 것은 대중교통 후보뿐이다. 다른 신뢰도 문제가 생기면
+             * 이 필드를 재사용한다.
              */
             String caution,
             /** 경로 구간 상세. 자차·택시·도보는 null */
             List<TransitLegResDTO.Leg> legs,
             /** 시외 출발편 후보. 시내·자차·택시·도보는 null */
-            List<Departure> departures
+            List<Departure> departures,
+            /** 승차 지점까지 접근 소요(분). 시외 door-to-door 후보만 채운다. 시내·자차·택시·도보는 null */
+            Integer accessMin,
+            /** 하차 지점에서 목적지까지 이탈 소요(분). 시외 door-to-door 후보만 채운다. 시내·자차·택시·도보는 null */
+            Integer egressMin,
+            /**
+             * 이 후보의 출발편 선정 기준 시각(HH:mm) = 접근 도착({@code base+accessMin}) + 수단별
+             * 탑승 여유({@code BoardingMargin}). 시외 door-to-door 후보만 채운다. 시내·자차·택시·도보는 null
+             */
+            String referenceAt
     ) {
 
-        /** 조회 실패 — mode·label만 채우고 나머지는 비운 채 available만 false다 */
-        public static Candidate unavailable(TransitMode mode) {
+        /** 조회 실패 — mode·label만 채우고 나머지는 비운 채 status만 LOOKUP_FAILED다 */
+        public static Candidate lookupFailed(TransitMode mode) {
             return Candidate.builder()
                     .mode(mode)
                     .label(mode.label())
-                    .available(false)
+                    .status(CandidateStatus.LOOKUP_FAILED)
+                    .build();
+        }
+
+        /** ODsay가 경로 자체를 주지 않음(도서 목적지 등) — mode·label만 채우고 나머지는 비운다 */
+        public static Candidate noRoute(TransitMode mode) {
+            return Candidate.builder()
+                    .mode(mode)
+                    .label(mode.label())
+                    .status(CandidateStatus.NO_ROUTE)
                     .build();
         }
     }
 
+    /**
+     * 후보 한 건의 상태.
+     *
+     * <ul>
+     *   <li>{@code OK} — 선택 가능
+     *   <li>{@code NO_SERVICE} — 조회는 성공했으나 기준 시각 이후 편이 없음(막차 지남)
+     *   <li>{@code NO_ROUTE} — ODsay가 경로 자체를 주지 않음(도서 목적지 등)
+     *   <li>{@code LOOKUP_FAILED} — 조회 자체가 실패·타임아웃
+     * </ul>
+     */
+    public enum CandidateStatus {
+        OK, NO_SERVICE, NO_ROUTE, LOOKUP_FAILED
+    }
+
     @Schema(description = "시외 출발편")
-    @Builder
+    @Builder(toBuilder = true)
     public record Departure(
             /** "KTX 1", "무궁화 1203" 등 사용자에게 보일 이름 */
             String name,
@@ -132,7 +175,27 @@ public class TransitCandidateResDTO {
             /** 기차만 등급별 요금이 있다. 나머지는 null */
             FareOptions fareOptions,
             /** "최저 요금" 등 이 편이 뽑힌 이유 */
-            List<String> labels
+            List<String> labels,
+            /** 접근 도착({@code base+accessMin}) → 이 편 출발까지 대기(분). 편마다 다르다 */
+            Integer waitMin,
+            /** 환승 연결편. 직통이면 null */
+            Connection connection
+    ) {
+    }
+
+    @Schema(description = "환승 연결편")
+    @Builder
+    public record Connection(
+            String name,
+            String grade,
+            String departureAt,
+            String arrivalAt,
+            Integer durationMin,
+            Integer fare,
+            /** 첫 leg 도착 → 연결편 출발까지 환승 대기(분) */
+            Integer transferMin,
+            String fromStation,
+            String toStation
     ) {
     }
 

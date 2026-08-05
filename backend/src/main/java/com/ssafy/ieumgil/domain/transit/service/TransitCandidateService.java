@@ -2,7 +2,6 @@ package com.ssafy.ieumgil.domain.transit.service;
 
 import com.ssafy.ieumgil.domain.transit.dto.TransitCandidateResDTO;
 
-import java.time.LocalTime;
 import java.util.List;
 
 public interface TransitCandidateService {
@@ -12,8 +11,9 @@ public interface TransitCandidateService {
      *
      * <p>블록을 만들지 않는다 — 후보만 준비하고 생성은 사용자의 선택에 맡긴다.
      *
-     * @param dayStart 그 Day의 시작 시각. null이면 09:00으로 본다. 시외 출발편 선정 기준의
-     *                 출발점이 된다 — 프론트가 DAY-03으로 ±30분 조정하는 값이다.
+     * <p>시각을 따로 받지 않는다. 시외 출발편의 기준 시각은 구간마다
+     * {@code from 블록의 startTime + durationMin}으로 독립적으로 구한다 — 블록에 이미 있는
+     * 진실을 클라이언트가 다시 알려줄 이유가 없고, 그래야 블록 사이 공백이 그대로 반영된다.
      */
-    TransitCandidateResDTO.Result calculate(Long projectId, List<Long> blockIds, LocalTime dayStart);
+    TransitCandidateResDTO.Result calculate(Long projectId, List<Long> blockIds);
 }

@@ -87,12 +87,6 @@ export function ReadModeView({ chains, items, dayKeys, project }) {
                             item.transportMeta.chosen.departureName ?? null
                           }
                         />
-                        {item.transportMeta.segment?.referenceAt && (
-                          <p className="tp-banner">
-                            기준: {item.transportMeta.segment.referenceAt} 이후
-                            출발
-                          </p>
-                        )}
                       </div>
                     ) : (
                       <div className="rv-card">

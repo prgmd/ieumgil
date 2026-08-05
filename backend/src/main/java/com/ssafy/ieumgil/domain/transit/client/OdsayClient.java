@@ -6,6 +6,7 @@ import com.ssafy.ieumgil.domain.transit.dto.OdsayFlightScheduleResponse;
 import com.ssafy.ieumgil.domain.transit.dto.OdsayRouteResponse;
 import com.ssafy.ieumgil.domain.transit.dto.OdsayTrainScheduleResponse;
 import com.ssafy.ieumgil.domain.transit.dto.OdsayTrainTerminalResponse;
+import com.ssafy.ieumgil.domain.transit.exception.OdsayNoRouteException;
 import com.ssafy.ieumgil.domain.transit.exception.TransitErrorCode;
 import com.ssafy.ieumgil.domain.transit.exception.TransitException;
 import lombok.extern.slf4j.Slf4j;
@@ -18,12 +19,19 @@ import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.function.Function;
 import java.util.function.Predicate;
 
 @Slf4j
 @Component
 public class OdsayClient {
+
+    /**
+     * ODsay가 "그 구간에는 경로가 없다"로 답하는 코드 — {@code -99} 검색결과 없음(울릉도),
+     * {@code 3} 출발지 정류장 없음(백령도). 실측 157경로 중 38개(도서 전량)가 이 둘이다.
+     */
+    private static final Set<String> NO_ROUTE_CODES = Set.of("-99", "3");
 
     private final RestClient restClient;
     private final OdsayProperties properties;
@@ -46,7 +54,7 @@ public class OdsayClient {
                     .uri(uri)
                     .retrieve()
                     .body(OdsayRouteResponse.class);
-            checkForError(response == null ? null : response.error());
+            checkRouteError(response);
             if (response == null || response.result() == null || response.result().path() == null) {
                 return List.of();
             }
@@ -191,5 +199,24 @@ public class OdsayClient {
                     log.warn("ODsay 응답 에러: code={}, message={}", error.code(), error.message()));
             throw new TransitException(TransitErrorCode.ODSAY_API_CALL_FAILED);
         }
+    }
+
+    /**
+     * 경로 검색 응답의 에러 판정. 다른 엔드포인트와 달리 <b>코드로 갈라야</b> 한다 —
+     * "그 구간에는 경로가 없다"와 "API가 죽었다"는 사용자가 할 행동이 다르다
+     * ({@link OdsayNoRouteException} 참고). 에러가 객체형·배열형 두 가지로 오므로
+     * 코드는 {@link OdsayRouteResponse#errorCode()}가 뽑는다.
+     */
+    private void checkRouteError(OdsayRouteResponse response) {
+        String code = response == null ? null : response.errorCode();
+        if (code == null) {
+            return;
+        }
+        if (NO_ROUTE_CODES.contains(code)) {
+            log.info("ODsay 경로 없음: code={}", code);
+            throw new OdsayNoRouteException();
+        }
+        log.warn("ODsay 응답 에러: code={}", code);
+        throw new TransitException(TransitErrorCode.ODSAY_API_CALL_FAILED);
     }
 }

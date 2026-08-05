@@ -12,16 +12,13 @@ import org.springframework.http.MediaType;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
-import java.time.LocalTime;
 import java.util.List;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
-import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
-import static org.mockito.Mockito.verify;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -44,7 +41,7 @@ class TransitCandidateControllerTest {
     @Test
     @DisplayName("후보 계산 결과를 CustomResponse로 감싸 반환한다")
     void returnsCandidatesWrappedInCustomResponse() throws Exception {
-        given(transitCandidateService.calculate(eq(1L), anyList(), any()))
+        given(transitCandidateService.calculate(eq(1L), anyList()))
                 .willReturn(TransitCandidateResDTO.Result.builder().segments(List.of()).build());
 
         mockMvc.perform(post("/api/projects/1/transit-candidates")
@@ -54,20 +51,6 @@ class TransitCandidateControllerTest {
                 .andExpect(jsonPath("$.isSuccess").value(true))
                 .andExpect(jsonPath("$.code").value("COMMON200"))
                 .andExpect(jsonPath("$.result.segments").isArray());
-    }
-
-    @Test
-    @DisplayName("dayStart를 HH:mm으로 받아 그대로 서비스에 넘긴다")
-    void passesDayStartToService() throws Exception {
-        given(transitCandidateService.calculate(eq(1L), anyList(), eq(LocalTime.of(9, 30))))
-                .willReturn(TransitCandidateResDTO.Result.builder().segments(List.of()).build());
-
-        mockMvc.perform(post("/api/projects/1/transit-candidates")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"blockIds\":[101,105],\"dayStart\":\"09:30\"}"))
-                .andExpect(status().isOk());
-
-        verify(transitCandidateService).calculate(eq(1L), anyList(), eq(LocalTime.of(9, 30)));
     }
 
     @Test

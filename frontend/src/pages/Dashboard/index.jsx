@@ -80,10 +80,38 @@ const DAY_END = 1440;
 const TL_PAD_TOP = 20;
 const TL_PAD_LEFT = 70;
 
-// 블록에 반영할 소요·비용 — 시외는 고른 출발편의 값이 후보 대표값보다 정확하다
-// (KTX 157분 vs 무궁화 320분처럼 편마다 다르다). 소요 10분 미만은 카드가 안 잡힌다.
+// 고른 편 기준 door-to-door 소요 — 접근 + 대기 + 시외(+ 환승 + 연결편) + 이탈.
+// 후보의 durationMin 도 door-to-door 지만 대표 편(첫 편) 기준이라 다른 편을 고르면
+// 맞지 않고, 편의 durationMin 은 시외 leg 하나만의 소요다(환승이면 첫 leg 만).
+// 교통 블록은 앞 블록이 끝나는 순간부터 시작하므로(startMins = 앞 블록 끝) 접근도 포함한다.
+// 조각이 하나라도 없으면 null 이다 — 고속버스 시간표는 소요를 주지 않을 수 있고,
+// 빠진 조각을 0 으로 채우면 실제보다 짧은 소요가 일정에 박힌다.
+const doorToDoorDurOf = (candidate, departure) => {
+  if (!departure) return null;
+  const conn = departure.connection;
+  const parts = [
+    candidate?.accessMin,
+    departure.waitMin,
+    departure.durationMin,
+    ...(conn ? [conn.transferMin, conn.durationMin] : []),
+    candidate?.egressMin,
+  ];
+  return parts.some((v) => v == null)
+    ? null
+    : parts.reduce((sum, v) => sum + v, 0);
+};
+
+// 블록에 반영할 소요·비용 — 시외는 고른 출발편 기준 door-to-door 가 후보 대표값보다
+// 정확하다. 계산할 수 없으면(시내 후보·시간표 미적용·조각 누락) 예전대로 편/후보의
+// 값을 쓴다. 소요 10분 미만은 카드가 안 잡힌다.
 const transitDurOf = (candidate, departure) =>
-  Math.max(10, departure?.durationMin ?? candidate?.durationMin ?? 10);
+  Math.max(
+    10,
+    doorToDoorDurOf(candidate, departure) ??
+      departure?.durationMin ??
+      candidate?.durationMin ??
+      10,
+  );
 const transitCostOf = (candidate, departure) =>
   departure?.fare ?? departure?.fareOptions?.general ?? candidate?.fare ?? 0;
 
@@ -1349,20 +1377,12 @@ export function DashboardPage() {
       try {
         // 모든 연속 구간의 후보를 한 번의 호출로 받는다.
         // 서버는 블록을 만들지 않는다 — 생성은 모달에서 적용을 눌러야(confirmBulkTransit).
-        // 출발편 기준 시각 = 첫 실블록이 끝나는 시각(= 첫 구간의 출발 시각).
-        // 시각 없는 블록이면 09:00 으로 받친다. (시작 시각 개념이 사라져 dayStart 없음)
-        const firstBlock = items[realIds[0]];
-        const referenceAt = blockApi.minsToTime(
-          firstBlock?.startMins != null
-            ? firstBlock.startMins + (firstBlock.dur || 0)
-            : 540,
-        );
+        // 출발편 기준 시각은 서버가 구간마다 from 블록의 시각에서 직접 구한다(응답의 referenceAt).
         const { segments = [] } = await blockApi.calculateTransitCandidates(
           projectId,
           realIds,
-          referenceAt,
         );
-        if (!segments.some((s) => s.candidates?.some((c) => c.available))) {
+        if (!segments.some((s) => s.candidates?.some((c) => c.status === "OK"))) {
           showToast("이동 가능한 경로를 찾지 못했어요.");
           return;
         }
@@ -1377,9 +1397,9 @@ export function DashboardPage() {
           if (s.defaultMode == null) return;
           const initial =
             s.candidates?.find(
-              (c) => c.mode === s.defaultMode && c.available,
+              (c) => c.mode === s.defaultMode && c.status === "OK",
             ) ??
-            s.candidates?.find((c) => c.available) ??
+            s.candidates?.find((c) => c.status === "OK") ??
             null;
           choices[`${s.fromBlockId}-${s.toBlockId}`] = initial
             ? { candidate: initial, departure: initial.departures?.[0] ?? null }
@@ -1445,7 +1465,7 @@ export function DashboardPage() {
           rebuilt.push(id);
           if (i < realIds.length - 1) {
             const chosen = choices[`${id}-${realIds[i + 1]}`];
-            if (!chosen?.candidate?.available) return; // 제외했거나 모르는 구간 — 만들지 않는다
+            if (chosen?.candidate?.status !== "OK") return; // 제외했거나 모르는 구간 — 만들지 않는다
             const info = {
               mode: chosen.candidate.label || chosen.candidate.mode,
               dur: transitDurOf(chosen.candidate, chosen.departure),
@@ -1611,21 +1631,14 @@ export function DashboardPage() {
       setIsGeneratingTransport(true);
       try {
         // 두 블록 사이 한 구간만 계산 — blockIds 에 그 둘만 넘긴다.
-        // 출발편 기준 시각 = 출발 블록이 끝나는 시각(그때 이동을 시작하니까)
-        const fromBlock = items[currentId];
-        const referenceAt = blockApi.minsToTime(
-          fromBlock?.startMins != null
-            ? fromBlock.startMins + (fromBlock.dur || 0)
-            : 540,
-        );
+        // 출발편 기준 시각은 서버가 from 블록의 시각에서 직접 구한다(응답의 referenceAt).
         const { segments = [] } = await blockApi.calculateTransitCandidates(
           projectId,
           [currentId, nextId],
-          referenceAt,
         );
         const segment = segments[0];
         const candidates = segment?.candidates ?? [];
-        if (!candidates.some((c) => c.available)) {
+        if (!candidates.some((c) => c.status === "OK")) {
           showToast("두 장소 사이의 경로를 찾지 못했어요.");
           return;
         }
@@ -1635,9 +1648,9 @@ export function DashboardPage() {
           segment.defaultMode == null
             ? null
             : candidates.find(
-                (c) => c.mode === segment.defaultMode && c.available,
+                (c) => c.mode === segment.defaultMode && c.status === "OK",
               ) ??
-              candidates.find((c) => c.available) ??
+              candidates.find((c) => c.status === "OK") ??
               null;
         // 생성하지 않고 선택 모달을 연다 — 생성은 confirmTransitChoice 가 한다
         setTransitPicker({
@@ -1658,7 +1671,7 @@ export function DashboardPage() {
         setIsGeneratingTransport(false);
       }
     },
-    [isGeneratingTransport, transitPicker, chains, items, projectId, showToast],
+    [isGeneratingTransport, transitPicker, chains, projectId, showToast],
   );
 
   // 피커에서 다른 후보/편을 고른다 (아직 생성하지 않는다 — confirmTransitChoice 가 한다)
@@ -1676,7 +1689,7 @@ export function DashboardPage() {
       const picker = transitPicker;
       setTransitPicker(null);
       const chosen = picker?.chosenCandidate;
-      if (!picker || !chosen?.available) return;
+      if (!picker || chosen?.status !== "OK") return;
 
       const { dayKey, currentId } = picker;
       const currentChain = [...(chains[dayKey] || [])];
@@ -2352,7 +2365,7 @@ export function DashboardPage() {
   const applyReselectTransport = useCallback(async () => {
     const picker = transportReselectPicker;
     const chosen = picker?.chosenCandidate;
-    if (!picker || !chosen?.available) return;
+    if (!picker || chosen?.status !== "OK") return;
     const block = items[picker.blockId];
     if (!block) {
       setTransportReselectPicker(null);
@@ -3933,7 +3946,7 @@ export function DashboardPage() {
               {bulkTransitPicker.segments.map((s) => {
                 const pairKey = `${s.fromBlockId}-${s.toBlockId}`;
                 const chosen = bulkTransitPicker.choices[pairKey];
-                const routable = s.candidates?.some((c) => c.available);
+                const routable = s.candidates?.some((c) => c.status === "OK");
                 return (
                   <div key={pairKey} className="tp-seg">
                     <div className="tp-seg-route">
@@ -3943,12 +3956,9 @@ export function DashboardPage() {
                         <em className="tp-seg-none">경로 없음</em>
                       )}
                     </div>
-                    {s.referenceAt && (
-                      <p className="tp-banner">{s.referenceAt} 이후 출발편 기준</p>
-                    )}
                     {s.timetableApplied === false && s.timetableSkipReason && (
                       <p className="tp-banner tp-banner-warn">
-                        {s.timetableSkipReason} — 앞 구간 확정 후 다시 계산하세요
+                        {s.timetableSkipReason}
                       </p>
                     )}
                     {routable && (
@@ -4022,16 +4032,10 @@ export function DashboardPage() {
               {items[transitPicker.currentId]?.name ?? "출발지"} →{" "}
               {items[transitPicker.nextId]?.name ?? "도착지"}
             </p>
-            {transitPicker.segment?.referenceAt && (
-              <p className="tp-banner">
-                {transitPicker.segment.referenceAt} 이후 출발편 기준
-              </p>
-            )}
             {transitPicker.segment?.timetableApplied === false &&
               transitPicker.segment?.timetableSkipReason && (
                 <p className="tp-banner tp-banner-warn">
-                  {transitPicker.segment.timetableSkipReason} — 앞 구간 확정 후
-                  다시 계산하세요
+                  {transitPicker.segment.timetableSkipReason}
                 </p>
               )}
             <div className="tp-list">
@@ -4070,7 +4074,7 @@ export function DashboardPage() {
               <button
                 type="button"
                 className="tp-apply"
-                disabled={!transitPicker.chosenCandidate?.available}
+                disabled={transitPicker.chosenCandidate?.status !== "OK"}
                 onClick={confirmTransitChoice}
               >
                 이 수단으로 추가
@@ -4124,7 +4128,7 @@ export function DashboardPage() {
               <button
                 type="button"
                 className="tp-apply"
-                disabled={!transportReselectPicker.chosenCandidate?.available}
+                disabled={transportReselectPicker.chosenCandidate?.status !== "OK"}
                 onClick={applyReselectTransport}
               >
                 저장

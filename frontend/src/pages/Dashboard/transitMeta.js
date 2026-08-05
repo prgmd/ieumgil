@@ -19,7 +19,7 @@ export const TRANSIT_MODE_META = {
 /**
  * v2 Candidate + 그 구간 candidates 스냅샷 → transportMeta.
  * chosen 은 선택된 후보 원본에 departureName(시외 편, 시내면 null)만 얹는다.
- * segment 는 세그먼트 레벨 메타(intercity/timetableApplied/timetableSkipReason/referenceAt)만 뽑는다.
+ * segment 는 세그먼트 레벨 메타(intercity/timetableApplied/timetableSkipReason)만 뽑는다.
  */
 export const buildTransportMeta = (segment, chosenCandidate, chosenDeparture) => ({
   generated: true,
@@ -28,7 +28,6 @@ export const buildTransportMeta = (segment, chosenCandidate, chosenDeparture) =>
         intercity: segment.intercity,
         timetableApplied: segment.timetableApplied,
         timetableSkipReason: segment.timetableSkipReason ?? null,
-        referenceAt: segment.referenceAt ?? null,
       }
     : null,
   chosen: chosenCandidate
