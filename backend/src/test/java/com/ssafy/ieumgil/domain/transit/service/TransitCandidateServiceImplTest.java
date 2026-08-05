@@ -18,6 +18,7 @@ import com.ssafy.ieumgil.domain.transit.dto.TransitCandidateResDTO.TransitMode;
 import com.ssafy.ieumgil.domain.transit.dto.TransitLegResDTO;
 import com.ssafy.ieumgil.domain.transit.dto.TransitResDTO;
 import com.ssafy.ieumgil.domain.transit.dto.TransitScheduleResDTO;
+import com.ssafy.ieumgil.domain.transit.exception.OdsayNoRouteException;
 import com.ssafy.ieumgil.domain.transit.exception.TransitErrorCode;
 import com.ssafy.ieumgil.domain.transit.exception.TransitException;
 import com.ssafy.ieumgil.domain.transit.util.IntercityLegs;
@@ -282,6 +283,31 @@ class TransitCandidateServiceImplTest {
                 .containsExactly(
                         tuple(TransitMode.TRANSIT, CandidateStatus.LOOKUP_FAILED),
                         tuple(TransitMode.TAXI, CandidateStatus.OK));
+    }
+
+    @Test
+    @DisplayName("ODsay가 경로 자체를 주지 않으면 대중교통 후보는 NO_ROUTE다 — 조회 실패와 구분한다")
+    void 경로_없음은_NO_ROUTE로_구분된다() {
+        // 실측 157경로 중 38개(울릉도·백령도 등 도서 전량)가 이 응답이다. LOOKUP_FAILED로 내면
+        // 화면에 "조회 실패, 재시도"가 뜨고 사용자는 영원히 같은 답을 받으며 재시도한다.
+        givenProject(TransportPref.PUBLIC);
+        given(blockRepository.findAllByIdInAndProject_IdAndDeletedAtIsNull(List.of(1L, 2L), PROJECT_ID))
+                .willReturn(List.of(blockAt(1L, LAT_A, LNG_A), blockAt(2L, LAT_B, LNG_B)));
+        given(publicTransitQueryService.getCombinedRoutes(LAT_A, LNG_A, LAT_B, LNG_B))
+                .willThrow(new OdsayNoRouteException());
+        given(placeQueryService.getTaxiRoute(LAT_A, LNG_A, LAT_B, LNG_B))
+                .willReturn(Optional.of(new PlaceResDTO.TaxiRoute(8900, 0, 6800, 12)));
+
+        TransitCandidateResDTO.Result result = service.calculate(PROJECT_ID, List.of(1L, 2L), null);
+
+        TransitCandidateResDTO.Segment segment = result.segments().get(0);
+        assertThat(segment.candidates())
+                .extracting(TransitCandidateResDTO.Candidate::mode, TransitCandidateResDTO.Candidate::status)
+                .containsExactly(
+                        tuple(TransitMode.TRANSIT, CandidateStatus.NO_ROUTE),
+                        tuple(TransitMode.TAXI, CandidateStatus.OK));
+        // 경로가 없는 수단을 기본으로 내밀지 않는다
+        assertThat(segment.defaultMode()).isEqualTo(TransitMode.TAXI);
     }
 
     @Test

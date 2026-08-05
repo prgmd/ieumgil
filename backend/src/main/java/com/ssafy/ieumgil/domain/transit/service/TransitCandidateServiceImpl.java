@@ -16,6 +16,7 @@ import com.ssafy.ieumgil.domain.transit.dto.TransitCandidateResDTO.TransitMode;
 import com.ssafy.ieumgil.domain.transit.dto.TransitLegResDTO;
 import com.ssafy.ieumgil.domain.transit.dto.TransitResDTO;
 import com.ssafy.ieumgil.domain.transit.dto.TransitScheduleResDTO;
+import com.ssafy.ieumgil.domain.transit.exception.OdsayNoRouteException;
 import com.ssafy.ieumgil.domain.transit.exception.TransitErrorCode;
 import com.ssafy.ieumgil.domain.transit.exception.TransitException;
 import com.ssafy.ieumgil.domain.transit.util.BoardingMargin;
@@ -313,7 +314,7 @@ public class TransitCandidateServiceImpl implements TransitCandidateService {
     private RoadResult unavailableFor(Leg leg, TransportPref pref) {
         LegModes modes = modesFor(pref, straightDistanceOf(leg));
         return new RoadResult(List.of(), modes.transit(),
-                modes.road().stream().map(mode -> Candidate.lookupFailed(mode.mode())).toList());
+                modes.road().stream().map(mode -> Candidate.lookupFailed(mode.mode())).toList(), false);
     }
 
     /**
@@ -378,8 +379,9 @@ public class TransitCandidateServiceImpl implements TransitCandidateService {
         boolean needsDriving = modes.road().contains(RoadMode.TAXI) || modes.road().contains(RoadMode.CAR);
         // 시내 후보 선정·시외 판정·도서 목적지 판정이 같은 대중교통 경로 목록을 쓴다 — 여기서 한 번만
         // 물어 세 자리에서 나눠 쓴다. 셋 다 필요 없는 leg(도보만)라면 부르지 않는다.
-        List<OdsayRouteResponse.Path> paths =
-                modes.transit() || needsDriving ? combinedRoutesFor(leg) : List.of();
+        RouteLookup lookup = modes.transit() || needsDriving
+                ? routeLookupOf(leg)
+                : new RouteLookup(List.of(), false);
         PlaceResDTO.TaxiRoute driving = needsDriving ? callDriving(leg) : null;
 
         List<Candidate> roadCandidates = new ArrayList<>();
@@ -391,20 +393,41 @@ public class TransitCandidateServiceImpl implements TransitCandidateService {
             };
             roadCandidates.add(candidate);
         }
-        return new RoadResult(paths, modes.transit(), List.copyOf(roadCandidates));
+        return new RoadResult(lookup.paths(), modes.transit(), List.copyOf(roadCandidates), lookup.noRoute());
     }
 
     /**
-     * 대중교통 경로 목록. 실패는 빈 목록이다 — 한 수단이 죽었다고 구간 전체를 못 내면 안 된다.
+     * 1단의 대중교통 경로 조회. "조회에 실패해서 비었다"와 "ODsay가 경로가 없다고 답했다"를
+     * 구분해서 들고 온다 — 앞은 재시도가 답이고 뒤는 몇 번을 물어도 같은 답이라 사용자가 할
+     * 행동이 다르다({@link CandidateStatus#NO_ROUTE}). 빈 목록으로 뭉개면 그 구분이 사라진다.
+     *
+     * <p>어느 쪽이든 예외를 밖으로 던지지 않는다 — 한 수단이 죽었다고 구간 전체를 못 내면 안 된다.
      */
-    private List<OdsayRouteResponse.Path> combinedRoutesFor(Leg leg) {
+    private RouteLookup routeLookupOf(Leg leg) {
         try {
-            return publicTransitQueryService
+            List<OdsayRouteResponse.Path> paths = publicTransitQueryService
                     .getCombinedRoutes(leg.fromLat(), leg.fromLng(), leg.toLat(), leg.toLng());
+            return new RouteLookup(paths, false);
+        } catch (OdsayNoRouteException e) {
+            log.info("ODsay가 경로를 주지 않는 구간: leg={}", leg);
+            return new RouteLookup(List.of(), true);
         } catch (RuntimeException e) {
             log.warn("대중교통 경로 목록 조회 실패: leg={}", leg, e);
-            return List.of();
+            return new RouteLookup(List.of(), false);
         }
+    }
+
+    /**
+     * 대중교통 경로 목록. 실패든 "경로 없음"이든 빈 목록이다 — 접근·이탈 조회는 둘을 구분할
+     * 이유가 없다(어느 쪽이든 그 수단 후보를 만들지 않는다). 구분이 필요한 1단은
+     * {@link #routeLookupOf}를 쓴다.
+     */
+    private List<OdsayRouteResponse.Path> combinedRoutesFor(Leg leg) {
+        return routeLookupOf(leg).paths();
+    }
+
+    /** 1단 경로 조회 결과. 빈 목록 하나로는 "조회 실패"와 "ODsay가 경로 없다고 답함"이 구분되지 않는다. */
+    private record RouteLookup(List<OdsayRouteResponse.Path> paths, boolean noRoute) {
     }
 
     /** 블록 → 승차 지점(접근). {@link IntercityLegs.Point}는 x=경도·y=위도다 */
@@ -545,10 +568,21 @@ public class TransitCandidateServiceImpl implements TransitCandidateService {
                 .build();
     }
 
+    /**
+     * 시내 구간.
+     *
+     * <p>ODsay가 경로 자체를 주지 않은 구간({@link RoadResult#noRoute})도 여기로 온다 —
+     * 경로가 없으니 {@code pathType}도 없어 시외로 판정될 수 없다. 그 경우 대중교통 후보는
+     * {@code LOOKUP_FAILED}가 아니라 {@code NO_ROUTE}다. 실측 157경로 중 38개(도서 전량)가
+     * 여기고, 조회 실패로 내면 사용자가 영원히 같은 답을 받으며 재시도한다. 자차·택시는
+     * 카카오 길찾기가 따로 답하므로 이 판정과 무관하게 그대로 남는다.
+     */
     private TransitCandidateResDTO.Segment citySegment(Pair pair, RoadResult road) {
         List<Candidate> candidates = new ArrayList<>();
         if (road.transitRequested()) {
-            candidates.addAll(transitCandidates(road.paths()));
+            candidates.addAll(road.noRoute()
+                    ? List.of(Candidate.noRoute(TransitMode.TRANSIT))
+                    : transitCandidates(road.paths()));
         }
         candidates.addAll(road.roadCandidates());
 
@@ -1216,11 +1250,15 @@ public class TransitCandidateServiceImpl implements TransitCandidateService {
      *
      * <p>{@code paths}를 그대로 들고 있는 이유: 시외 판정({@code pathType})·시내 후보 선정·
      * 도서 목적지 판정이 모두 원본을 봐야 한다. 미리 평탄화하면 2단에서 다시 호출하게 된다.
+     *
+     * @param noRoute ODsay가 "경로가 없다"고 답했는지({@link OdsayNoRouteException}).
+     *                {@code paths}가 비어 있다는 사실만으로는 조회 실패와 구분되지 않아 따로 든다.
      */
     private record RoadResult(
             List<OdsayRouteResponse.Path> paths,
             boolean transitRequested,
-            List<Candidate> roadCandidates
+            List<Candidate> roadCandidates,
+            boolean noRoute
     ) {
 
         /**

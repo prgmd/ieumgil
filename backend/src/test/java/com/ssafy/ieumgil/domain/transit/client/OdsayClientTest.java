@@ -6,7 +6,9 @@ import com.ssafy.ieumgil.domain.transit.dto.OdsayFlightScheduleResponse;
 import com.ssafy.ieumgil.domain.transit.dto.OdsayRouteResponse;
 import com.ssafy.ieumgil.domain.transit.dto.OdsayTrainScheduleResponse;
 import com.ssafy.ieumgil.domain.transit.dto.OdsayTrainTerminalResponse;
+import com.ssafy.ieumgil.domain.transit.exception.OdsayNoRouteException;
 import com.ssafy.ieumgil.domain.transit.exception.TransitException;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.client.RestClientTest;
@@ -166,6 +168,51 @@ class OdsayClientTest {
         assertThatThrownBy(() ->
                 odsayClient.searchPublicTransitRoute(37.4979, 127.0276, 37.5665, 127.1054, "BUS"))
                 .isInstanceOf(TransitException.class);
+    }
+
+    @Test
+    @DisplayName("[실측] 경로 없음(code -99)은 장애가 아니라 '경로가 없다'로 구분한다")
+    void 경로_없음_에러는_경로없음_예외다() {
+        // 실측: 울릉도 목적지. {"error":{"msg":"검색결과가 없습니다.","code":"-99"}}
+        String errorResponse = """
+                { "error": { "msg": "검색결과가 없습니다.", "code": "-99" } }
+                """;
+        server.expect(requestTo("https://api.odsay.com/v1/api/searchPubTransPathT?SX=127.0276&SY=37.4979&EX=127.1054&EY=37.5665&apiKey=test-key&SearchPathType=2"))
+                .andRespond(withSuccess(errorResponse, MediaType.APPLICATION_JSON));
+
+        assertThatThrownBy(() ->
+                odsayClient.searchPublicTransitRoute(37.4979, 127.0276, 37.5665, 127.1054, "BUS"))
+                .isInstanceOf(OdsayNoRouteException.class);
+    }
+
+    @Test
+    @DisplayName("[실측] 정류장 없음(code 3)도 '경로가 없다'다 — 재시도해도 답이 같다")
+    void 정류장_없음_에러도_경로없음_예외다() {
+        // 실측: 백령도 목적지. {"error":{"msg":"출발지 정류장이 없습니다.","code":"3"}}
+        String errorResponse = """
+                { "error": { "msg": "출발지 정류장이 없습니다.", "code": "3" } }
+                """;
+        server.expect(requestTo("https://api.odsay.com/v1/api/searchPubTransPathT?SX=127.0276&SY=37.4979&EX=127.1054&EY=37.5665&apiKey=test-key&SearchPathType=2"))
+                .andRespond(withSuccess(errorResponse, MediaType.APPLICATION_JSON));
+
+        assertThatThrownBy(() ->
+                odsayClient.searchPublicTransitRoute(37.4979, 127.0276, 37.5665, 127.1054, "BUS"))
+                .isInstanceOf(OdsayNoRouteException.class);
+    }
+
+    @Test
+    @DisplayName("인증 실패(code 500)는 '경로 없음'이 아니다 — 장애를 영구적인 답으로 위장하면 안 된다")
+    void 인증_실패는_경로없음_예외가_아니다() {
+        String errorResponse = """
+                { "error": [ { "code": "500", "message": "[ApiKeyAuthFailed] ApiKey authentication failed." } ] }
+                """;
+        server.expect(requestTo("https://api.odsay.com/v1/api/searchPubTransPathT?SX=127.0276&SY=37.4979&EX=127.1054&EY=37.5665&apiKey=test-key&SearchPathType=2"))
+                .andRespond(withSuccess(errorResponse, MediaType.APPLICATION_JSON));
+
+        assertThatThrownBy(() ->
+                odsayClient.searchPublicTransitRoute(37.4979, 127.0276, 37.5665, 127.1054, "BUS"))
+                .isInstanceOf(TransitException.class)
+                .isNotInstanceOf(OdsayNoRouteException.class);
     }
 
     @Test
