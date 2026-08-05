@@ -586,6 +586,50 @@ class TransitCandidateServiceImplTest {
     }
 
     @Test
+    @DisplayName("[실측 5/5] 시외 경로가 전부 항공이면 자차·택시 후보를 만들지 않고 카카오도 부르지 않는다")
+    void 육로로_갈_수_없는_구간은_자차_택시_후보를_만들지_않는다() {
+        // 실측 서울시청→제주시청은 경로 5개 전부에 항공 leg가 있다 — 차로 갈 수 없는 목적지다.
+        // 카카오모빌리티는 이 구간에도 "길찾기 성공"으로 527,600원을 답하므로(도로가 없는데도)
+        // 후보를 만들어 두고 status로 감추는 것으로는 부족하다. 프론트는 status와 무관하게 모든
+        // 후보를 그리므로 "조회 실패" 회색 줄이 남는다 — 후보 자체를 만들지 않아야 한다.
+        givenProject(TransportPref.CAR);   // startDate가 없어 시간표는 붙지 않는다(외부 호출 최소화)
+        given(blockRepository.findAllByIdInAndProject_IdAndDeletedAtIsNull(List.of(1L, 3L), PROJECT_ID))
+                .willReturn(List.of(cheongjuBlock(), jejuBlock()));
+        given(publicTransitQueryService.getCombinedRoutes(anyDouble(), anyDouble(), anyDouble(), anyDouble()))
+                .willReturn(List.of(airPath(), transferTrainAirPath()));
+
+        TransitCandidateResDTO.Result result = service.calculate(PROJECT_ID, List.of(1L, 3L));
+
+        assertThat(result.segments().get(0).candidates()).extracting(Candidate::mode)
+                .doesNotContain(TransitMode.CAR, TransitMode.TAXI);
+        // 버릴 답에 카카오 쿼터를 쓰지 않는다 — 판정에 필요한 경로 목록은 이미 조회돼 있다
+        verify(placeQueryService, never())
+                .getTaxiRoute(anyDouble(), anyDouble(), anyDouble(), anyDouble());
+    }
+
+    @Test
+    @DisplayName("[실측 18/19] 시외 경로에 육로 대안이 하나라도 있으면 자차·택시는 그대로 남는다")
+    void 육로_대안이_하나라도_있으면_자차_택시가_남는다() {
+        // 서울→부산은 19경로 중 18개가 항공 없는 경로다(국내선 1편이 섞여 있을 뿐이다). 판정을
+        // "하나라도 항공이면"으로 뒤집으면 이 구간의 자차·택시가 사라진다 — 옛 hasNonRoadLeg를
+        // 죽인 바로 그 오판이다.
+        givenProject(TransportPref.CAR);
+        given(blockRepository.findAllByIdInAndProject_IdAndDeletedAtIsNull(List.of(1L, 2L), PROJECT_ID))
+                .willReturn(List.of(seoulBlock(), busanBlock()));
+        given(publicTransitQueryService.getCombinedRoutes(anyDouble(), anyDouble(), anyDouble(), anyDouble()))
+                .willReturn(List.of(airPath(), trainPath()));
+        given(placeQueryService.getTaxiRoute(anyDouble(), anyDouble(), anyDouble(), anyDouble()))
+                .willReturn(Optional.of(new PlaceResDTO.TaxiRoute(374600, 0, 401839, 310)));
+
+        TransitCandidateResDTO.Result result = service.calculate(PROJECT_ID, List.of(1L, 2L));
+
+        assertThat(result.segments().get(0).candidates()).extracting(Candidate::mode)
+                .contains(TransitMode.CAR, TransitMode.TAXI);
+        assertThat(candidateOf(result, TransitMode.TAXI).status()).isEqualTo(CandidateStatus.OK);
+        verify(placeQueryService).getTaxiRoute(LAT_SEOUL, LNG_SEOUL, LAT_BUSAN, LNG_BUSAN);
+    }
+
+    @Test
     @DisplayName("경로 목록 조회 자체가 실패해도(paths 비어있음) 자차·택시는 지금처럼 그대로 만든다")
     void 경로_조회가_실패하면_자차_택시를_그대로_만든다() {
         givenProject(TransportPref.CAR);
@@ -625,18 +669,14 @@ class TransitCandidateServiceImplTest {
     }
 
     @Test
-    @DisplayName("시외 구간에서 드라이빙 조회가 실패해도 항공이 기본 후보가 되고 기준 시각 누적에 실제 소요시간을 쓴다")
-    void 드라이빙_조회가_실패한_시외_구간은_항공이_기본이_된다() {
+    @DisplayName("육로로 갈 수 없는 시외 구간은 택시 없이 항공이 기본이 되고 door-to-door 소요를 쓴다")
+    void 육로로_갈_수_없는_시외_구간은_항공이_기본이_된다() {
         given(blockRepository.findAllByIdInAndProject_IdAndDeletedAtIsNull(List.of(2L, 3L), PROJECT_ID))
                 .willReturn(List.of(busanBlock(), jejuBlock()));
         given(projectRepository.findByIdAndDeletedAtIsNull(PROJECT_ID)).willReturn(Optional.of(publicProject()));
         given(publicTransitQueryService.getCombinedRoutes(anyDouble(), anyDouble(), anyDouble(), anyDouble()))
                 .willReturn(List.of(airPath()));
         givenZeroAccessEgress(LAT_BUSAN, LNG_BUSAN, LAT_JEJU, LNG_JEJU);
-        // 카카오 길찾기 자체가 실패한다 — driving==null이 택시 후보를 status=LOOKUP_FAILED로 남기는
-        // 유일한 이유다(roadUnreachable 삭제 후에도 이 경로는 그대로 살아 있어야 한다).
-        given(placeQueryService.getTaxiRoute(anyDouble(), anyDouble(), anyDouble(), anyDouble()))
-                .willReturn(Optional.empty());
         given(transitScheduleQueryService.getFlightSchedule(anyInt(), anyInt(), any(LocalDate.class)))
                 .willReturn(List.of(TransitScheduleResDTO.FlightSchedule.builder()
                         .airline("대한항공").flightNo("KE1801")
@@ -646,9 +686,10 @@ class TransitCandidateServiceImplTest {
         TransitCandidateResDTO.Result result = service.calculate(PROJECT_ID, List.of(2L, 3L));
 
         TransitCandidateResDTO.Segment segment = result.segments().get(0);
-        // 택시는 후보에서 사라지지 않는다 — driving==null이라 status=LOOKUP_FAILED로 남을 뿐이다
-        TransitCandidateResDTO.Candidate taxi = candidateOf(result, TransitMode.TAXI);
-        assertThat(taxi.status()).isEqualTo(CandidateStatus.LOOKUP_FAILED);
+        // 제주는 차로 갈 수 없다 — 택시 후보는 status가 아니라 목록에서 없다.
+        // (드라이빙 조회 실패가 status=LOOKUP_FAILED로 남는 계약은
+        //  드라이빙_조회만_실패하면_available_false다()가 육로 구간에서 지킨다)
+        assertThat(segment.candidates()).extracting(Candidate::mode).doesNotContain(TransitMode.TAXI);
         assertThat(segment.candidates()).extracting(Candidate::mode).contains(TransitMode.AIR);
         assertThat(segment.defaultMode()).isEqualTo(TransitMode.AIR);
         // door-to-door 소요다: 접근·이탈은 0분이지만 대기(09:00 종료+공항 여유 40분 기준 10:30발 =

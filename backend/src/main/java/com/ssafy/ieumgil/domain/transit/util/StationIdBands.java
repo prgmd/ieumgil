@@ -29,11 +29,20 @@ public final class StationIdBands {
 
     public static Optional<TransitMode> modeOf(int stationId) {
         if (in(stationId, TRAIN_MIN, TRAIN_MAX)) return Optional.of(TransitMode.TRAIN);
-        if (in(stationId, AIR_MIN, AIR_MAX)) return Optional.of(TransitMode.AIR);
+        if (isAir(stationId)) return Optional.of(TransitMode.AIR);
         for (int[] b : BUS_BANDS) {
             if (in(stationId, b[0], b[1])) return Optional.of(TransitMode.EXPRESS_BUS);
         }
         return Optional.empty();
+    }
+
+    /**
+     * 공항 대역(3500xxx)인지. 육로 판정({@link LandReachability})이 {@code trafficType} 대신 이
+     * 대역을 쓴다 — 그 판정이 {@code trafficType}으로 항공을 가리다가 시외버스를 항공으로 오분류해
+     * 폐기됐다.
+     */
+    public static boolean isAir(int stationId) {
+        return in(stationId, AIR_MIN, AIR_MAX);
     }
 
     private static boolean in(int v, int lo, int hi) {

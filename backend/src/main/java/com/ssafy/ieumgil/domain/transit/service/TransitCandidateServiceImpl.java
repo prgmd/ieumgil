@@ -22,6 +22,7 @@ import com.ssafy.ieumgil.domain.transit.exception.TransitException;
 import com.ssafy.ieumgil.domain.transit.util.BoardingMargin;
 import com.ssafy.ieumgil.domain.transit.util.ConnectionPlanner;
 import com.ssafy.ieumgil.domain.transit.util.Haversine;
+import com.ssafy.ieumgil.domain.transit.util.LandReachability;
 import com.ssafy.ieumgil.domain.transit.util.IntercityLegs;
 import com.ssafy.ieumgil.domain.transit.util.StationIdBands;
 import com.ssafy.ieumgil.global.exception.CustomException;
@@ -386,10 +387,19 @@ public class TransitCandidateServiceImpl implements TransitCandidateService {
         RouteLookup lookup = modes.transit() || needsDriving
                 ? routeLookupOf(leg)
                 : new RouteLookup(List.of(), false);
-        PlaceResDTO.TaxiRoute driving = needsDriving ? callDriving(leg) : null;
+        // 차로 갈 수 없는 목적지(시외 경로가 전부 항공)면 자차·택시를 아예 만들지 않는다. 후보를
+        // 만들어 두고 status로 감추지 않는 이유: 프론트는 status와 무관하게 모든 후보를 그리므로
+        // "조회 실패" 회색 줄이 남고, 그게 사용자가 신고한 증상이다. 도보는 그대로 둔다 —
+        // 2km 임계로 이미 걸러지고, 육지와 이어진 섬(영도 등)까지 잘못 걸린다.
+        boolean landUnreachable = LandReachability.isLandUnreachable(intercityPathsOf(lookup.paths()));
+        // 버릴 답에 카카오 쿼터를 쓰지 않는다 — 판정 근거인 경로 목록은 이미 위에서 받았다.
+        PlaceResDTO.TaxiRoute driving = needsDriving && !landUnreachable ? callDriving(leg) : null;
 
         List<Candidate> roadCandidates = new ArrayList<>();
         for (RoadMode mode : modes.road()) {
+            if (landUnreachable && (mode == RoadMode.CAR || mode == RoadMode.TAXI)) {
+                continue;
+            }
             Candidate candidate = switch (mode) {
                 case TAXI -> taxiCandidate(driving);
                 case CAR -> carCandidate(driving);
@@ -398,6 +408,11 @@ public class TransitCandidateServiceImpl implements TransitCandidateService {
             roadCandidates.add(candidate);
         }
         return new RoadResult(lookup.paths(), modes.transit(), List.copyOf(roadCandidates), lookup.noRoute());
+    }
+
+    /** 시외 경로만 남긴다({@link #INTERCITY_PATH_TYPES}). 시내 구간이면 빈 목록이다 */
+    private static List<OdsayRouteResponse.Path> intercityPathsOf(List<OdsayRouteResponse.Path> paths) {
+        return paths.stream().filter(path -> INTERCITY_PATH_TYPES.contains(path.pathType())).toList();
     }
 
     /**
