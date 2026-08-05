@@ -44,6 +44,10 @@ export function AppBar({ crumbs, members = [], activeMemberIds = [], extra = nul
     setLoggingOut(true);
     try {
       await logout();
+    } catch (e) {
+      // authStore.logout()이 내부에서 실패를 삼키는 것이 기본 동작이지만,
+      // 혹시 예외가 새어나오더라도 unhandled rejection이 되지 않도록 안전망으로 막는다.
+      console.error('로그아웃 처리 중 오류', e);
     } finally {
       navigate('/', { replace: true });
     }
@@ -58,7 +62,7 @@ export function AppBar({ crumbs, members = [], activeMemberIds = [], extra = nul
   return (
     <header className="appbar">
       <button className="logo" onClick={() => navigate('/my')} aria-label="개인 페이지로 이동">
-        <img src={logo} alt="아음길" className="logo-img" />
+        <img src={logo} alt="이음길" className="logo-img" />
       </button>
 
       <div className="crumb">

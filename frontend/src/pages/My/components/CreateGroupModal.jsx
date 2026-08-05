@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import Modal from '../shared/ui/Modal';
 import { useToastStore } from '../../../global/stores/toastStore';
+import { onEnter } from '../../../global/util/onEnter';
 
 /**
  * MY-02: 그룹명(2~20자) 입력 → 생성 → 생성 직후 초대코드 공유 모달로 이어짐.
@@ -32,6 +33,7 @@ export default function CreateGroupModal({ open, onClose, onCreate }) {
   }
 
   async function handleSubmit() {
+    if (submitting) return;
     const trimmed = name.trim();
     if (trimmed.length < 2 || trimmed.length > 20) {
       setError('그룹명은 2~20자로 입력해주세요.');
@@ -40,8 +42,7 @@ export default function CreateGroupModal({ open, onClose, onCreate }) {
     setError('');
     setSubmitting(true);
     try {
-      console.log(trimmed)
-      const group = await onCreate(trimmed)
+      const group = await onCreate(trimmed);
       setCreatedGroup(group);
       setStep('share');
     } catch {
@@ -72,7 +73,7 @@ export default function CreateGroupModal({ open, onClose, onCreate }) {
             maxLength={20}
             value={name}
             onChange={(e) => setName(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && handleSubmit()}
+            onKeyDown={onEnter(handleSubmit)}
             autoFocus
           />
           {error && <div className="code-err">{error}</div>}

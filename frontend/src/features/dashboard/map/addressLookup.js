@@ -32,7 +32,12 @@ const POSTCODE_SRC =
  */
 function loadScriptOnce(id, src) {
   return new Promise((resolve, reject) => {
-    const fail = () => reject(new Error("외부 스크립트를 불러오지 못했어요."));
+    const fail = (script) => {
+      // 실패한 태그를 남겨 두면 다음 호출이 existing 분기로 들어가 이미 끝난
+      // 이벤트에 리스너를 붙이게 된다(영영 대기) — 지워서 다음 호출이 새로 삽입하게 한다.
+      script.remove();
+      reject(new Error("외부 스크립트를 불러오지 못했어요."));
+    };
 
     const existing = document.getElementById(id);
     if (existing) {
@@ -41,7 +46,9 @@ function loadScriptOnce(id, src) {
         return;
       }
       existing.addEventListener("load", () => resolve(), { once: true });
-      existing.addEventListener("error", fail, { once: true });
+      existing.addEventListener("error", () => fail(existing), {
+        once: true,
+      });
       return;
     }
 
@@ -57,7 +64,7 @@ function loadScriptOnce(id, src) {
       },
       { once: true },
     );
-    script.addEventListener("error", fail, { once: true });
+    script.addEventListener("error", () => fail(script), { once: true });
     document.head.appendChild(script);
   });
 }
