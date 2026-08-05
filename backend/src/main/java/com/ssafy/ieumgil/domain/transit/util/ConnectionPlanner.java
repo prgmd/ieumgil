@@ -17,9 +17,12 @@ import java.util.Optional;
  * 가장 빠른 연결편을 붙인다. 연결편을 찾지 못한 첫 편은 결과에서 뺀다 — 탈 수 없는 조합을
  * 후보로 보여주지 않는다.
  *
- * <p>자정을 넘기는 환승은 다루지 않는다. 도착+여유가 자정을 넘기면(하루 1440분 이상) 그
- * 편은 연결편을 찾지 않는다 — 두 번째 leg 시간표를 다음 날까지 조회하지 않으므로, 넘긴
- * 걸로 추측해 이튿날 첫차를 잘못 붙이는 대신 "연결편 없음"으로 낸다.
+ * <p>자정을 넘기는 환승은 다루지 않는다. 두 번째 leg 시간표를 다음 날까지 조회하지 않으므로,
+ * 넘긴 걸로 추측해 이튿날 첫차를 잘못 붙이는 대신 "연결편 없음"으로 낸다. 자정을 넘기는 경우는
+ * 둘이다 — ① 도착+여유가 자정을 넘길 때(하루 1440분 이상), ② 첫 편 자체가 자정을 넘길 때
+ * (23:30 출발 → 05:10 도착처럼 도착이 출발보다 이른 편). ②는 도착 시각만 보면 05:10이라
+ * ①의 검사를 그냥 지나가고, 기준일로 조회한 두 번째 leg 시간표의 06:00 편이 붙어 실제로는
+ * 18시간 전에 떠난 편을 "환승 50분"으로 내보내게 된다.
  */
 public final class ConnectionPlanner {
 
@@ -48,6 +51,11 @@ public final class ConnectionPlanner {
             return Optional.empty();
         }
         int arrivalMinutes = minutesOf(first.arrivalAt());
+        // 첫 편이 자정을 넘겼다(도착이 출발보다 이르다) — 도착 시각만으로는 기준일의 이른 아침과
+        // 구별되지 않아 아래 검사를 통과해 버린다. 여기서 끊는다.
+        if (arrivalMinutes < minutesOf(first.departureAt())) {
+            return Optional.empty();
+        }
         int requiredMinutes = arrivalMinutes + marginMin;
         if (requiredMinutes >= MINUTES_PER_DAY) {
             return Optional.empty();

@@ -62,6 +62,22 @@ class ConnectionPlannerTest {
         assertThat(out.get(0).connection().departureAt()).isEqualTo("10:10");
     }
 
+    @Test
+    @DisplayName("자정을_넘긴_첫_편은_연결편을_붙이지_않는다")
+    void 자정을_넘긴_첫_편은_연결편을_붙이지_않는다() {
+        // 23:30 출발 → 05:10 도착(이튿날). 도착 시각만 보면 310분이라 "도착+여유 < 1440" 검사를
+        // 그냥 통과한다.
+        var first = List.of(dep("23:30", "05:10"));
+        // 기준일로 조회한 시간표다 — 06:00 편은 승객이 실제로 내리기 약 18시간 전에 떠났다.
+        var second = List.of(dep("06:00", "07:00"));
+
+        var out = ConnectionPlanner.connect(first, second, TransitMode.TRAIN);
+
+        // 이튿날 시간표를 조회하지 않으므로 "연결편 없음"이 정답이다. 검사가 빠지면 out 에
+        // dep=06:00, transferMin=50 짜리 탈 수 없는 조합이 하나 남는다.
+        assertThat(out).isEmpty();
+    }
+
     private Departure dep(String departureAt, String arrivalAt) {
         return Departure.builder()
                 .departureAt(departureAt)
