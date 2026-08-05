@@ -732,6 +732,13 @@ public class TransitCandidateServiceImpl implements TransitCandidateService {
      * 실패·경로 없음) 시간표를 조회해 보지도 않고 {@code null}을 반환한다 — 그 수단 후보를
      * 만들지 않는다(접근시간을 0으로 추측하지 않는다). 호출자({@link #intercityCandidates})가
      * 이 {@code null}을 걸러낸다.
+     *
+     * <p>{@code mode}(대표 수단)는 후보의 <b>정체</b>일 뿐이다 — {@link IntercityLegs}가 목적지에
+     * 도달하는 마지막 leg에서 뽑으므로 {@code pathType 20}에서는 첫 leg의 수단과 다르다. 그래서
+     * 첫 leg의 시간표·탑승 여유는 대표 수단이 아니라 <b>그 leg 자신의 대역</b>으로 판별한
+     * {@code boardingMode}를 쓴다({@link #withConnections}가 두 번째 leg에 하는 것과 대칭이다) —
+     * 대표 수단을 넘기면 기차 역 ID가 항공 시간표 API로 가고, 기차편이 항공 여유(40분) 기준으로
+     * 걸러진다.
      */
     private Candidate candidateFor(
             TransitMode mode, IntercityLegs legs, Pair pair, int base, LocalDate startDate, int dayNo,
@@ -739,13 +746,18 @@ public class TransitCandidateServiceImpl implements TransitCandidateService {
         if (legs == null) {
             return Candidate.lookupFailed(mode);
         }
+        Optional<TransitMode> boardingMode = modeOfLeg(legs.legs().get(0));
+        if (boardingMode.isEmpty()) {
+            log.warn("첫 leg의 역 ID 대역을 판별할 수 없다: mode={}", mode);
+            return Candidate.lookupFailed(mode);
+        }
         Optional<AccessLegs> access = accessLegsOf(pair, legs);
         if (access.isEmpty()) {
             return null;
         }
         int accessArrival = base + access.get().accessMin();
-        Candidate firstLegCandidate =
-                timetableCandidateFor(mode, legs.legs().get(0), accessArrival, startDate, dayNo, from, to);
+        Candidate firstLegCandidate = timetableCandidateFor(
+                boardingMode.get(), legs.legs().get(0), accessArrival, startDate, dayNo, from, to);
         if (firstLegCandidate.status() != CandidateStatus.OK) {
             return firstLegCandidate;
         }
@@ -755,7 +767,16 @@ public class TransitCandidateServiceImpl implements TransitCandidateService {
         if (legCandidate.status() != CandidateStatus.OK) {
             return legCandidate;
         }
-        return doorToDoorCandidate(mode, legs, access.get(), legCandidate, base, startDate, dayNo);
+        return doorToDoorCandidate(
+                mode, boardingMode.get(), legs, access.get(), legCandidate, base, startDate, dayNo);
+    }
+
+    /**
+     * leg 하나의 수단. 그 leg의 출발역 ID 대역으로 판별한다({@link StationIdBands#modeOf}).
+     * 역 ID가 없거나 대역을 모르면 empty다 — 추측하지 않는다.
+     */
+    private Optional<TransitMode> modeOfLeg(OdsayRouteResponse.SubPath leg) {
+        return leg.startID() == null ? Optional.empty() : StationIdBands.modeOf(leg.startID());
     }
 
     /**
@@ -770,10 +791,15 @@ public class TransitCandidateServiceImpl implements TransitCandidateService {
      * 조회 자체는 성공했으니 {@code LOOKUP_FAILED}가 아니다. 그래도 {@code legs}·{@code fare}·
      * {@code accessMin}·{@code egressMin}·{@code referenceAt}은 채운다 — 그 값들은 특정 편에
      * 좌우되지 않는 구조적인 값이다. {@code durationMin}만 편이 있어야 계산되므로 null이다.
+     *
+     * @param mode         후보의 정체가 되는 대표 수단(목적지에 도달하는 수단)
+     * @param boardingMode 실제로 탑승하는 첫 leg의 수단. {@code referenceAt}은 이 수단의 탑승
+     *                     여유로 계산한다 — 그 값이 곧 첫 leg 편을 걸러낸 기준이므로 대표 수단의
+     *                     여유를 쓰면 기차+항공 경로에서 화면 기준 시각과 실제 기준이 어긋난다
      */
     private Candidate doorToDoorCandidate(
-            TransitMode mode, IntercityLegs legs, AccessLegs access, Candidate legCandidate,
-            int base, LocalDate startDate, int dayNo) {
+            TransitMode mode, TransitMode boardingMode, IntercityLegs legs, AccessLegs access,
+            Candidate legCandidate, int base, LocalDate startDate, int dayNo) {
         List<TransitLegResDTO.Leg> allLegs = new ArrayList<>();
         allLegs.addAll(access.access());
         allLegs.addAll(TransitLegResDTO.fromSubPaths(legs.legs()));
@@ -782,7 +808,8 @@ public class TransitCandidateServiceImpl implements TransitCandidateService {
         int transferCount = vehicleLegCountOf(allLegs) - 1;
         Integer fare = fareOf(access, legs);
         TransitResDTO.FareConfidence fareConfidence = fareConfidenceOf(access, legs);
-        String referenceAt = referenceFor(startDate, dayNo, base + access.accessMin(), mode).time().format(HHMM);
+        String referenceAt =
+                referenceFor(startDate, dayNo, base + access.accessMin(), boardingMode).time().format(HHMM);
 
         Candidate.CandidateBuilder builder = Candidate.builder()
                 .mode(mode)
@@ -869,7 +896,7 @@ public class TransitCandidateServiceImpl implements TransitCandidateService {
     /**
      * 환승 경로의 두 번째 leg 시간표를 <b>한 번만</b> 불러 첫 leg의 편마다 연결편을 붙인다.
      *
-     * <p>두 번째 leg의 수단은 첫 leg과 같다고 가정하지 않고 다시 판별한다({@link StationIdBands#modeOf}) —
+     * <p>두 번째 leg의 수단은 첫 leg과 같다고 가정하지 않고 다시 판별한다({@link #modeOfLeg}) —
      * {@code pathType 20}처럼 두 leg가 서로 다른 수단(기차→항공 등)일 수 있어서다. 판별할 수
      * 없거나 두 번째 leg 조회 자체가 실패하면 추측하지 않고 조회 실패로 낸다 — 첫 leg만 있는
      * 반쪽 경로를 직통처럼 내보내지 않는다.
@@ -877,7 +904,7 @@ public class TransitCandidateServiceImpl implements TransitCandidateService {
     private Candidate withConnections(
             TransitMode mode, IntercityLegs legs, Candidate firstLegCandidate,
             int base, LocalDate startDate, int dayNo, String from, String to) {
-        Optional<TransitMode> secondMode = StationIdBands.modeOf(legs.legs().get(1).startID());
+        Optional<TransitMode> secondMode = modeOfLeg(legs.legs().get(1));
         if (secondMode.isEmpty()) {
             log.warn("환승 두 번째 leg의 역 ID 대역을 판별할 수 없다: mode={}", mode);
             return Candidate.lookupFailed(mode);

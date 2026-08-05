@@ -752,12 +752,15 @@ class TransitCandidateServiceImplTest {
     }
 
     @Test
-    @DisplayName("환승 시외 구간(pathType 20)은 두 번째 leg 시간표를 붙여 연결편을 계산한다")
-    void 환승_시외_구간은_연결편을_계산한다() {
-        // 이 테스트가 실패해야 하는 회귀: candidateFor가 legs.legs().get(0) 대신
-        // legs.legs().get(size-1)을 써도 기존 단일 leg 픽스처들은 전부 통과한다(leg가 하나뿐이라
-        // get(0)==get(size-1)). 첫 leg(기차·3300xxx)와 두 번째 leg(항공·3500xxx)가 서로 다른
-        // 역 ID 대역·시간표 API를 쓰는 이 픽스처만이 그 스왑을 실제로 잡아낸다.
+    @DisplayName("복합 구간(pathType 20)의 대표 수단은 도착 수단(항공)이고 첫 leg 시간표는 기차로 간다")
+    void 복합_시외_구간은_도착_수단으로_이름_붙고_leg마다_자기_시간표로_간다() {
+        // 이 테스트가 잡아내는 회귀 셋:
+        //  ① 대표 수단을 첫 leg에서 뽑으면(옛 규칙) 이 후보가 "고속·시외버스"·"기차" 이름으로
+        //     나간다 — 제주에 기차로 갈 수 없으니 사용자에게 없는 수단을 제안하는 것이다.
+        //  ② 대표 수단을 첫 leg 시간표 조회에 그대로 넘기면 기차 역 ID(3300128→3300140)가
+        //     airServiceTime으로 간다. leg마다 자기 대역으로 다시 판별해야 한다.
+        //  ③ candidateFor가 legs.legs().get(0) 대신 get(size-1)을 쓰는 스왑. 기존 단일 leg
+        //     픽스처는 get(0)==get(size-1)이라 전부 통과한다 — 이 픽스처만 잡는다.
         given(blockRepository.findAllByIdInAndProject_IdAndDeletedAtIsNull(List.of(1L, 3L), PROJECT_ID))
                 .willReturn(List.of(seoulBlock(), jejuBlock()));
         given(projectRepository.findByIdAndDeletedAtIsNull(PROJECT_ID)).willReturn(Optional.of(publicProject()));
@@ -787,11 +790,23 @@ class TransitCandidateServiceImplTest {
         TransitCandidateResDTO.Result result =
                 service.calculate(PROJECT_ID, List.of(1L, 3L));
 
-        Candidate train = candidateOf(result, TransitMode.TRAIN);
-        assertThat(train.transferCount()).isEqualTo(1);
+        // 첫 leg 시간표는 자기 대역(기차)으로 간다 — 대표 수단(항공)을 그대로 넘기면 기차 역 ID가
+        // airServiceTime에 들어간다
+        verify(transitScheduleQueryService).getTrainSchedule(eq(3300128), eq(3300140), any(LocalDate.class));
+        verify(transitScheduleQueryService, never())
+                .getFlightSchedule(eq(3300128), eq(3300140), any(LocalDate.class));
+        // 대표 수단은 목적지에 닿는 마지막 leg(항공)다. 기차 후보 슬롯에는 이 경로가 들어가지 않는다
+        Candidate air = candidateOf(result, TransitMode.AIR);
+        assertThat(air.status()).isEqualTo(CandidateStatus.OK);
+        assertThat(air.label()).isEqualTo(TransitMode.AIR.label());
+        assertThat(candidateOf(result, TransitMode.TRAIN).status()).isEqualTo(CandidateStatus.LOOKUP_FAILED);
+        // 기준 시각도 실제로 탑승하는 첫 leg의 여유(기차 10분)다 — base 14:00 + 10분.
+        // 대표 수단(항공 40분)을 쓰면 14:40이 된다
+        assertThat(air.referenceAt()).isEqualTo("14:10");
+        assertThat(air.transferCount()).isEqualTo(1);
         // 17:00발(19:30 도착)은 20:10 이후 편이 없어 연결편을 못 찾고 빠진다 — 16:00발만 남는다
-        assertThat(train.departures()).hasSize(1);
-        TransitCandidateResDTO.Departure first = train.departures().get(0);
+        assertThat(air.departures()).hasSize(1);
+        TransitCandidateResDTO.Departure first = air.departures().get(0);
         assertThat(first.departureAt()).isEqualTo("16:00");
         TransitCandidateResDTO.Connection connection = first.connection();
         assertThat(connection).isNotNull();
@@ -807,9 +822,9 @@ class TransitCandidateServiceImplTest {
         assertThat(connection.transferMin()).isEqualTo(83);
         // door-to-door: 접근·이탈은 0분이지만 대기(14:10 기준 16:00발=120분)+기차(157분)+
         // 환승대기(83분)+항공(60분)=420분이다. fare는 접근(0)+시외 totalPayment(119800)+이탈(0)
-        assertThat(train.durationMin()).isEqualTo(420);
-        assertThat(train.fare()).isEqualTo(119800);
-        assertThat(train.fareConfidence()).isEqualTo(TransitResDTO.FareConfidence.CONFIRMED);
+        assertThat(air.durationMin()).isEqualTo(420);
+        assertThat(air.fare()).isEqualTo(119800);
+        assertThat(air.fareConfidence()).isEqualTo(TransitResDTO.FareConfidence.CONFIRMED);
         // 두 번째 leg 시간표는 첫 leg 편이 둘이어도 한 번만 조회된다
         verify(transitScheduleQueryService, times(1))
                 .getFlightSchedule(eq(3500008), eq(3500003), any(LocalDate.class));
