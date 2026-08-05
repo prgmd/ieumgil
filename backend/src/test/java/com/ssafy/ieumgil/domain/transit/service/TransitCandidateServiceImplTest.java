@@ -1366,6 +1366,10 @@ class TransitCandidateServiceImplTest {
         // 도착 시각도 접지 않는다 — 24:10 + 240분은 "04:10"이 아니라 "28:10"이다.
         // %1440으로 접으면 다음 날 편이 오늘 새벽 편으로 보인다
         assertThat(expressBus.departures().get(1).arrivalAt()).isEqualTo("28:10");
+        // 대기 시간도 접힌 값이 아니다 — base 14:00(seoulBlock 13:00 + 60분), 접근 0분이므로
+        // 24:10발까지 610분이다. %1440으로 접으면 1450이 10으로 줄어 "대기 -830분"이 되고,
+        // 그 음수를 +1440으로 되감으면 610이 아니라 엉뚱한 값이 나온다
+        assertThat(expressBus.departures().get(1).waitMin()).isEqualTo(610);
     }
 
     @Test
