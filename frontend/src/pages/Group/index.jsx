@@ -5,6 +5,7 @@ import { useGroupDetail } from '../../features/group/hooks/useGroupDetail';
 import { useProjects } from '../../features/group/hooks/useProjects';
 import { isTripFinished } from '../../features/group/util/tripStatus';
 import { useToastStore } from '../../global/stores/toastStore';
+import { onEnter } from '../../global/util/onEnter';
 import LeaveGroupModal from './components/LeaveGroupModal';
 import CreateProjectModal from './components/CreateProjectModal';
 import EditProjectModal from './components/EditProjectModal';
@@ -59,8 +60,12 @@ export function GroupPage() {
   }
 
   async function handleReissue() {
-    await reissueInviteCode();
-    showToast('코드 재발급 — 기존 코드는 즉시 무효화됐어요');
+    try {
+      await reissueInviteCode();
+      showToast('코드 재발급 — 기존 코드는 즉시 무효화됐어요');
+    } catch {
+      showToast('코드 재발급에 실패했어요. 잠시 후 다시 시도해주세요.');
+    }
   }
 
   // 없는 그룹·권한 없는 그룹·잘못된 URL(/groups/abc)이면 개인 페이지로 되돌린다.
@@ -88,7 +93,7 @@ export function GroupPage() {
                 maxLength={20}
                 onChange={(e) => setNameDraft(e.target.value)}
                 onBlur={commitRename}
-                onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()}
+                onKeyDown={onEnter((e) => e.currentTarget.blur())}
               />
             ) : (
               <h2 className="sec-title">

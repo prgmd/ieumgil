@@ -5,6 +5,7 @@ import { useAuthStore } from '../../global/stores/authStore';
 import { useMyGroups } from '../../features/my/hooks/useMyGroups';
 import { useToastStore } from '../../global/stores/toastStore';
 import { ERROR_CODE } from '../../global/api/errorCodes';
+import { onEnter } from '../../global/util/onEnter';
 import CreateGroupModal from './components/CreateGroupModal';
 import DeleteGroupModal from './components/DeleteGroupModal';
 import { AppBar } from './shared/ui/AppBar';
@@ -20,19 +21,24 @@ export function MyPage() {
 
   const [code, setCode] = useState('');
   const [codeErr, setCodeErr] = useState('');
+  const [joining, setJoining] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState(null); // 삭제 모달에 넘길 그룹
   const [editingId, setEditingId] = useState(null); // 인라인 이름 수정 중인 그룹 id
   const [editValue, setEditValue] = useState('');
 
   async function handleJoin() {
+    if (joining) return;
     setCodeErr('');
+    setJoining(true);
     try {
       const group = await joinByCode(code);
       setCode('');
       navigate(`/groups/${group.id}`);
     } catch (e) {
       setCodeErr(messageFor(e));
+    } finally {
+      setJoining(false);
     }
   }
 
@@ -45,6 +51,8 @@ export function MyPage() {
     const trimmed = editValue.trim();
     setEditingId(null);
     if (!trimmed) return; // 빈 값이면 조용히 취소 (원본 이름 유지)
+    const group = groups.find((g) => g.id === groupId);
+    if (trimmed === group?.name) return; // 변경 없으면 조용히 취소
     try {
       await renameGroup(groupId, trimmed);
       showToast('이름이 수정됐어요 ✓');
@@ -93,7 +101,7 @@ export function MyPage() {
                       onClick={(e) => e.stopPropagation()}
                       onChange={(e) => setEditValue(e.target.value)}
                       onBlur={() => commitEdit(g.id)}
-                      onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()}
+                      onKeyDown={onEnter((e) => e.currentTarget.blur())}
                       maxLength={20}
                       style={{
                         fontSize: 16,
@@ -168,9 +176,9 @@ export function MyPage() {
                 placeholder="예: YJ3K7Q2M"
                 value={code}
                 onChange={(e) => setCode(e.target.value.toUpperCase())}
-                onKeyDown={(e) => e.key === 'Enter' && handleJoin()}
+                onKeyDown={onEnter(handleJoin)}
               />
-              <button className="btn btn-acc" onClick={handleJoin}>
+              <button className="btn btn-acc" onClick={handleJoin} disabled={joining}>
                 입장
               </button>
             </div>
