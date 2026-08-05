@@ -3,13 +3,9 @@
   src: url('./assets/fonts/MemomentKkukkukk.ttf') format('truetype');
   font-weight: normal;
   font-style: normal;
-}
-
-@font-face {
-  font-family: 'kyobo2024';
-  src: url('./assets/fonts/KyoboHandwriting2024psw.ttf') format('truetype');
-  font-weight: normal;
-  font-style: normal;
+  /* swap이 없으면 브라우저 기본이 "폰트 로드까지 글자 미표시(FOIT)" — 5.4MB ttf라
+     첫 화면이 수 초간 백지가 된다. swap은 폴백 폰트로 먼저 그리고 로드 후 갈아끼운다. */
+  font-display: swap;
 }
 
 /* 실험용 폰트 스위치 지점.
