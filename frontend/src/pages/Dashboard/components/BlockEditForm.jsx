@@ -89,11 +89,12 @@ export function BlockEditForm({
       setError("블록 이름을 입력해주세요.");
       return;
     }
-    // 리사이즈(10분 단위)와 같은 단위 — 예전 30분 단위는 리사이즈로 만든 70분
-    // 블록을 모달에서 저장 못 하는 모순이 있었다
+    // 단위 강제는 하지 않는다 — 예전 10분 단위 검증은 KTX 138분·시내버스 23분처럼
+    // 교통 후보가 만든 실측값이 걸려, 그 블록의 "모든" 필드 저장을 막는 모순이 있었다
+    // (리사이즈는 10분 스냅이지만 그건 입력 편의지 데이터 규칙이 아니다)
     const dur = Number(formData.durationMin);
-    if (!Number.isInteger(dur) || dur <= 0 || dur % 10 !== 0) {
-      setError("소요 시간은 10분 단위로 입력해주세요. (예: 30, 40, 70)");
+    if (!Number.isInteger(dur) || dur <= 0) {
+      setError("소요 시간은 1분 이상의 정수로 입력해주세요.");
       return;
     }
     // 보통은 24:00 을 넘겨도 된다 — 넘친 만큼은 다음 Day 00:00 에 "(이어서)"

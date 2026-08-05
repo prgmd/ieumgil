@@ -24,7 +24,10 @@ public enum GeneralErrorCode implements BaseErrorCode {
     METHOD_NOT_ALLOWED(HttpStatus.METHOD_NOT_ALLOWED, "COMMON405", "지원하지 않는 HTTP 메서드입니다."),
 
     // 500
-    INTERNAL_SERVER_ERROR(HttpStatus.INTERNAL_SERVER_ERROR, "COMMON500", "서버 내부 오류가 발생했습니다.");
+    INTERNAL_SERVER_ERROR(HttpStatus.INTERNAL_SERVER_ERROR, "COMMON500", "서버 내부 오류가 발생했습니다."),
+
+    // 503 — op 락 획득 시간 초과(OpPublisher). 데드락 안전망이 요청을 끊었다는 뜻이므로 재시도가 유효하다
+    OP_LOCK_TIMEOUT(HttpStatus.SERVICE_UNAVAILABLE, "COMMON503", "요청이 몰려 처리하지 못했습니다. 잠시 후 다시 시도해주세요.");
 
     private final HttpStatus status;
     private final String code;
