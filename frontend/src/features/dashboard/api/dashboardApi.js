@@ -267,27 +267,36 @@ export async function fetchChatbotHistory(projectId) {
  *   intercity: boolean,
  *   timetableApplied: boolean,
  *   timetableSkipReason: string|null,
- *   referenceAt: string|null,
  *   defaultMode: "TRANSIT"|"TRAIN"|"EXPRESS_BUS"|"AIR"|"TAXI"|"CAR"|"WALK"|null,
  *   candidates: Array<{
- *     mode: string, label: string, available: boolean,
+ *     mode: string, label: string,
+ *     status: "OK"|"NO_SERVICE"|"NO_ROUTE"|"LOOKUP_FAILED",
  *     durationMin: number|null, fare: number|null,
  *     fareConfidence: "CONFIRMED"|"ESTIMATE"|"UNKNOWN"|null,
  *     intervalMin: number|null, distanceM: number|null,
  *     labels: string[]|null, transferCount: number|null, walkMeters: number|null,
  *     caution: string|null,
  *     legs: Array<{type:string, lineName:string|null, from:string|null, to:string|null, durationMin:number}>|null,
+ *     accessMin: number|null, egressMin: number|null, referenceAt: string|null,
  *     departures: Array<{
  *       name: string, grade: string|null, departureAt: string|null, arrivalAt: string|null,
  *       durationMin: number|null, fare: number|null,
  *       fareConfidence: "CONFIRMED"|"UNKNOWN",
  *       fareOptions: {general:number,special:number,standing:number}|null,
- *       labels: string[],
+ *       labels: string[], waitMin: number|null,
+ *       connection: {
+ *         name: string, grade: string|null, departureAt: string|null, arrivalAt: string|null,
+ *         durationMin: number|null, fare: number|null, transferMin: number|null,
+ *         fromStation: string|null, toStation: string|null,
+ *       }|null,
  *     }>|null,
  *   }>
  * }>}>}
- * CAR/TAXI는 육로 경로가 없는 구간(도서 목적지)에서 candidates 배열에 아예 나타나지
- * 않는다 — caution 필드는 현재 어떤 후보도 채우지 않는다(폐기된 필드, 재사용 대비 보존).
+ * CAR/TAXI는 카카오 길찾기로 따로 응답하므로 ODsay가 대중교통 경로를 못 주는 구간
+ * (도서 목적지 등)에서도 그대로 후보로 나간다 — 그 구간에서 NO_ROUTE가 되는 건
+ * 대중교통(TRANSIT/TRAIN/EXPRESS_BUS/AIR) 후보뿐이다. caution 필드는 현재 어떤
+ * 후보도 채우지 않는다(폐기된 필드, 재사용 대비 보존). accessMin/egressMin/referenceAt/
+ * waitMin/connection은 시외 door-to-door 후보(시간표 적용)만 채운다.
  */
 export async function calculateTransitCandidates(projectId, blockIds) {
   try {

@@ -804,7 +804,7 @@ coord2address 역지오코딩(MAP-04 핀 지정).
 
 ### GET /api/trains
 
-ODsay 열차 시간표(KTX·무궁화 등) → 출발 후보 목록(앞 일정 종료 + 45분 버퍼 이후).
+ODsay 열차 시간표(KTX·무궁화 등) → 출발 후보 목록(앞 일정 종료 + 탑승 여유 이후. 기차는 `BoardingMargin` 10분).
 
 **Query Params:** `dep`(출발역), `arr`(도착역), `after`(기준 시각)
 
