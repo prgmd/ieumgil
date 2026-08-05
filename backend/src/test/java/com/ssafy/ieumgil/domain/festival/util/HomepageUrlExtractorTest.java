@@ -34,4 +34,16 @@ class HomepageUrlExtractorTest {
         assertThat(HomepageUrlExtractor.extract(null)).isNull();
         assertThat(HomepageUrlExtractor.extract("<a>링크 없음</a>")).isNull();
     }
+
+    @Test
+    @DisplayName("javascript: href는 걸러진다")
+    void javascript_href는_걸러진다() {
+        assertThat(HomepageUrlExtractor.extract("<a href=\"javascript:void(0)\">클릭</a>")).isNull();
+    }
+
+    @Test
+    @DisplayName("상대경로 href는 걸러진다")
+    void 상대경로_href는_걸러진다() {
+        assertThat(HomepageUrlExtractor.extract("<a href=\"/festival/123\">상세보기</a>")).isNull();
+    }
 }
