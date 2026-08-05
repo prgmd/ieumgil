@@ -4428,7 +4428,7 @@ export function DashboardPage() {
                     </div>
                     {s.timetableApplied === false && s.timetableSkipReason && (
                       <p className="tp-banner tp-banner-warn">
-                        {s.timetableSkipReason} — 앞 구간 확정 후 다시 계산하세요
+                        {s.timetableSkipReason}
                       </p>
                     )}
                     {routable && (
@@ -4505,8 +4505,7 @@ export function DashboardPage() {
             {transitPicker.segment?.timetableApplied === false &&
               transitPicker.segment?.timetableSkipReason && (
                 <p className="tp-banner tp-banner-warn">
-                  {transitPicker.segment.timetableSkipReason} — 앞 구간 확정 후
-                  다시 계산하세요
+                  {transitPicker.segment.timetableSkipReason}
                 </p>
               )}
             <div className="tp-list">
