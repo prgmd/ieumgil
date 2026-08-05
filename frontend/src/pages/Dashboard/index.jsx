@@ -11,7 +11,31 @@ import { ChatbotWidget } from "./components/ChatbotWidget";
 import { RemoteCursorLayer } from "./components/RemoteCursorLayer";
 import { TransitCandidateCard } from "./components/TransitCandidateCard";
 import { hueOf } from "./components/memberColor";
-import { TRANSIT_MODE_META, buildTransportMeta } from "./transitMeta";
+import { buildTransportMeta } from "./transitMeta";
+import { CardBody } from "./components/CardBody";
+import {
+  BlockEditBadge,
+  BlockLinkBadge,
+  BlockEditorBadge,
+} from "./components/BlockBadges";
+import { HoldRepeatButton } from "./components/HoldRepeatButton";
+import { PoolCard } from "./components/PoolCard";
+import { SearchResultDraggable } from "./components/SearchResultDraggable";
+import { ReadModeView } from "./components/ReadModeView";
+import {
+  CAT_COLORS,
+  fmtTime,
+  won,
+  catOf,
+  catKeyOf,
+  effectiveCostOf,
+  isTempId,
+  isServerBlock,
+  catFromKakaoGroup,
+  dayNoOf,
+  dayKeysOf,
+  dayDate,
+} from "./dashboardHelpers";
 import {
   DndContext,
   DragOverlay,
@@ -25,10 +49,8 @@ import {
 import {
   SortableContext,
   sortableKeyboardCoordinates,
-  useSortable,
   rectSortingStrategy,
 } from "@dnd-kit/sortable";
-import { CSS } from "@dnd-kit/utilities";
 import { generateKeyBetween } from "fractional-indexing";
 import { AppBar } from "../My/shared/ui/AppBar";
 import EditProjectModal from "../Group/components/EditProjectModal";
@@ -38,7 +60,6 @@ import { useVoiceChat } from "../../features/dashboard/voice/useVoiceChat";
 import { createOpSequencer } from "../../features/dashboard/realtime/opSequencer";
 import { ensureKakaoMaps } from "../../features/dashboard/map/addressLookup";
 import * as blockApi from "../../features/dashboard/api/dashboardApi";
-import { openBlockLink, hasExternalLink } from "../../features/dashboard/api/externalLink";
 import { getClientId } from "../../global/api/clientId";
 import { useGroupDetail } from "../../features/group/hooks/useGroupDetail";
 import { useProjects } from "../../features/group/hooks/useProjects";
@@ -58,102 +79,12 @@ const DAY_END = 1440;
 const TL_PAD_TOP = 20;
 const TL_PAD_LEFT = 70;
 
-/**
- * 카테고리(대분류) 표. 색은 값을 직접 적지 않고 공통 토큰(tokens.css)을 가리킨다 —
- * 팔레트를 바꿀 일이 생기면 CSS 한 곳만 고치면 된다.
- * hex/bg 는 그대로 CSS 변수(--dc/--cb)나 배경색으로 넘어가므로 var() 문자열로 둔다.
- */
-const CAT_COLORS = {
-  stay: { nm: "숙소", hex: "var(--stay, #8a5aa8)", bg: "var(--stayB, #f3edfa)" },
-  food: { nm: "식당", hex: "var(--food, #d97e3c)", bg: "var(--foodB, #fdf1e4)" },
-  spot: {
-    nm: "명소/활동",
-    hex: "var(--spot, #3e8e63)",
-    bg: "var(--spotB, #eaf5ec)",
-  },
-  etc: { nm: "기타", hex: "var(--etc, #7a6a5c)", bg: "var(--etcB, #f1ece4)" },
-  trans: {
-    nm: "교통",
-    hex: "var(--trans, #6b7fc7)",
-    bg: "var(--transB, #eef0fb)",
-  },
-};
-
-const fmtTime = (mins) => {
-  const h = Math.floor(mins / 60);
-  const m = mins % 60;
-  return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
-};
-
-// 금액 표기 (QA 배치2) — 만원 이상은 "9.3만원"으로 축약해 긴 숫자를 줄이고,
-// 0원/없음은 빈 문자열을 돌려준다(예전 "무료" 표기는 정보가 아니라 소음이었다).
-// 호출부는 빈 값일 때 요소 자체를 그리지 않는다.
-const won = (n) => {
-  if (!n) return "";
-  if (n >= 10000) {
-    const man = n / 10000;
-    const text =
-      man >= 100
-        ? Math.round(man).toLocaleString("ko-KR")
-        : man.toFixed(1).replace(/\.0$/, "");
-    return `${text}만원`;
-  }
-  return `${n.toLocaleString("ko-KR")}원`;
-};
-
-// 소요 표기 (QA 배치2) — 60분 이상은 "1시간 15분"으로 읽기 좋게
-const fmtDur = (mins) => {
-  if (mins == null) return "";
-  if (mins < 60) return `${mins}분`;
-  const h = Math.floor(mins / 60);
-  const m = mins % 60;
-  return m > 0 ? `${h}시간 ${m}분` : `${h}시간`;
-};
-
-const catOf = (item) => CAT_COLORS[item?.cat] || CAT_COLORS.etc;
-
-// 카드에 보일 소분류 — 교통 블록은 transportMeta.chosen.label 을 우선한다.
-// 이동 수단 재선택은 transportMeta 만 바꿀 수 있어서(subCategory 는 생성 시 고정,
-// LWW 미지원) sub 를 그대로 쓰면 재선택·새로고침 후 옛 수단명이 남는다.
-const subLabelOf = (item) =>
-  item?.cat === "trans"
-    ? (item?.transportMeta?.chosen?.label ?? item?.sub)
-    : item?.sub;
-
 // 블록에 반영할 소요·비용 — 시외는 고른 출발편의 값이 후보 대표값보다 정확하다
 // (KTX 157분 vs 무궁화 320분처럼 편마다 다르다). 소요 10분 미만은 카드가 안 잡힌다.
 const transitDurOf = (candidate, departure) =>
   Math.max(10, departure?.durationMin ?? candidate?.durationMin ?? 10);
 const transitCostOf = (candidate, departure) =>
   departure?.fare ?? departure?.fareOptions?.general ?? candidate?.fare ?? 0;
-
-/**
- * 요금이 "1인당"으로 오는 이동수단 — 표를 사람 수만큼 끊어야 한다.
- * 택시·자가용은 차 한 대 기준(요금을 나눠 내는 쪽)이라 곱하지 않고, 도보는 0원이다.
- */
-const PER_PERSON_FARE_MODES = new Set([
-  "TRANSIT",
-  "TRAIN",
-  "EXPRESS_BUS",
-  "AIR",
-]);
-
-const isPerPersonFare = (item) =>
-  item?.cat === "trans" &&
-  PER_PERSON_FARE_MODES.has(item?.transportMeta?.chosen?.mode);
-
-/**
- * 예산에 실제로 잡히는 금액.
- *
- * 블록의 cost 는 서버가 준 값 그대로다 — 대중교통·기차·항공은 1인 요금이라 그대로
- * 더하면 인원과 무관하게 한 명 몫만 잡힌다. 곱하기를 저장 시점이 아니라 합산 시점에
- * 하는 이유는, 나중에 여행 인원을 바꿔도 예산이 저절로 따라오게 하기 위함이다
- * (저장해 두면 인원 변경 때 모든 교통 블록을 다시 써야 한다).
- */
-const effectiveCostOf = (item, headcount) => {
-  const cost = item?.cost || 0;
-  return isPerPersonFare(item) ? cost * Math.max(1, headcount || 1) : cost;
-};
 
 /**
  * 중복 orderKey 에 견디는 키 생성 (QA: 블록 이동 시 ">=" 오류 픽스).
@@ -177,27 +108,6 @@ const safeKeyBetween = (before, after) => {
     }
   }
 };
-
-// ── 블록 id 규약 ─────────────────────────────────────
-// 서버에 아직 없는 블록을 구분하는 규약 — custom-(모달 저장 전), search-(생성 요청 중),
-// split-(자정에서 쪼개져 다음 Day 에 생길 "이어서" 블록, 생성 요청 중)
-const isTempId = (id) =>
-  String(id).startsWith("custom-") ||
-  String(id).startsWith("search-") ||
-  String(id).startsWith("split-");
-// 서버에 실재하는 블록만 REST 를 태운다 — 임시 id·auto-(로컬 교통)는 제외
-const isServerBlock = (id) => !isTempId(id) && !String(id).startsWith("auto-");
-
-// 카카오 category_group_code → 화면 cat. 음식점(FD6)·카페(CE7)는 food,
-// 숙박(AD5)은 stay, 그 외 장소는 spot 으로 본다.
-const catFromKakaoGroup = (code) => {
-  if (code === "FD6" || code === "CE7") return "food";
-  if (code === "AD5") return "stay";
-  return "spot";
-};
-
-// "d3" → 3 (서버 dayNo)
-const dayNoOf = (dayKey) => Number(String(dayKey).replace("d", ""));
 
 /** 하루의 끝을 넘긴 블록이 있는지 — 쪼개기가 필요한지 판단할 때만 쓴다 */
 const chainOverflowsMidnight = (chainIds, itemsMap) =>
@@ -420,45 +330,6 @@ const persistShiftedTimes = (chainIds, prevItems, nextItems, excludeId) => {
   );
 };
 
-const DAY_MS = 24 * 60 * 60 * 1000;
-/** 프로젝트를 아직 못 불러왔을 때만 쓰는 Day 수 (기존 목업과 같은 4일). */
-const FALLBACK_DAY_COUNT = 4;
-const WEEKDAYS = ["일", "월", "화", "수", "목", "금", "토"];
-
-// 'YYYY-MM-DD' 를 그냥 new Date() 에 넣으면 UTC 자정으로 읽혀 KST에서 하루 밀린다.
-const parseDate = (iso) =>
-  typeof iso === "string" && iso.length >= 10
-    ? new Date(`${iso.slice(0, 10)}T00:00:00`)
-    : null;
-
-/**
- * 프로젝트 기간(startDate~endDate)에서 Day 키 목록을 만든다.
- * 그룹 페이지에서 기간을 수정하면 이 목록이 바뀌고, Day 탭·읽기 모드가 함께 따라간다.
- */
-function dayKeysOf(project) {
-  const start = parseDate(project?.startDate);
-  const end = parseDate(project?.endDate);
-  const count =
-    start && end
-      ? Math.min(30, Math.max(1, Math.round((end - start) / DAY_MS) + 1))
-      : FALLBACK_DAY_COUNT;
-  return Array.from({ length: count }, (_, i) => `d${i + 1}`);
-}
-
-/** Day n(0-based)의 실제 날짜. 기간을 모르면 빈 문자열 — 가짜 날짜를 만들지 않는다. */
-function dayDate(project, index, style = "full") {
-  const start = parseDate(project?.startDate);
-  if (!start) return "";
-  const d = new Date(start.getTime() + index * DAY_MS);
-  const mm = String(d.getMonth() + 1).padStart(2, "0");
-  const dd = String(d.getDate()).padStart(2, "0");
-  if (style === "short") return `${mm}.${dd}`;
-  return `${d.getFullYear()}.${mm}.${dd} (${WEEKDAYS[d.getDay()]})`;
-}
-
-/** 없는/잘못된 cat 은 기타로 모은다 — 카테고리 합계에서 한 칸이 사라지지 않게. */
-const catKeyOf = (item) => (CAT_COLORS[item?.cat] ? item.cat : "etc");
-
 const resolveOverlaps = (currentItems, dayChain, dayStartMins, fixedId) => {
   let newItems = { ...currentItems };
   const others = dayChain.filter((id) => id !== fixedId);
@@ -530,243 +401,6 @@ function DayTab({ label, date, count, isActive, onClick, viewers = [] }) {
         </span>
       )}
     </button>
-  );
-}
-
-function CardBody({
-  item,
-  mode,
-  startMins,
-  endMins,
-  isThisResizing,
-  onEdge,
-  lockedBy,
-}) {
-  const catStyle = catOf(item);
-
-  if (mode !== "timeline") {
-    return (
-      <>
-        <div className="l">
-          <span className="cat">
-            {catStyle.nm}
-            {subLabelOf(item) ? ` · ${subLabelOf(item)}` : ""}
-          </span>
-          {lockedBy && <span className="lock-badge">✎ {lockedBy}</span>}
-          <span className="grip">⠿</span>
-        </div>
-        {/* 💡 연필 아이콘 삭제, 글씨 두께만 강조 */}
-        <div className="nm">{item?.name}</div>
-        <div className="sub">{item?.detail || item?.address}</div>
-      </>
-    );
-  }
-
-  return (
-    <>
-      {onEdge && (
-        <div
-          className={`tl-edge is-top ${isThisResizing === "top" ? "is-active" : ""}`}
-          onClick={(e) => onEdge(e, "top")}
-        />
-      )}
-      <div className="l1">
-        <span className="cat">
-          {catStyle.nm}
-          {subLabelOf(item) ? ` · ${subLabelOf(item)}` : ""}
-        </span>
-        {item?.auto && <span className="auto-badge">자동</span>}
-        {lockedBy && <span className="lock-badge">✎ {lockedBy} 편집 중</span>}
-        <span>
-          <span className="nm">{item?.name}</span>{" "}
-          <span className="nm-sub">{item?.detail}</span>
-        </span>
-        <span className="time">
-          {fmtTime(startMins)} – {fmtTime(endMins)}
-        </span>
-        {/* 무료(0원)는 표기 자체를 생략한다 (QA 배치2).
-            대중교통·기차·항공은 1인 요금이라 "/인"을 붙인다 — 안 붙이면 옆 패널의
-            총액과 안 맞아 보인다(총액에는 인원만큼 곱해 들어간다). */}
-        {item?.cost > 0 && (
-          <span className="cost">
-            {won(item.cost)}
-            {isPerPersonFare(item) && <span className="cost-unit">/인</span>}
-          </span>
-        )}
-      </div>
-      <div className="addr">📍 {item?.address || "위치 정보 없음"}</div>
-      <div className="ctl">
-        {/* 리사이즈 중에는 안내 문구가 카테고리 색으로 강조된다(.dur.is-resizing) */}
-        <span className={`dur ${isThisResizing ? "is-resizing" : ""}`}>
-          {isThisResizing
-            ? "마우스를 움직여 조절 후 클릭하여 확정"
-            : `소요 ${fmtDur(item?.dur)}`}
-        </span>
-      </div>
-      {onEdge && (
-        <div
-          className={`tl-edge is-bottom ${isThisResizing === "bottom" ? "is-active" : ""}`}
-          onClick={(e) => onEdge(e, "bottom")}
-        />
-      )}
-    </>
-  );
-}
-
-/**
- * 블록의 수정 표시. 개인 페이지의 카드(.g-card .op)와 같은 ✎ 아이콘·같은 규칙 —
- * 평소에는 숨어 있고 카드에 마우스를 올릴 때만 나타난다(노출은 CSS .blk-op).
- *
- * 카드 전체에 드래그 리스너가 걸려 있어 pointerdown 을 여기서 끊어야 버튼을 누르는
- * 동작이 드래그 시작으로 오해되지 않는다.
- */
-function BlockEditBadge({ onEdit }) {
-  if (!onEdit) return null;
-  return (
-    <button
-      type="button"
-      className="blk-op"
-      title="블록 수정"
-      aria-label="블록 수정"
-      onPointerDown={(e) => e.stopPropagation()}
-      onClick={(e) => {
-        e.stopPropagation();
-        onEdit();
-      }}
-    >
-      ✎
-    </button>
-  );
-}
-
-/**
- * 블록 출처(카카오/축제)로 이동하는 외부 링크 아이콘. hover 시에만 노출(.blk-op와 같은 규칙).
- * 카드 전체에 드래그 리스너가 걸려 있어 pointerdown 을 끊어 드래그 시작으로 오해되지 않게 한다.
- */
-function BlockLinkBadge({ item }) {
-  if (!hasExternalLink(item)) return null;
-  return (
-    <button
-      type="button"
-      className="blk-link"
-      title="출처 링크 열기"
-      aria-label="출처 링크 열기"
-      onPointerDown={(e) => e.stopPropagation()}
-      onClick={(e) => {
-        e.stopPropagation();
-        openBlockLink(item);
-      }}
-    >
-      🔗
-    </button>
-  );
-}
-
-/**
- * 꾹 누르면 연속 반복되는 버튼 (QA 배치2) — 400ms 홀드 후 100ms 간격 반복.
- * 짧은 탭은 click 한 번이고, 홀드였다면 릴리즈 때 따라오는 click 을 삼켜
- * 마지막에 한 칸 더 가는 이중 실행을 막는다.
- */
-function HoldRepeatButton({ onTrigger, children, ...rest }) {
-  const timersRef = useRef({ delay: null, repeat: null });
-  const repeatedRef = useRef(false);
-
-  const stop = () => {
-    clearTimeout(timersRef.current.delay);
-    clearInterval(timersRef.current.repeat);
-    timersRef.current = { delay: null, repeat: null };
-  };
-
-  const handlePointerDown = () => {
-    repeatedRef.current = false;
-    timersRef.current.delay = setTimeout(() => {
-      repeatedRef.current = true;
-      onTrigger();
-      timersRef.current.repeat = setInterval(onTrigger, 100);
-    }, 400);
-  };
-
-  const handleClick = () => {
-    if (repeatedRef.current) {
-      repeatedRef.current = false;
-      return;
-    }
-    onTrigger();
-  };
-
-  return (
-    <button
-      type="button"
-      {...rest}
-      onPointerDown={handlePointerDown}
-      onPointerUp={stop}
-      onPointerLeave={stop}
-      onPointerCancel={stop}
-      onClick={handleClick}
-    >
-      {children}
-    </button>
-  );
-}
-
-/** 블록 좌상단의 "가장 최근 수정자" 아바타 — 테두리는 그 멤버의 커서 색 */
-function BlockEditorBadge({ editor }) {
-  if (!editor) return null;
-  return (
-    <span
-      className="blk-editor"
-      title={`최근 수정 · ${editor.name}`}
-      style={{ "--vh": hueOf(editor.id) }}
-    >
-      {editor.profileImg?.startsWith("http") ? (
-        <img src={editor.profileImg} alt="" />
-      ) : (
-        editor.name[0]
-      )}
-    </span>
-  );
-}
-
-function PoolCard({ id, item, onEditBlock, lockedBy, editor }) {
-  const {
-    attributes,
-    listeners,
-    setNodeRef,
-    transform,
-    transition,
-    isDragging,
-  } = useSortable({ id, data: { from: "pool" } });
-  const catStyle = catOf(item);
-  // dnd-kit 이 만들어주는 이동값과 카테고리 색만 인라인으로 넘긴다(색 지정은 CSS 몫).
-  const style = {
-    transform: isDragging ? undefined : CSS.Transform.toString(transform),
-    transition,
-    "--dc": catStyle.hex,
-    "--cb": catStyle.bg,
-  };
-
-  return (
-    <div
-      ref={setNodeRef}
-      style={style}
-      className={`pcard ${isDragging ? "is-dragging" : ""}`}
-      data-pool-id={id}
-      {...attributes}
-      {...listeners}
-      // 💡 박스 전체 영역에 클릭 이벤트 연결
-      onClick={() => onEditBlock && onEditBlock(id)}
-    >
-      <BlockEditorBadge editor={editor} />
-      <CardBody
-        id={id}
-        item={item}
-        mode="pool"
-        onEditBlock={onEditBlock}
-        lockedBy={lockedBy}
-      />
-      <BlockEditBadge onEdit={onEditBlock && (() => onEditBlock(id))} />
-      <BlockLinkBadge item={item} />
-    </div>
   );
 }
 
@@ -858,193 +492,6 @@ function TimelineCard({
           </>
         )}
       </div>
-    </div>
-  );
-}
-
-// 💡 새롭게 추가된 검색 결과용 드래그 컴포넌트
-function SearchResultDraggable({ place, onClick }) {
-  const id = `search-result-${place.id}`;
-  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
-    id,
-    data: { from: "search", place },
-  });
-
-  return (
-    <div
-      ref={setNodeRef}
-      className={`sr-item ${isDragging ? "is-dragging" : ""}`}
-      {...attributes}
-      {...listeners}
-      onClick={() => onClick && onClick(place)}
-    >
-      <div className="sr-main">
-        <div className="sr-dot">●</div>
-        <div>
-          <div className="sr-name">{place.place_name}</div>
-          <div className="sr-addr">
-            {place.road_address_name || place.address_name}
-          </div>
-          <div className="sr-cat">{place.category_group_name}</div>
-        </div>
-      </div>
-      {/* 끌어다 놓기 유도용 손잡이 아이콘 */}
-      <div className="sr-grip">⠿</div>
-    </div>
-  );
-}
-
-function ReadModeView({ chains, items, dayKeys, project }) {
-  // 배경·좌우 여백은 편집 모드와 같은 껍데기(.dash-shell/.dash-body)가 쥔다 —
-  // 여기서 배경을 따로 칠하면 모드를 바꿀 때 화면이 갈라져 보인다.
-
-  // Day별 비용 합계 (QA 배치2) — 편집 모드 예산과 같은 기준(체인 배치 블록만 +
-  // 1인 요금 이동수단은 인원만큼 곱한다). 두 화면의 총액이 달라지면 안 된다.
-  const headcount = Math.max(1, project?.budgetHeadcount || 1);
-  const dayCostOf = (day) =>
-    (chains[day] || []).reduce(
-      (sum, id) => sum + effectiveCostOf(items[id], headcount),
-      0,
-    );
-  const totalCost = dayKeys.reduce((sum, day) => sum + dayCostOf(day), 0);
-
-  // 교통 블록 접기 카드 — 행(block)별 펼침 상태. Day 전체가 아니라 블록별로 접는다.
-  const [expandedIds, setExpandedIds] = useState(() => new Set());
-  const toggleExpanded = (id) => {
-    setExpandedIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  };
-
-  return (
-    <div className="dash-body read-view">
-      <div className="rv-total">
-        {/* 편집 모드와 헷갈리지 않게 모드를 명시한다 (QA 배치3) */}
-        <span className="rv-mode-chip">📖 읽기 전용</span>
-        여행 총 비용 <b>{won(totalCost) || "0원"}</b>
-      </div>
-      {dayKeys.map((day, index) => {
-        // 표시는 시각 순으로 (QA ⓒ) — 체인은 orderKey 순서라 드래그·수정 이력에
-        // 따라 시각 순서와 어긋날 수 있는데, 읽기 모드는 "하루의 흐름"이라
-        // 시간이 곧 순서여야 한다. 정렬은 표시 전용이라 데이터를 건드리지 않는다.
-        const chain = [...(chains[day] || [])].sort(
-          (a, b) => (items[a]?.startMins ?? 0) - (items[b]?.startMins ?? 0),
-        );
-        const dayCost = dayCostOf(day);
-        return (
-          <div key={day} className="rv-day">
-            <h2 className="rv-day-title">
-              Day {index + 1}{" "}
-              <span className="rv-day-date">
-                {dayDate(project, index) || "날짜 미정"}
-              </span>
-              {dayCost > 0 && (
-                <span className="rv-day-cost">{won(dayCost)}</span>
-              )}
-            </h2>
-
-            {/* 빈 Day 도 생략하지 않는다(RO-02) — 건너뛰면 Day 번호가 끊겨
-                "아직 안 짠 날"과 "없는 날"을 구분할 수 없다 */}
-            {chain.length === 0 ? (
-              <p className="rv-day-empty">일정 없음</p>
-            ) : (
-            <div className="rv-list">
-              <div className="rv-line" />
-              {chain.map((id) => {
-                const item = items[id];
-                if (!item) return null;
-                const startMins = item.startMins;
-                const endMins = startMins + item.dur;
-                const catStyle = catOf(item);
-                const isTransport = item.cat === "trans" && item.transportMeta?.chosen;
-                return (
-                  // 카테고리 색만 CSS 변수로 넘기고, 그 색을 어디에 쓸지는 CSS 가 정한다
-                  <div
-                    key={id}
-                    className="rv-row"
-                    style={{ "--dc": catStyle.hex, "--cb": catStyle.bg }}
-                  >
-                    <div className="rv-time">{fmtTime(startMins)}</div>
-                    <div className="rv-dot" />
-                    {isTransport ? (
-                      <div className="rv-card rv-transit">
-                        <button
-                          type="button"
-                          className="rv-transit-head"
-                          onClick={() => toggleExpanded(id)}
-                        >
-                          <span className="tcc-ico">
-                            {TRANSIT_MODE_META[item.transportMeta.chosen.mode]?.ico ??
-                              "🚏"}
-                          </span>
-                          <b>{item.transportMeta.chosen.label ?? item.name}</b>
-                          {item.transportMeta.chosen.departureName && (
-                            <span> {item.transportMeta.chosen.departureName}</span>
-                          )}
-                          {item.cost > 0 && (
-                            <span className="rv-cost">
-                              {won(item.cost)}
-                              {isPerPersonFare(item) && (
-                                <span className="cost-unit">/인</span>
-                              )}
-                            </span>
-                          )}
-                          <span className="rv-transit-caret">
-                            {expandedIds.has(id) ? "▲" : "▼"}
-                          </span>
-                        </button>
-                        {expandedIds.has(id) && (
-                          <div className="rv-transit-body">
-                            <TransitCandidateCard
-                              candidate={item.transportMeta.chosen}
-                              mode="view"
-                              selectedDepartureName={
-                                item.transportMeta.chosen.departureName ?? null
-                              }
-                            />
-                            {item.transportMeta.segment?.referenceAt && (
-                              <p className="tp-banner">
-                                기준: {item.transportMeta.segment.referenceAt} 이후
-                                출발
-                              </p>
-                            )}
-                          </div>
-                        )}
-                      </div>
-                    ) : (
-                      <div className="rv-card">
-                        <div className="rv-card-main">
-                          <span className="rv-badge">
-                            {catStyle.nm} {item.sub ? `· ${item.sub}` : ""}
-                          </span>
-                          <div>
-                            <div className="rv-name">{item.name}</div>
-                            <div className="rv-addr">
-                              📍 {item.address || "위치 정보 없음"}
-                            </div>
-                          </div>
-                        </div>
-                        <div className="rv-card-side">
-                          <div className="rv-range">
-                            {fmtTime(startMins)} - {fmtTime(endMins)}
-                          </div>
-                          {item.cost > 0 && (
-                            <div className="rv-cost">{won(item.cost)}</div>
-                          )}
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-            )}
-          </div>
-        );
-      })}
     </div>
   );
 }
