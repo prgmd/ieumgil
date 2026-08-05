@@ -23,6 +23,7 @@ import com.ssafy.ieumgil.domain.transit.util.BoardingMargin;
 import com.ssafy.ieumgil.domain.transit.util.ConnectionPlanner;
 import com.ssafy.ieumgil.domain.transit.util.Haversine;
 import com.ssafy.ieumgil.domain.transit.util.LandReachability;
+import com.ssafy.ieumgil.domain.transit.util.IntercityLabel;
 import com.ssafy.ieumgil.domain.transit.util.IntercityLegs;
 import com.ssafy.ieumgil.domain.transit.util.StationIdBands;
 import com.ssafy.ieumgil.global.exception.CustomException;
@@ -578,7 +579,7 @@ public class TransitCandidateServiceImpl implements TransitCandidateService {
         }
         return Candidate.builder()
                 .mode(mode)
-                .label(mode.label())
+                .label(IntercityLabel.of(legs.legs(), mode))
                 .status(CandidateStatus.OK)
                 .durationMin(legs.path().info().totalTime())
                 .fareConfidence(TransitResDTO.FareConfidence.UNKNOWN)
@@ -792,7 +793,9 @@ public class TransitCandidateServiceImpl implements TransitCandidateService {
      * {@code accessMin}·{@code egressMin}·{@code referenceAt}은 채운다 — 그 값들은 특정 편에
      * 좌우되지 않는 구조적인 값이다. {@code durationMin}만 편이 있어야 계산되므로 null이다.
      *
-     * @param mode         후보의 정체가 되는 대표 수단(목적지에 도달하는 수단)
+     * @param mode         후보의 정체가 되는 대표 수단(목적지에 도달하는 수단). 버킷·아이콘 키다 —
+     *                     사용자에게 보이는 이름({@code label})은 leg 순서대로 이어 붙인
+     *                     {@link IntercityLabel}이라 복합 경로에서는 이 수단 이름과 다르다
      * @param boardingMode 실제로 탑승하는 첫 leg의 수단. {@code referenceAt}은 이 수단의 탑승
      *                     여유로 계산한다 — 그 값이 곧 첫 leg 편을 걸러낸 기준이므로 대표 수단의
      *                     여유를 쓰면 기차+항공 경로에서 화면 기준 시각과 실제 기준이 어긋난다
@@ -813,7 +816,9 @@ public class TransitCandidateServiceImpl implements TransitCandidateService {
 
         Candidate.CandidateBuilder builder = Candidate.builder()
                 .mode(mode)
-                .label(mode.label())
+                // 표시 이름은 leg 순서대로 이어 붙인다("시외버스+항공") — 대표 수단만으로 이름을
+                // 붙이면 앞 구간이 화면에서 사라진다({@link IntercityLabel})
+                .label(IntercityLabel.of(legs.legs(), mode))
                 .fare(fare)
                 .fareConfidence(fareConfidence)
                 .transferCount(transferCount)

@@ -795,10 +795,14 @@ class TransitCandidateServiceImplTest {
         verify(transitScheduleQueryService).getTrainSchedule(eq(3300128), eq(3300140), any(LocalDate.class));
         verify(transitScheduleQueryService, never())
                 .getFlightSchedule(eq(3300128), eq(3300140), any(LocalDate.class));
-        // 대표 수단은 목적지에 닿는 마지막 leg(항공)다. 기차 후보 슬롯에는 이 경로가 들어가지 않는다
+        // 대표 수단(버킷·아이콘 키)은 목적지에 닿는 마지막 leg(항공)다. 기차 후보 슬롯에는 이 경로가
+        // 들어가지 않는다
         Candidate air = candidateOf(result, TransitMode.AIR);
         assertThat(air.status()).isEqualTo(CandidateStatus.OK);
-        assertThat(air.label()).isEqualTo(TransitMode.AIR.label());
+        assertThat(air.mode()).isEqualTo(TransitMode.AIR);
+        // 표시 이름은 leg 순서대로 이어 붙인다 — "항공"만 쓰면 서울에서 기차를 먼저 타야 하는
+        // 사실이 화면에서 사라지고, "기차"만 쓰면 제주에 기차로 갈 수 있다는 말이 된다
+        assertThat(air.label()).isEqualTo("기차+항공");
         assertThat(candidateOf(result, TransitMode.TRAIN).status()).isEqualTo(CandidateStatus.LOOKUP_FAILED);
         // 기준 시각도 실제로 탑승하는 첫 leg의 여유(기차 10분)다 — base 14:00 + 10분.
         // 대표 수단(항공 40분)을 쓰면 14:40이 된다
