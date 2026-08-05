@@ -592,8 +592,6 @@ class TransitCandidateServiceImplTest {
         given(projectRepository.findByIdAndDeletedAtIsNull(PROJECT_ID)).willReturn(Optional.of(publicProject()));
         given(publicTransitQueryService.getCombinedRoutes(anyDouble(), anyDouble(), anyDouble(), anyDouble()))
                 .willReturn(List.of(airPath()));
-        given(transitScheduleQueryService.searchTrainStation(anyString())).willReturn(Optional.empty());
-        given(transitScheduleQueryService.searchExpressBusTerminal(anyString())).willReturn(Optional.empty());
         // 카카오 길찾기 자체가 실패한다 — driving==null이 택시 후보를 status=LOOKUP_FAILED로 남기는
         // 유일한 이유다(roadUnreachable 삭제 후에도 이 경로는 그대로 살아 있어야 한다).
         given(placeQueryService.getTaxiRoute(anyDouble(), anyDouble(), anyDouble(), anyDouble()))
@@ -617,17 +615,13 @@ class TransitCandidateServiceImplTest {
     }
 
     @Test
-    @DisplayName("시외 구간은 수단별로 나뉘고 기준 시각 이후 편이 붙는다")
+    @DisplayName("[실측 35/35] 시외 구간은 subPath 역 ID로 수단별로 나뉘고 기준 시각 이후 편이 붙는다")
     void 시외_구간은_수단별로_나뉜다() {
         given(blockRepository.findAllByIdInAndProject_IdAndDeletedAtIsNull(List.of(1L, 2L), PROJECT_ID))
                 .willReturn(List.of(seoulBlock(), busanBlock()));
         given(projectRepository.findByIdAndDeletedAtIsNull(PROJECT_ID)).willReturn(Optional.of(publicProject()));
         given(publicTransitQueryService.getCombinedRoutes(anyDouble(), anyDouble(), anyDouble(), anyDouble()))
                 .willReturn(List.of(trainPath()));  // pathType=11
-        given(transitScheduleQueryService.searchTrainStation("서울"))
-                .willReturn(Optional.of(terminal(3300128, "서울")));
-        given(transitScheduleQueryService.searchTrainStation("부산"))
-                .willReturn(Optional.of(terminal(3300108, "부산")));
         given(transitScheduleQueryService.getTrainSchedule(eq(3300128), eq(3300108), any(LocalDate.class)))
                 .willReturn(List.of(
                         train("KTX", 1, "16:00", "18:37", 59800),
@@ -662,6 +656,56 @@ class TransitCandidateServiceImplTest {
         // 후보의 대표값은 첫 편에서 온다
         assertThat(train.durationMin()).isEqualTo(157);
         assertThat(train.fare()).isEqualTo(59800);
+        // ID가 그대로 들어간 것이 위 eq(3300128), eq(3300108) 스텁 매칭으로 이미 증명됐다 —
+        // 이름 검색을 쓰지 않았다는 것도 함께 못 박는다
+        verify(transitScheduleQueryService, never()).searchTrainStation(anyString());
+    }
+
+    @Test
+    @DisplayName("[실측 35/35] 시외버스(tt6) leg도 고속버스(tt5)와 같은 searchInterBusSchedule로 간다")
+    void 시외버스_leg도_고속버스와_같은_엔드포인트로_간다() {
+        given(blockRepository.findAllByIdInAndProject_IdAndDeletedAtIsNull(List.of(1L, 2L), PROJECT_ID))
+                .willReturn(List.of(seoulBlock(), busanBlock()));
+        given(projectRepository.findByIdAndDeletedAtIsNull(PROJECT_ID)).willReturn(Optional.of(publicProject()));
+        given(publicTransitQueryService.getCombinedRoutes(anyDouble(), anyDouble(), anyDouble(), anyDouble()))
+                .willReturn(List.of(interCityBusPath()));  // trafficType=6(시외버스), 대역 3600→4000
+        given(transitScheduleQueryService.getIntercityBusSchedule(eq(3600210), eq(4000135), any(LocalDate.class)))
+                .willReturn(List.of(bus(2, "16:00", 140, 20900)));
+
+        TransitCandidateResDTO.Result result =
+                service.calculate(PROJECT_ID, List.of(1L, 2L), LocalTime.of(9, 0));
+
+        Candidate expressBus = candidateOf(result, TransitMode.EXPRESS_BUS);
+        assertThat(expressBus.status()).isEqualTo(CandidateStatus.OK);
+        assertThat(expressBus.departures()).isNotEmpty();
+        assertThat(expressBus.departures().get(0).fare()).isEqualTo(20900);
+        // 시외버스(tt6)를 위한 별도 엔드포인트로 가지 않는다 — 이름 검색도 쓰지 않는다
+        verify(transitScheduleQueryService, never()).searchExpressBusTerminal(anyString());
+        verify(transitScheduleQueryService, never()).searchIntercityBusTerminal(anyString());
+    }
+
+    @Test
+    @DisplayName("[실측 19/19] 항공 leg의 startID·endID가 이름 검색 없이 airServiceTime에 그대로 전달된다")
+    void 항공_leg_역_ID가_그대로_시간표_API에_전달된다() {
+        // 기준 시각(부산 블록 종료 08:00+60분=09:00 + 항공 여유)보다 늦은 편이어야 남는다
+        given(blockRepository.findAllByIdInAndProject_IdAndDeletedAtIsNull(List.of(2L, 3L), PROJECT_ID))
+                .willReturn(List.of(busanBlock(), jejuBlock()));
+        given(projectRepository.findByIdAndDeletedAtIsNull(PROJECT_ID)).willReturn(Optional.of(publicProject()));
+        given(publicTransitQueryService.getCombinedRoutes(anyDouble(), anyDouble(), anyDouble(), anyDouble()))
+                .willReturn(List.of(airPath()));  // startID=3500005(청주공항)·endID=3500003(제주공항)
+        given(transitScheduleQueryService.getFlightSchedule(eq(3500005), eq(3500003), any(LocalDate.class)))
+                .willReturn(List.of(TransitScheduleResDTO.FlightSchedule.builder()
+                        .airline("제주항공").flightNo("7C101")
+                        .departureTime("10:30").arrivalTime("11:35").runDay("매일")
+                        .build()));
+
+        TransitCandidateResDTO.Result result =
+                service.calculate(PROJECT_ID, List.of(2L, 3L), LocalTime.of(9, 0));
+
+        Candidate air = candidateOf(result, TransitMode.AIR);
+        assertThat(air.status()).isEqualTo(CandidateStatus.OK);
+        assertThat(air.departures()).hasSize(1);
+        assertThat(air.departures().get(0).name()).isEqualTo("제주항공 7C101");
     }
 
     @Test
@@ -672,8 +716,6 @@ class TransitCandidateServiceImplTest {
         given(projectRepository.findByIdAndDeletedAtIsNull(PROJECT_ID)).willReturn(Optional.of(publicProject()));
         given(publicTransitQueryService.getCombinedRoutes(anyDouble(), anyDouble(), anyDouble(), anyDouble()))
                 .willReturn(List.of(trainPath()));
-        given(transitScheduleQueryService.searchTrainStation(anyString()))
-                .willReturn(Optional.of(terminal(3300128, "서울")));
         given(transitScheduleQueryService.getTrainSchedule(anyInt(), anyInt(), any(LocalDate.class)))
                 .willReturn(List.of(
                         train("KTX", 1, "05:13", "07:50", 59800),
@@ -708,8 +750,6 @@ class TransitCandidateServiceImplTest {
         given(projectRepository.findByIdAndDeletedAtIsNull(PROJECT_ID)).willReturn(Optional.of(publicProject()));
         given(publicTransitQueryService.getCombinedRoutes(anyDouble(), anyDouble(), anyDouble(), anyDouble()))
                 .willReturn(List.of(trainPath()));
-        given(transitScheduleQueryService.searchTrainStation(anyString()))
-                .willReturn(Optional.of(terminal(3300128, "서울")));
         given(transitScheduleQueryService.getTrainSchedule(anyInt(), anyInt(), any(LocalDate.class)))
                 .willReturn(List.of(
                         train("KTX", 1, "10:00", "12:37", 59800),
@@ -733,8 +773,6 @@ class TransitCandidateServiceImplTest {
         given(projectRepository.findByIdAndDeletedAtIsNull(PROJECT_ID)).willReturn(Optional.of(publicProject()));
         given(publicTransitQueryService.getCombinedRoutes(anyDouble(), anyDouble(), anyDouble(), anyDouble()))
                 .willReturn(List.of(trainPath()));
-        given(transitScheduleQueryService.searchTrainStation(anyString()))
-                .willReturn(Optional.of(terminal(3300128, "서울")));
         given(transitScheduleQueryService.getTrainSchedule(anyInt(), anyInt(), any(LocalDate.class)))
                 .willReturn(List.of(train("KTX", 1, "16:00", "18:37", 59800)));
 
@@ -764,8 +802,6 @@ class TransitCandidateServiceImplTest {
         given(projectRepository.findByIdAndDeletedAtIsNull(PROJECT_ID)).willReturn(Optional.of(publicProject()));
         given(publicTransitQueryService.getCombinedRoutes(anyDouble(), anyDouble(), anyDouble(), anyDouble()))
                 .willReturn(List.of(trainPath()));
-        given(transitScheduleQueryService.searchTrainStation(anyString()))
-                .willReturn(Optional.of(terminal(3300128, "서울")));
         given(transitScheduleQueryService.getTrainSchedule(anyInt(), anyInt(), any(LocalDate.class)))
                 .willReturn(List.of(train("KTX", 1, "16:00", "18:37", 59800)));
 
@@ -805,8 +841,6 @@ class TransitCandidateServiceImplTest {
         given(projectRepository.findByIdAndDeletedAtIsNull(PROJECT_ID)).willReturn(Optional.of(publicProject()));
         given(publicTransitQueryService.getCombinedRoutes(anyDouble(), anyDouble(), anyDouble(), anyDouble()))
                 .willReturn(List.of(trainPath()));
-        given(transitScheduleQueryService.searchTrainStation(anyString()))
-                .willReturn(Optional.of(terminal(3300128, "서울")));
         given(transitScheduleQueryService.getTrainSchedule(anyInt(), anyInt(), any(LocalDate.class)))
                 .willReturn(List.of());
 
@@ -861,8 +895,6 @@ class TransitCandidateServiceImplTest {
         given(projectRepository.findByIdAndDeletedAtIsNull(PROJECT_ID)).willReturn(Optional.of(publicProject()));
         given(publicTransitQueryService.getCombinedRoutes(anyDouble(), anyDouble(), anyDouble(), anyDouble()))
                 .willReturn(List.of(trainPath()));
-        given(transitScheduleQueryService.searchTrainStation(anyString()))
-                .willReturn(Optional.of(terminal(3300128, "서울")));
         given(transitScheduleQueryService.getTrainSchedule(anyInt(), anyInt(), any(LocalDate.class)))
                 .willReturn(List.of(train("KTX", 1, "16:00", "18:37", 59800)));
 
@@ -900,9 +932,6 @@ class TransitCandidateServiceImplTest {
             given(projectRepository.findByIdAndDeletedAtIsNull(PROJECT_ID)).willReturn(Optional.of(publicProject()));
             given(publicTransitQueryService.getCombinedRoutes(anyDouble(), anyDouble(), anyDouble(), anyDouble()))
                     .willReturn(List.of(trainPath()));
-            given(transitScheduleQueryService.searchTrainStation(anyString()))
-                    .willReturn(Optional.of(terminal(3300128, "서울")));
-            given(transitScheduleQueryService.searchExpressBusTerminal(anyString())).willReturn(Optional.empty());
             // Day1은 350ms 걸려도 자기 예산(600ms, 새 예산) 안에 끝나 정상 응답한다. 그 350ms를
             // 쓰고 나면 공유 예산에는 약 250ms만 남는다. Day2는 450ms가 걸리는데, 이건 "남은
             // ~250ms"로는 못 끝내지만(→ 취소되어 LOOKUP_FAILED) "새 600ms"라면 넉넉히 끝난다
@@ -940,14 +969,13 @@ class TransitCandidateServiceImplTest {
     }
 
     @Test
-    @DisplayName("역 이름을 못 찾으면 그 수단만 제외하고 나머지는 유지한다")
-    void 역_검색_실패는_그_수단만_뺀다() {
+    @DisplayName("역 ID가 알려진 대역이 아니면 추측하지 않고 그 수단만 빠진다 — 이름 검색으로 대체하지 않는다")
+    void 대역을_판별할_수_없는_역_ID는_그_수단만_뺀다() {
         given(blockRepository.findAllByIdInAndProject_IdAndDeletedAtIsNull(List.of(1L, 2L), PROJECT_ID))
                 .willReturn(List.of(seoulBlock(), busanBlock()));
         given(projectRepository.findByIdAndDeletedAtIsNull(PROJECT_ID)).willReturn(Optional.of(publicProject()));
         given(publicTransitQueryService.getCombinedRoutes(anyDouble(), anyDouble(), anyDouble(), anyDouble()))
-                .willReturn(List.of(trainPath()));
-        given(transitScheduleQueryService.searchTrainStation(anyString())).willReturn(Optional.empty());
+                .willReturn(List.of(unknownBandTrainPath()));
         given(placeQueryService.getTaxiRoute(anyDouble(), anyDouble(), anyDouble(), anyDouble()))
                 .willReturn(Optional.of(new PlaceResDTO.TaxiRoute(374600, 0, 401839, 310)));
 
@@ -957,6 +985,8 @@ class TransitCandidateServiceImplTest {
         Candidate train = candidateOf(result, TransitMode.TRAIN);
         assertThat(train.status()).isEqualTo(CandidateStatus.LOOKUP_FAILED);
         assertThat(candidateOf(result, TransitMode.TAXI).status()).isEqualTo(CandidateStatus.OK);
+        // 대역을 못 판별했다고 이름 검색으로 대체하지 않는다 — 시간표 API 자체를 부르지 않는다
+        verifyNoInteractions(transitScheduleQueryService);
     }
 
     @Test
@@ -967,8 +997,6 @@ class TransitCandidateServiceImplTest {
         given(projectRepository.findByIdAndDeletedAtIsNull(PROJECT_ID)).willReturn(Optional.of(publicProject()));
         given(publicTransitQueryService.getCombinedRoutes(anyDouble(), anyDouble(), anyDouble(), anyDouble()))
                 .willReturn(List.of(trainPath()));
-        given(transitScheduleQueryService.searchTrainStation(anyString()))
-                .willReturn(Optional.of(terminal(3300128, "서울")));
         given(transitScheduleQueryService.getTrainSchedule(anyInt(), anyInt(), any(LocalDate.class)))
                 .willReturn(List.of(train("KTX", 1, "05:13", "07:50", 59800)));
 
@@ -1021,7 +1049,6 @@ class TransitCandidateServiceImplTest {
         given(projectRepository.findByIdAndDeletedAtIsNull(PROJECT_ID)).willReturn(Optional.of(publicProject()));
         given(publicTransitQueryService.getCombinedRoutes(anyDouble(), anyDouble(), anyDouble(), anyDouble()))
                 .willReturn(List.of(busPath(), intercityPath));
-        given(transitScheduleQueryService.searchTrainStation(anyString())).willReturn(Optional.empty());
 
         TransitCandidateResDTO.Result result =
                 service.calculate(PROJECT_ID, List.of(1L, 2L), LocalTime.of(9, 0));
@@ -1042,9 +1069,7 @@ class TransitCandidateServiceImplTest {
                 .willReturn(List.of(seoulBlock(), busanBlock()));
         given(projectRepository.findByIdAndDeletedAtIsNull(PROJECT_ID)).willReturn(Optional.of(publicProject()));
         given(publicTransitQueryService.getCombinedRoutes(anyDouble(), anyDouble(), anyDouble(), anyDouble()))
-                .willReturn(List.of(trainPath()));
-        given(transitScheduleQueryService.searchExpressBusTerminal(anyString()))
-                .willReturn(Optional.of(terminal(4000057, "서울고속버스터미널")));
+                .willReturn(List.of(expressBusPath()));
         // 편이 셋이어야 selectThree가 최저가 축까지 실제로 돈다 — 둘이면 시각순에서 끝나
         // "최저 요금 라벨이 없다"는 단정이 저절로 통과해 버린다
         given(transitScheduleQueryService.getIntercityBusSchedule(anyInt(), anyInt(), any(LocalDate.class)))
@@ -1160,11 +1185,56 @@ class TransitCandidateServiceImplTest {
                 .build();
     }
 
-    /** 기차 경로(pathType=11). ODsay는 시외 경로에 payment를 주지 않는다 */
+    /**
+     * 기차 경로(pathType=11). ODsay는 시외 경로에 payment를 주지 않는다.
+     *
+     * <p>startID·endID(3300128 서울역·3300108 부산역)는 실측 픽스처
+     * ({@code schedule-train.json})와 같은 값이다 — 이름 검색 없이 이 ID가 그대로
+     * {@code trainServiceTime}에 들어간다.
+     */
     private OdsayRouteResponse.Path trainPath() {
         return new OdsayRouteResponse.Path(11,
                 new OdsayRouteResponse.Info(157, null, null, 325000, 800, null, null, "서울", "부산"),
-                List.of(new OdsayRouteResponse.SubPath(4, 157, 325000, "서울", "부산", null)));
+                List.of(new OdsayRouteResponse.SubPath(4, 157, 325000, "서울", "부산", null,
+                        3300128, 3300108, null, null, null, null, null, null, null, null, null, null)));
+    }
+
+    /**
+     * 역 ID가 알려진 대역(3300·3400·3500·3600·4000xxx) 밖인 기차 경로. 추측하지 않고
+     * 그 수단만 조회 실패로 빠지는지를 검증하는 데 쓴다.
+     */
+    private OdsayRouteResponse.Path unknownBandTrainPath() {
+        return new OdsayRouteResponse.Path(11,
+                new OdsayRouteResponse.Info(157, null, null, 325000, 800, null, null, "서울", "부산"),
+                List.of(new OdsayRouteResponse.SubPath(4, 157, 325000, "서울", "부산", null,
+                        9_999_999, 9_999_998, null, null, null, null, null, null, null, null, null, null)));
+    }
+
+    /**
+     * 고속버스(tt5) 경로(pathType=12). startID·endID(4000057·4000156)는
+     * {@code OdsayClientTest}의 터미널 검색 응답과 같은 값이다.
+     */
+    private OdsayRouteResponse.Path expressBusPath() {
+        return new OdsayRouteResponse.Path(12,
+                new OdsayRouteResponse.Info(240, null, null, null, null, null, null,
+                        "서울고속버스터미널", "부산종합버스터미널"),
+                List.of(new OdsayRouteResponse.SubPath(5, 240, null,
+                        "서울고속버스터미널", "부산종합버스터미널", null,
+                        4000057, 4000156, null, null, null, null, null, null, null, null, null, null)));
+    }
+
+    /**
+     * 시외버스(tt6) 경로(pathType=12). startID·endID(3600210 서부정류장·4000135 광주종합버스터미널)는
+     * 실측 사실 문서 §5의 예시 그대로다 — trafficType이 6이어도 고속버스(tt5)와 같은
+     * {@code searchInterBusSchedule}로 간다.
+     */
+    private OdsayRouteResponse.Path interCityBusPath() {
+        return new OdsayRouteResponse.Path(12,
+                new OdsayRouteResponse.Info(140, null, null, null, null, null, null,
+                        "서부정류장", "광주종합버스터미널"),
+                List.of(new OdsayRouteResponse.SubPath(6, 140, null,
+                        "서부정류장", "광주종합버스터미널", null,
+                        3600210, 4000135, null, null, null, null, null, null, null, null, null, null)));
     }
 
     /** 해운 경로(pathType=14). 기차와 마찬가지로 요금도 환승 수도 없다 */
@@ -1186,16 +1256,6 @@ class TransitCandidateServiceImplTest {
         return new OdsayRouteResponse.Path(1,
                 new OdsayRouteResponse.Info(51, 1200, 12, 12900, 900, 2, 0, "시청", "역삼"),
                 List.of(new OdsayRouteResponse.SubPath(2, 51, 12900, "시청앞", "역삼역", null)));
-    }
-
-    private TransitScheduleResDTO.TerminalSearchResult terminal(int stationId, String stationName) {
-        return TransitScheduleResDTO.TerminalSearchResult.builder()
-                .stationId(stationId)
-                .stationName(stationName)
-                .lat(0)
-                .lng(0)
-                .destinations(List.of())
-                .build();
     }
 
     private TransitScheduleResDTO.BusSchedule bus(
@@ -1223,11 +1283,18 @@ class TransitCandidateServiceImplTest {
                 .build();
     }
 
-    /** 항공 구간(trafficType=7)이 섞인 복합 경로(pathType=20) */
+    /**
+     * 항공 구간(trafficType=7)이 섞인 복합 경로(pathType=20).
+     *
+     * <p>startID·endID(3500005 청주공항·3500003 제주공항)는 {@code DomesticAirport} enum의
+     * 등록 ID와 같다 — 실측으로 확인된 값이다. 이름 검색({@code DomesticAirport.findByName}) 없이
+     * 이 ID가 그대로 {@code airServiceTime}에 들어간다.
+     */
     private OdsayRouteResponse.Path airPath() {
         return new OdsayRouteResponse.Path(20,
                 new OdsayRouteResponse.Info(356, null, null, 436642, null, null, null, "청주", "제주"),
-                List.of(new OdsayRouteResponse.SubPath(7, 356, 436642, "청주공항", "제주공항", null)));
+                List.of(new OdsayRouteResponse.SubPath(7, 356, 436642, "청주공항", "제주공항", null,
+                        3500005, 3500003, null, null, null, null, null, null, null, null, null, null)));
     }
 
     /** 버스로만 이어지는 순수 육로 경로 */
