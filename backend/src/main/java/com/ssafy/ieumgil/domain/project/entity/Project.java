@@ -58,9 +58,9 @@ public class Project extends BaseTimeEntity {
 
     private LocalDate endDate;
 
-    @Enumerated(EnumType.STRING)
-    @Column(length = 10)
-    private TransportPref transportPref;
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "transport_prefs", columnDefinition = "jsonb")
+    private List<TransportPref> transportPrefs;
 
     /** 정산 인원(1인당 표시용). null이면 조회 시점 그룹 멤버 수를 따른다(BGT-03) */
     private Integer budgetHeadcount;
@@ -125,8 +125,8 @@ public class Project extends BaseTimeEntity {
         this.targetBudget = budget;
     }
 
-    /** 이름·기간 부분 수정. null인 인자는 건드리지 않는다(PATCH 시맨틱) */
-    public void updateInfo(String name, LocalDate startDate, LocalDate endDate) {
+    /** 이름·기간·여행지 부분 수정. null인 인자는 건드리지 않는다(PATCH 시맨틱) */
+    public void updateInfo(String name, LocalDate startDate, LocalDate endDate, String destination) {
         if (name != null) {
             this.name = name;
         }
@@ -136,6 +136,17 @@ public class Project extends BaseTimeEntity {
         if (endDate != null) {
             this.endDate = endDate;
         }
+        if (destination != null) {
+            this.destination = destination;
+        }
+    }
+
+    /** 이동수단 선호 부분 수정. 빈/null이면 무시(불변) — 다음 후보 계산부터 적용, 기존 블록은 재계산하지 않는다 */
+    public void changeTransportPref(List<TransportPref> transportPrefs) {
+        if (transportPrefs == null || transportPrefs.isEmpty()) {
+            return;
+        }
+        this.transportPrefs = transportPrefs.stream().distinct().toList();
     }
 
     public void softDelete() {

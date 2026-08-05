@@ -11,7 +11,32 @@ import { ChatbotWidget } from "./components/ChatbotWidget";
 import { RemoteCursorLayer } from "./components/RemoteCursorLayer";
 import { TransitCandidateCard } from "./components/TransitCandidateCard";
 import { hueOf } from "./components/memberColor";
-import { TRANSIT_MODE_META, buildTransportMeta } from "./transitMeta";
+import { buildTransportMeta } from "./transitMeta";
+import { CardBody } from "./components/CardBody";
+import {
+  BlockEditBadge,
+  BlockLinkBadge,
+  BlockEditorBadge,
+} from "./components/BlockBadges";
+import { HoldRepeatButton } from "./components/HoldRepeatButton";
+import { PoolCard } from "./components/PoolCard";
+import { SearchResultDraggable } from "./components/SearchResultDraggable";
+import { ReadModeView } from "./components/ReadModeView";
+import {
+  CAT_COLORS,
+  fmtTime,
+  won,
+  catOf,
+  catKeyOf,
+  effectiveCostOf,
+  isTempId,
+  isServerBlock,
+  catFromKakaoGroup,
+  dayNoOf,
+  dayKeysOf,
+  dayDate,
+} from "./dashboardHelpers";
+import { planPinImage, searchPinImage, ROUTE_LINE_COLOR } from "./mapPins";
 import {
   DndContext,
   DragOverlay,
@@ -25,19 +50,17 @@ import {
 import {
   SortableContext,
   sortableKeyboardCoordinates,
-  useSortable,
   rectSortingStrategy,
 } from "@dnd-kit/sortable";
-import { CSS } from "@dnd-kit/utilities";
 import { generateKeyBetween } from "fractional-indexing";
 import { AppBar } from "../My/shared/ui/AppBar";
+import EditProjectModal from "../Group/components/EditProjectModal";
 import { useDashboard } from "../../features/dashboard/hooks/useDashboard";
 import { useProjectOps } from "../../features/dashboard/realtime/useProjectOps";
 import { useVoiceChat } from "../../features/dashboard/voice/useVoiceChat";
 import { createOpSequencer } from "../../features/dashboard/realtime/opSequencer";
 import { ensureKakaoMaps } from "../../features/dashboard/map/addressLookup";
 import * as blockApi from "../../features/dashboard/api/dashboardApi";
-import { openBlockLink, hasExternalLink } from "../../features/dashboard/api/externalLink";
 import { getClientId } from "../../global/api/clientId";
 import { useGroupDetail } from "../../features/group/hooks/useGroupDetail";
 import { useProjects } from "../../features/group/hooks/useProjects";
@@ -56,68 +79,6 @@ const SNAP = 1;
 const DAY_END = 1440;
 const TL_PAD_TOP = 20;
 const TL_PAD_LEFT = 70;
-
-/**
- * 카테고리(대분류) 표. 색은 값을 직접 적지 않고 공통 토큰(tokens.css)을 가리킨다 —
- * 팔레트를 바꿀 일이 생기면 CSS 한 곳만 고치면 된다.
- * hex/bg 는 그대로 CSS 변수(--dc/--cb)나 배경색으로 넘어가므로 var() 문자열로 둔다.
- */
-const CAT_COLORS = {
-  stay: { nm: "숙소", hex: "var(--stay, #8a5aa8)", bg: "var(--stayB, #f3edfa)" },
-  food: { nm: "식당", hex: "var(--food, #d97e3c)", bg: "var(--foodB, #fdf1e4)" },
-  spot: {
-    nm: "명소/활동",
-    hex: "var(--spot, #3e8e63)",
-    bg: "var(--spotB, #eaf5ec)",
-  },
-  etc: { nm: "기타", hex: "var(--etc, #7a6a5c)", bg: "var(--etcB, #f1ece4)" },
-  trans: {
-    nm: "교통",
-    hex: "var(--trans, #6b7fc7)",
-    bg: "var(--transB, #eef0fb)",
-  },
-};
-
-const fmtTime = (mins) => {
-  const h = Math.floor(mins / 60);
-  const m = mins % 60;
-  return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
-};
-
-// 금액 표기 (QA 배치2) — 만원 이상은 "9.3만원"으로 축약해 긴 숫자를 줄이고,
-// 0원/없음은 빈 문자열을 돌려준다(예전 "무료" 표기는 정보가 아니라 소음이었다).
-// 호출부는 빈 값일 때 요소 자체를 그리지 않는다.
-const won = (n) => {
-  if (!n) return "";
-  if (n >= 10000) {
-    const man = n / 10000;
-    const text =
-      man >= 100
-        ? Math.round(man).toLocaleString("ko-KR")
-        : man.toFixed(1).replace(/\.0$/, "");
-    return `${text}만원`;
-  }
-  return `${n.toLocaleString("ko-KR")}원`;
-};
-
-// 소요 표기 (QA 배치2) — 60분 이상은 "1시간 15분"으로 읽기 좋게
-const fmtDur = (mins) => {
-  if (mins == null) return "";
-  if (mins < 60) return `${mins}분`;
-  const h = Math.floor(mins / 60);
-  const m = mins % 60;
-  return m > 0 ? `${h}시간 ${m}분` : `${h}시간`;
-};
-
-const catOf = (item) => CAT_COLORS[item?.cat] || CAT_COLORS.etc;
-
-// 카드에 보일 소분류 — 교통 블록은 transportMeta.chosen.label 을 우선한다.
-// 이동 수단 재선택은 transportMeta 만 바꿀 수 있어서(subCategory 는 생성 시 고정,
-// LWW 미지원) sub 를 그대로 쓰면 재선택·새로고침 후 옛 수단명이 남는다.
-const subLabelOf = (item) =>
-  item?.cat === "trans"
-    ? (item?.transportMeta?.chosen?.label ?? item?.sub)
-    : item?.sub;
 
 // 고른 편 기준 door-to-door 소요 — 접근 + 대기 + 시외(+ 환승 + 연결편) + 이탈.
 // 후보의 durationMin 도 door-to-door 지만 대표 편(첫 편) 기준이라 다른 편을 고르면
@@ -176,27 +137,6 @@ const safeKeyBetween = (before, after) => {
     }
   }
 };
-
-// ── 블록 id 규약 ─────────────────────────────────────
-// 서버에 아직 없는 블록을 구분하는 규약 — custom-(모달 저장 전), search-(생성 요청 중),
-// split-(자정에서 쪼개져 다음 Day 에 생길 "이어서" 블록, 생성 요청 중)
-const isTempId = (id) =>
-  String(id).startsWith("custom-") ||
-  String(id).startsWith("search-") ||
-  String(id).startsWith("split-");
-// 서버에 실재하는 블록만 REST 를 태운다 — 임시 id·auto-(로컬 교통)는 제외
-const isServerBlock = (id) => !isTempId(id) && !String(id).startsWith("auto-");
-
-// 카카오 category_group_code → 화면 cat. 음식점(FD6)·카페(CE7)는 food,
-// 숙박(AD5)은 stay, 그 외 장소는 spot 으로 본다.
-const catFromKakaoGroup = (code) => {
-  if (code === "FD6" || code === "CE7") return "food";
-  if (code === "AD5") return "stay";
-  return "spot";
-};
-
-// "d3" → 3 (서버 dayNo)
-const dayNoOf = (dayKey) => Number(String(dayKey).replace("d", ""));
 
 /** 하루의 끝을 넘긴 블록이 있는지 — 쪼개기가 필요한지 판단할 때만 쓴다 */
 const chainOverflowsMidnight = (chainIds, itemsMap) =>
@@ -419,58 +359,6 @@ const persistShiftedTimes = (chainIds, prevItems, nextItems, excludeId) => {
   );
 };
 
-const DAY_MS = 24 * 60 * 60 * 1000;
-/** 프로젝트를 아직 못 불러왔을 때만 쓰는 Day 수 (기존 목업과 같은 4일). */
-const FALLBACK_DAY_COUNT = 4;
-const WEEKDAYS = ["일", "월", "화", "수", "목", "금", "토"];
-
-// 'YYYY-MM-DD' 를 그냥 new Date() 에 넣으면 UTC 자정으로 읽혀 KST에서 하루 밀린다.
-const parseDate = (iso) =>
-  typeof iso === "string" && iso.length >= 10
-    ? new Date(`${iso.slice(0, 10)}T00:00:00`)
-    : null;
-
-/**
- * 프로젝트 기간(startDate~endDate)에서 Day 키 목록을 만든다.
- * 그룹 페이지에서 기간을 수정하면 이 목록이 바뀌고, Day 탭·읽기 모드가 함께 따라간다.
- */
-function dayKeysOf(project) {
-  const start = parseDate(project?.startDate);
-  const end = parseDate(project?.endDate);
-  const count =
-    start && end
-      ? Math.min(30, Math.max(1, Math.round((end - start) / DAY_MS) + 1))
-      : FALLBACK_DAY_COUNT;
-  return Array.from({ length: count }, (_, i) => `d${i + 1}`);
-}
-
-/** Date → 'YYYY-MM-DD' (서버·<input type="date"> 가 쓰는 형식). */
-function toISODate(date) {
-  const mm = String(date.getMonth() + 1).padStart(2, "0");
-  const dd = String(date.getDate()).padStart(2, "0");
-  return `${date.getFullYear()}-${mm}-${dd}`;
-}
-
-/** Day n(0-based)의 날짜를 'YYYY-MM-DD' 로. 기간을 모르면 빈 문자열. */
-function dayISODate(project, index) {
-  const start = parseDate(project?.startDate);
-  return start ? toISODate(new Date(start.getTime() + index * DAY_MS)) : "";
-}
-
-/** Day n(0-based)의 실제 날짜. 기간을 모르면 빈 문자열 — 가짜 날짜를 만들지 않는다. */
-function dayDate(project, index, style = "full") {
-  const start = parseDate(project?.startDate);
-  if (!start) return "";
-  const d = new Date(start.getTime() + index * DAY_MS);
-  const mm = String(d.getMonth() + 1).padStart(2, "0");
-  const dd = String(d.getDate()).padStart(2, "0");
-  if (style === "short") return `${mm}.${dd}`;
-  return `${d.getFullYear()}.${mm}.${dd} (${WEEKDAYS[d.getDay()]})`;
-}
-
-/** 없는/잘못된 cat 은 기타로 모은다 — 카테고리 합계에서 한 칸이 사라지지 않게. */
-const catKeyOf = (item) => (CAT_COLORS[item?.cat] ? item.cat : "etc");
-
 const resolveOverlaps = (currentItems, dayChain, dayStartMins, fixedId) => {
   let newItems = { ...currentItems };
   const others = dayChain.filter((id) => id !== fixedId);
@@ -542,236 +430,6 @@ function DayTab({ label, date, count, isActive, onClick, viewers = [] }) {
         </span>
       )}
     </button>
-  );
-}
-
-function CardBody({
-  item,
-  mode,
-  startMins,
-  endMins,
-  isThisResizing,
-  onEdge,
-  lockedBy,
-}) {
-  const catStyle = catOf(item);
-
-  if (mode !== "timeline") {
-    return (
-      <>
-        <div className="l">
-          <span className="cat">
-            {catStyle.nm}
-            {subLabelOf(item) ? ` · ${subLabelOf(item)}` : ""}
-          </span>
-          {lockedBy && <span className="lock-badge">✎ {lockedBy}</span>}
-          <span className="grip">⠿</span>
-        </div>
-        {/* 💡 연필 아이콘 삭제, 글씨 두께만 강조 */}
-        <div className="nm">{item?.name}</div>
-        <div className="sub">{item?.detail || item?.address}</div>
-      </>
-    );
-  }
-
-  return (
-    <>
-      {onEdge && (
-        <div
-          className={`tl-edge is-top ${isThisResizing === "top" ? "is-active" : ""}`}
-          onClick={(e) => onEdge(e, "top")}
-        />
-      )}
-      <div className="l1">
-        <span className="cat">
-          {catStyle.nm}
-          {subLabelOf(item) ? ` · ${subLabelOf(item)}` : ""}
-        </span>
-        {item?.auto && <span className="auto-badge">자동</span>}
-        {lockedBy && <span className="lock-badge">✎ {lockedBy} 편집 중</span>}
-        <span>
-          <span className="nm">{item?.name}</span>{" "}
-          <span className="nm-sub">{item?.detail}</span>
-        </span>
-        <span className="time">
-          {fmtTime(startMins)} – {fmtTime(endMins)}
-        </span>
-        {/* 무료(0원)는 표기 자체를 생략한다 (QA 배치2) */}
-        {item?.cost > 0 && <span className="cost">{won(item.cost)}</span>}
-      </div>
-      <div className="addr">📍 {item?.address || "위치 정보 없음"}</div>
-      <div className="ctl">
-        {/* 리사이즈 중에는 안내 문구가 카테고리 색으로 강조된다(.dur.is-resizing) */}
-        <span className={`dur ${isThisResizing ? "is-resizing" : ""}`}>
-          {isThisResizing
-            ? "마우스를 움직여 조절 후 클릭하여 확정"
-            : `소요 ${fmtDur(item?.dur)}`}
-        </span>
-      </div>
-      {onEdge && (
-        <div
-          className={`tl-edge is-bottom ${isThisResizing === "bottom" ? "is-active" : ""}`}
-          onClick={(e) => onEdge(e, "bottom")}
-        />
-      )}
-    </>
-  );
-}
-
-/**
- * 블록의 수정 표시. 개인 페이지의 카드(.g-card .op)와 같은 ✎ 아이콘·같은 규칙 —
- * 평소에는 숨어 있고 카드에 마우스를 올릴 때만 나타난다(노출은 CSS .blk-op).
- *
- * 카드 전체에 드래그 리스너가 걸려 있어 pointerdown 을 여기서 끊어야 버튼을 누르는
- * 동작이 드래그 시작으로 오해되지 않는다.
- */
-function BlockEditBadge({ onEdit }) {
-  if (!onEdit) return null;
-  return (
-    <button
-      type="button"
-      className="blk-op"
-      title="블록 수정"
-      aria-label="블록 수정"
-      onPointerDown={(e) => e.stopPropagation()}
-      onClick={(e) => {
-        e.stopPropagation();
-        onEdit();
-      }}
-    >
-      ✎
-    </button>
-  );
-}
-
-/**
- * 블록 출처(카카오/축제)로 이동하는 외부 링크 아이콘. hover 시에만 노출(.blk-op와 같은 규칙).
- * 카드 전체에 드래그 리스너가 걸려 있어 pointerdown 을 끊어 드래그 시작으로 오해되지 않게 한다.
- */
-function BlockLinkBadge({ item }) {
-  if (!hasExternalLink(item)) return null;
-  return (
-    <button
-      type="button"
-      className="blk-link"
-      title="출처 링크 열기"
-      aria-label="출처 링크 열기"
-      onPointerDown={(e) => e.stopPropagation()}
-      onClick={(e) => {
-        e.stopPropagation();
-        openBlockLink(item);
-      }}
-    >
-      🔗
-    </button>
-  );
-}
-
-/**
- * 꾹 누르면 연속 반복되는 버튼 (QA 배치2) — 400ms 홀드 후 100ms 간격 반복.
- * 짧은 탭은 click 한 번이고, 홀드였다면 릴리즈 때 따라오는 click 을 삼켜
- * 마지막에 한 칸 더 가는 이중 실행을 막는다.
- */
-function HoldRepeatButton({ onTrigger, children, ...rest }) {
-  const timersRef = useRef({ delay: null, repeat: null });
-  const repeatedRef = useRef(false);
-
-  const stop = () => {
-    clearTimeout(timersRef.current.delay);
-    clearInterval(timersRef.current.repeat);
-    timersRef.current = { delay: null, repeat: null };
-  };
-
-  const handlePointerDown = () => {
-    repeatedRef.current = false;
-    timersRef.current.delay = setTimeout(() => {
-      repeatedRef.current = true;
-      onTrigger();
-      timersRef.current.repeat = setInterval(onTrigger, 100);
-    }, 400);
-  };
-
-  const handleClick = () => {
-    if (repeatedRef.current) {
-      repeatedRef.current = false;
-      return;
-    }
-    onTrigger();
-  };
-
-  return (
-    <button
-      type="button"
-      {...rest}
-      onPointerDown={handlePointerDown}
-      onPointerUp={stop}
-      onPointerLeave={stop}
-      onPointerCancel={stop}
-      onClick={handleClick}
-    >
-      {children}
-    </button>
-  );
-}
-
-/** 블록 좌상단의 "가장 최근 수정자" 아바타 — 테두리는 그 멤버의 커서 색 */
-function BlockEditorBadge({ editor }) {
-  if (!editor) return null;
-  return (
-    <span
-      className="blk-editor"
-      title={`최근 수정 · ${editor.name}`}
-      style={{ "--vh": hueOf(editor.id) }}
-    >
-      {editor.profileImg?.startsWith("http") ? (
-        <img src={editor.profileImg} alt="" />
-      ) : (
-        editor.name[0]
-      )}
-    </span>
-  );
-}
-
-function PoolCard({ id, item, onEditBlock, lockedBy, editor }) {
-  const {
-    attributes,
-    listeners,
-    setNodeRef,
-    transform,
-    transition,
-    isDragging,
-  } = useSortable({ id, data: { from: "pool" } });
-  const catStyle = catOf(item);
-  // dnd-kit 이 만들어주는 이동값과 카테고리 색만 인라인으로 넘긴다(색 지정은 CSS 몫).
-  const style = {
-    transform: isDragging ? undefined : CSS.Transform.toString(transform),
-    transition,
-    "--dc": catStyle.hex,
-    "--cb": catStyle.bg,
-  };
-
-  return (
-    <div
-      ref={setNodeRef}
-      style={style}
-      className={`pcard ${isDragging ? "is-dragging" : ""}`}
-      data-pool-id={id}
-      {...attributes}
-      {...listeners}
-      // 💡 박스 전체 영역에 클릭 이벤트 연결
-      onClick={() => onEditBlock && onEditBlock(id)}
-    >
-      <BlockEditorBadge editor={editor} />
-      <CardBody
-        id={id}
-        item={item}
-        mode="pool"
-        onEditBlock={onEditBlock}
-        lockedBy={lockedBy}
-      />
-      <BlockEditBadge onEdit={onEditBlock && (() => onEditBlock(id))} />
-      <BlockLinkBadge item={item} />
-    </div>
   );
 }
 
@@ -867,177 +525,6 @@ function TimelineCard({
   );
 }
 
-// 💡 새롭게 추가된 검색 결과용 드래그 컴포넌트
-function SearchResultDraggable({ place, onClick }) {
-  const id = `search-result-${place.id}`;
-  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
-    id,
-    data: { from: "search", place },
-  });
-
-  return (
-    <div
-      ref={setNodeRef}
-      className={`sr-item ${isDragging ? "is-dragging" : ""}`}
-      {...attributes}
-      {...listeners}
-      onClick={() => onClick && onClick(place)}
-    >
-      <div className="sr-main">
-        <div className="sr-dot">●</div>
-        <div>
-          <div className="sr-name">{place.place_name}</div>
-          <div className="sr-addr">
-            {place.road_address_name || place.address_name}
-          </div>
-          <div className="sr-cat">{place.category_group_name}</div>
-        </div>
-      </div>
-      {/* 끌어다 놓기 유도용 손잡이 아이콘 */}
-      <div className="sr-grip">⠿</div>
-    </div>
-  );
-}
-
-function ReadModeView({ chains, items, dayKeys, project }) {
-  // 배경·좌우 여백은 편집 모드와 같은 껍데기(.dash-shell/.dash-body)가 쥔다 —
-  // 여기서 배경을 따로 칠하면 모드를 바꿀 때 화면이 갈라져 보인다.
-
-  // Day별 비용 합계 (QA 배치2) — 편집 모드 예산과 같은 기준(체인 배치 블록만)
-  const dayCostOf = (day) =>
-    (chains[day] || []).reduce((sum, id) => sum + (items[id]?.cost || 0), 0);
-  const totalCost = dayKeys.reduce((sum, day) => sum + dayCostOf(day), 0);
-
-  // 교통 블록 접기 카드 — 행(block)별 펼침 상태. Day 전체가 아니라 블록별로 접는다.
-  const [expandedIds, setExpandedIds] = useState(() => new Set());
-  const toggleExpanded = (id) => {
-    setExpandedIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  };
-
-  return (
-    <div className="dash-body read-view">
-      <div className="rv-total">
-        {/* 편집 모드와 헷갈리지 않게 모드를 명시한다 (QA 배치3) */}
-        <span className="rv-mode-chip">📖 읽기 전용</span>
-        여행 총 비용 <b>{won(totalCost) || "0원"}</b>
-      </div>
-      {dayKeys.map((day, index) => {
-        // 표시는 시각 순으로 (QA ⓒ) — 체인은 orderKey 순서라 드래그·수정 이력에
-        // 따라 시각 순서와 어긋날 수 있는데, 읽기 모드는 "하루의 흐름"이라
-        // 시간이 곧 순서여야 한다. 정렬은 표시 전용이라 데이터를 건드리지 않는다.
-        const chain = [...(chains[day] || [])].sort(
-          (a, b) => (items[a]?.startMins ?? 0) - (items[b]?.startMins ?? 0),
-        );
-        const dayCost = dayCostOf(day);
-        return (
-          <div key={day} className="rv-day">
-            <h2 className="rv-day-title">
-              Day {index + 1}{" "}
-              <span className="rv-day-date">
-                {dayDate(project, index) || "날짜 미정"}
-              </span>
-              {dayCost > 0 && (
-                <span className="rv-day-cost">{won(dayCost)}</span>
-              )}
-            </h2>
-
-            {/* 빈 Day 도 생략하지 않는다(RO-02) — 건너뛰면 Day 번호가 끊겨
-                "아직 안 짠 날"과 "없는 날"을 구분할 수 없다 */}
-            {chain.length === 0 ? (
-              <p className="rv-day-empty">일정 없음</p>
-            ) : (
-            <div className="rv-list">
-              <div className="rv-line" />
-              {chain.map((id) => {
-                const item = items[id];
-                if (!item) return null;
-                const startMins = item.startMins;
-                const endMins = startMins + item.dur;
-                const catStyle = catOf(item);
-                const isTransport = item.cat === "trans" && item.transportMeta?.chosen;
-                return (
-                  // 카테고리 색만 CSS 변수로 넘기고, 그 색을 어디에 쓸지는 CSS 가 정한다
-                  <div
-                    key={id}
-                    className="rv-row"
-                    style={{ "--dc": catStyle.hex, "--cb": catStyle.bg }}
-                  >
-                    <div className="rv-time">{fmtTime(startMins)}</div>
-                    <div className="rv-dot" />
-                    {isTransport ? (
-                      <div className="rv-card rv-transit">
-                        <button
-                          type="button"
-                          className="rv-transit-head"
-                          onClick={() => toggleExpanded(id)}
-                        >
-                          <span className="tcc-ico">
-                            {TRANSIT_MODE_META[item.transportMeta.chosen.mode]?.ico ??
-                              "🚏"}
-                          </span>
-                          <b>{item.transportMeta.chosen.label ?? item.name}</b>
-                          {item.transportMeta.chosen.departureName && (
-                            <span> {item.transportMeta.chosen.departureName}</span>
-                          )}
-                          {item.cost > 0 && (
-                            <span className="rv-cost">{won(item.cost)}</span>
-                          )}
-                          <span className="rv-transit-caret">
-                            {expandedIds.has(id) ? "▲" : "▼"}
-                          </span>
-                        </button>
-                        {expandedIds.has(id) && (
-                          <div className="rv-transit-body">
-                            <TransitCandidateCard
-                              candidate={item.transportMeta.chosen}
-                              mode="view"
-                              selectedDepartureName={
-                                item.transportMeta.chosen.departureName ?? null
-                              }
-                            />
-                          </div>
-                        )}
-                      </div>
-                    ) : (
-                      <div className="rv-card">
-                        <div className="rv-card-main">
-                          <span className="rv-badge">
-                            {catStyle.nm} {item.sub ? `· ${item.sub}` : ""}
-                          </span>
-                          <div>
-                            <div className="rv-name">{item.name}</div>
-                            <div className="rv-addr">
-                              📍 {item.address || "위치 정보 없음"}
-                            </div>
-                          </div>
-                        </div>
-                        <div className="rv-card-side">
-                          <div className="rv-range">
-                            {fmtTime(startMins)} - {fmtTime(endMins)}
-                          </div>
-                          {item.cost > 0 && (
-                            <div className="rv-cost">{won(item.cost)}</div>
-                          )}
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-            )}
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
 export function DashboardPage() {
   const { groupId } = useParams();
   // 라우트 파라미터는 문자열 — 서버의 숫자 ID와 맞추려면 변환이 필요하다 (GroupPage 와 동일)
@@ -1099,8 +586,8 @@ export function DashboardPage() {
   // 원천은 위 스냅샷 하나다 — 두 소스가 섞이면 날짜 수정 직후 값이 어긋난다.
   const numericGroupId = Number(groupId);
   const { group } = useGroupDetail(numericGroupId);
-  // 날짜 캘린더(handleDayDateChange)의 저장 경로로만 쓴다 — 저장 후 reload() 로
-  // 스냅샷을 다시 읽어야 이 화면의 Day 탭·날짜가 따라 바뀐다.
+  // 제목 옆 ✎(프로젝트 수정 모달)의 저장 경로로만 쓴다 — 저장 후 reload() 로
+  // 스냅샷을 다시 읽어야 이 화면의 제목·Day 탭·날짜가 따라 바뀐다.
   const { updateProject } = useProjects(numericGroupId);
   const currentUser = useAuthStore((s) => s.currentUser);
 
@@ -1112,7 +599,7 @@ export function DashboardPage() {
   // 보이스 아이콘 펼침 여부. 기본은 접힘 — 평소엔 하단의 작은 타원 토글만 두고,
   // 누를 때만 마이크·스피커 아이콘이 나온다(보드를 가리지 않게).
   const [voiceOpen, setVoiceOpen] = useState(false);
-  const [dateEditOpen, setDateEditOpen] = useState(false); // 날짜 캘린더 열림 여부
+  const [editProjectOpen, setEditProjectOpen] = useState(false); // 프로젝트 수정 모달
   const [selectedDay, setActiveDay] = useState("d1");
   // 기간이 줄어 보고 있던 Day 가 사라지면 첫째 날을 본다 — 상태를 되돌리지 않고
   // 렌더 시점에 정하므로 "없는 Day 를 가리키는 한 프레임"이 생기지 않는다.
@@ -1339,23 +826,31 @@ export function DashboardPage() {
   // 갱신하되, 카메라 이동(범위 맞춤)은 "지도 준비·Day 전환 때 한 번"만 한다 —
   // 블록을 만질 때마다 지도가 움직이면 검색하려고 옮겨 둔 화면을 뺏는다.
   const chainMarkersRef = useRef([]);
+  const routeLinesRef = useRef([]);
   const lastMapFitRef = useRef(null); // { map, day } — 카메라를 이미 맞춘 조합
   useEffect(() => {
     if (!map || !window.kakao?.maps) return;
 
     chainMarkersRef.current.forEach((m) => m.setMap(null));
     chainMarkersRef.current = [];
+    routeLinesRef.current.forEach((l) => l.setMap(null));
+    routeLinesRef.current = [];
 
     const chainPoints = (chains[activeDay] || [])
       .map((id) => items[id])
       .filter((it) => it?.lat != null && it?.lng != null);
 
-    chainPoints.forEach((it) => {
+    chainPoints.forEach((it, idx) => {
       const position = new window.kakao.maps.LatLng(it.lat, it.lng);
       const marker = new window.kakao.maps.Marker({
         map,
         position,
         title: it.name,
+        // 초록 + 방문 순번 = 이미 일정에 넣은 곳 (검색 결과는 번호 없는 파랑).
+        // 순번은 그날 좌표 있는 블록 기준 — 좌표 없는 교통 블록은 건너뛴다.
+        // zIndex 로 검색 핀 위에 둔다: 같은 자리에 겹쳐도 계획이 가려지지 않는다.
+        image: planPinImage(idx + 1),
+        zIndex: 5,
       });
       // 핀 클릭 = 검색 결과 클릭과 같은 상세 말풍선
       window.kakao.maps.event.addListener(marker, "click", () => {
@@ -1375,6 +870,50 @@ export function DashboardPage() {
         infoWindowRef.current.open(map);
       });
       chainMarkersRef.current.push(marker);
+    });
+
+    // ── 이동 경로 선 ──
+    // 교통 블록이 낀 구간만 잇는다 — 단순히 이웃한 두 장소를 잇는 게 아니라
+    // "이동 수단을 정해 둔 구간"만 그려야 계획한 동선과 아직 빈 구간이 구분된다.
+    // 교통 블록 자체에는 좌표가 없으므로(경로 조회 결과에 legs 의 정거장 '이름'만
+    // 오고 좌표는 없다) 앞뒤 장소를 직선으로 잇는다 — 실제 도로·선로 모양이 아니다.
+    const chainItems = (chains[activeDay] || [])
+      .map((id) => items[id])
+      .filter(Boolean);
+    const hasCoords = (it) => it?.lat != null && it?.lng != null;
+
+    chainItems.forEach((it, i) => {
+      if (it.cat !== "trans") return;
+
+      let from = null;
+      for (let k = i - 1; k >= 0; k -= 1) {
+        if (hasCoords(chainItems[k])) {
+          from = chainItems[k];
+          break;
+        }
+      }
+      let to = null;
+      for (let k = i + 1; k < chainItems.length; k += 1) {
+        if (hasCoords(chainItems[k])) {
+          to = chainItems[k];
+          break;
+        }
+      }
+      if (!from || !to) return; // 한쪽 끝의 좌표를 모르면 그릴 수 없다
+
+      const line = new window.kakao.maps.Polyline({
+        map,
+        path: [
+          new window.kakao.maps.LatLng(from.lat, from.lng),
+          new window.kakao.maps.LatLng(to.lat, to.lng),
+        ],
+        strokeWeight: 4,
+        strokeColor: ROUTE_LINE_COLOR,
+        strokeOpacity: 0.75,
+        // 실제 경로가 아니라 "이 두 곳을 이동한다"는 표시라 점선으로 둔다
+        strokeStyle: "shortdash",
+      });
+      routeLinesRef.current.push(line);
     });
 
     // 카메라 맞춤 — 이 (지도, Day) 조합에서 아직 안 맞췄을 때만.
@@ -1413,48 +952,44 @@ export function DashboardPage() {
   //  만들어진다 — 입장 시 지오코딩하던 부트스트랩은 실패·동시 입장 중복의
   //  여지가 있어 생성 시점으로 옮기며 제거했다. CreateProjectModal 참조.)
 
-  // 날짜 팝오버는 Esc 로 닫는다. 브라우저 캘린더를 자동으로 띄우지는 않는다 —
-  // 팝오버가 열리자마자 캘린더가 겹쳐 뜨면 시야를 가려서, 입력칸의 달력 표시를
-  // 눌렀을 때만 열리게 둔다.
-  useEffect(() => {
-    if (!dateEditOpen) return;
-    const onKey = (e) => e.key === "Escape" && setDateEditOpen(false);
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [dateEditOpen]);
-
   /**
-   * 캘린더에서 고른 날짜를 지금 보고 있는 Day 의 날짜로 삼는다.
+   * 계획표 블록을 눌렀을 때 — 상세 모달을 열면서 지도도 그 장소로 옮긴다.
    *
-   * 여행은 이어진 기간이라 Day 하나만 다른 날로 뗄 수 없다 — 고른 날짜에 이 Day 가 오도록
-   * 시작일·종료일을 통째로 옮긴다. 기간 길이는 그대로여서 Day 수와 블록 배치가 흔들리지
-   * 않는다. (며칠짜리 여행인지 자체를 바꾸는 건 그룹 페이지의 수정 폼에서 한다.)
+   * 모달이 화면을 덮지만 카메라는 그동안 옮겨져 있어, 닫는 즉시 그 장소가 보인다.
+   * 좌표가 없는 블록(교통·기타)은 옮길 곳이 없으므로 모달만 연다.
+   * 카메라 자동 맞춤(lastMapFitRef)과 달리 이건 사용자가 직접 누른 결과라
+   * "화면을 뺏는다"는 문제가 없다.
    */
-  async function handleDayDateChange(picked) {
-    setDateEditOpen(false);
-    const pickedDate = parseDate(picked);
-    if (!pickedDate || !project) return;
+  const openBlockDetail = useCallback(
+    (id) => {
+      setEditingBlockId(id);
 
-    const newStart = new Date(pickedDate.getTime() - activeDayIndex * DAY_MS);
-    const newEnd = new Date(newStart.getTime() + (dayKeys.length - 1) * DAY_MS);
-    const startISO = toISODate(newStart);
-    const endISO = toISODate(newEnd);
-    if (startISO === project.startDate && endISO === project.endDate) return;
+      const item = items[id];
+      if (!map || !window.kakao?.maps) return;
+      if (item?.lat == null || item?.lng == null) return;
 
-    try {
-      await updateProject(projectId, {
-        name: project.name,
-        startDate: startISO,
-        endDate: endISO,
-      });
-      // 이 화면의 project 원천은 스냅샷이다 — 다시 읽어야 Day 탭·날짜가 따라온다.
-      // (기간 밖으로 밀려난 블록의 후보 이동도 서버 응답이 진실이다.)
-      reload();
-      showToast(`여행 일정을 ${startISO} 시작으로 옮겼어요 ✓`);
-    } catch {
-      showToast("날짜를 바꾸지 못했어요. 잠시 후 다시 시도해주세요.");
-    }
-  }
+      const position = new window.kakao.maps.LatLng(item.lat, item.lng);
+      // 너무 멀리 있으면 당겨 준다 — 이미 가까우면 지금 배율을 그대로 둔다
+      if (map.getLevel() > 5) map.setLevel(5);
+      map.panTo(position);
+
+      if (!infoWindowRef.current) {
+        infoWindowRef.current = new window.kakao.maps.InfoWindow({
+          zIndex: 1,
+          removable: true,
+        });
+      }
+      infoWindowRef.current.setContent(
+        `<div style="padding:12px;font-size:13px;color:#333;min-width:180px;">
+           <b style="display:block;margin-bottom:4px;color:#d97e3c;">${item.name ?? ""}</b>
+           ${item.address ? `<span>${item.address}</span>` : ""}
+         </div>`,
+      );
+      infoWindowRef.current.setPosition(position);
+      infoWindowRef.current.open(map);
+    },
+    [map, items],
+  );
 
   const handleSearchPlace = (e) => {
     e.preventDefault();
@@ -1497,6 +1032,10 @@ export function DashboardPage() {
             const marker = new window.kakao.maps.Marker({
               map: map,
               position: position,
+              title: place.place_name,
+              // 파랑 = 아직 후보 (타임라인에 들어간 블록은 초록)
+              image: searchPinImage(),
+              zIndex: 3,
             });
             // 마커 클릭 = 상세 말풍선
             window.kakao.maps.event.addListener(marker, "click", () => {
@@ -1557,13 +1096,19 @@ export function DashboardPage() {
     }
   };
 
+  // 정산·1인 요금 환산의 기준 인원. 프로젝트에 값이 없으면 최소 1명으로 본다.
+  const headcount = Math.max(1, project?.budgetHeadcount || 1);
+
   // 예산은 체인에 배치된 블록만 센다(명세) — 후보(POOL)는 아직 계획이 아니라
   // 검토 중인 카드라서, 합산에 넣으면 "쓸지 말지 모르는 돈"이 예산을 잠식한다.
   const placedIds = Object.values(chains).flat();
   const totalBudget = placedIds.reduce(
-    (sum, id) => sum + (items[id]?.cost || 0),
+    (sum, id) => sum + effectiveCostOf(items[id], headcount),
     0,
   );
+  // 총액을 인원으로 나눈 값 — 대중교통처럼 1인 요금인 항목은 이미 곱해 넣었으므로
+  // 여기서 나누면 다시 1인 몫으로 돌아온다.
+  const perPersonBudget = Math.round(totalBudget / headcount);
   const [targetBudget, setTargetBudget] = useState(0);
 
   // ── 스냅샷 → 로컬 보드 시드 ──────────────────────────
@@ -1665,13 +1210,14 @@ export function DashboardPage() {
         ? totalBudget || 1
         : targetBudget;
 
-    // 총액(totalBudget)과 같은 기준 — 체인에 배치된 블록만 (후보는 계획이 아니다)
+    // 총액(totalBudget)과 같은 기준 — 체인에 배치된 블록만 (후보는 계획이 아니다).
+    // 1인 요금 곱하기도 같은 함수를 써야 칸의 합이 총액과 맞는다.
     const sumByCat = {};
     Object.values(chains)
       .flat()
       .forEach((id) => {
         const item = items[id];
-        const cost = item?.cost || 0;
+        const cost = effectiveCostOf(item, headcount);
         if (cost <= 0) return;
         const cat = catKeyOf(item);
         sumByCat[cat] = (sumByCat[cat] ?? 0) + cost;
@@ -1688,7 +1234,7 @@ export function DashboardPage() {
         shareOfTotal:
           totalBudget > 0 ? (sumByCat[cat] / totalBudget) * 100 : 0,
       }));
-  }, [items, chains, targetBudget, totalBudget, remainingBudget]);
+  }, [items, chains, headcount, targetBudget, totalBudget, remainingBudget]);
 
   // 저장 실패 시 롤백 — "어디서 왔는지"를 복원하는 대신 서버 진실로 보드를
   // 다시 시드한다. 5.5단계 이후엔 교통 블록까지 전부 서버에 있으므로
@@ -1841,10 +1387,14 @@ export function DashboardPage() {
           return;
         }
         // 구간별 초기 선택 = 서버 추천(defaultMode) → 첫 이용 가능 후보 → 제외(null)
-        // choices[pairKey] = {candidate, departure} | null(제외) — departure 는
-        // 시외에서 고른 편(시내면 null), candidate 의 첫 편으로 초기화한다.
+        // defaultMode 가 null 이면(교통수단 선호 둘 다 선택) 자동 선택하지 않는다 —
+        // choices 에 키를 아예 넣지 않는다(= "제외"와 구분되는 "미선택" 상태),
+        // 사용자가 카드에서 직접 골라야 한다.
+        // choices[pairKey] = {candidate, departure} | null(제외) | undefined(미선택)
+        // — departure 는 시외에서 고른 편(시내면 null), candidate 의 첫 편으로 초기화한다.
         const choices = {};
         segments.forEach((s) => {
+          if (s.defaultMode == null) return;
           const initial =
             s.candidates?.find(
               (c) => c.mode === s.defaultMode && c.status === "OK",
@@ -2092,10 +1642,16 @@ export function DashboardPage() {
           showToast("두 장소 사이의 경로를 찾지 못했어요.");
           return;
         }
+        // defaultMode 가 null 이면(교통수단 선호 둘 다 선택) 자동 선택하지 않는다 —
+        // 사용자가 카드에서 직접 골라야 한다.
         const initialCandidate =
-          candidates.find((c) => c.mode === segment.defaultMode && c.status === "OK") ??
-          candidates.find((c) => c.status === "OK") ??
-          null;
+          segment.defaultMode == null
+            ? null
+            : candidates.find(
+                (c) => c.mode === segment.defaultMode && c.status === "OK",
+              ) ??
+              candidates.find((c) => c.status === "OK") ??
+              null;
         // 생성하지 않고 선택 모달을 연다 — 생성은 confirmTransitChoice 가 한다
         setTransitPicker({
           dayKey,
@@ -2424,7 +1980,8 @@ export function DashboardPage() {
         break;
       case "PROJECT_UPDATED":
         if (own) break; // 자기 변경으로 보드 전체를 재시드할 이유가 없다
-        // 이름·기간·movedToPool — Day 탭 수 등 훅 소유 파생에 걸쳐 있어 재시드가 정확하다
+        // 이름·기간·이동수단·movedToPool — Day 탭 수 등 훅 소유 파생에 걸쳐 있어 재시드가 정확하다.
+        // reload() 가 스냅샷을 통째로 다시 받아오므로 project.transportPrefs 도 이 한 번으로 갱신된다.
         reload();
         break;
       case "PROJECT_DELETED":
@@ -3737,6 +3294,19 @@ export function DashboardPage() {
             <h1 className="dash-headbar-title">
               {project?.name ?? "여행 대시보드"}
             </h1>
+            {/* 예전엔 그룹 페이지로 돌아가야만 수정할 수 있었다 — 보고 있는
+                화면에서 바로 열 수 있게 제목 옆에 둔다 */}
+            {project && (
+              <button
+                type="button"
+                className="dash-headbar-edit"
+                title="프로젝트 수정"
+                aria-label="프로젝트 수정"
+                onClick={() => setEditProjectOpen(true)}
+              >
+                ✎
+              </button>
+            )}
             <div className="mode-switch">
               <button
                 className={`mode-tab ${viewMode === "edit" ? "on" : ""}`}
@@ -3800,60 +3370,23 @@ export function DashboardPage() {
                 <div className="board plan-board">
                   <div className="bd-head">
                     <h2>Day {activeDayIndex + 1}</h2>
-                    {/* 날짜를 누르면 캘린더가 열리고, 고른 날짜에 이 Day 가 오도록
-                        여행 일정 전체가 함께 옮겨진다. 프로젝트를 못 불러왔으면 표시만. */}
+                    {/* 날짜는 표시 전용이다 — 여행 기간은 상단바 제목 옆 ✎(프로젝트
+                        수정)에서 바꾼다. 안내 토글을 날짜 바로 옆에 붙여, 예전에
+                        날짜를 누르던 사람이 어디로 가야 하는지 여기서 알게 한다. */}
                     <div className="date-wrap">
-                      {project ? (
-                        <button
-                          type="button"
-                          className="date date-btn"
-                          title="날짜를 눌러 일정을 옮기세요"
-                          onClick={() => setDateEditOpen((v) => !v)}
-                        >
-                          {dayDate(project, activeDayIndex) || "날짜 미정"}
-                          <span className="date-ico">🗓</span>
-                        </button>
-                      ) : (
-                        <span className="date">
-                          {dayDate(project, activeDayIndex) || "날짜 미정"}
-                        </span>
-                      )}
-
-                      {dateEditOpen && (
-                        <>
-                          <div
-                            className="date-pop-back"
-                            onClick={() => setDateEditOpen(false)}
-                          />
-                          <div className="date-pop">
-                            <label htmlFor="day-date-input">
-                              Day {activeDayIndex + 1} 날짜
-                            </label>
-                            <input
-                              id="day-date-input"
-                              type="date"
-                              value={dayISODate(project, activeDayIndex)}
-                              onChange={(e) =>
-                                handleDayDateChange(e.target.value)
-                              }
-                            />
-                            <p>
-                              고른 날짜에 Day {activeDayIndex + 1} 이 오도록 여행{" "}
-                              {dayKeys.length}일 전체가 함께 옮겨져요.
-                            </p>
-                          </div>
-                        </>
-                      )}
+                      <span className="date">
+                        {dayDate(project, activeDayIndex) || "날짜 미정"}
+                      </span>
+                      <span
+                        // tip-down: 헤더 바로 아래라 위로 열면 상단바에 가린다
+                        className="hint-ico tip-down"
+                        tabIndex={0}
+                        aria-label="계획표 사용 안내"
+                        data-tip="후보 블록을 원하는 시간에 끌어다 놓아 일정을 만들어요. 블록의 위·아래 가장자리를 누르면 10분 단위로 길이를 조절하고, 블록 사이 🚗 버튼으로 이동수단을 추가할 수 있어요. 여행 날짜는 위 제목 옆 ✎ 에서 바꿀 수 있어요."
+                      >
+                        ⓘ
+                      </span>
                     </div>
-                    <span
-                      // tip-down: 헤더 바로 아래라 위로 열면 상단바에 가린다
-                      className="hint-ico tip-down"
-                      tabIndex={0}
-                      aria-label="계획표 사용 안내"
-                      data-tip="후보 블록을 원하는 시간에 끌어다 놓아 일정을 만들어요. 블록의 위·아래 가장자리를 누르면 10분 단위로 길이를 조절하고, 블록 사이 🚗 버튼으로 이동수단을 추가할 수 있어요."
-                    >
-                      ⓘ
-                    </span>
                     <div className="right">
                       <button
                         className="auto-transport-btn"
@@ -3971,7 +3504,7 @@ export function DashboardPage() {
                                 onResizeStart={handleResizeStart}
                                 dayStartMins={timelineStart}
                                 boundTop={boundTop}
-                                onEditBlock={setEditingBlockId}
+                                onEditBlock={openBlockDetail}
                                 lockedBy={lockBadgeOf(data.id)}
                                 editor={editorBadgeOf(data.id)}
                               />
@@ -4100,13 +3633,10 @@ export function DashboardPage() {
                     <span className="bud-total-value">
                       {won(totalBudget) || "0원"}
                     </span>
-                    <span
-                      className="hint-ico"
-                      tabIndex={0}
-                      aria-label="예산 사용 안내"
-                      data-tip="계획표에 배치된 블록들의 비용 합계예요(후보 목록은 제외). 희망 총 예산을 정하면 카테고리별 사용률이 막대로 보여요 — 금액을 클릭하면 직접 입력할 수 있어요."
-                    >
-                      ⓘ
+                    {/* 정산은 결국 1인당 얼마인지가 궁금하다 — 총액 옆에 바로 붙인다 */}
+                    <span className="bud-total-per">
+                      1인당 {won(perPersonBudget) || "0원"}
+                      <span className="bud-total-per-n"> · {headcount}인</span>
                     </span>
                   </div>
 
@@ -4706,6 +4236,18 @@ export function DashboardPage() {
         </button>
       </div>
 
+      {/* 프로젝트 수정 — 그룹 페이지의 ✎ 와 같은 모달을 그대로 쓴다.
+          저장 뒤에는 스냅샷을 다시 읽어야 제목·Day 탭·기간이 따라온다
+          (이 화면의 project 원천은 목록이 아니라 스냅샷이다). */}
+      {editProjectOpen && project && (
+        <EditProjectModal
+          open
+          project={project}
+          onUpdate={updateProject}
+          onSaved={reload}
+          onClose={() => setEditProjectOpen(false)}
+        />
+      )}
     </>
   );
 }

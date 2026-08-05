@@ -1,14 +1,9 @@
 import { useState } from 'react';
 import Modal from '../../My/shared/ui/Modal';
+import TransportPicker from '../../My/shared/ui/TransportPicker';
 import { useToastStore } from '../../../global/stores/toastStore';
 import { searchPlaces } from '../../../features/dashboard/map/addressLookup';
 import { createBlock } from '../../../features/dashboard/api/dashboardApi';
-
-// PROJECT.transport_pref는 CAR | PUBLIC 두 값뿐이다 (ERD.md).
-const TRANSPORT_OPTIONS = [
-  { value: 'CAR', label: '자차 (렌트)' },
-  { value: 'PUBLIC', label: '대중교통' },
-];
 
 function todayISO() {
   return new Date().toISOString().slice(0, 10);
@@ -20,7 +15,7 @@ const initialForm = {
   budgetHeadcount: 4,
   startDate: todayISO(),
   endDate: todayISO(),
-  transportPref: '', // 기본값 없음 — 사용자가 직접 골라야 함
+  transportPrefs: [], // 기본값 없음 — 사용자가 직접 골라야 함
   targetBudget: '',
 };
 
@@ -97,7 +92,7 @@ export default function CreateProjectModal({ open, onClose, onCreate }) {
     }
     // 서버가 필수로 받는다(ProjectReqDTO.Create @NotNull). 빈 값으로 보내면
     // enum 변환이 실패해 COMMON400_4 로 떨어지므로 여기서 먼저 막는다.
-    if (!form.transportPref) {
+    if (form.transportPrefs.length < 1) {
       setError('주요 이동수단을 선택해주세요.');
       return;
     }
@@ -264,37 +259,20 @@ export default function CreateProjectModal({ open, onClose, onCreate }) {
         </div>
       </div>
 
-      <div className="r2">
-        <div>
-          <label>주요 이동수단 *</label>
-          <select
-            value={form.transportPref}
-            onChange={(e) => update('transportPref', e.target.value)}
-          >
-            {/* 초기값은 빈 문자열로 두고 되돌아갈 수는 없게 한다 —
-                기본값을 정해주지 않고 사용자가 직접 고르게 하려는 의도. */}
-            <option value="" disabled>
-              선택해주세요
-            </option>
-            {TRANSPORT_OPTIONS.map((t) => (
-              <option key={t.value} value={t.value}>
-                {t.label}
-              </option>
-            ))}
-          </select>
-        </div>
-        <div>
-          <label>목표 예산 (총액, 원)</label>
-          <input
-            type="number"
-            min={0}
-            step={10000}
-            placeholder="예: 600000"
-            value={form.targetBudget}
-            onChange={(e) => update('targetBudget', e.target.value)}
-          />
-        </div>
-      </div>
+      <TransportPicker
+        value={form.transportPrefs}
+        onChange={(next) => update('transportPrefs', next)}
+      />
+
+      <label>목표 예산 (총액, 원)</label>
+      <input
+        type="number"
+        min={0}
+        step={10000}
+        placeholder="예: 600000"
+        value={form.targetBudget}
+        onChange={(e) => update('targetBudget', e.target.value)}
+      />
 
       {error && <div className="code-err">{error}</div>}
 

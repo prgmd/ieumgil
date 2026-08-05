@@ -85,7 +85,7 @@
       "destination": "제주",
       "startDate": "2026-08-10",
       "endDate": "2026-08-13",
-      "transportPref": "CAR",
+      "transportPrefs": ["CAR"],
       "budgetHeadcount": 4,
       "targetBudget": 300000,
       "keywords": ["오름", "카페"],
@@ -568,7 +568,7 @@
 | `segments[].intercity` | bool | 시외 구간 여부(ODsay `pathType` 기준, 위 참조) |
 | `segments[].timetableApplied` | bool | 시간표를 조회해 실제 출발편을 골랐는지. `intercity:false`(시내)면 해당 없음으로 항상 `false`다 |
 | `segments[].timetableSkipReason` | string \| null | `timetableApplied:false`인 이유. 시내처럼 애초에 해당 없는 경우는 `null`(사유 없음과 미적용을 구분하지 않는다) |
-| `segments[].defaultMode` | enum \| null | 후보 중 기본값 — `status:"OK"`이면서 **실제로 탈 편이 있는** 첫 후보(우선순위순: `TransportPref`가 정한 수단 또는 `TRAIN`→`EXPRESS_BUS`→`AIR`). 그런 후보가 하나도 없으면 `null` |
+| `segments[].defaultMode` | enum \| null | 후보 중 기본값 — `status:"OK"`이면서 **실제로 탈 편이 있는** 첫 후보(우선순위순: `TransportPref`가 정한 수단 또는 `TRAIN`→`EXPRESS_BUS`→`AIR`). 그런 후보가 하나도 없으면 `null`. **프로젝트의 `transportPrefs`가 `CAR`·`PUBLIC` 둘 다 선택된 경우 모든 구간에서 항상 `null`**(사용자가 매 구간 직접 고른다) |
 | `segments[].candidates` | array | 아래 참조 |
 
 > **기준 시각은 Segment가 아니라 Candidate에 있다.** 수단마다 접근 경로와 탑승 여유가 달라 기준이 하나로 모이지 않는다 — `candidates[].referenceAt`을 읽어야 한다.
@@ -708,9 +708,11 @@
 >
 > **기본 선택과 후보 포함 여부는 서로 다른 질문이다 — 임계값 두 개가 각각 답한다. 이 판정은 시내·시외 구분 없이 구간의 직선거리로만 정해진다**(먼 시외 구간도 예외가 아니다 — 서울↔부산처럼 대중교통이 아예 불가능한 거리라도 택시 후보는 그대로 계산된다).
 > - 직선거리 **300m 미만**: 대중교통·택시를 물을 거리가 아니므로 호출 자체를 생략하고 도보만 후보로 낸다.
-> - 직선거리 **300m~2km**: 프로젝트의 `TransportPref`가 정한 수단(`CAR`→자차, `PUBLIC`/미지정→대중교통)이 **기본값(`defaultMode`)이자 후보 1순위**이고 택시가 항상 따라붙으며, **도보도 후보로 함께 나온다**(기본은 아니다).
-> - 직선거리 **2km 초과**: 도보가 후보에서 빠진다. 기본 수단은 여전히 `TransportPref` 기준으로 정해진다.
+> - 직선거리 **300m~2km**: 프로젝트의 `transportPrefs`가 정한 수단(`CAR`→자차, `PUBLIC`/미지정→대중교통)이 **기본값(`defaultMode`)이자 후보 1순위**이고 택시가 항상 따라붙으며, **도보도 후보로 함께 나온다**(기본은 아니다).
+> - 직선거리 **2km 초과**: 도보가 후보에서 빠진다. 기본 수단은 여전히 `transportPrefs` 기준으로 정해진다.
 > - 즉 **300m는 "기본 수단이 무엇인가"를, 2km는 "도보를 후보 목록에 넣을지"를 각각 결정**한다 — 300m~2km 구간에서 두 답이 겹쳐 선호 수단과 도보가 함께 후보로 나가는 것이 정상이다.
+>
+> **`transportPrefs`는 복수 선택이 가능하다**(`CAR`·`PUBLIC` 둘 다). 두 값을 모두 선택하면 위 우선순위 판단 자체가 성립하지 않으므로 — 위 임계값 로직과 무관하게 — 모든 구간의 `defaultMode`가 `null`로 나가고 사용자가 매 구간 직접 고른다. 후보 목록 구성(도보 포함 여부 등)은 그대로 적용된다.
 
 **후보 → 블록 필드 매핑** (프론트가 후보 선택 즉시 `POST /api/projects/{projectId}/blocks`를 호출할 때 쓴다. `transportMeta`는 자유 형식 객체라 아래 키는 백엔드가 강제하는 스키마가 아니라 프론트-백엔드 간 관례다):
 
@@ -1030,7 +1032,7 @@ REST로 변경 요청을 보내면, 서버가 seq를 붙여 STOMP로 전파한�
 **op type 목록:**
 `BLOCK_CREATED` / `BLOCK_FIELD_UPDATED` / `BLOCK_MOVED` / `BLOCK_DELETED` / `PROJECT_UPDATED` / `PROJECT_STATUS_CHANGED` / `PROJECT_DELETED` / `TARGET_BUDGET_CHANGED` / `BUDGET_HEADCOUNT_CHANGED` / `MEMBER_JOINED` / `MEMBER_LEFT`
 
-- `PROJECT_UPDATED`: 기간 축소 시 `movedToPool: [blockId...]` 포함.
+- `PROJECT_UPDATED`: 기간 축소 시 `movedToPool: [blockId...]` 포함. `payload.transportPrefs`(문자열 배열, 예: `["CAR","PUBLIC"]`)에 변경 후 값을 항상 싣는다.
 - `PROJECT_DELETED`: 대시보드를 보던 멤버를 그룹 페이지로 리다이렉트.
 - `MEMBER_LEFT`: 멤버 탈퇴 시 나머지 멤버는 이 op로 멤버 목록·정산 인원 갱신.
 

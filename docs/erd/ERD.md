@@ -57,7 +57,7 @@ erDiagram
         varchar destination
         date start_date
         date end_date
-        varchar transport_pref "CAR | PUBLIC"
+        jsonb transport_prefs "[\"CAR\",\"PUBLIC\"]"
         int budget_headcount "1인당 표시용 정산 인원, null=현재 멤버 수 따름"
         int target_budget "프로젝트 전체 목표 예산, nullable"
         jsonb keywords "챗봇 키워드 최대 5개, nullable"
@@ -199,7 +199,7 @@ erDiagram
 | destination | VARCHAR(100) | NULL | 여행지 |
 | start_date | DATE | NULL | 시작일 |
 | end_date | DATE | NULL | 종료일 |
-| transport_pref | VARCHAR(10) | NULL | 선호 이동수단 `CAR` / `PUBLIC` |
+| transport_prefs | JSONB | NULL | 선호 이동수단(복수 선택 가능) `["CAR","PUBLIC"]` |
 | budget_headcount | INT | NULL | 정산 인원(1인당 표시용). null=조회 시점 멤버 수 따름 |
 | target_budget | INT | NULL | 프로젝트 전체 목표 예산 |
 | keywords | JSONB | NULL | 챗봇 키워드 (최대 5개) |

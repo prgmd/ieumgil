@@ -17,18 +17,6 @@ const REISSUE_URL = "/auth/refresh";
 // 리프레시 자체가 실패했을 때 이동시킬 로그인 경로
 const LOGIN_PATH = "/";
 
-/**
- * 이 탭(클라이언트 인스턴스)의 식별자 — 실시간 op 브로드캐스트의 "요청자 본인 스킵"용.
- *
- * 대시보드 변경 요청에 X-Client-Id 로 실어 보내면, 서버가 브로드캐스트 op 의 clientId 에
- * 같은 값을 넣어 되돌려준다. 수신 측은 자기 CLIENT_ID 와 같은 op 를 무시한다 — 안 그러면
- * 방금 자기가 보낸 변경을 되돌려받아 입력 중 커서가 튀거나 글자가 씹힌다. (dashboard-api.md 공통 규약)
- *
- * 새로고침마다 값이 바뀌어도 무방하다 — "지금 열려 있는 이 화면"만 구분하면 되기 때문.
- * 그래서 저장하지 않고 모듈 로드 시 1회 생성한다.
- */
-export const CLIENT_ID = crypto.randomUUID();
-
 const axiosInstance = axios.create({
   baseURL: BASE_URL,
   timeout: 10000,
@@ -97,7 +85,13 @@ const reissueAccessToken = async () => {
   const { data } = await axios.post(
     `${BASE_URL}${REISSUE_URL}`,
     null,
-    { headers: { "Content-Type": "application/json" }, withCredentials: true },
+    {
+      headers: { "Content-Type": "application/json" },
+      withCredentials: true,
+      // 멈춘 리프레시가 isRefreshing 을 영구 true 로 만들어 이후 401 이 큐에
+      // 영구 적체(앱 wedge)되는 것을 막는다. 인스턴스 timeout(10000) 과 동일하게 둔다.
+      timeout: 10000,
+    },
   );
 
   const payload = data?.result ?? data; // 래핑 여부와 무관하게 동작
@@ -130,7 +124,19 @@ axiosInstance.interceptors.response.use(
     //   아직 없는 refreshToken 으로 요청이 한 번 더 나가고, 그 실패가 토큰 정리 +
     //   "/" 하드 리다이렉트로 이어져 호출부의 catch 가 진짜 사유를 못 받는다
     // - /auth/logout: 이미 로그아웃 흐름이라 재발급할 이유가 없다
-    const isAuthCall = originalRequest.url?.includes("/auth/");
+    // url 은 보통 상대경로(예: "/auth/refresh")지만 절대 URL 일 수도 있으므로
+    // pathname 을 추출해 prefix 로 매치한다 — substring 매치는 "/projects/5/auth/..."
+    // 같은 미래 라우트를 오탐한다.
+    let isAuthCall = false;
+    if (originalRequest.url) {
+      try {
+        isAuthCall = new URL(originalRequest.url, BASE_URL).pathname.startsWith(
+          "/auth/",
+        );
+      } catch {
+        isAuthCall = false;
+      }
+    }
 
     // 401 이 아니거나, 이미 재시도했거나, 인증 엔드포인트면 그대로 실패 처리
     // (refreshToken 은 httpOnly 쿠키라 JS 로 존재 여부를 확인할 수 없으므로,
@@ -144,6 +150,9 @@ axiosInstance.interceptors.response.use(
       return new Promise((resolve, reject) => {
         pendingQueue.push({ resolve, reject });
       }).then((newToken) => {
+        // 재요청이 다시 401 이면 isRetryable(!_retry) 가드에 걸려 리프레시
+        // 재진입 없이 실패하도록, 리더와 동일하게 재시도 전에 _retry 를 세운다.
+        originalRequest._retry = true;
         originalRequest.headers.Authorization = `Bearer ${newToken}`;
         return axiosInstance(originalRequest);
       });

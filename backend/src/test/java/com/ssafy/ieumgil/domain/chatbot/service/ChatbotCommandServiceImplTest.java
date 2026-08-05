@@ -255,7 +255,7 @@ class ChatbotCommandServiceImplTest {
                 .startDate(LocalDate.of(2026, 8, 1))
                 .endDate(LocalDate.of(2026, 8, 3))
                 .budgetHeadcount(4)
-                .transportPref(TransportPref.CAR)
+                .transportPrefs(List.of(TransportPref.CAR))
                 .build();
         when(projectRepository.findByIdAndDeletedAtIsNull(1L)).thenReturn(Optional.of(project));
         when(chatModel.call(any(Prompt.class))).thenReturn(canned("답변"));
