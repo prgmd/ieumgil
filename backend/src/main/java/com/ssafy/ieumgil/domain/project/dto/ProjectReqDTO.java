@@ -61,6 +61,10 @@ public class ProjectReqDTO {
             @Schema(description = "종료일", example = "2026-08-14")
             LocalDate endDate,
 
+            @Schema(description = "여행지. null이면 미변경", example = "제주")
+            @Size(max = 100, message = "여행지는 100자 이하여야 합니다.")
+            String destination,
+
             @Schema(description = "이동수단 선호(복수 선택). null이면 미변경", example = "[\"CAR\"]")
             List<TransportPref> transportPrefs
     ) {

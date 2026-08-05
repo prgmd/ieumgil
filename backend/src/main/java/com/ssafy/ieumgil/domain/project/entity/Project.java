@@ -125,8 +125,8 @@ public class Project extends BaseTimeEntity {
         this.targetBudget = budget;
     }
 
-    /** 이름·기간 부분 수정. null인 인자는 건드리지 않는다(PATCH 시맨틱) */
-    public void updateInfo(String name, LocalDate startDate, LocalDate endDate) {
+    /** 이름·기간·여행지 부분 수정. null인 인자는 건드리지 않는다(PATCH 시맨틱) */
+    public void updateInfo(String name, LocalDate startDate, LocalDate endDate, String destination) {
         if (name != null) {
             this.name = name;
         }
@@ -135,6 +135,9 @@ public class Project extends BaseTimeEntity {
         }
         if (endDate != null) {
             this.endDate = endDate;
+        }
+        if (destination != null) {
+            this.destination = destination;
         }
     }
 
