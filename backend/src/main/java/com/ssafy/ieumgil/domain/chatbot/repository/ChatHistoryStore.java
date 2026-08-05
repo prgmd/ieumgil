@@ -11,8 +11,8 @@ import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Component;
 
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.List;
-import java.util.Objects;
 
 /**
  * 프로젝트+멤버 단위 최근 대화 이력.
@@ -46,10 +46,47 @@ public class ChatHistoryStore {
         if (raw == null) {
             return List.of();
         }
-        return raw.stream()
+        List<ChatTurn> turns = raw.stream()
                 .map(this::deserializeOrNull)
-                .filter(Objects::nonNull)
                 .toList();
+        return alignPairs(turns);
+    }
+
+    /**
+     * 로드 결과가 (user, assistant) 짝만 남도록 정렬한다.
+     *
+     * <p>저장은 짝을 원자적으로 붙이지만, 개별 항목 역직렬화 실패가 하나라도 있으면 평평한
+     * 리스트의 짝 경계가 어긋난다 — 소비처가 tail을 슬라이스해 role 그대로 GMS 메시지로 넘기므로,
+     * 어긋난 이력은 홀수/동일 role 연속이 되어 Anthropic이 alternation 위반(400)을 낸다. 인접한
+     * user→assistant만 짝으로 취해 선두 user·엄격한 교대·짝수 길이를 보장한다. 짝을 못 이룬
+     * 항목(선두 assistant·꼬리 user)은 버린다. 손상 없는 정상 이력은 그대로 통과한다.
+     *
+     * <p>여기서 "인접"은 <b>원본 저장 인덱스 기준 인접</b>이다 — 역직렬화 실패 항목({@code null})을
+     * 미리 걸러내지 않고 자리에 둔 채 스캔한다. 실패 항목을 먼저 제거하면 남은 항목들이 앞으로
+     * 당겨져 리스트-인덱스상 붙어 보이지만 원본에서는 떨어져 있던 서로 다른 턴의 질문/답을 role만
+     * 맞다고 짝으로 접착할 수 있다(예: {@code U0,A0,U1,A1}에서 A0·U1이 연속으로 깨지면 U0와 A1이
+     * 붙어 보인다). 그래서 {@code turns.get(i)}와 {@code turns.get(i+1)}이 <b>둘 다 non-null이면서</b>
+     * role까지 맞을 때만 짝으로 인정한다 — non-null이면 그 자리가 원본에서 실제로 인접했다는 뜻이다.
+     */
+    private List<ChatTurn> alignPairs(List<ChatTurn> turns) {
+        List<ChatTurn> aligned = new ArrayList<>(turns.size());
+        int i = 0;
+        while (i < turns.size()) {
+            ChatTurn turn = turns.get(i);
+            ChatTurn next = i + 1 < turns.size() ? turns.get(i + 1) : null;
+            boolean userThenAssistant = turn != null
+                    && next != null
+                    && ChatTurn.ROLE_USER.equals(turn.role())
+                    && ChatTurn.ROLE_ASSISTANT.equals(next.role());
+            if (userThenAssistant) {
+                aligned.add(turn);
+                aligned.add(next);
+                i += 2;
+            } else {
+                i++;
+            }
+        }
+        return aligned;
     }
 
     /**
