@@ -34,6 +34,8 @@ public class WebSearchInterceptor implements ClientHttpRequestInterceptor {
     private static final ObjectMapper MAPPER = new ObjectMapper();
     private static final String WEB_SEARCH_TYPE = "web_search_20250305";
     private static final int MAX_USES = 2;
+    /** MAP 모드 시그니처 — 뷰포트 장소검색 tool의 등록명(= ViewportPlaceSearchTool.searchPlacesInView). */
+    private static final String VIEWPORT_TOOL_NAME = "searchPlacesInView";
 
     @Override
     @NonNull
@@ -52,12 +54,23 @@ public class WebSearchInterceptor implements ClientHttpRequestInterceptor {
         return new BufferedResponse(response, normalized);
     }
 
-    /** 나가는 body의 tools 배열에 web_search 서버tool을 추가한다. 실패 시 원본 그대로. */
+    /**
+     * 나가는 body의 tools 배열에 web_search 서버tool을 추가한다. 실패 시 원본 그대로.
+     *
+     * <p>단, MAP 모드 요청(뷰포트 검색 tool 하나만 등록된 시그니처)에는 주입하지 않는다.
+     * web_search를 함께 노출하면 모델이 뷰포트 tool 대신 web_search로 산문 답을 내 추천 카드
+     * (뷰포트 tool 호출의 side-effect)가 사라지기 때문이다. interceptor는 mode 신호를 받지
+     * 못하므로 나가는 tools 배열을 sniff해 판정한다.
+     */
     private byte[] injectWebSearchTool(byte[] body) {
         try {
             ObjectNode root = (ObjectNode) MAPPER.readTree(body);
-            ArrayNode tools = root.has("tools") && root.get("tools").isArray()
-                    ? (ArrayNode) root.get("tools")
+            JsonNode existing = root.get("tools");
+            if (existing != null && existing.isArray() && isMapModeRequest((ArrayNode) existing)) {
+                return body;
+            }
+            ArrayNode tools = existing != null && existing.isArray()
+                    ? (ArrayNode) existing
                     : root.putArray("tools");
             ObjectNode ws = MAPPER.createObjectNode();
             ws.put("type", WEB_SEARCH_TYPE);
@@ -69,6 +82,15 @@ public class WebSearchInterceptor implements ClientHttpRequestInterceptor {
             log.warn("web_search tool 주입 실패, 원본 요청 사용", e);
             return body;
         }
+    }
+
+    /**
+     * MAP 모드 시그니처인지 판정한다: 등록된 custom tool이 뷰포트 검색 tool 하나뿐인 요청.
+     * (web_search는 아직 주입 전이라 이 시점 tools 배열에 없다.)
+     */
+    private boolean isMapModeRequest(ArrayNode tools) {
+        return tools.size() == 1
+                && VIEWPORT_TOOL_NAME.equals(tools.get(0).path("name").asText(""));
     }
 
     /**
