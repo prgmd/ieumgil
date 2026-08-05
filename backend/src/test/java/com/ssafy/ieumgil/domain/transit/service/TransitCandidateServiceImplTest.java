@@ -1,5 +1,6 @@
 package com.ssafy.ieumgil.domain.transit.service;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.ssafy.ieumgil.domain.block.entity.Block;
 import com.ssafy.ieumgil.domain.block.entity.BlockCategory;
 import com.ssafy.ieumgil.domain.block.entity.BlockSource;
@@ -14,19 +15,24 @@ import com.ssafy.ieumgil.domain.transit.dto.TransitCandidateResDTO;
 import com.ssafy.ieumgil.domain.transit.dto.TransitCandidateResDTO.Candidate;
 import com.ssafy.ieumgil.domain.transit.dto.TransitCandidateResDTO.CandidateStatus;
 import com.ssafy.ieumgil.domain.transit.dto.TransitCandidateResDTO.TransitMode;
+import com.ssafy.ieumgil.domain.transit.dto.TransitLegResDTO;
 import com.ssafy.ieumgil.domain.transit.dto.TransitResDTO;
 import com.ssafy.ieumgil.domain.transit.dto.TransitScheduleResDTO;
 import com.ssafy.ieumgil.domain.transit.exception.TransitErrorCode;
 import com.ssafy.ieumgil.domain.transit.exception.TransitException;
+import com.ssafy.ieumgil.domain.transit.util.IntercityLegs;
 import com.ssafy.ieumgil.global.exception.CustomException;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import java.io.IOException;
+import java.io.InputStream;
 import java.math.BigDecimal;
 import java.time.Duration;
 import java.time.LocalDate;
@@ -1235,5 +1241,121 @@ class TransitCandidateServiceImplTest {
         return result.segments().get(0).candidates().stream()
                 .filter(c -> c.mode() == mode)
                 .findFirst().orElseThrow();
+    }
+
+    // --- accessLegsOf: 접근·이탈 경로 별도 조회 (Task 7) ---
+
+    /**
+     * 승차 지점 → 하차 지점을 단일 leg로 잇는 시외 대표경로. {@code path()}·{@code mode()}는
+     * accessLegsOf가 쓰지 않으므로 대충 둔다 — 이 테스트가 검증하는 것은 boarding/alightingPoint뿐이다.
+     */
+    private IntercityLegs intercityLegsBoardingAt(
+            double boardingX, double boardingY, double alightingX, double alightingY) {
+        OdsayRouteResponse.SubPath leg = new OdsayRouteResponse.SubPath(4, 157, 325000, "서울", "부산", null,
+                3300128, 3300108, boardingX, boardingY, alightingX, alightingY,
+                59800, null, null, null, null, "KTX");
+        OdsayRouteResponse.Path path = new OdsayRouteResponse.Path(11,
+                new OdsayRouteResponse.Info(157, null, null, 325000, null, null, null, "서울", "부산"),
+                List.of(leg));
+        return new IntercityLegs(path, List.of(leg), TransitMode.TRAIN);
+    }
+
+    private List<OdsayRouteResponse.Path> readFixture(String name) throws IOException {
+        try (InputStream in = getClass().getResourceAsStream("/odsay/" + name)) {
+            return new ObjectMapper().readValue(in, OdsayRouteResponse.class).result().path();
+        }
+    }
+
+    @Test
+    @DisplayName("[실측] 서울시청→서울역 접근 경로는 7분·1,550원·3leg(도보·지하철·도보)다(odsay-access.json)")
+    void 측정_서울시청_서울역_접근경로() throws IOException {
+        Block from = blockAt(1L, LAT_A, LNG_A);
+        Block to = blockAt(2L, LAT_JEJU, LNG_JEJU);
+        // boardingPoint=서울역(126.970681, 37.554522) — odsay-intercity.json 실측 픽스처와 같은 좌표
+        IntercityLegs legs = intercityLegsBoardingAt(126.970681, 37.554522, LNG_BUSAN, LAT_BUSAN);
+
+        given(publicTransitQueryService.getCombinedRoutes(LAT_A, LNG_A, 37.554522, 126.970681))
+                .willReturn(readFixture("odsay-access.json"));
+        given(publicTransitQueryService.getCombinedRoutes(LAT_BUSAN, LNG_BUSAN, LAT_JEJU, LNG_JEJU))
+                .willReturn(List.of(pathOf(5, 300, null, null)));
+
+        TransitCandidateServiceImpl.AccessLegs result =
+                service.accessLegsOf(new TransitCandidateServiceImpl.Pair(from, to), legs).orElseThrow();
+
+        assertThat(result.accessMin()).isEqualTo(7);
+        assertThat(result.accessFare()).isEqualTo(1550);
+        assertThat(result.access()).extracting(TransitLegResDTO.Leg::type)
+                .containsExactly(
+                        TransitLegResDTO.LegType.WALK,
+                        TransitLegResDTO.LegType.SUBWAY,
+                        TransitLegResDTO.LegType.WALK);
+        // 이탈도 같은 메서드로 채워진다 — 접근과 뒤섞이지 않았는지 다른 값으로 확인한다
+        assertThat(result.egressMin()).isEqualTo(5);
+        assertThat(result.egressFare()).isEqualTo(300);
+    }
+
+    @Test
+    @DisplayName("접근은 블록→승차지점, 이탈은 하차지점→블록 순서로 조회한다 — 방향이 바뀌면 오답이다")
+    void 접근_이탈_호출_순서를_검증한다() {
+        Block from = blockAt(1L, LAT_A, LNG_A);
+        Block to = blockAt(2L, LAT_JEJU, LNG_JEJU);
+        IntercityLegs legs = intercityLegsBoardingAt(126.970681, 37.554522, LNG_BUSAN, LAT_BUSAN);
+        given(publicTransitQueryService.getCombinedRoutes(anyDouble(), anyDouble(), anyDouble(), anyDouble()))
+                .willReturn(List.of(pathOf(5, 300, null, null)));
+
+        service.accessLegsOf(new TransitCandidateServiceImpl.Pair(from, to), legs);
+
+        ArgumentCaptor<Double> startLat = ArgumentCaptor.forClass(Double.class);
+        ArgumentCaptor<Double> startLng = ArgumentCaptor.forClass(Double.class);
+        ArgumentCaptor<Double> endLat = ArgumentCaptor.forClass(Double.class);
+        ArgumentCaptor<Double> endLng = ArgumentCaptor.forClass(Double.class);
+        verify(publicTransitQueryService, times(2))
+                .getCombinedRoutes(startLat.capture(), startLng.capture(), endLat.capture(), endLng.capture());
+
+        // 첫 호출(접근) = 블록 좌표 → 승차 지점
+        assertThat(startLat.getAllValues().get(0)).isEqualTo(LAT_A);
+        assertThat(startLng.getAllValues().get(0)).isEqualTo(LNG_A);
+        assertThat(endLat.getAllValues().get(0)).isEqualTo(37.554522);
+        assertThat(endLng.getAllValues().get(0)).isEqualTo(126.970681);
+
+        // 두번째 호출(이탈) = 하차 지점 → 블록 좌표. 뒤집히면(승차 지점→블록, 블록→하차 지점) 이 값이 깨진다
+        assertThat(startLat.getAllValues().get(1)).isEqualTo(LAT_BUSAN);
+        assertThat(startLng.getAllValues().get(1)).isEqualTo(LNG_BUSAN);
+        assertThat(endLat.getAllValues().get(1)).isEqualTo(LAT_JEJU);
+        assertThat(endLng.getAllValues().get(1)).isEqualTo(LNG_JEJU);
+    }
+
+    @Test
+    @DisplayName("접근 경로가 없으면 empty다 — 이탈은 부르지도 않고, 0분으로 추측하지 않는다")
+    void 접근_경로가_없으면_empty를_반환한다() {
+        Block from = blockAt(1L, LAT_A, LNG_A);
+        Block to = blockAt(2L, LAT_JEJU, LNG_JEJU);
+        IntercityLegs legs = intercityLegsBoardingAt(126.970681, 37.554522, LNG_BUSAN, LAT_BUSAN);
+        given(publicTransitQueryService.getCombinedRoutes(LAT_A, LNG_A, 37.554522, 126.970681))
+                .willThrow(new TransitException(TransitErrorCode.ROUTE_NOT_FOUND));
+
+        Optional<TransitCandidateServiceImpl.AccessLegs> result =
+                service.accessLegsOf(new TransitCandidateServiceImpl.Pair(from, to), legs);
+
+        assertThat(result).isEmpty();
+        verify(publicTransitQueryService, never())
+                .getCombinedRoutes(LAT_BUSAN, LNG_BUSAN, LAT_JEJU, LNG_JEJU);
+    }
+
+    @Test
+    @DisplayName("접근은 있어도 이탈 경로가 없으면 empty다")
+    void 이탈_경로가_없으면_empty를_반환한다() throws IOException {
+        Block from = blockAt(1L, LAT_A, LNG_A);
+        Block to = blockAt(2L, LAT_JEJU, LNG_JEJU);
+        IntercityLegs legs = intercityLegsBoardingAt(126.970681, 37.554522, LNG_BUSAN, LAT_BUSAN);
+        given(publicTransitQueryService.getCombinedRoutes(LAT_A, LNG_A, 37.554522, 126.970681))
+                .willReturn(readFixture("odsay-access.json"));
+        given(publicTransitQueryService.getCombinedRoutes(LAT_BUSAN, LNG_BUSAN, LAT_JEJU, LNG_JEJU))
+                .willThrow(new TransitException(TransitErrorCode.ROUTE_NOT_FOUND));
+
+        Optional<TransitCandidateServiceImpl.AccessLegs> result =
+                service.accessLegsOf(new TransitCandidateServiceImpl.Pair(from, to), legs);
+
+        assertThat(result).isEmpty();
     }
 }

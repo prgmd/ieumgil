@@ -21,6 +21,7 @@ import com.ssafy.ieumgil.domain.transit.exception.TransitErrorCode;
 import com.ssafy.ieumgil.domain.transit.exception.TransitException;
 import com.ssafy.ieumgil.domain.transit.util.BoardingMargin;
 import com.ssafy.ieumgil.domain.transit.util.Haversine;
+import com.ssafy.ieumgil.domain.transit.util.IntercityLegs;
 import com.ssafy.ieumgil.global.exception.CustomException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -392,6 +393,52 @@ public class TransitCandidateServiceImpl implements TransitCandidateService {
             log.warn("대중교통 경로 목록 조회 실패: leg={}", leg, e);
             return List.of();
         }
+    }
+
+    /** 블록 → 승차 지점(접근). {@link IntercityLegs.Point}는 x=경도·y=위도다 */
+    private List<OdsayRouteResponse.Path> combinedRoutesFor(Block from, IntercityLegs.Point to) {
+        return combinedRoutesFor(new Leg(
+                from.getLat().doubleValue(), from.getLng().doubleValue(), to.y(), to.x()));
+    }
+
+    /** 하차 지점 → 블록(이탈). {@link IntercityLegs.Point}는 x=경도·y=위도다 */
+    private List<OdsayRouteResponse.Path> combinedRoutesFor(IntercityLegs.Point from, Block to) {
+        return combinedRoutesFor(new Leg(
+                from.y(), from.x(), to.getLat().doubleValue(), to.getLng().doubleValue()));
+    }
+
+    /**
+     * 블록 → 승차 지점, 하차 지점 → 블록. 시외 경로엔 이 leg가 없어(실측 537건 전부 0) 따로 부른다.
+     *
+     * <p>접근·이탈 중 하나라도 경로가 없으면(빈 목록) {@code empty}다 — 0분으로 추측하지 않는다.
+     * 호출자가 이 empty를 "그 수단 후보를 만들지 않는다"로 읽고 {@code log.warn}으로 남긴다.
+     * package-private인 이유는 {@code TransitCandidateServiceImplTest}가 직접 부르기 때문이다
+     * ({@link #TIMETABLE_TIMEOUT}과 같은 이유).
+     */
+    Optional<AccessLegs> accessLegsOf(Pair pair, IntercityLegs legs) {
+        IntercityLegs.Point boarding = legs.boardingPoint();
+        IntercityLegs.Point alighting = legs.alightingPoint();
+
+        List<OdsayRouteResponse.Path> access = combinedRoutesFor(pair.from(), boarding);
+        if (access.isEmpty()) {
+            log.warn("접근 경로 없음: fromBlockId={}, boarding={}", pair.from().getId(), boarding);
+            return Optional.empty();
+        }
+        List<OdsayRouteResponse.Path> egress = combinedRoutesFor(alighting, pair.to());
+        if (egress.isEmpty()) {
+            log.warn("이탈 경로 없음: alighting={}, toBlockId={}", alighting, pair.to().getId());
+            return Optional.empty();
+        }
+
+        OdsayRouteResponse.Path accessPath = access.get(0);
+        OdsayRouteResponse.Path egressPath = egress.get(0);
+        return Optional.of(new AccessLegs(
+                TransitLegResDTO.fromSubPaths(accessPath.subPath()),
+                accessPath.info().totalTime(),
+                accessPath.info().payment(),
+                TransitLegResDTO.fromSubPaths(egressPath.subPath()),
+                egressPath.info().totalTime(),
+                egressPath.info().payment()));
     }
 
     /**
@@ -877,8 +924,27 @@ public class TransitCandidateServiceImpl implements TransitCandidateService {
         return Haversine.distanceMeters(leg.fromLat(), leg.fromLng(), leg.toLat(), leg.toLng());
     }
 
-    /** 응답 구간 하나에 대응하는 블록 쌍. 좌표가 같아도 서로 다른 블록이면 별개의 구간이다. */
-    private record Pair(Block from, Block to) {
+    /**
+     * 응답 구간 하나에 대응하는 블록 쌍. 좌표가 같아도 서로 다른 블록이면 별개의 구간이다.
+     *
+     * <p>package-private인 이유는 {@code TransitCandidateServiceImplTest}가 {@link #accessLegsOf}를
+     * 직접 부르며 이 타입을 써야 하기 때문이다.
+     */
+    record Pair(Block from, Block to) {
+    }
+
+    /**
+     * 접근·이탈 경로({@link #accessLegsOf}의 결과).
+     *
+     * <p>{@code accessMin}·{@code egressMin}이 int인 이유: 이 레코드가 존재한다는 것 자체가 두
+     * 호출이 모두 성공했다는 뜻이다({@link #accessLegsOf}가 실패를 이미 {@code Optional.empty()}로
+     * 걸러낸 뒤에만 만들어진다) — 그 안에서는 0으로 추측할 자리가 없다. {@code accessFare}·
+     * {@code egressFare}는 Integer다 — 시내 경로의 {@code payment} 자체가 nullable이라
+     * ({@link OdsayRouteResponse.Info#payment}) 이 값도 그렇다.
+     */
+    record AccessLegs(
+            List<TransitLegResDTO.Leg> access, int accessMin, Integer accessFare,
+            List<TransitLegResDTO.Leg> egress, int egressMin, Integer egressFare) {
     }
 
     private Leg legOf(Block from, Block to) {
