@@ -192,4 +192,19 @@ public class OdsayClient {
             throw new TransitException(TransitErrorCode.ODSAY_API_CALL_FAILED);
         }
     }
+
+    /**
+     * ODsay 에러가 객체형·배열형 두 가지로 온다({@link OdsayRouteResponse#errorCode()} 참고).
+     * {@code searchPubTransPathT} 응답의 {@code error}가 이 타입이라 별도 오버로드가 필요하다.
+     */
+    private void checkForError(Object error) {
+        if (error == null) {
+            return;
+        }
+        if (error instanceof List<?> list && list.isEmpty()) {
+            return;
+        }
+        log.warn("ODsay 응답 에러: {}", error);
+        throw new TransitException(TransitErrorCode.ODSAY_API_CALL_FAILED);
+    }
 }

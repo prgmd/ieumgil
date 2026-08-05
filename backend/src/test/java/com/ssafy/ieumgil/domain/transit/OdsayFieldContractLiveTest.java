@@ -93,6 +93,9 @@ class OdsayFieldContractLiveTest {
 		// paths.get(0)만 보지 않는다 — 전제는 "시외 경로 전부에 payment가 없다"는 것이다.
 		assertThat(paths).as("시외 경로에 payment가 생겼다면 설계 근거가 바뀐다").allSatisfy(
 				path -> assertThat(path.info().payment()).isNull());
+		// payment가 없다고 요금이 없는 게 아니다 — totalPayment로 온다(2026-08-04 실측).
+		assertThat(paths).as("시외 경로는 totalPayment로 요금을 준다").allSatisfy(
+				path -> assertThat(path.info().totalPayment()).isNotNull());
 		// 서울시청→부산역 실거리는 약 400km로 알려져 있다 — 300,000m는 안전 하한이다.
 		assertThat(paths.get(0).info().totalDistance()).as("시외 경로 거리")
 				.isNotNull().isGreaterThan(300_000);
