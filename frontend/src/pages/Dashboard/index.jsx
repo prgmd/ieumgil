@@ -972,12 +972,6 @@ function ReadModeView({ chains, items, dayKeys, project }) {
                                 item.transportMeta.chosen.departureName ?? null
                               }
                             />
-                            {item.transportMeta.segment?.referenceAt && (
-                              <p className="tp-banner">
-                                기준: {item.transportMeta.segment.referenceAt} 이후
-                                출발
-                              </p>
-                            )}
                           </div>
                         )}
                       </div>
@@ -4404,9 +4398,6 @@ export function DashboardPage() {
                         <em className="tp-seg-none">경로 없음</em>
                       )}
                     </div>
-                    {s.referenceAt && (
-                      <p className="tp-banner">{s.referenceAt} 이후 출발편 기준</p>
-                    )}
                     {s.timetableApplied === false && s.timetableSkipReason && (
                       <p className="tp-banner tp-banner-warn">
                         {s.timetableSkipReason} — 앞 구간 확정 후 다시 계산하세요
@@ -4483,11 +4474,6 @@ export function DashboardPage() {
               {items[transitPicker.currentId]?.name ?? "출발지"} →{" "}
               {items[transitPicker.nextId]?.name ?? "도착지"}
             </p>
-            {transitPicker.segment?.referenceAt && (
-              <p className="tp-banner">
-                {transitPicker.segment.referenceAt} 이후 출발편 기준
-              </p>
-            )}
             {transitPicker.segment?.timetableApplied === false &&
               transitPicker.segment?.timetableSkipReason && (
                 <p className="tp-banner tp-banner-warn">

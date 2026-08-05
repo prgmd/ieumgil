@@ -154,6 +154,11 @@ export function TransitCandidateCard({
 
       <LegsInline legs={c.legs} />
 
+      {/* 출발편 선정 기준 시각 — 수단마다 탑승 여유가 달라 후보별로 다르다 */}
+      {c.referenceAt && (
+        <p className="tcc-banner">{c.referenceAt} 이후 출발편 기준</p>
+      )}
+
       {isIntercity && isOk && (() => {
         // view(열람) 모드는 확정된 편 하나만 보여준다 — 다른 편은 편집 모드 전용이다.
         // select(피커) 모드는 고르는 중이라 전체 목록을 그대로 보여준다.
