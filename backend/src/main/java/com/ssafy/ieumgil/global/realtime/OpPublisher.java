@@ -8,6 +8,7 @@ import com.ssafy.ieumgil.domain.project.repository.ProjectRepository;
 import com.ssafy.ieumgil.domain.user.repository.UserRepository;
 import com.ssafy.ieumgil.global.apiPayload.code.GeneralErrorCode;
 import com.ssafy.ieumgil.global.exception.CustomException;
+import jakarta.persistence.EntityManager;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -56,6 +57,7 @@ public class OpPublisher {
     private final UserRepository userRepository;
     private final ApplicationEventPublisher eventPublisher;
     private final ObjectMapper objectMapper;
+    private final EntityManager entityManager;
 
     private final ConcurrentHashMap<Long, ReentrantLock> projectLocks = new ConcurrentHashMap<>();
 
@@ -71,6 +73,19 @@ public class OpPublisher {
      *                         요청 하나를 끊어 데드락이 전체 장애(커넥션 풀 고갈)로 번지는 것을 막는다
      */
     public long publish(Long projectId, Long actorId, String clientId, String opType, Map<String, Object> payload) {
+        // 락을 잡기 "전에" 밀린 변경을 전부 DB로 내보낸다 — 모든 경로의 락 순서를
+        // "DB 행 락 → 프로젝트 락" 한 방향으로 통일하기 위해서다. 이 flush가 없으면
+        // 더티 체크만 하고 온 경로(예: block.move 후 publish)는 커밋 시점 flush에서,
+        // 즉 프로젝트 락을 쥔 채로 행 락을 잡는다. 벌크 UPDATE(flushAutomatically)로
+        // 행 락을 먼저 쥐고 오는 경로(updateProject)와 순서가 교차하면 JVM 락-DB 락에
+        // 걸친 데드락이 된다(클래스 주석 참고). 순서가 한 방향이면 교착은 원리적으로 없다.
+        //
+        // ⚠️ 규약: publish 뒤에는 엔티티를 변경하지 말 것 — 그 변경이 커밋 flush로 되살아나
+        // 순서가 다시 교차한다. (활동 로그 INSERT는 예외다: 새 행이라 경합 상대가 없다)
+        if (TransactionSynchronizationManager.isActualTransactionActive()) {
+            entityManager.flush();
+        }
+
         ReentrantLock lock = projectLocks.computeIfAbsent(projectId, id -> new ReentrantLock());
         acquireOrGiveUp(lock, projectId, opType);
         boolean unlockAtTxCompletion = false;
