@@ -507,50 +507,6 @@ class TransitCandidateServiceImplTest {
     }
 
     @Test
-    @DisplayName("육로 대안이 하나도 없으면 자차·택시 후보 자체를 만들지 않는다")
-    void 육로가_없으면_자차_택시_후보를_만들지_않는다() {
-        // 예전에는 이 상황(항공 경로 하나만 있음)에서 자차·택시를 페리 경고 + ESTIMATE로
-        // "강등"해서 내보냈다. 그런데 청주-제주처럼 도로 주행만으로 556,600원을 계산해 놓고
-        // 경고만 붙이는 건 사용자에게 여전히 오해를 준다 — 이제는 후보 자체를 만들지 않는다.
-        givenProject(TransportPref.CAR);
-        given(blockRepository.findAllByIdInAndProject_IdAndDeletedAtIsNull(List.of(1L, 3L), PROJECT_ID))
-                .willReturn(List.of(cheongjuBlock(), jejuBlock()));
-        // ODsay가 준 유일한 경로가 항공이다 = 육로 대안이 없다
-        given(publicTransitQueryService.getCombinedRoutes(anyDouble(), anyDouble(), anyDouble(), anyDouble()))
-                .willReturn(List.of(airPath()));
-
-        TransitCandidateResDTO.Result result = service.calculate(PROJECT_ID, List.of(1L, 3L), null);
-
-        assertThat(result.segments().get(0).candidates())
-                .extracting(TransitCandidateResDTO.Candidate::mode)
-                .doesNotContain(TransitMode.CAR, TransitMode.TAXI);
-        // 육로가 없다고 이미 확정됐으니 드라이빙 조회 자체를 하지 않는다 — 불필요한 외부 호출 생략
-        verify(placeQueryService, never())
-                .getTaxiRoute(anyDouble(), anyDouble(), anyDouble(), anyDouble());
-    }
-
-    @Test
-    @DisplayName("한 경로 안에 육로 구간과 해운 구간이 섞여 있어도 그 경로는 육로로 치지 않는다")
-    void 버스와_해운이_섞인_경로는_육로가_아니다() {
-        // hasRoadPath는 경로 하나하나를 본다 — 그 경로의 일부(버스)가 육로라고 해서 경로 전체를
-        // 육로로 인정하면 안 된다("항구까지는 버스, 그다음은 배"인 경로가 유일한 대안일 때
-        // 자차·택시가 여전히 후보로 남으면 안 되기 때문이다).
-        givenProject(TransportPref.CAR);
-        given(blockRepository.findAllByIdInAndProject_IdAndDeletedAtIsNull(List.of(1L, 3L), PROJECT_ID))
-                .willReturn(List.of(cheongjuBlock(), jejuBlock()));
-        given(publicTransitQueryService.getCombinedRoutes(anyDouble(), anyDouble(), anyDouble(), anyDouble()))
-                .willReturn(List.of(busPlusFerryPath()));
-
-        TransitCandidateResDTO.Result result = service.calculate(PROJECT_ID, List.of(1L, 3L), null);
-
-        assertThat(result.segments().get(0).candidates())
-                .extracting(TransitCandidateResDTO.Candidate::mode)
-                .doesNotContain(TransitMode.CAR, TransitMode.TAXI);
-        verify(placeQueryService, never())
-                .getTaxiRoute(anyDouble(), anyDouble(), anyDouble(), anyDouble());
-    }
-
-    @Test
     @DisplayName("육로 경로면 자차·택시 후보가 그대로 있고 택시 요금은 CONFIRMED다")
     void 육로_구간은_후보를_그대로_낸다() {
         givenProject(TransportPref.CAR);
@@ -571,12 +527,12 @@ class TransitCandidateServiceImplTest {
     }
 
     @Test
-    @DisplayName("경로 목록 조회 자체가 실패하면(paths 비어있음) 육로 여부를 모른다고 보고 지금처럼 자차·택시를 만든다")
+    @DisplayName("경로 목록 조회 자체가 실패해도(paths 비어있음) 자차·택시는 지금처럼 그대로 만든다")
     void 경로_조회가_실패하면_자차_택시를_그대로_만든다() {
         givenProject(TransportPref.CAR);
         given(blockRepository.findAllByIdInAndProject_IdAndDeletedAtIsNull(List.of(1L, 3L), PROJECT_ID))
                 .willReturn(List.of(cheongjuBlock(), jejuBlock()));
-        // ODsay 대중교통 경로 조회 자체가 실패한다 — "육로가 없다"가 아니라 "모른다"는 신호다
+        // ODsay 대중교통 경로 조회 자체가 실패해도 자차·택시 후보 판단에는 영향이 없다
         given(publicTransitQueryService.getCombinedRoutes(anyDouble(), anyDouble(), anyDouble(), anyDouble()))
                 .willThrow(new TransitException(TransitErrorCode.ROUTE_NOT_FOUND));
         given(placeQueryService.getTaxiRoute(anyDouble(), anyDouble(), anyDouble(), anyDouble()))
@@ -610,8 +566,8 @@ class TransitCandidateServiceImplTest {
     }
 
     @Test
-    @DisplayName("육로가 없는 시외 구간은 항공이 기본 후보가 되고 기준 시각 누적에 실제 소요시간을 쓴다")
-    void 육로가_없는_시외_구간은_항공이_기본이_된다() {
+    @DisplayName("시외 구간에서 드라이빙 조회가 실패해도 항공이 기본 후보가 되고 기준 시각 누적에 실제 소요시간을 쓴다")
+    void 드라이빙_조회가_실패한_시외_구간은_항공이_기본이_된다() {
         given(blockRepository.findAllByIdInAndProject_IdAndDeletedAtIsNull(List.of(2L, 3L), PROJECT_ID))
                 .willReturn(List.of(busanBlock(), jejuBlock()));
         given(projectRepository.findByIdAndDeletedAtIsNull(PROJECT_ID)).willReturn(Optional.of(publicProject()));
@@ -619,6 +575,10 @@ class TransitCandidateServiceImplTest {
                 .willReturn(List.of(airPath()));
         given(transitScheduleQueryService.searchTrainStation(anyString())).willReturn(Optional.empty());
         given(transitScheduleQueryService.searchExpressBusTerminal(anyString())).willReturn(Optional.empty());
+        // 카카오 길찾기 자체가 실패한다 — driving==null이 택시 후보를 available=false로 남기는
+        // 유일한 이유다(roadUnreachable 삭제 후에도 이 경로는 그대로 살아 있어야 한다).
+        given(placeQueryService.getTaxiRoute(anyDouble(), anyDouble(), anyDouble(), anyDouble()))
+                .willReturn(Optional.empty());
         given(transitScheduleQueryService.getFlightSchedule(anyInt(), anyInt(), any(LocalDate.class)))
                 .willReturn(List.of(TransitScheduleResDTO.FlightSchedule.builder()
                         .airline("대한항공").flightNo("KE1801")
@@ -628,15 +588,13 @@ class TransitCandidateServiceImplTest {
         TransitCandidateResDTO.Result result = service.calculate(PROJECT_ID, List.of(2L, 3L), null);
 
         TransitCandidateResDTO.Segment segment = result.segments().get(0);
-        // 육로 대안이 없으니 자차·택시 후보 자체가 없다 — 그렇다고 기본 수단이 null로 비지 않는다
-        assertThat(segment.candidates()).extracting(Candidate::mode)
-                .doesNotContain(TransitMode.CAR, TransitMode.TAXI)
-                .contains(TransitMode.AIR);
+        // 택시는 후보에서 사라지지 않는다 — driving==null이라 available=false로 남을 뿐이다
+        TransitCandidateResDTO.Candidate taxi = candidateOf(result, TransitMode.TAXI);
+        assertThat(taxi.available()).isFalse();
+        assertThat(segment.candidates()).extracting(Candidate::mode).contains(TransitMode.AIR);
         assertThat(segment.defaultMode()).isEqualTo(TransitMode.AIR);
         // 기준 시각 누적(SegmentClock)이 쓸 소요시간도 실제 항공편에서 온다(10:30~11:35 = 65분)
         assertThat(candidateOf(result, TransitMode.AIR).durationMin()).isEqualTo(65);
-        verify(placeQueryService, never())
-                .getTaxiRoute(anyDouble(), anyDouble(), anyDouble(), anyDouble());
     }
 
     @Test
@@ -1118,15 +1076,6 @@ class TransitCandidateServiceImplTest {
                 List.of(new OdsayRouteResponse.SubPath(7, 150, 98000, "목포항", "홍도항", null)));
     }
 
-    /** 버스(육로)로 항구까지 간 다음 배를 타는 복합 경로(pathType=20). 일부만 육로여도 경로 전체는 비육로다 */
-    private OdsayRouteResponse.Path busPlusFerryPath() {
-        return new OdsayRouteResponse.Path(20,
-                new OdsayRouteResponse.Info(200, null, null, 120000, 700, null, null, "목포", "홍도"),
-                List.of(
-                        new OdsayRouteResponse.SubPath(2, 30, 15000, "목포터미널", "목포항", null),
-                        new OdsayRouteResponse.SubPath(7, 150, 98000, "목포항", "홍도항", null)));
-    }
-
     /** 지하철로 이어지는 시내 경로 — 가장 빠르다 */
     private OdsayRouteResponse.Path subwayPath() {
         return new OdsayRouteResponse.Path(1,
@@ -1176,11 +1125,11 @@ class TransitCandidateServiceImplTest {
                 .build();
     }
 
-    /** 항공 구간이 섞인 경로. trafficType=6(AIR)이 있으면 육로로 이어지지 않는다는 신호다 */
+    /** 항공 구간(trafficType=7)이 섞인 복합 경로(pathType=20) */
     private OdsayRouteResponse.Path airPath() {
         return new OdsayRouteResponse.Path(20,
                 new OdsayRouteResponse.Info(356, null, null, 436642, null, null, null, "청주", "제주"),
-                List.of(new OdsayRouteResponse.SubPath(6, 356, 436642, "청주공항", "제주공항", null)));
+                List.of(new OdsayRouteResponse.SubPath(7, 356, 436642, "청주공항", "제주공항", null)));
     }
 
     /** 버스로만 이어지는 순수 육로 경로 */

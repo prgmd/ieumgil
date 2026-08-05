@@ -357,19 +357,10 @@ public class TransitCandidateServiceImpl implements TransitCandidateService {
         // 물어 세 자리에서 나눠 쓴다. 셋 다 필요 없는 leg(도보만)라면 부르지 않는다.
         List<OdsayRouteResponse.Path> paths =
                 modes.transit() || needsDriving ? combinedRoutesFor(leg) : List.of();
-        // 도서 목적지 판정: paths가 비어 있으면(조회 실패·타임아웃 포함) "모른다"는 뜻이라 지금까지처럼
-        // 자차·택시를 정상적으로 만든다 — paths가 있는데 그중 육로로만 이어지는 경로가 하나도 없을 때만
-        // "이 leg는 육로로 갈 수 없다"고 판정한다. 예전에는 여러 경로 중 항공·해운이 섞인 것 하나만
-        // 있어도 육로가 없다고 오판했다(서울-부산처럼 기차·버스가 멀쩡히 있는데도 국내선 하나 때문에
-        // 걸림) — 이제는 육로 대안이 하나도 없을 때만 자차·택시 후보 자체를 만들지 않는다.
-        boolean roadUnreachable = needsDriving && !paths.isEmpty() && !hasRoadPath(paths);
-        PlaceResDTO.TaxiRoute driving = needsDriving && !roadUnreachable ? callDriving(leg) : null;
+        PlaceResDTO.TaxiRoute driving = needsDriving ? callDriving(leg) : null;
 
         List<Candidate> roadCandidates = new ArrayList<>();
         for (RoadMode mode : modes.road()) {
-            if (roadUnreachable && (mode == RoadMode.CAR || mode == RoadMode.TAXI)) {
-                continue;
-            }
             Candidate candidate = switch (mode) {
                 case TAXI -> taxiCandidate(driving);
                 case CAR -> carCandidate(driving);
@@ -391,17 +382,6 @@ public class TransitCandidateServiceImpl implements TransitCandidateService {
             log.warn("대중교통 경로 목록 조회 실패: leg={}", leg, e);
             return List.of();
         }
-    }
-
-    /**
-     * combinedRoutes 중 육로(항공·해운 leg가 없는 경로)로만 이어지는 대안이 하나라도 있는지.
-     * 항공·해운 leg가 섞인 경로는 육로가 아니다 — bus+ferry처럼 일부만 육로여도 그 경로 전체는
-     * 육로 대안으로 치지 않는다. 모든 경로를 본다 — 첫 번째 경로만 보면 육로 대안이 뒤에 있는
-     * 경우를 놓칠 수 있다.
-     */
-    private boolean hasRoadPath(List<OdsayRouteResponse.Path> combinedRoutes) {
-        return combinedRoutes.stream()
-                .anyMatch(path -> !TransitLegResDTO.hasNonRoadLeg(TransitLegResDTO.fromSubPaths(path.subPath())));
     }
 
     /**

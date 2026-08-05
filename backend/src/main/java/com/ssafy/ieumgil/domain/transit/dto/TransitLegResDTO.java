@@ -16,17 +16,22 @@ public class TransitLegResDTO {
 
     /** ODsay {@code trafficType} 매핑. 이 대응은 여기 한 곳에서만 한다 */
     public enum LegType {
-        SUBWAY, BUS, WALK, TRAIN, EXPRESS_BUS, AIR, FERRY, OTHER;
+        SUBWAY, BUS, WALK, TRAIN, EXPRESS_BUS, AIR, OTHER;
 
+        /**
+         * ODsay {@code trafficType} 매핑. 6·7은 실측으로 확정했다 —
+         * 6은 시외버스(서부정류장→광주종합버스터미널 140분 20,900원),
+         * 7은 항공(김포국제공항→김해국제공항 65분 120,200원)이다.
+         * 해운은 157경로 실측에서 0건이라 상수를 두지 않는다.
+         */
         static LegType of(int trafficType) {
             return switch (trafficType) {
                 case 1 -> SUBWAY;
                 case 2 -> BUS;
                 case 3 -> WALK;
                 case 4 -> TRAIN;
-                case 5 -> EXPRESS_BUS;
-                case 6 -> AIR;
-                case 7 -> FERRY;
+                case 5, 6 -> EXPRESS_BUS;   // 고속·시외버스. 같은 시간표 엔드포인트를 쓴다
+                case 7 -> AIR;
                 default -> OTHER;
             };
         }
@@ -58,17 +63,6 @@ public class TransitLegResDTO {
                         .durationMin(sub.sectionTime() == null ? 0 : sub.sectionTime())
                         .build())
                 .toList();
-    }
-
-    /**
-     * 육로로 이어지지 않는 구간이 있는지.
-     *
-     * <p>도서 목적지 판정에 쓴다. 좌표로 섬 목록을 하드코딩하는 대신 <b>ODsay가 항공·해운을
-     * 경로에 넣었다는 사실</b>을 신호로 쓴다 — 목록은 끝나지 않고 틀리기 쉽지만 이 신호는
-     * 외부 API가 이미 판단해 준 것이다.
-     */
-    public static boolean hasNonRoadLeg(List<Leg> legs) {
-        return legs.stream().anyMatch(leg -> leg.type() == LegType.AIR || leg.type() == LegType.FERRY);
     }
 
     public static String lineNameOf(OdsayRouteResponse.SubPath sub) {

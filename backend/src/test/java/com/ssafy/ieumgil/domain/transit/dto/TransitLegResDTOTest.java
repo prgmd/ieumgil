@@ -31,15 +31,30 @@ class TransitLegResDTOTest {
     }
 
     @Test
-    @DisplayName("trafficType 7종을 전부 매핑한다")
-    void trafficType을_전부_매핑한다() {
+    @DisplayName("trafficType 1~5는 그대로다 — 지하철·버스·도보·기차·고속버스")
+    void trafficType_1부터_5는_그대로_매핑한다() {
         assertThat(legTypeOf(1)).isEqualTo(TransitLegResDTO.LegType.SUBWAY);
         assertThat(legTypeOf(2)).isEqualTo(TransitLegResDTO.LegType.BUS);
         assertThat(legTypeOf(3)).isEqualTo(TransitLegResDTO.LegType.WALK);
         assertThat(legTypeOf(4)).isEqualTo(TransitLegResDTO.LegType.TRAIN);
         assertThat(legTypeOf(5)).isEqualTo(TransitLegResDTO.LegType.EXPRESS_BUS);
-        assertThat(legTypeOf(6)).isEqualTo(TransitLegResDTO.LegType.AIR);
-        assertThat(legTypeOf(7)).isEqualTo(TransitLegResDTO.LegType.FERRY);
+    }
+
+    @Test
+    @DisplayName("[실측] trafficType 6은 시외버스, 7은 항공이다")
+    void 버스와_항공_매핑() {
+        // 실측: pt12 tt6 서부정류장→광주종합버스터미널 140분 20,900원
+        //       pt13 tt7 김포국제공항→김해국제공항 65분 120,200원
+        assertThat(TransitLegResDTO.LegType.of(6)).isEqualTo(TransitLegResDTO.LegType.EXPRESS_BUS);
+        assertThat(TransitLegResDTO.LegType.of(7)).isEqualTo(TransitLegResDTO.LegType.AIR);
+    }
+
+    @Test
+    @DisplayName("FERRY는 없다 — 157경로 실측에서 해운 관측 0건")
+    void FERRY가_없다() {
+        assertThat(TransitLegResDTO.LegType.values())
+                .extracting(Enum::name)
+                .doesNotContain("FERRY");
     }
 
     @Test
@@ -53,21 +68,7 @@ class TransitLegResDTOTest {
     void 수단별로_노선명_출처가_다르다() {
         assertThat(lineNameOf(1, new OdsayRouteResponse.Lane("신분당선", null, null))).isEqualTo("신분당선");
         assertThat(lineNameOf(2, new OdsayRouteResponse.Lane(null, "402", null))).isEqualTo("402");
-        assertThat(lineNameOf(6, new OdsayRouteResponse.Lane(null, null, "대한항공"))).isEqualTo("대한항공");
-    }
-
-    @Test
-    @DisplayName("항공·해운 구간이 있으면 육로로 이어지지 않는다고 판정한다")
-    void 항공이나_해운이_있으면_육로가_아니다() {
-        List<TransitLegResDTO.Leg> withAir = TransitLegResDTO.fromSubPaths(List.of(
-                new OdsayRouteResponse.SubPath(6, 70, 368207, "청주국제공항", "제주국제공항",
-                        List.of(new OdsayRouteResponse.Lane(null, null, "이스타항공")))));
-        List<TransitLegResDTO.Leg> onlyRoad = TransitLegResDTO.fromSubPaths(List.of(
-                new OdsayRouteResponse.SubPath(2, 38, 12000, "A", "B",
-                        List.of(new OdsayRouteResponse.Lane(null, "402", null)))));
-
-        assertThat(TransitLegResDTO.hasNonRoadLeg(withAir)).isTrue();
-        assertThat(TransitLegResDTO.hasNonRoadLeg(onlyRoad)).isFalse();
+        assertThat(lineNameOf(7, new OdsayRouteResponse.Lane(null, null, "대한항공"))).isEqualTo("대한항공");
     }
 
     @Test
