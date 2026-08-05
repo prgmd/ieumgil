@@ -6,7 +6,11 @@ import com.ssafy.ieumgil.domain.activitylog.entity.ActivityLog;
 import com.ssafy.ieumgil.domain.activitylog.repository.ActivityLogRepository;
 import com.ssafy.ieumgil.domain.project.repository.ProjectRepository;
 import com.ssafy.ieumgil.domain.user.repository.UserRepository;
+import com.ssafy.ieumgil.global.apiPayload.code.GeneralErrorCode;
+import com.ssafy.ieumgil.global.exception.CustomException;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.support.TransactionSynchronization;
@@ -15,6 +19,7 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.ReentrantLock;
 
 /**
@@ -32,7 +37,15 @@ import java.util.concurrent.locks.ReentrantLock;
  *
  * 롤백된 seq는 저널에 영구 갭으로 남는다 — 이것은 순서 역전과 별개 문제로, 클라이언트의
  * 갭 재시도 규약이 다루는 영역이다.
+ *
+ * <p>락 획득은 무한 대기가 아니라 {@code realtime.op-lock-timeout-ms} 상한을 둔다(기본 5초).
+ * 이 락과 DB 행 락은 서로를 모르는 두 세계라, 반대 순서로 잡는 경로가 하나라도 생기면
+ * (예: 벌크 UPDATE의 flushAutomatically가 행 락을 먼저 쥔 트랜잭션 vs 이 락을 쥔 채
+ * 커밋 flush에서 같은 행 락을 기다리는 트랜잭션) Postgres 데드락 감지기가 보지 못하는
+ * 교착이 되고, 무한 대기면 프로젝트 락이 영구 점유돼 재기동 외 복구가 없다. 상한에 걸리면
+ * 이 요청만 503으로 실패시킨다 — 트랜잭션이 롤백되며 행 락도 풀려 반대편이 살아난다.
  */
+@Slf4j
 @Component
 @RequiredArgsConstructor
 public class OpPublisher {
@@ -46,14 +59,20 @@ public class OpPublisher {
 
     private final ConcurrentHashMap<Long, ReentrantLock> projectLocks = new ConcurrentHashMap<>();
 
+    /** 락 획득 상한. 정상 경로의 보유 시간은 트랜잭션 길이(수십 ms)라 5초 대기는 사실상 데드락 신호다 */
+    @Value("${realtime.op-lock-timeout-ms:5000}")
+    private long lockTimeoutMs;
+
     /**
      * @param clientId 요청 헤더 X-Client-Id — 수신 측이 "자기가 보낸 op"를 스킵하는 기준. 없으면 null
      * @param payload  op 종류별 본문 (예: BLOCK_MOVED → {blockId, dayNo, orderKey})
      * @return 채번된 seq — 생성/이동 응답에 실어 클라이언트가 자기 op의 위치를 알게 한다
+     * @throws CustomException OP_LOCK_TIMEOUT(503) — 상한 안에 락을 얻지 못했을 때. 무한 대기 대신
+     *                         요청 하나를 끊어 데드락이 전체 장애(커넥션 풀 고갈)로 번지는 것을 막는다
      */
     public long publish(Long projectId, Long actorId, String clientId, String opType, Map<String, Object> payload) {
         ReentrantLock lock = projectLocks.computeIfAbsent(projectId, id -> new ReentrantLock());
-        lock.lock();
+        acquireOrGiveUp(lock, projectId, opType);
         boolean unlockAtTxCompletion = false;
         try {
             // 트랜잭션 완료(커밋이든 롤백이든) 시점까지 락을 연장한다. 등록을 채번보다 먼저 하는
@@ -103,6 +122,25 @@ public class OpPublisher {
             if (!unlockAtTxCompletion) {
                 lock.unlock();
             }
+        }
+    }
+
+    /**
+     * 상한부 락 획득. 실패 시 아무것도 쥐지 않은 채 던진다 — 이 위치는 아직 동기화 등록 전이라
+     * unlock 대상이 없고, 예외는 호출부 트랜잭션을 롤백시켜 이 트랜잭션이 쥔 DB 행 락도 함께 푼다.
+     * 클래스 주석의 락 순서 역전 시나리오에서, 양쪽 중 늦게 온 쪽이 여기서 물러나며 교착이 풀린다.
+     */
+    private void acquireOrGiveUp(ReentrantLock lock, Long projectId, String opType) {
+        try {
+            if (!lock.tryLock(lockTimeoutMs, TimeUnit.MILLISECONDS)) {
+                // 정상 보유 시간(수십 ms)의 100배를 기다려도 못 얻었다 — 데드락이 가장 유력하다
+                log.error("op 락 획득 시간 초과({}ms): project={} opType={} — 락 순서 역전(데드락) 의심",
+                        lockTimeoutMs, projectId, opType);
+                throw new CustomException(GeneralErrorCode.OP_LOCK_TIMEOUT);
+            }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new CustomException(GeneralErrorCode.OP_LOCK_TIMEOUT);
         }
     }
 }
