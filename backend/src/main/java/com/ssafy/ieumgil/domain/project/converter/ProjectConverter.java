@@ -58,7 +58,6 @@ public class ProjectConverter {
                 .budgetHeadcount(project.getBudgetHeadcount())
                 .transportPrefs(project.getTransportPrefs())
                 .status(project.getStatus())
-                .themeColor(project.getThemeColor())
                 .build();
     }
 
@@ -75,7 +74,6 @@ public class ProjectConverter {
                 .targetBudget(project.getTargetBudget())
                 .keywords(project.getKeywords() != null ? project.getKeywords() : List.of())
                 .status(project.getStatus())
-                .themeColor(project.getThemeColor())
                 .build();
     }
 
