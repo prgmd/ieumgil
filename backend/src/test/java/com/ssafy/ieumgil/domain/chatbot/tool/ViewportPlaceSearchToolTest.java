@@ -14,6 +14,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.anyDouble;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.never;
@@ -83,13 +84,14 @@ class ViewportPlaceSearchToolTest {
     }
 
     @Test
-    @DisplayName("카카오 호출이 실패해도 대화는 계속된다 — 빈 목록으로 떨어뜨린다")
-    void kakaoFailureDegradesToEmptyList() {
+    @DisplayName("카카오 호출이 실패하면 빈 목록으로 위장하지 않고 예외를 올린다 — 모델이 실패를 '없음'으로 오인하지 않게")
+    void kakaoFailureSurfacesAsExceptionNotEmptyList() {
         when(placeQueryService.searchPlacesInRect(anyString(), anyDouble(), anyDouble(), anyDouble(), anyDouble()))
                 .thenThrow(new PlaceException(PlaceErrorCode.KAKAO_API_CALL_FAILED));
         ViewportPlaceSearchTool tool = new ViewportPlaceSearchTool(
                 VIEWPORT, placeQueryService, new CandidateCollector());
 
-        assertThat(tool.searchPlacesInView("카페")).isEmpty();
+        assertThatThrownBy(() -> tool.searchPlacesInView("카페"))
+                .isInstanceOf(RuntimeException.class);
     }
 }

@@ -14,6 +14,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
@@ -56,12 +57,14 @@ class KakaoPlaceSearchToolTest {
     }
 
     @Test
-    void returnsEmptyListInsteadOfThrowingWhenSearchFails() {
+    @DisplayName("검색이 실패하면 빈 목록으로 위장하지 않고 예외를 올린다 — 모델이 실패를 '없음'으로 오인하지 않게")
+    void surfacesExceptionInsteadOfEmptyListWhenSearchFails() {
         when(placeQueryService.searchPlaces(any(), any(), any())).thenThrow(new RuntimeException("kakao down"));
 
         KakaoPlaceSearchTool tool = new KakaoPlaceSearchTool("제주도", placeQueryService, new CandidateCollector(), new KakaoPlaceCoordinateResolver(placeQueryService));
 
-        assertThat(tool.searchPlaces("흑돼지", null)).isEmpty();
+        assertThatThrownBy(() -> tool.searchPlaces("흑돼지", null))
+                .isInstanceOf(RuntimeException.class);
     }
 
     @Test
