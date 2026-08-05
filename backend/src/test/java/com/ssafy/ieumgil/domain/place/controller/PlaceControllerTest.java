@@ -2,6 +2,7 @@ package com.ssafy.ieumgil.domain.place.controller;
 
 import com.ssafy.ieumgil.domain.place.dto.PlaceResDTO;
 import com.ssafy.ieumgil.domain.place.service.PlaceQueryService;
+import com.ssafy.ieumgil.global.security.ActiveUserChecker;
 import com.ssafy.ieumgil.global.security.jwt.JwtProvider;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -37,6 +38,9 @@ class PlaceControllerTest {
 
     @MockitoBean
     private JwtProvider jwtProvider;
+    // 필터가 계정 생존 확인(탈퇴 차단)까지 하므로 이 빈도 슬라이스에 없다
+    @MockitoBean
+    private ActiveUserChecker activeUserChecker;
 
     @Test
     void searchPlacesReturnsOkWithResults() throws Exception {

@@ -12,6 +12,7 @@ import com.ssafy.ieumgil.domain.user.repository.UserRepository;
 import com.ssafy.ieumgil.global.exception.CustomException;
 import com.ssafy.ieumgil.global.security.jwt.JwtProperties;
 import com.ssafy.ieumgil.global.security.jwt.JwtProvider;
+import com.ssafy.ieumgil.global.websocket.WsSessionRegistry;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
@@ -37,6 +38,7 @@ public class AuthCommandServiceImpl implements AuthCommandService {
     private final RefreshTokenRepository refreshTokenRepository;
     private final JwtProvider jwtProvider;
     private final JwtProperties jwtProperties;
+    private final WsSessionRegistry wsSessionRegistry;
 
     @Override
     public AuthResDTO.LoginResult kakaoLogin(String code) {
@@ -85,8 +87,17 @@ public class AuthCommandServiceImpl implements AuthCommandService {
         return AuthConverter.toReissueResult(newAccessToken, newRefreshToken);
     }
 
+    /**
+     * 로그아웃 — refresh 토큰 삭제 + 열려 있는 WS 세션 종료.
+     *
+     * <p>세션을 끊지 않으면 로그아웃이 REST에만 적용된다. 이미 성립한 구독은 브로커가 직접
+     * 밀어주므로 StompAuthInterceptor를 타지 않고, 프레임을 하나도 보내지 않는 세션은
+     * access 토큰이 만료돼도 수신이 이어진다 — 토큰을 탈취당한 뒤 로그아웃해도 차단되지 않는다.
+     * (탈퇴·그룹 탈퇴 경로는 이미 같은 호출을 한다)
+     */
     @Override
     public void logout(Long userId) {
         refreshTokenRepository.deleteByUserId(userId);
+        wsSessionRegistry.disconnect(userId);
     }
 }

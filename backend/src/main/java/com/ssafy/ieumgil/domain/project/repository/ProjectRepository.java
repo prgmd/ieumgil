@@ -30,6 +30,24 @@ public interface ProjectRepository extends JpaRepository<Project, Long> {
     /** 그룹의 프로젝트 카드 목록. 최근 만든 것이 위로 온다 */
     List<Project> findByTravelGroupIdAndDeletedAtIsNullOrderByIdDesc(Long travelGroupId);
 
+    /**
+     * 인가용 그룹 id 조회 — 프로젝트와 그룹이 <b>둘 다</b> 살아 있어야 한다.
+     *
+     * <p>그룹 소프트 삭제는 프로젝트를 함께 지우지 않고 멤버십 행도 남긴다. 프로젝트만
+     * 확인하면 삭제된 그룹의 대시보드를 계속 인가하게 되는데, REST(@GroupMember)는 이미
+     * 그룹 생존을 확인하므로 두 경로의 기준이 어긋난다 — 그 틈이 곧 WS 우회로다.
+     *
+     * <p>FK 값만 필요하므로 엔티티를 싣지 않는다(기존 findByIdAndDeletedAtIsNull은 전 컬럼을 읽었다).
+     */
+    @Query("""
+            SELECT p.travelGroup.id
+            FROM Project p
+            WHERE p.id = :projectId
+              AND p.deletedAt IS NULL
+              AND p.travelGroup.deletedAt IS NULL
+            """)
+    Optional<Long> findAliveGroupIdById(@Param("projectId") Long projectId);
+
     /** 위 집계 결과를 담는 그릇. 구현체는 Spring이 만들어준다. */
     interface GroupProjectCount {
         Long getGroupId();
