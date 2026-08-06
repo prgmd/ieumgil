@@ -2,9 +2,9 @@ import { useEffect, useRef, useState } from "react";
 import { CAT_TO_SERVER } from "../../../features/dashboard/api/dashboardApi";
 import {
   openAddressSearch,
-  geocodeAddress,
   preloadAddressSearch,
 } from "../../../features/dashboard/map/addressLookup";
+import { geocodeAddress } from "../../../features/place/api/placeApi";
 import { TransitCandidateCard } from "./TransitCandidateCard";
 import "./BlockEditForm.css";
 
