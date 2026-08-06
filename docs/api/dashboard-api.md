@@ -95,14 +95,12 @@
     "blocks": [
       {
         "blockId": 101,
-        "dayNo": 1,
+        "startOffsetMinutes": 540,
         "orderKey": "a0",
         "category": "SPOT",
         "subCategory": "관광",
         "name": "성산일출봉",
         "durationMin": 90,
-        "startTime": "09:00",
-        "endTime": "10:30",
         "isTimeFixed": false,
         "budget": 5000,
         "detail": "매표 후 도보 30분",
@@ -114,6 +112,7 @@
         "transportMeta": null,
         "source": "KAKAO",
         "authorId": 1,
+        "lastEditedById": 3,
         "fieldUpdatedAt": { "budget": "2026-08-01T10:22:31.512Z" },
         "createdAt": "2026-08-01T10:00:00+09:00"
       }
@@ -125,7 +124,11 @@
   }
 }
 ```
-> `dayNo: null`인 블록은 후보(POOL). 블록 정렬은 `orderKey, blockId` 순.
+> **블록의 위치는 `startOffsetMinutes` 하나다** — Day 1 00:00 기준 경과 분. `null`이면 후보(POOL).
+> Day 번호·하루 안의 시각은 클라이언트가 여기서 파생한다: `dayNo = offset / 1440 + 1`, `분 = offset % 1440`.
+> 종료는 `offset + durationMin`이라 자정을 넘어도 되감기지 않는다 — 자정을 넘는 블록도 행 하나다.
+> `lastEditedById`는 마지막 편집자(PRS-04). 아직 편집 이력이 없으면 작성자와 같고, 옛 행은 `null`일 수 있어 그때는 `authorId`로 폴백한다.
+> 블록 정렬은 `startOffsetMinutes` 오름차순(POOL은 맨 뒤) → `orderKey` → `blockId` 순.
 
 **Errors:**
 
@@ -262,7 +265,7 @@
 {
   "category": "SPOT",
   "name": "성산일출봉",
-  "dayNo": 1,
+  "startOffsetMinutes": 540,
   "orderKey": "a0",
   "lat": 33.4581,
   "lng": 126.9425,
@@ -270,8 +273,6 @@
   "address": "제주 서귀포시 성산읍",
   "subCategory": "관광",
   "durationMin": 90,
-  "startTime": "09:00",
-  "endTime": "10:30",
   "isTimeFixed": false,
   "budget": 5000,
   "vehicleFlag": null,
@@ -285,13 +286,12 @@
 |---|---|---|---|
 | `category` | enum | Y | `SPOT`\|`FOOD`\|`STAY`\|`ETC`\|`TRANSPORT` |
 | `name` | string | Y | 블록 이름 |
-| `dayNo` | int | N | null이면 후보(POOL) 생성 |
+| `startOffsetMinutes` | int | N | Day 1 00:00 기준 경과 분(0 이상). **null이면 후보(POOL) 생성** |
 | `orderKey` | string | N | 미지정 시 서버가 말단 키 부여 |
 | `lat` / `lng` | decimal | 조건부 | **장소성 카테고리(SPOT·FOOD·STAY)는 필수** |
 | `placeId` / `address` | string | N | 카카오 장소 참조 |
 | `subCategory` | string | N | 자유 텍스트 |
-| `durationMin` | int | N | 소요시간(분), 기본 60(30분 단위) |
-| `startTime` / `endTime` | string(HH:mm) | N | 일정 시작/종료 시각. 미지정 시 null(느슨한 블록) |
+| `durationMin` | int | N | 소요시간(분), 기본 60(30분 단위). 종료는 `startOffsetMinutes + durationMin` 파생이라 따로 보내지 않는다 |
 | `isTimeFixed` | bool | N | 시각 고정(드래그 재계산 제외) 여부, 기본 false |
 | `budget` | int | N | 예산(원) — **프로젝트 전체(총액) 기준**, 기본 0 |
 | `vehicleFlag` | enum | N | `START`\|`END` — **ETC 카테고리에서만 허용** |
@@ -316,6 +316,8 @@
 | `BLOCK400` | 400 | 장소성 카테고리 lat/lng 누락 |
 | `BLOCK400_1` | 400 | vehicleFlag를 ETC 외 카테고리에 지정 |
 | `GROUP403` | 403 | 그룹 멤버가 아님 |
+
+> 음수 `startOffsetMinutes`는 DB 체크 제약(`block_start_offset_minutes_check`)이 막는다 — 전용 에러 코드 없이 `COMMON500`이다. 클라이언트 버그로만 도달하는 경로라 방어선만 두었다.
 
 ---
 
@@ -343,8 +345,8 @@
 }
 ```
 > `applied`가 `false`인 필드는 더 최신 값이 이미 반영돼 있어 이번 변경이 무시됨(스테일).
-> LWW 대상 필드: `name`, `budget`, `durationMin`, `detail`, `startTime`, `endTime`, `isTimeFixed`, `vehicleFlag`, `transportMeta` 등.
-> 드래그 재정렬 후 재계산된 시각도 이 엔드포인트로 저장한다(§ position 참조).
+> LWW 대상 필드는 정확히 7종이다: `name`, `budget`, `durationMin`, `detail`, `isTimeFixed`, `vehicleFlag`, `transportMeta`.
+> **위치(`startOffsetMinutes`·`orderKey`)는 LWW 대상이 아니다** — 여기로 보내면 `BLOCK400_2`. 위치를 바꾸는 길은 `PATCH .../position` 하나뿐이라 두 경로가 서로 다른 위치를 주장할 수 없다.
 
 **Errors:**
 
@@ -359,15 +361,20 @@
 
 ### PATCH /api/blocks/{blockId}/position
 
-블록 이동 — 체인 재정렬 / 후보↔체인 / Day 이동(BLK-07, DAY-02). 이동 자체는 옮긴 블록 1행(`orderKey`·`dayNo`)만 UPDATE. `BLOCK_MOVED` op 브로드캐스트.
+블록 이동 — 체인 재정렬 / 후보↔체인 / Day 이동 / 시각 변경(BLK-07, DAY-02). **위치를 바꾸는 유일한 엔드포인트다.** 옮긴 블록 1행(`startOffsetMinutes`·`orderKey`)만 UPDATE. `BLOCK_MOVED` op 브로드캐스트.
 
 **Request Body:**
 ```json
-{ "dayNo": 2, "orderKey": "a5" }
+{ "startOffsetMinutes": 1950, "orderKey": "a5" }
 ```
-> 후보로 이동 시 `dayNo: null`.
->
-> **시각 재계산(공백 보존)**: 이동 후 클라이언트는 영향받은 일반 블록(`isTimeFixed=false`)의 `startTime`/`endTime`을 앞 블록 종료 시각 + 소요시간 기준으로 다시 계산해 `PATCH /api/blocks/{blockId}/fields`로 저장한다. `isTimeFixed=true`(예약·교통 앵커)는 재계산에서 제외한다. 블록별 시각을 정본으로 저장하므로 블록 사이 공백(간격)은 그대로 유지된다.
+
+| 필드 | 타입 | 필수 | 설명 |
+|---|---|---|---|
+| `startOffsetMinutes` | int | N | 목적지. Day 1 00:00 기준 경과 분(0 이상). **null이면 후보(POOL)로 내린다** |
+| `orderKey` | string | Y | fractional index. 같은 오프셋에 여럿 놓일 때의 tie-break |
+
+> Day 이동과 하루 안의 시각 변경이 **같은 값 하나**라 요청 1건·op 1건이다 — 예시의 `1950`은 Day 2 08:30(`1440 + 510`)이다.
+> **시각 재계산(공백 보존)**: 이동으로 뒤 블록이 밀려야 하면, 클라이언트가 영향받은 일반 블록(`isTimeFixed=false`)의 새 오프셋을 계산해 블록마다 이 엔드포인트를 다시 호출한다. `isTimeFixed=true`(예약·교통 앵커)는 재계산에서 제외한다. 서버는 재계산에 관여하지 않는다 — 옮기라고 한 블록만 옮긴다. 블록 사이 공백은 오프셋 차이로 그대로 남는다.
 
 **Response `200`:**
 ```json
@@ -433,7 +440,7 @@
 
 계산은 두 단계다. 1단은 모든 구간의 시내 경로·자차·택시 조회를 병렬로 모으고(최대 20초) — 시외 여부(`intercity`)도 이때 ODsay가 준 경로의 `pathType`(11 기차·12 고속버스·13 항공·14 해운·20 복합 중 하나라도 있으면 시외)으로 판정된다. 2단은 **시외 구간마다** 접근·시간표·환승·이탈을 조립해 door-to-door 후보를 만든다(최대 20초, 1단 다음 순차라 최악 40초).
 
-**시외 구간은 서로 독립적이다.** 구간의 기준 시각은 앞 구간이 고른 편에서 누적하지 않고 그 구간의 출발 블록에서 직접 구한다(`base = from.startTime + from.durationMin`). 블록 사이 공백이 그대로 반영되고 — 10:00~11:00 관람 후 14:00에 시작하는 블록이면 `base`는 14:00이다 — **한 Day에 시외 구간이 여러 개여도 각자 자기 시간표를 받는다.** 앞 구간의 확정 여부가 뒤 구간의 기준을 흔들지 않기 때문이다.
+**시외 구간은 서로 독립적이다.** 구간의 기준 시각은 앞 구간이 고른 편에서 누적하지 않고 그 구간의 출발 블록에서 직접 구한다(`base = from.startOffsetMinutes + from.durationMin`). 블록 사이 공백이 그대로 반영되고 — 10:00~11:00 관람 후 14:00에 시작하는 블록이면 `base`는 14:00이다 — **한 Day에 시외 구간이 여러 개여도 각자 자기 시간표를 받는다.** 앞 구간의 확정 여부가 뒤 구간의 기준을 흔들지 않기 때문이다.
 
 **Request Body:**
 ```json
@@ -444,7 +451,7 @@
 |---|---|---|---|
 | `blockIds` | array\<long\> | Y | 구간을 만들 블록 id, 체인 순서대로. 최대 30개(초과 시 `400`) |
 
-> 시각을 따로 받지 않는다 — 기준 시각은 위처럼 블록에 저장된 값에서 서버가 구한다. 여행 날짜도 마찬가지로 프로젝트 `startDate`와 블록 `dayNo`(`startDate + (dayNo-1)`)로 유도하며, `startDate`가 없으면 그 Day의 시외 구간은 시간표를 아예 적용하지 못한다(아래 참조).
+> 시각을 따로 받지 않는다 — 기준 시각은 위처럼 블록에 저장된 값에서 서버가 구한다. 여행 날짜도 마찬가지로 프로젝트 `startDate`와 블록 오프셋에서 파생한 Day 번호(`startDate + (dayNo-1)`, `dayNo = offset / 1440 + 1`)로 유도하며, `startDate`가 없으면 그 Day의 시외 구간은 시간표를 아예 적용하지 못한다(아래 참조). 후보(POOL) 블록은 Day를 모르므로 1일차로 본다.
 > 서버가 인접 쌍으로 구간을 만든다 — `[101,105,107]`이면 `(101,105)`,`(105,107)` 두 구간.
 > `blockIds`가 0~1개면 만들 구간이 없으므로 **`segments: []`를 200으로 반환한다(400이 아니다)** — 단, 그 1개가 이 프로젝트에 실재하고 좌표를 가진 유효한 블록일 때다. 구간 생성 전에 요청에 포함된 **모든** 블록의 존재·좌표를 먼저 검사하므로, blockIds가 1개뿐이라도 그 블록이 없거나 좌표가 없으면 여전히 `400`이다.
 > 같은 id가 연속으로 오면(예: `[101,101,105]`) 그 쌍만 건너뛴다 — 이동이 없다고 보고 구간을 만들지 않는다. 단, 이 경우도 좌표 검사는 두 id 모두에 대해 먼저 이뤄진다(예: `[101,101]`에서 101에 좌표가 없으면 구간이 0개여도 `TRANSIT400_2`).
@@ -701,7 +708,7 @@
 | 상황 | `timetableSkipReason` | 비고 |
 |---|---|---|
 | 시내 구간(`intercity: false`) | `null` | 애초에 해당 없음 — 사유가 아니라 미적용이다 |
-| 출발 블록에 `startTime`이 없음 | `"출발 블록에 시작 시각이 없어 기준 시각을 계산할 수 없습니다"` | 앞 구간에서 시각을 끌어오지 않는다 — 그게 블록 사이 공백을 무시하던 옛 누적 모델의 버그였다 |
+| 출발 블록이 후보(POOL)라 `startOffsetMinutes`가 없음 | `"출발 블록에 시작 시각이 없어 기준 시각을 계산할 수 없습니다"` | 앞 구간에서 시각을 끌어오지 않는다 — 그게 블록 사이 공백을 무시하던 옛 누적 모델의 버그였다 |
 | `project.startDate`가 없음 | `"프로젝트 시작일이 없어 운행 요일을 확인할 수 없습니다"` | 오늘 날짜로 갈음하지 않는다 — 실제 여행일과 무관한 시간표를 확정처럼 낼 수 없다 |
 | 시간표 조회 공유 예산 소진 | `"다른 Day의 시간표 조회가 시간을 다 써서 확인하지 못했습니다"` | 2단의 20초 상한은 요청 전체(모든 구간·모든 Day)가 공유한다 — 앞선 구간의 조회가 오래 걸려 예산을 다 썼으면 이 구간은 조회 자체를 시도하지 않는다 |
 
@@ -1080,6 +1087,10 @@ REST로 변경 요청을 보내면, 서버가 seq를 붙여 STOMP로 전파한�
 **op type 목록:**
 `BLOCK_CREATED` / `BLOCK_FIELD_UPDATED` / `BLOCK_MOVED` / `BLOCK_DELETED` / `PROJECT_UPDATED` / `PROJECT_STATUS_CHANGED` / `PROJECT_DELETED` / `TARGET_BUDGET_CHANGED` / `BUDGET_HEADCOUNT_CHANGED` / `MEMBER_JOINED` / `MEMBER_LEFT`
 
+- `BLOCK_CREATED`: `{blockId, block}` — `block`은 스냅샷 `blocks[]` 항목과 같은 전문이라 수신 측이 조회 없이 바로 그린다.
+- `BLOCK_FIELD_UPDATED`: `{blockId, fields}` — **적용된 필드만** 담는다(스테일 필드는 빠진다).
+- `BLOCK_MOVED`: `{blockId, startOffsetMinutes, orderKey}` — 위치 전체가 이 payload 하나다. `startOffsetMinutes: null`이면 후보(POOL)로 내려간 것이고, Day 이동과 시각 변경도 이 값 하나로 표현되므로 한 번의 이동이 op 두 건으로 쪼개지지 않는다.
+- `BLOCK_DELETED`: `{blockId}` — tombstone이라 행은 남는다.
 - `PROJECT_UPDATED`: 기간 축소 시 `movedToPool: [blockId...]` 포함. `payload.transportPrefs`(문자열 배열, 예: `["CAR","PUBLIC"]`)에 변경 후 값을 항상 싣는다.
 - `PROJECT_DELETED`: 대시보드를 보던 멤버를 그룹 페이지로 리다이렉트.
 - `MEMBER_LEFT`: 멤버 탈퇴 시 나머지 멤버는 이 op로 멤버 목록·정산 인원 갱신.

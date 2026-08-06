@@ -74,14 +74,12 @@ erDiagram
     BLOCK {
         bigint id PK
         bigint project_id FK
-        int day_no "null = 후보 블록"
+        int start_offset_minutes "Day 1 00:00 기준 경과 분, null = 후보 블록"
         varchar order_key "fractional index 문자열"
         varchar category "SPOT|FOOD|STAY|ETC|TRANSPORT"
         varchar sub_category "자유 텍스트"
         varchar name
-        int duration_min "소요시간(분), 시각 재계산·표시용"
-        time start_time "일정 시작 시각, nullable"
-        time end_time "일정 종료 시각, nullable"
+        int duration_min "소요시간(분), 종료 오프셋 파생·표시용"
         boolean is_time_fixed "시각 고정(드래그 재계산 제외) 여부"
         int budget "총액(프로젝트 전체) 원, 기본 0"
         varchar detail "최대 500자"
@@ -222,7 +220,7 @@ erDiagram
 > **`budget_headcount`(1인당 표시용)**: 생성 폼의 "여행 인원" 입력을 초기값으로 사용. **정산 자체는 총액 기준**이며, 이 값은 "1인당 = 총액 ÷ 인원" N빵 표시에만 쓴다. null이면 조회 시점 그룹 멤버 수로 계산, 직접 지정 후에는 멤버 수 변동에 자동 연동하지 않음(BGT-03).
 > **`status`**: 양방향 전환. DONE이어도 쓰기 거부 로직을 두지 않음(NFR-05). 인덱스 `(group_id, status)`.
 >
-> **Day 시작 시각(`day_settings`) 컬럼 제거** — 블록이 각자 `start_time`을 저장하므로 별도 Day 기점이 필요 없다. Day 시작 = 그 Day 첫 블록의 `start_time`.
+> **Day 시작 시각(`day_settings`) 컬럼 제거** — 블록이 각자 절대 오프셋을 저장하므로 별도 Day 기점이 필요 없다. Day의 경계는 항상 00:00이고(Day N = 오프셋 `(N-1)*1440` ~ `N*1440 - 1`), `start_date`는 Day 1을 달력 날짜에 대응시키는 역할만 한다.
 
 ---
 
@@ -231,14 +229,12 @@ erDiagram
 |---|---|---|---|
 | id | BIGINT | PK, IDENTITY | 블록 식별자 |
 | project_id | BIGINT | FK(PROJECT) NOT NULL | 소속 프로젝트 (ON DELETE CASCADE) |
-| day_no | INT | NULL | Day 번호. **NULL = 후보 블록(POOL)** |
+| start_offset_minutes | INT | NULL, CHECK(NULL 이거나 ≥ 0) | Day 1 00:00 기준 경과 분. **NULL = 후보 블록(POOL)**. Day 번호·하루 안의 시각·종료 시각이 전부 여기서 파생된다 |
 | order_key | VARCHAR(255) | NOT NULL | fractional index 문자열 (체인 정렬) |
 | category | VARCHAR(20) | NOT NULL | `SPOT` / `FOOD` / `STAY` / `ETC` / `TRANSPORT` |
 | sub_category | VARCHAR(50) | NULL | 자유 텍스트 소분류 |
 | name | VARCHAR(255) | NOT NULL | 블록 이름 |
-| duration_min | INT | NOT NULL, DEFAULT 60† | 소요 시간(분, 30분 단위). 시각 재계산·표시용 |
-| start_time | TIME | NULL | 일정 시작 시각. 시각 없는(느슨한) 블록은 null |
-| end_time | TIME | NULL | 일정 종료 시각. null이면 미지정 |
+| duration_min | INT | NOT NULL, DEFAULT 60† | 소요 시간(분, 30분 단위). 종료 오프셋(`start_offset_minutes + duration_min`)의 근거이자 표시값 |
 | is_time_fixed | BOOLEAN | NOT NULL, DEFAULT FALSE† | 시각 고정 여부. TRUE면 드래그 재계산에서 제외(앵커) |
 | budget | INT | NOT NULL, DEFAULT 0† | 예산(원) — **프로젝트 전체(총액) 기준** |
 | detail | VARCHAR(500) | NULL | 세부 내용 (최대 500자) |
@@ -259,14 +255,15 @@ erDiagram
 
 > **체인 조회는 partial index** (tombstone 필터가 항상 붙으므로):
 > ```sql
-> CREATE INDEX ix_block_chain ON block (project_id, day_no, order_key) WHERE deleted_at IS NULL;
+> CREATE INDEX ix_block_chain ON block (project_id, start_offset_minutes, order_key, id) WHERE deleted_at IS NULL;
 > ```
-> **정렬은 항상 `ORDER BY order_key, id`** — 동시 삽입으로 order_key가 같을 수 있어 id로 tie-break.
+> **정렬은 항상 `ORDER BY start_offset_minutes NULLS LAST, order_key, id`** — 보드 순서는 오프셋이 정하고, 오프셋이 같을 때만 order_key가 가른다(동시 삽입으로 order_key까지 같을 수 있어 id로 최종 tie-break). 후보(POOL)는 NULLS LAST로 맨 뒤에 모인다.
 > **`budget`은 프로젝트 전체(총액) 기준 정수** — 1인당 금액은 저장하지 않고, 필요 시 `총액 ÷ budget_headcount`로 표시만 한다.
-> **블록 시간 모델(`start_time`/`end_time`/`is_time_fixed`)**:
-> - 각 블록이 자기 시각을 저장한다(정본). 시각 없는 느슨한 블록은 둘 다 null. 블록 사이 간격(공백)은 뒤 블록 `start_time`이 앞 블록 `end_time`보다 늦으면 자연스럽게 표현된다.
-> - **드래그(재정렬) 시**: `is_time_fixed=false`인 일반 블록은 앞 블록 종료 시각 기준으로 시각을 다시 계산해 `start_time`/`end_time`을 **저장**한다(공백 보존). `is_time_fixed=true`(예약·교통 등 앵커)는 재계산에서 제외하고 자기 시각을 고수한다.
-> - `duration_min`은 재계산의 기준 소요시간이자 표시값. 시각이 둘 다 있으면 `end_time − start_time`과 일치.
+> **블록 시간 모델(`start_offset_minutes`/`duration_min`/`is_time_fixed`)**:
+> - 위치는 정수 하나다. `day_no = offset / 1440 + 1`, 하루 안의 시각 = `offset % 1440`, 종료 = `offset + duration_min`. 종료가 자정을 넘어도 되감기지 않으므로 **심야 이동 블록도 행 하나**다.
+> - 보드에 있다 ⟺ 오프셋이 있다. 위치와 시각이 서로 어긋날 수 없는 것이 이 모델의 요점이다(옛 `day_no`+`start_time` 조합은 어긋날 수 있었다).
+> - **드래그(재정렬) 시**: `is_time_fixed=false`인 일반 블록은 앞 블록 종료 기준으로 오프셋을 다시 계산해 **위치 변경 API로 저장**한다(공백 보존). `is_time_fixed=true`(예약·교통 등 앵커)는 재계산에서 제외하고 자기 오프셋을 고수한다.
+> - 블록 사이 간격(공백)은 뒤 블록의 오프셋이 앞 블록의 종료 오프셋보다 크면 자연스럽게 표현된다 — 공백은 결함이 아니라 정상 상태다.
 > **카카오맵 딥링크**: 별도 컬럼 없이 `place_id`+`source`로 프론트에서 파생한다 — `source=KAKAO`일 때만 `https://place.map.kakao.com/{place_id}`로 "카카오맵에서 보기" 버튼 노출(카카오 로컬 API 응답의 `place_url` 필드와 동일 패턴). `source`가 `KAKAO`가 아니면(TourAPI 등 외부 장소ID) 버튼 자체를 숨긴다 — URL을 저장하지 않고 항상 파생시켜서 링크 깨짐/불일치를 원천 차단.
 > **`vehicle_flag`**: ETC 카테고리에서만 노출. 역할은 "수단 선택의 기본값 제안"까지만 — 판정 결과를 계산에 직접 쓰지 않아 이동·삭제되어도 기존 교통 블록 오염 없음.
 > **`transport_meta` 예시**:
@@ -284,10 +281,9 @@ erDiagram
 >   "fareConfidence": "CONFIRMED"
 > }
 > ```
-> `estimated`(시간 추정)와 `fareConfidence`(요금 신뢰도 `CONFIRMED`/`ESTIMATE`)는 별개 축. 교통 블록의 출발/도착 시각은 `transport_meta`가 아니라 블록의 `start_time`/`end_time`에 저장하고 `is_time_fixed=true`(앵커)로 둔다.
+> `estimated`(시간 추정)와 `fareConfidence`(요금 신뢰도 `CONFIRMED`/`ESTIMATE`)는 별개 축. 교통 블록의 출발 시각은 `transport_meta`가 아니라 블록의 `start_offset_minutes`에 저장하고(도착은 `+ duration_min` 파생) `is_time_fixed=true`(앵커)로 둔다.
 > `intervalMin`(배차간격, 분)은 `routeMode`가 `BUS`/`SUBWAY`일 때만 있는 값(ODsay `totalIntervalTime`) — 환승 구간 배차간격의 합이라 단일 노선 배차간격이 아니며, WALK/TAXI/CAR에는 없다(`null`).
-> **`field_updated_at` 예시**: `{"budget":"2026-08-01T10:22:31.512Z"}` — `start_time`·`end_time`·`is_time_fixed`도 LWW 대상 필드이며 `jsonb_set`으로 원자적 부분 갱신.
-> **시각 표현 한계(v1 스코프 아웃)**: `start_time`/`end_time`은 날짜 없는 시각이라 익일 도착(심야 이동) 미표현.
+> **`field_updated_at` 예시**: `{"budget":"2026-08-01T10:22:31.512Z"}` — LWW 대상은 `name`·`budget`·`duration_min`·`detail`·`is_time_fixed`·`vehicle_flag`·`transport_meta` 7종이다. **`start_offset_minutes`는 LWW 대상이 아니다** — 위치는 이동 API 하나로만 바뀌므로 필드 경로와 이동 경로가 서로 다른 위치를 주장할 여지가 없다.
 
 ---
 
@@ -362,6 +358,6 @@ MEMBER ──< ACTIVITY_LOG (member_id)
 | 접속 · 커서 · 편집 중 배지 (presence) | Redis · 메모리 | TTL 기반(PRS) |
 | 세부 내용 텍스트 편집 락 | Redis `SET NX` | TTL 30초(OI-04) |
 | seq 채번 카운터 | Redis `INCR` | 기동 시 `max(seq)` 리시드 |
-| 예산 합계 · Day 종료 시각 | 클라이언트 파생 계산 | 각 블록 `budget`(총액) 합산, Day 종료 = 마지막 블록 `end_time` |
+| 예산 합계 · Day 종료 시각 | 클라이언트 파생 계산 | 각 블록 `budget`(총액) 합산, Day 종료 = 마지막 블록 `start_offset_minutes + duration_min` |
 | 교통(ODsay)·장소(카카오 로컬) 조회 결과 | 외부 API (실시간 조회) | `domain.transit`/`domain.place`, DB에 영속하지 않음 |
 | 챗봇 대화 히스토리 | Redis `ChatTurn` | TTL 기반, 최근 N턴만 저장 |

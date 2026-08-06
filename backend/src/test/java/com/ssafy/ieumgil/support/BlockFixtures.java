@@ -23,6 +23,15 @@ public final class BlockFixtures {
         return create(category, name, orderKey, startOffsetMinutes);
     }
 
+    /** 보드의 특정 지점에 소요 시간까지 지정해 놓는 생성 요청 — 자정 넘김을 만들 때 쓴다 */
+    public static BlockReqDTO.Create at(BlockCategory category, String name, String orderKey,
+                                        int startOffsetMinutes, int durationMin) {
+        return new BlockReqDTO.Create(
+                category, name, startOffsetMinutes, orderKey,
+                null, null, null, null, null, durationMin,
+                null, null, null, BlockSource.MANUAL, null, null);
+    }
+
     /** 나머지 필드는 엔티티 기본값(60분/false/0원)에 맡기는 최소 생성 요청 */
     public static BlockReqDTO.Create create(BlockCategory category, String name, String orderKey,
                                             Integer startOffsetMinutes) {
