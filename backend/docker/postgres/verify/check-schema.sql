@@ -35,7 +35,7 @@ ORDER BY src.relname, c.conname;
 \echo '기대 (PK·UNIQUE 외 수동 선언분):'
 \echo '  ix_group_member_member       group_member(member_id)'
 \echo '  ix_project_group             project(group_id, deleted_at)'
-\echo '  ix_block_chain               block(project_id, day_no, order_key) WHERE deleted_at IS NULL'
+\echo '  ix_block_chain               block(project_id, start_offset_minutes, order_key, id) WHERE deleted_at IS NULL'
 \echo '  ux_activity_log_project_seq  activity_log(project_id, seq) UNIQUE'
 \echo ''
 

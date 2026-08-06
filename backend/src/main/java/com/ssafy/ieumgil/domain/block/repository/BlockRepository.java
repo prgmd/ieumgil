@@ -85,13 +85,12 @@ public interface BlockRepository extends JpaRepository<Block, Long> {
 
     /**
      * 범위 밖 블록을 후보(POOL)로 일괄 이동 — 오프셋만 비우고 orderKey는 유지한다.
-     * dayNo도 함께 비운다 — Task 6에서 컬럼이 사라질 때까지 병행 기록을 어긋나지 않게 유지한다.
      * clearAutomatically로 영속성 컨텍스트가 비워지므로 다른 엔티티 변경이 끝난 뒤 마지막에 부른다.
      */
     @Modifying(clearAutomatically = true, flushAutomatically = true)
     @Query("""
             UPDATE Block b
-            SET b.startOffsetMinutes = null, b.dayNo = null
+            SET b.startOffsetMinutes = null
             WHERE b.project.id = :projectId
               AND b.startOffsetMinutes >= :tripMinutes
               AND b.deletedAt IS NULL

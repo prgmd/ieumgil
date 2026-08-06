@@ -14,6 +14,7 @@ import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
+import org.hibernate.annotations.Check;
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.annotations.OnDelete;
 import org.hibernate.annotations.OnDeleteAction;
@@ -27,7 +28,6 @@ import lombok.NoArgsConstructor;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDateTime;
-import java.time.LocalTime;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -49,6 +49,7 @@ import java.util.Map;
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 @AllArgsConstructor(access = AccessLevel.PRIVATE)
 @Table(name = "block")
+@Check(constraints = "start_offset_minutes IS NULL OR start_offset_minutes >= 0")
 public class Block extends BaseTimeEntity {
 
     public static final int MINUTES_PER_DAY = 1440;
@@ -56,9 +57,6 @@ public class Block extends BaseTimeEntity {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
-
-    /** Day 번호. null = 후보 블록(POOL) */
-    private Integer dayNo;
 
     /**
      * Day 1의 00:00을 원점으로 한 경과 분. null = 후보(POOL).
@@ -87,11 +85,6 @@ public class Block extends BaseTimeEntity {
     @Builder.Default
     @Column(nullable = false)
     private Integer durationMin = 60;
-
-    /** 일정 시작 시각. 시각 없는(느슨한) 블록은 null. 날짜가 없어 익일 도착은 미표현(v1 스코프 아웃) */
-    private LocalTime startTime;
-
-    private LocalTime endTime;
 
     /** true면 앵커(예약·교통) — 드래그 재계산에서 제외되고 자기 시각을 고수한다 */
     @Builder.Default
@@ -209,16 +202,11 @@ public class Block extends BaseTimeEntity {
     public void move(Integer startOffsetMinutes, String orderKey) {
         this.startOffsetMinutes = startOffsetMinutes;
         this.orderKey = orderKey;
-        // Task 6에서 제거되는 병행 기록 — 옛 컬럼을 읽는 코드가 남아 있는 동안만 유지한다
-        this.dayNo = startOffsetMinutes == null ? null : startOffsetMinutes / MINUTES_PER_DAY + 1;
-        this.startTime = startOffsetMinutes == null
-                ? null
-                : java.time.LocalTime.ofSecondOfDay((startOffsetMinutes % MINUTES_PER_DAY) * 60L);
     }
 
     /**
      * LWW 갱신 대상 필드 하나를 적용한다. 값은 서비스가 타입 검증·변환을 끝낸 상태다.
-     * 여기 나열된 9종이 곧 LWW 대상 필드의 전체 목록이다(dashboard-api.md).
+     * 여기 나열된 7종이 곧 LWW 대상 필드의 전체 목록이다(dashboard-api.md).
      */
     public void applyField(String field, Object value) {
         switch (field) {
@@ -226,8 +214,6 @@ public class Block extends BaseTimeEntity {
             case "budget" -> this.budget = (Integer) value;
             case "durationMin" -> this.durationMin = (Integer) value;
             case "detail" -> this.detail = (String) value;
-            case "startTime" -> this.startTime = (LocalTime) value;
-            case "endTime" -> this.endTime = (LocalTime) value;
             case "isTimeFixed" -> this.isTimeFixed = (Boolean) value;
             case "vehicleFlag" -> this.vehicleFlag = (VehicleFlag) value;
             case "transportMeta" -> this.transportMeta = castTransportMeta(value);
