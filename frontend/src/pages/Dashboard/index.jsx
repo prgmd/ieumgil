@@ -628,9 +628,11 @@ export function DashboardPage() {
   // 리렌더로 이어지지 않는다 — 커서 위치는 레이어 소관, 여기는 Day 만.
   const [viewingDays, setViewingDays] = useState({}); // actorId → dayNo
   const cursorLastSeenRef = useRef({}); // actorId → ts (하트비트 만료 판정)
-  // 블록별 "가장 최근 수정자" — 블록 op(생성·필드수정·이동)의 actorId 로 기록한다.
-  // 서버에 최근 수정자 칸이 없어(ERD: author_id 뿐) 새로고침하면 비고, 그때는
-  // 작성자(authorId)로 폴백한다 (editorBadgeOf 참조).
+  // 블록별 "가장 최근 수정자"의 세션 오버레이 — 블록 op(생성·필드수정·이동)의
+  // actorId 로 기록한다. 영속 값은 서버의 block.lastEditedById 이고(PRS-04), 이 맵은
+  // op 가 도착한 순간 재조회 없이 배지를 갱신하려는 용도 + 아직 서버 id 를 못 받은
+  // 낙관적 생성 블록을 덮는 용도다. 시드마다 비운다 — 스냅샷이 더 최신이다
+  // (우선순위는 editorBadgeOf 참조).
   const [lastEditors, setLastEditors] = useState({}); // blockId → memberId
 
   const recordBlockEditor = (blockId, memberId) => {
@@ -870,6 +872,10 @@ export function DashboardPage() {
     setItems(serverItems);
     setChains(serverChains);
     setPool(serverPool);
+
+    // 수정자 오버레이는 시드마다 버린다 — 스냅샷의 lastEditedById 가 서버 확정값이라
+    // 끊겨 있던 사이 남이 고친 블록에 내 세션의 옛 기록이 남아 이기면 안 된다.
+    setLastEditors({});
 
     // 멤버·접속 상태의 시드 — 이후는 MEMBER_JOINED/LEFT op 와 PRESENCE 메시지가
     // 이어받는다. 스냅샷의 online 이 실값(서버 PresenceRegistry)이라 그대로 믿는다.
@@ -2902,10 +2908,16 @@ export function DashboardPage() {
       : null;
   };
 
-  // 블록 좌상단의 "가장 최근 수정자" 아바타 — 이 세션의 op 기록이 우선이고,
-  // 없으면(새로고침 직후) 작성자로 폴백한다. 멤버 정보가 없으면(탈퇴 등) 감춘다.
+  // 블록 좌상단의 "가장 최근 수정자" 아바타. 우선순위는
+  //   ① 시드 이후 도착한 op(lastEditors) → ② 서버 영속값(lastEditedById, PRS-04)
+  //   → ③ 작성자(authorId, 005 마이그레이션 이전 행의 폴백)
+  // ①이 ②보다 앞서는 건 op 가 스냅샷보다 뒤의 사실이기 때문이다(시드 때 ①은 비워진다).
+  // 멤버 정보가 없으면(탈퇴 등) 감춘다.
   const editorBadgeOf = (blockId) => {
-    const memberId = lastEditors[blockId] ?? items[blockId]?.authorId;
+    const memberId =
+      lastEditors[blockId] ??
+      items[blockId]?.lastEditedById ??
+      items[blockId]?.authorId;
     if (memberId == null) return null;
     const member = boardMembers.find((m) => m.memberId === memberId);
     if (!member) return null;

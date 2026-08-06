@@ -101,6 +101,9 @@ export function toUiBlock(b) {
     transportMeta: b.transportMeta ?? null,
     source: b.source,
     authorId: b.authorId,
+    // 마지막 편집자(PRS-04) — 서버가 영속하므로 새로고침해도 남는다.
+    // 005 마이그레이션 이전 행은 null 이라 화면에서 authorId 로 폴백한다.
+    lastEditedById: b.lastEditedById ?? null,
     fieldUpdatedAt: b.fieldUpdatedAt ?? {},
     // "자동 생성" 표식 — 서버에 auto 필드가 없어 transportMeta.generated 로 실어 둔다
     // (자유 형식 jsonb). 재생성 시 삭제 대상 판별과 "자동" 배지 표시에 쓴다.
