@@ -43,6 +43,9 @@ import java.util.concurrent.ThreadLocalRandom;
         // 컨텍스트에서도 그 이벤트가 발생하므로, .env에 키가 있는 개발 PC에서는 테스트를 돌릴 때마다
         // 실호출이 나간다. 키를 비워 상수 유가 provider로 떨어뜨려 테스트를 네트워크에서 떼어 놓는다.
         "opinet.api-key=",
+        // 같은 이유로 TourAPI 키도 비운다. 안 그러면 .env에 키가 있는 개발 PC에서 통합 테스트 컨텍스트가
+        // 뜰 때마다 FestivalBatchService의 기동 동기화가 실 TourAPI 전량 수집을 백그라운드로 날린다.
+        "tourapi.service-key=",
 })
 public abstract class IntegrationTestSupport {
 

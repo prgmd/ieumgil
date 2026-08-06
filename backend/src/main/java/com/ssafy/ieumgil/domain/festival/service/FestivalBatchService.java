@@ -7,15 +7,22 @@ import com.ssafy.ieumgil.domain.festival.repository.FestivalRepository;
 import com.ssafy.ieumgil.domain.festival.util.HomepageUrlExtractor;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnExpression;
+import org.springframework.boot.context.event.ApplicationReadyEvent;
+import org.springframework.context.event.EventListener;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
 
 @Slf4j
 @Component
+// serviceKey가 없으면(테스트 컨텍스트·키 미설정 환경) 배치 자체를 띄우지 않는다. 안 그러면
+// 기동 시 ApplicationReadyEvent가 발화해 실 TourAPI 전량 수집이 나간다 — OpinetFuelPriceProvider와 같은 방어.
+@ConditionalOnExpression("!'${tourapi.service-key:}'.isBlank()")
 @RequiredArgsConstructor
 public class FestivalBatchService {
 
@@ -97,6 +104,32 @@ public class FestivalBatchService {
             log.warn("TourAPI 축제 수집 부족 — 총 {}건 중 {}건만 적재됐다", expected, collected);
         }
         return result;
+    }
+
+    /**
+     * 기동 직후 축제 데이터가 비어 있으면 한 번 채운다.
+     *
+     * <p>개발 노트북은 새벽에 꺼져 있어 04:00 크론이 사실상 돌지 않는다 — 실제로 축제가 빈 채로
+     * 며칠 방치됐다. 그래서 기동 시 한 번 확인해, 비어 있을 때만 수집한다. 이미 차 있으면 재수집하지
+     * 않는다({@code count()>0} 스킵) — 매 재시작마다 전량 재수집하는 낭비를 막는다.
+     *
+     * <p>{@code syncFestivals()}는 N페이지 TourAPI 배치라 오래 걸린다. {@link ApplicationReadyEvent}
+     * 스레드에서 그대로 돌리면 기동이 그만큼 지연되므로 별도 스레드로 분리한다. 프로젝트에 아직
+     * {@code @EnableAsync}·비동기 사용처가 없어, 전역 설정을 새로 들이는 대신 {@link CompletableFuture}로
+     * 이 메서드 안에서만 분리했다. 가드({@code count()}) 판단은 동기로 하고, 무거운 수집만 비동기로 넘긴다.
+     */
+    @EventListener(ApplicationReadyEvent.class)
+    public void syncOnStartupIfEmpty() {
+        if (festivalRepository.count() > 0) {
+            log.info("축제 데이터 존재 — 기동 동기화 스킵");
+            return;
+        }
+        log.info("축제 데이터 비어있음 — 기동 동기화 시작");
+        // 별 스레드라 예외가 future에 갇혀 조용히 사라지면 빈 DB로 방치된다 — 실패를 로그로 드러낸다.
+        CompletableFuture.runAsync(this::syncFestivals)
+                .whenComplete((result, e) -> {
+                    if (e != null) log.error("기동 축제 동기화 실패", e);
+                });
     }
 
     /** 한 페이지의 실패는 그 페이지에서 끝낸다 — 남은 페이지는 계속 시도해야 한다. */
