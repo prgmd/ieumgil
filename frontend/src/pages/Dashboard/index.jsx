@@ -9,7 +9,8 @@ import { useParams, useNavigate } from "react-router-dom";
 import { BlockEditForm } from "./components/BlockEditForm";
 import { ChatbotWidget } from "./components/ChatbotWidget";
 import { RemoteCursorLayer } from "./components/RemoteCursorLayer";
-import { TransitCandidateCard } from "./components/TransitCandidateCard";
+import { TransitPickerModals } from "./components/TransitPickerModals";
+import { VoiceBar } from "./components/VoiceBar";
 import { hueOf } from "./components/memberColor";
 import { buildTransportMeta } from "./transitMeta";
 import { CardBody } from "./components/CardBody";
@@ -18,17 +19,14 @@ import {
   BlockLinkBadge,
   BlockEditorBadge,
 } from "./components/BlockBadges";
-import { HoldRepeatButton } from "./components/HoldRepeatButton";
 import { PoolCard } from "./components/PoolCard";
-import { SearchResultDraggable } from "./components/SearchResultDraggable";
+import { BudgetPanel } from "./components/BudgetPanel";
+import { MapPanel } from "./components/MapPanel";
+import { SearchPanel } from "./components/SearchPanel";
 import { ReadModeView } from "./components/ReadModeView";
 import {
-  CAT_COLORS,
   fmtTime,
-  won,
   catOf,
-  catKeyOf,
-  effectiveCostOf,
   isTempId,
   isServerBlock,
   catFromKakaoGroup,
@@ -36,7 +34,8 @@ import {
   dayKeysOf,
   dayDate,
 } from "./dashboardHelpers";
-import { planPinImage, searchPinImage, ROUTE_LINE_COLOR } from "./mapPins";
+import { useKakaoMap } from "./hooks/useKakaoMap";
+import { useBudget } from "./hooks/useBudget";
 import {
   DndContext,
   DragOverlay,
@@ -59,7 +58,6 @@ import { useDashboard } from "../../features/dashboard/hooks/useDashboard";
 import { useProjectOps } from "../../features/dashboard/realtime/useProjectOps";
 import { useVoiceChat } from "../../features/dashboard/voice/useVoiceChat";
 import { createOpSequencer } from "../../features/dashboard/realtime/opSequencer";
-import { ensureKakaoMaps } from "../../features/dashboard/map/addressLookup";
 import * as blockApi from "../../features/dashboard/api/dashboardApi";
 import { getClientId } from "../../global/api/clientId";
 import { useGroupDetail } from "../../features/group/hooks/useGroupDetail";
@@ -770,346 +768,62 @@ export function DashboardPage() {
   const [dragPreview, setDragPreview] = useState(null);
   const [isGeneratingTransport, setIsGeneratingTransport] = useState(false);
 
-  const [map, setMap] = useState(null);
-  const [searchKeyword, setSearchKeyword] = useState("");
-  const [searchResults, setSearchResults] = useState([]);
-  const searchListRef = useRef(null);
-  const infoWindowRef = useRef(null);
-  // 검색 결과 핀 — 추적해 둬야 재검색·초기화 때 지도에서 걷을 수 있다
-  const searchMarkersRef = useRef([]);
-
-  // 지도 초기화 — 컨테이너 div 의 ref callback 으로 한다.
-  //
-  // "마운트 시 1회 effect + getElementById" 방식은 레이스가 있었다: 스냅샷 로딩
-  // 가드가 null 을 반환하는 동안에는 컨테이너가 DOM 에 없어서, SDK 가 이미 로드된
-  // 재진입(그룹 페이지에서 되돌아오기 등)에서는 initMap 이 빈손으로 끝나고 지도가
-  // 영영 회색으로 남았다. ref callback 은 "div 가 실제로 마운트된 순간"에 불리므로
-  // 레이스가 없고, 읽기 모드 전환으로 div 가 재마운트될 때도 다시 바인딩된다.
-  const initMapOnContainer = useCallback((container) => {
-    if (!container) {
-      // 언마운트(읽기 모드 전환 등) — 카카오 지도는 destroy API 가 없어
-      // 참조만 끊는다. 다음 마운트 때 새 인스턴스로 바인딩된다.
-      setMap(null);
-      return;
-    }
-
-    // SDK 로딩(중복 삽입·로딩 중 대기)은 addressLookup 이 맡는다 — 블록 상세의
-    // 주소 검색도 같은 SDK 를 쓰므로 로더가 두 벌이면 서로의 <script> 를 기다리다 엇갈린다.
-    ensureKakaoMaps()
-      .then((maps) => {
-        // 늦게 도착했는데 그 사이 컨테이너가 떨어져 나갔으면 버린다
-        if (!container.isConnected) return;
-        setMap(
-          new maps.Map(container, {
-            center: new maps.LatLng(33.450701, 126.570667),
-            level: 7,
-          }),
-        );
-      })
-      .catch(() => {
-        // 지도는 보조 기능이라 실패해도 보드는 그대로 쓴다 (회색 박스로 남는다)
-      });
-  }, []);
-
-  // 지도 패널이 사이드 폭을 그대로 쓰게 되면서(빈 공간 활용) 창 크기에 따라 실제
-  // 픽셀 크기가 바뀐다 — 카카오 지도는 컨테이너 크기가 변하면 relayout() 을 불러줘야
-  // 타일과 중심이 어긋나지 않는다.
-  useEffect(() => {
-    if (!map) return;
-    const onResize = () => map.relayout();
-    window.addEventListener("resize", onResize);
-    return () => window.removeEventListener("resize", onResize);
-  }, [map]);
-
-  // ── 계획표 블록 → 지도 핀 (QA 배치3) ──
-  // 활성 Day 체인의 좌표 있는 블록을 핀으로 찍는다. 핀은 편집을 따라 실시간으로
-  // 갱신하되, 카메라 이동(범위 맞춤)은 "지도 준비·Day 전환 때 한 번"만 한다 —
-  // 블록을 만질 때마다 지도가 움직이면 검색하려고 옮겨 둔 화면을 뺏는다.
-  const chainMarkersRef = useRef([]);
-  const routeLinesRef = useRef([]);
-  const lastMapFitRef = useRef(null); // { map, day } — 카메라를 이미 맞춘 조합
-  useEffect(() => {
-    if (!map || !window.kakao?.maps) return;
-
-    chainMarkersRef.current.forEach((m) => m.setMap(null));
-    chainMarkersRef.current = [];
-    routeLinesRef.current.forEach((l) => l.setMap(null));
-    routeLinesRef.current = [];
-
-    const chainPoints = (chains[activeDay] || [])
-      .map((id) => items[id])
-      .filter((it) => it?.lat != null && it?.lng != null);
-
-    chainPoints.forEach((it, idx) => {
-      const position = new window.kakao.maps.LatLng(it.lat, it.lng);
-      const marker = new window.kakao.maps.Marker({
-        map,
-        position,
-        title: it.name,
-        // 초록 + 방문 순번 = 이미 일정에 넣은 곳 (검색 결과는 번호 없는 파랑).
-        // 순번은 그날 좌표 있는 블록 기준 — 좌표 없는 교통 블록은 건너뛴다.
-        // zIndex 로 검색 핀 위에 둔다: 같은 자리에 겹쳐도 계획이 가려지지 않는다.
-        image: planPinImage(idx + 1),
-        zIndex: 5,
-      });
-      // 핀 클릭 = 검색 결과 클릭과 같은 상세 말풍선
-      window.kakao.maps.event.addListener(marker, "click", () => {
-        if (!infoWindowRef.current) {
-          infoWindowRef.current = new window.kakao.maps.InfoWindow({
-            zIndex: 1,
-            removable: true,
-          });
-        }
-        infoWindowRef.current.setContent(
-          `<div style="padding:12px;font-size:13px;color:#333;min-width:180px;">
-             <b style="display:block;margin-bottom:4px;color:#d97e3c;">${it.name}</b>
-             ${it.address ? `<span>${it.address}</span>` : ""}
-           </div>`,
-        );
-        infoWindowRef.current.setPosition(position);
-        infoWindowRef.current.open(map);
-      });
-      chainMarkersRef.current.push(marker);
-    });
-
-    // ── 이동 경로 선 ──
-    // 교통 블록이 낀 구간만 잇는다 — 단순히 이웃한 두 장소를 잇는 게 아니라
-    // "이동 수단을 정해 둔 구간"만 그려야 계획한 동선과 아직 빈 구간이 구분된다.
-    // 교통 블록 자체에는 좌표가 없으므로(경로 조회 결과에 legs 의 정거장 '이름'만
-    // 오고 좌표는 없다) 앞뒤 장소를 직선으로 잇는다 — 실제 도로·선로 모양이 아니다.
-    const chainItems = (chains[activeDay] || [])
-      .map((id) => items[id])
-      .filter(Boolean);
-    const hasCoords = (it) => it?.lat != null && it?.lng != null;
-
-    chainItems.forEach((it, i) => {
-      if (it.cat !== "trans") return;
-
-      let from = null;
-      for (let k = i - 1; k >= 0; k -= 1) {
-        if (hasCoords(chainItems[k])) {
-          from = chainItems[k];
-          break;
-        }
-      }
-      let to = null;
-      for (let k = i + 1; k < chainItems.length; k += 1) {
-        if (hasCoords(chainItems[k])) {
-          to = chainItems[k];
-          break;
-        }
-      }
-      if (!from || !to) return; // 한쪽 끝의 좌표를 모르면 그릴 수 없다
-
-      const line = new window.kakao.maps.Polyline({
-        map,
-        path: [
-          new window.kakao.maps.LatLng(from.lat, from.lng),
-          new window.kakao.maps.LatLng(to.lat, to.lng),
-        ],
-        strokeWeight: 4,
-        strokeColor: ROUTE_LINE_COLOR,
-        strokeOpacity: 0.75,
-        // 실제 경로가 아니라 "이 두 곳을 이동한다"는 표시라 점선으로 둔다
-        strokeStyle: "shortdash",
-      });
-      routeLinesRef.current.push(line);
-    });
-
-    // 카메라 맞춤 — 이 (지도, Day) 조합에서 아직 안 맞췄을 때만.
-    // 활성 Day 에 좌표가 없으면 배치된 첫 여행지(지도 시작점)라도 보여준다.
-    const last = lastMapFitRef.current;
-    if (last?.map === map && last?.day === activeDay) return;
-
-    let fitPoints = chainPoints;
-    if (fitPoints.length === 0) {
-      const firstPlaced = Object.values(chains)
-        .flat()
-        .map((id) => items[id])
-        .find((it) => it?.lat != null && it?.lng != null);
-      fitPoints = firstPlaced ? [firstPlaced] : [];
-    }
-    // 맞출 좌표가 아직 없으면 "맞췄다"고 기록하지 않는다 — 빈 보드로 들어온 직후
-    // 시작 지점 블록이 뒤늦게 생기는 경우(부트스트랩), 기록을 먼저 해 버리면
-    // 그 블록이 생겨도 카메라가 영영 안 움직인다(여수 미이동 버그의 원인).
-    if (fitPoints.length === 0) return;
-    lastMapFitRef.current = { map, day: activeDay };
-    if (fitPoints.length === 1) {
-      map.setLevel(5);
-      map.setCenter(
-        new window.kakao.maps.LatLng(fitPoints[0].lat, fitPoints[0].lng),
-      );
-    } else {
-      const bounds = new window.kakao.maps.LatLngBounds();
-      fitPoints.forEach((it) =>
-        bounds.extend(new window.kakao.maps.LatLng(it.lat, it.lng)),
-      );
-      map.setBounds(bounds);
-    }
-  }, [map, chains, activeDay, items]);
+  const {
+    initMapOnContainer,
+    searchKeyword,
+    setSearchKeyword,
+    searchResults,
+    searchListRef,
+    handleSearchPlace,
+    handleClearSearch,
+    handlePlaceClick,
+    focusPlace,
+    getMapBounds,
+  } = useKakaoMap({ chains, items, activeDay });
 
   // (시작 지점 블록은 이제 프로젝트 생성 모달에서 출발지점을 고를 때 함께
   //  만들어진다 — 입장 시 지오코딩하던 부트스트랩은 실패·동시 입장 중복의
   //  여지가 있어 생성 시점으로 옮기며 제거했다. CreateProjectModal 참조.)
 
-  /**
-   * 계획표 블록을 눌렀을 때 — 상세 모달을 열면서 지도도 그 장소로 옮긴다.
-   *
-   * 모달이 화면을 덮지만 카메라는 그동안 옮겨져 있어, 닫는 즉시 그 장소가 보인다.
-   * 좌표가 없는 블록(교통·기타)은 옮길 곳이 없으므로 모달만 연다.
-   * 카메라 자동 맞춤(lastMapFitRef)과 달리 이건 사용자가 직접 누른 결과라
-   * "화면을 뺏는다"는 문제가 없다.
-   */
+  // 상세 모달을 열면서 지도도 그 장소로 옮긴다 — 모달이 화면을 덮지만 카메라는
+  // 그동안 옮겨져 있어, 닫는 즉시 그 장소가 보인다.
   const openBlockDetail = useCallback(
     (id) => {
       setEditingBlockId(id);
-
-      const item = items[id];
-      if (!map || !window.kakao?.maps) return;
-      if (item?.lat == null || item?.lng == null) return;
-
-      const position = new window.kakao.maps.LatLng(item.lat, item.lng);
-      // 너무 멀리 있으면 당겨 준다 — 이미 가까우면 지금 배율을 그대로 둔다
-      if (map.getLevel() > 5) map.setLevel(5);
-      map.panTo(position);
-
-      if (!infoWindowRef.current) {
-        infoWindowRef.current = new window.kakao.maps.InfoWindow({
-          zIndex: 1,
-          removable: true,
-        });
-      }
-      infoWindowRef.current.setContent(
-        `<div style="padding:12px;font-size:13px;color:#333;min-width:180px;">
-           <b style="display:block;margin-bottom:4px;color:#d97e3c;">${item.name ?? ""}</b>
-           ${item.address ? `<span>${item.address}</span>` : ""}
-         </div>`,
-      );
-      infoWindowRef.current.setPosition(position);
-      infoWindowRef.current.open(map);
+      focusPlace(items[id]);
     },
-    [map, items],
+    [focusPlace, items],
   );
 
-  const handleSearchPlace = (e) => {
-    e.preventDefault();
-    if (!searchKeyword.trim()) {
-      alert("검색어를 입력해주세요.");
-      return;
-    }
-    if (!window.kakao || !window.kakao.maps || !window.kakao.maps.services) {
-      alert("카카오 장소 검색 API를 사용할 수 없습니다.");
-      return;
-    }
-
-    const ps = new window.kakao.maps.services.Places();
-    ps.keywordSearch(searchKeyword, (data, status) => {
-      if (status === window.kakao.maps.services.Status.OK) {
-        // 검색 결과 데이터 업데이트
-        setSearchResults(data);
-
-        // ✅ 디테일 1: 새 검색을 하면 스크롤을 맨 위로 휙! 올리기
-        if (searchListRef.current) {
-          searchListRef.current.scrollTop = 0;
-        }
-
-        // ✅ 디테일 2 (보너스): 새 검색을 하면 기존에 열려있던 정보 창(말풍선) 닫기!
-        if (infoWindowRef.current) {
-          infoWindowRef.current.close();
-        }
-
-        // 지도 화면 범위를 새 검색 결과들에 맞게 이동시키기
-        if (map) {
-          // 이전 검색의 핀부터 걷는다 — 안 걷으면 검색할 때마다 지도에 쌓인다
-          searchMarkersRef.current.forEach((m) => m.setMap(null));
-          searchMarkersRef.current = [];
-
-          const bounds = new window.kakao.maps.LatLngBounds();
-          data.forEach((place) => {
-            const position = new window.kakao.maps.LatLng(place.y, place.x);
-            bounds.extend(position);
-
-            const marker = new window.kakao.maps.Marker({
-              map: map,
-              position: position,
-              title: place.place_name,
-              // 파랑 = 아직 후보 (타임라인에 들어간 블록은 초록)
-              image: searchPinImage(),
-              zIndex: 3,
-            });
-            // 마커 클릭 = 상세 말풍선
-            window.kakao.maps.event.addListener(marker, "click", () => {
-              handlePlaceClick(place);
-            });
-            searchMarkersRef.current.push(marker);
-          });
-
-          map.setBounds(bounds);
-        }
-      } else if (status === window.kakao.maps.services.Status.ZERO_RESULT) {
-        alert("검색 결과가 존재하지 않습니다.");
-        setSearchResults([]);
-      } else {
-        alert("검색 중 오류가 발생했습니다.");
-      }
-    });
-  };
-  // 검색 내역 초기화 (QA) — 결과 목록·지도 핀·말풍선·입력어를 한 번에 걷는다
-  const handleClearSearch = () => {
-    setSearchResults([]);
-    setSearchKeyword("");
-    searchMarkersRef.current.forEach((m) => m.setMap(null));
-    searchMarkersRef.current = [];
-    infoWindowRef.current?.close();
-  };
-
-  const handlePlaceClick = (place) => {
-    if (map && window.kakao && window.kakao.maps) {
-      const moveLatLon = new window.kakao.maps.LatLng(place.y, place.x);
-
-      map.setLevel(4);
-      map.panTo(moveLatLon);
-
-      // 💡 2-1. 인포윈도우가 아직 안 만들어졌다면 최초 1회 생성
-      if (!infoWindowRef.current) {
-        infoWindowRef.current = new window.kakao.maps.InfoWindow({
-          zIndex: 1,
-          removable: true, // 창 닫기(X) 버튼 활성화
-        });
-      }
-
-      // 💡 2-2. 정보 창 안에 들어갈 디자인(HTML) 구성
-      // 현재 앱의 테마 색상(#d97e3c 등)을 사용해 통일감을 주었습니다.
-      const content = `
-        <div style="padding:15px; font-size:13px; color:#333; min-width:200px; border-radius:8px;">
-          <b style="font-size:15px; display:block; margin-bottom:5px; color:#d97e3c;">${place.place_name}</b>
-          ${place.road_address_name ? `<span style="display:block;">${place.road_address_name}</span>` : ""}
-          <span style="color:#888; display:block; margin-top:2px;">${place.address_name}</span>
-          ${place.phone ? `<span style="display:block; margin-top:5px; color:#6b7fc7;">📞 ${place.phone}</span>` : ""}
-        </div>
-      `;
-
-      // 💡 2-3. 내용과 좌표를 갱신하고 지도에 열기
-      infoWindowRef.current.setContent(content);
-      infoWindowRef.current.setPosition(moveLatLon);
-      infoWindowRef.current.open(map);
-    }
-  };
-
-  // 정산·1인 요금 환산의 기준 인원. 프로젝트에 값이 없으면 최소 1명으로 본다.
-  const headcount = Math.max(1, project?.budgetHeadcount || 1);
-
-  // 예산은 체인에 배치된 블록만 센다(명세) — 후보(POOL)는 아직 계획이 아니라
-  // 검토 중인 카드라서, 합산에 넣으면 "쓸지 말지 모르는 돈"이 예산을 잠식한다.
-  const placedIds = Object.values(chains).flat();
-  const totalBudget = placedIds.reduce(
-    (sum, id) => sum + effectiveCostOf(items[id], headcount),
-    0,
+  // 저장 실패 시 롤백 — "어디서 왔는지"를 복원하는 대신 서버 진실로 보드를
+  // 다시 시드한다. 5.5단계 이후엔 교통 블록까지 전부 서버에 있으므로
+  // reload 로 잃는 것이 없다.
+  // (useBudget 이 목표 예산 저장 실패에 이걸 쓰므로 훅 호출보다 위에 있어야 한다)
+  const rollbackToServer = useCallback(
+    (e) => {
+      showToast(
+        e?.message ?? "변경을 저장하지 못했어요. 서버 상태로 되돌립니다.",
+      );
+      reload();
+    },
+    [showToast, reload],
   );
-  // 총액을 인원으로 나눈 값 — 대중교통처럼 1인 요금인 항목은 이미 곱해 넣었으므로
-  // 여기서 나누면 다시 1인 몫으로 돌아온다.
-  const perPersonBudget = Math.round(totalBudget / headcount);
-  const [targetBudget, setTargetBudget] = useState(0);
+
+  const {
+    headcount,
+    totalBudget,
+    perPersonBudget,
+    targetBudget,
+    setTargetBudget,
+    budgetDraft,
+    setBudgetDraft,
+    commitBudgetDraft,
+    budgetEditCancelledRef,
+    bumpTargetBudget,
+    budgetPct,
+    remainingBudget,
+    budgetSegments,
+  } = useBudget({ projectId, project, chains, items, rollbackToServer });
 
   // ── 스냅샷 → 로컬 보드 시드 ──────────────────────────
   // effect 가 아니라 "렌더 중 조건부 setState"(React 공식 파생 상태 리셋 패턴)를 쓴다.
@@ -1139,7 +853,7 @@ export function DashboardPage() {
     if (!serverChains[activeDay]) setActiveDay("d1");
 
     // 목표 예산은 스냅샷의 project 에 실려 오고, 수정은 PATCH /projects 로 저장된다
-    // (백엔드 합의로 targetBudget 필드 추가 — handleTargetBudgetChange 참조).
+    // (백엔드 합의로 targetBudget 필드 추가 — useBudget 참조).
     setTargetBudget(project?.targetBudget ?? 0);
   }
 
@@ -1149,105 +863,6 @@ export function DashboardPage() {
     showToast(error?.message ?? "프로젝트를 열 수 없어요.");
     navigate(`/groups/${groupId}`, { replace: true });
   }, [status, error, groupId, navigate, showToast]);
-  // 목표 예산 저장은 디바운스한다 — ± 버튼 연타(십만원 단위)를 요청 1건으로 모은다.
-  // 타이머가 언마운트 후에 발화해도 요청은 그대로 나간다(마지막 조작 유실 방지).
-  // ± 버튼과 직접 입력이 같은 경로(commitTargetBudget)를 탄다.
-  const targetBudgetTimerRef = useRef(null);
-  const commitTargetBudget = (value) => {
-    const next = Math.max(0, value); // 0원 밑으로는 안 내려가게 방지
-    setTargetBudget(next);
-
-    clearTimeout(targetBudgetTimerRef.current);
-    targetBudgetTimerRef.current = setTimeout(() => {
-      blockApi.updateTargetBudget(projectId, next).catch(rollbackToServer);
-    }, 600);
-  };
-  // 홀드 반복(100ms 간격 연속 호출)은 렌더 사이에 여러 번 발화한다 — 클로저의
-  // targetBudget 은 그 사이 낡아 있으므로 최신값은 ref 로 읽어 누적시킨다
-  const targetBudgetRef = useRef(targetBudget);
-  useEffect(() => {
-    targetBudgetRef.current = targetBudget;
-  });
-  const handleTargetBudgetChange = (amount) =>
-    commitTargetBudget(targetBudgetRef.current + amount);
-
-  // 직접 입력 편집 상태 — null 이면 표시 모드, 문자열이면 입력 모드(입력 중 원문 유지)
-  const [budgetDraft, setBudgetDraft] = useState(null);
-  const budgetEditCancelledRef = useRef(false); // Esc 취소가 blur 커밋으로 이어지지 않게
-  const commitBudgetDraft = () => {
-    if (budgetEditCancelledRef.current) {
-      budgetEditCancelledRef.current = false;
-      setBudgetDraft(null);
-      return;
-    }
-    const parsed = Number(budgetDraft);
-    if (budgetDraft !== null && budgetDraft !== "" && Number.isFinite(parsed)) {
-      commitTargetBudget(Math.floor(parsed));
-    }
-    setBudgetDraft(null);
-  };
-  const budgetPercent =
-    targetBudget > 0 ? Math.min(100, (totalBudget / targetBudget) * 100) : 0;
-  const remainingBudget = targetBudget - totalBudget;
-
-  /**
-   * 카테고리(대분류)별 예산 세그먼트.
-   *
-   * 사용량 전체가 갈색 한 덩어리였을 때는 "무엇이 예산을 잡아먹는지"를 알 수 없었다.
-   * 블록 하나하나로 쪼개면 칸이 너무 잘게 나뉘므로, 숙소·식당·명소/활동·기타·교통
-   * 다섯 대분류로 합산해 카테고리 색 그대로 쌓는다.
-   *
-   * 칸의 폭은 "희망 예산 대비 비율"이다 — 그래야 남은 예산(빈 트랙)과 같은 자를 쓴다.
-   * 예산을 넘긴 경우에는 기준을 총 사용액으로 바꿔 막대를 꽉 채우고, 초과분은 아래
-   * 텍스트가 알려준다(비율이 100%를 넘는 칸은 그릴 수 없으므로).
-   *
-   * 순서는 금액순이 아니라 CAT_COLORS 선언 순서다 — 블록을 하나 고칠 때마다 칸이
-   * 자리를 바꾸면 눈으로 따라가기 어렵다.
-   */
-  const budgetSegments = useMemo(() => {
-    const denominator =
-      remainingBudget < 0 || targetBudget <= 0
-        ? totalBudget || 1
-        : targetBudget;
-
-    // 총액(totalBudget)과 같은 기준 — 체인에 배치된 블록만 (후보는 계획이 아니다).
-    // 1인 요금 곱하기도 같은 함수를 써야 칸의 합이 총액과 맞는다.
-    const sumByCat = {};
-    Object.values(chains)
-      .flat()
-      .forEach((id) => {
-        const item = items[id];
-        const cost = effectiveCostOf(item, headcount);
-        if (cost <= 0) return;
-        const cat = catKeyOf(item);
-        sumByCat[cat] = (sumByCat[cat] ?? 0) + cost;
-      });
-
-    return Object.keys(CAT_COLORS)
-      .filter((cat) => sumByCat[cat] > 0)
-      .map((cat) => ({
-        cat,
-        name: CAT_COLORS[cat].nm,
-        color: CAT_COLORS[cat].hex,
-        cost: sumByCat[cat],
-        percent: (sumByCat[cat] / denominator) * 100,
-        shareOfTotal:
-          totalBudget > 0 ? (sumByCat[cat] / totalBudget) * 100 : 0,
-      }));
-  }, [items, chains, headcount, targetBudget, totalBudget, remainingBudget]);
-
-  // 저장 실패 시 롤백 — "어디서 왔는지"를 복원하는 대신 서버 진실로 보드를
-  // 다시 시드한다. 5.5단계 이후엔 교통 블록까지 전부 서버에 있으므로
-  // reload 로 잃는 것이 없다.
-  const rollbackToServer = useCallback(
-    (e) => {
-      showToast(
-        e?.message ?? "변경을 저장하지 못했어요. 서버 상태로 되돌립니다.",
-      );
-      reload();
-    },
-    [showToast, reload],
-  );
 
   /**
    * 자정 쪼개기 결과를 서버에 반영한다 — 잘린 원본의 소요 시간, 통째로 옮겨진 블록의
@@ -2270,20 +1885,6 @@ export function DashboardPage() {
         e?.message ?? "블록을 저장하지 못했어요. 잠시 후 다시 시도해주세요.",
       );
     }
-  };
-
-  // MAP 모드 챗봇에 넘길 지도 뷰포트 (남서·북동) — 지도가 아직 없으면 null(위젯이 안내)
-  const getMapBounds = () => {
-    if (!map) return null;
-    const bounds = map.getBounds();
-    const sw = bounds.getSouthWest();
-    const ne = bounds.getNorthEast();
-    return {
-      swLat: sw.getLat(),
-      swLng: sw.getLng(),
-      neLat: ne.getLat(),
-      neLng: ne.getLng(),
-    };
   };
 
   const handleCreateCustomBlock = () => {
@@ -3655,185 +3256,32 @@ export function DashboardPage() {
               </div>
 
               <div className="side">
-                <div className="panel">
-                  <div className="bud-total">
-                    <span className="bud-total-label">총 </span>
-                    <span className="bud-total-value">
-                      {won(totalBudget) || "0원"}
-                    </span>
-                    {/* 정산은 결국 1인당 얼마인지가 궁금하다 — 총액 옆에 바로 붙인다 */}
-                    <span className="bud-total-per">
-                      1인당 {won(perPersonBudget) || "0원"}
-                      <span className="bud-total-per-n"> · {headcount}인</span>
-                    </span>
-                  </div>
+                <BudgetPanel
+                  totalBudget={totalBudget}
+                  perPersonBudget={perPersonBudget}
+                  headcount={headcount}
+                  targetBudget={targetBudget}
+                  budgetDraft={budgetDraft}
+                  setBudgetDraft={setBudgetDraft}
+                  commitBudgetDraft={commitBudgetDraft}
+                  budgetEditCancelledRef={budgetEditCancelledRef}
+                  bumpTargetBudget={bumpTargetBudget}
+                  budgetPct={budgetPct}
+                  remainingBudget={remainingBudget}
+                  budgetSegments={budgetSegments}
+                />
 
-                  <div className="bud-target">
-                    <span>희망 총 예산</span>
-                    <div className="bud-stepper">
-                      <HoldRepeatButton
-                        onTrigger={() => handleTargetBudgetChange(-100000)}
-                      >
-                        -
-                      </HoldRepeatButton>
-                      {/* 금액을 누르면 직접 입력 — Enter/포커스 아웃으로 저장, Esc 취소 */}
-                      {budgetDraft === null ? (
-                        <button
-                          type="button"
-                          className="bud-stepper-value"
-                          title="클릭해서 직접 입력"
-                          onClick={() => setBudgetDraft(String(targetBudget))}
-                        >
-                          {targetBudget.toLocaleString()}원
-                        </button>
-                      ) : (
-                        <input
-                          className="bud-stepper-input"
-                          type="number"
-                          min="0"
-                          step="10000"
-                          autoFocus
-                          value={budgetDraft}
-                          onChange={(e) => setBudgetDraft(e.target.value)}
-                          onBlur={commitBudgetDraft}
-                          onKeyDown={(e) => {
-                            if (e.key === "Enter") e.currentTarget.blur();
-                            else if (e.key === "Escape") {
-                              budgetEditCancelledRef.current = true;
-                              e.currentTarget.blur();
-                            }
-                          }}
-                        />
-                      )}
-                      <HoldRepeatButton
-                        onTrigger={() => handleTargetBudgetChange(100000)}
-                      >
-                        +
-                      </HoldRepeatButton>
-                    </div>
-                  </div>
+                <MapPanel initMapOnContainer={initMapOnContainer} />
 
-                  {/* 블록별 사용량 — 한 덩어리 갈색 바 대신 블록마다 색이 다른 칸으로 쌓는다.
-                      칸에 마우스를 올리면 블록 이름·금액·비중이 툴팁으로 나온다. */}
-                  <div className="bud-track">
-                    {budgetSegments.map((seg) => (
-                      <div
-                        key={seg.cat}
-                        className="bud-seg"
-                        style={{
-                          width: `${seg.percent}%`,
-                          backgroundColor: seg.color,
-                        }}
-                        title={`${seg.name} · ${won(seg.cost)} (사용액의 ${Math.round(seg.shareOfTotal)}%)`}
-                      />
-                    ))}
-                    {budgetSegments.length === 0 && (
-                      <div className="bud-empty">아직 비용이 있는 블록이 없어요</div>
-                    )}
-                  </div>
-
-                  {budgetSegments.length > 0 && (
-                    <div className="bud-legend">
-                      {budgetSegments.map((seg) => (
-                        <span key={seg.cat} className="bud-legend-item">
-                          <i style={{ backgroundColor: seg.color }} />
-                          <b>{seg.name}</b>
-                          {won(seg.cost)}
-                          <em>{Math.round(seg.shareOfTotal)}%</em>
-                        </span>
-                      ))}
-                    </div>
-                  )}
-
-                  <div className="bud-foot">
-                    <span>희망 예산의 {Math.round(budgetPercent)}% 사용</span>
-                    <span
-                      className={`bud-left ${remainingBudget < 0 ? "is-over" : ""}`}
-                    >
-                      {remainingBudget < 0
-                        ? `${won(Math.abs(remainingBudget))} 초과`
-                        : `남은 ${won(remainingBudget) || "0원"}`}
-                    </span>
-                  </div>
-                </div>
-
-                <div className="panel">
-                  <h4 className="panel-title">
-                    지도
-                    <span
-                      className="hint-ico"
-                      tabIndex={0}
-                      aria-label="지도 사용 안내"
-                      data-tip="장소를 검색하면 지도가 그 위치로 이동해요. 검색 결과나 지도의 핀을 클릭하면 상세 정보 말풍선이 떠요."
-                    >
-                      ⓘ
-                    </span>
-                  </h4>
-                  {/* 높이는 CSS(.map-box)에서 화면 높이에 맞춰 늘린다 — 사이드 폭이
-                      넓어진 만큼 지도도 남는 공간을 다 쓰게 하기 위함.
-                      초기화는 ref callback 으로 — getElementById 방식은 로딩 가드가
-                      null 을 반환하는 동안 컨테이너가 없어 재진입 시 회색 지도가 됐다 */}
-                  <div
-                    id="kakao-map-container"
-                    className="map-box"
-                    ref={initMapOnContainer}
-                  />
-                </div>
-
-                <div className="panel">
-                  <h4 className="panel-title">
-                    카카오 장소 검색
-                    <span
-                      className="hint-ico"
-                      tabIndex={0}
-                      aria-label="장소 검색 사용 안내"
-                      data-tip="장소를 검색한 뒤 마음에 드는 결과를 끌어다 후보 목록에 담아요. 계획표에는 후보 목록을 거쳐 올릴 수 있어요."
-                    >
-                      ⓘ
-                    </span>
-                  </h4>
-                  <div className="search-box">
-                    <form className="search-form" onSubmit={handleSearchPlace}>
-                      <input
-                        type="text"
-                        value={searchKeyword}
-                        onChange={(e) => setSearchKeyword(e.target.value)}
-                        placeholder="도시, 명소, 음식..."
-                      />
-                      {/* 결과가 있을 때만 초기화 — 목록·지도 핀을 한 번에 걷는다 */}
-                      {searchResults.length > 0 && (
-                        <button
-                          type="button"
-                          className="search-clear"
-                          onClick={handleClearSearch}
-                          title="검색 결과와 지도 핀을 지웁니다"
-                        >
-                          지우기
-                        </button>
-                      )}
-                      <button type="submit">검색</button>
-                    </form>
-
-                    {/* 💡 검색 결과 리스트: 버튼이 사라지고 이젠 꾹 눌러서 끌 수 있습니다! */}
-                    <div className="search-results" ref={searchListRef}>
-                      {searchResults.map((place) => (
-                        <SearchResultDraggable
-                          key={place.id}
-                          place={place}
-                          // 클릭 = 지도 이동 + 상세 말풍선 (드래그와 별개 동작)
-                          onClick={handlePlaceClick}
-                        />
-                      ))}
-                      {searchResults.length === 0 && (
-                        <div className="search-empty">
-                          검색 결과가 여기에 표시됩니다.
-                          <br />
-                          검색 후 패널을 왼쪽으로 끌어다 놓으세요.
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                </div>
+                <SearchPanel
+                  searchKeyword={searchKeyword}
+                  setSearchKeyword={setSearchKeyword}
+                  searchResults={searchResults}
+                  searchListRef={searchListRef}
+                  handleSearchPlace={handleSearchPlace}
+                  handleClearSearch={handleClearSearch}
+                  handlePlaceClick={handlePlaceClick}
+                />
               </div>
 
               {/* 보드 밖 경고 — 후보 목록·타임라인 어느 쪽도 아닌 곳에 블록을
@@ -3958,311 +3406,29 @@ export function DashboardPage() {
         </div>
       )}
 
-      {/* 이동수단 자동 생성(통합) — Day 전 구간의 후보를 한 모달에서 고르고
-          "적용"하면 일괄 생성된다 (confirmBulkTransit) */}
-      {bulkTransitPicker && (
-        <div className="blk-modal-ov" onClick={() => setBulkTransitPicker(null)}>
-          <div
-            className="transit-picker tp-bulk"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <h3 className="tp-title">이동수단 자동 생성</h3>
-            <p className="tp-route">
-              구간마다 이동수단을 고르세요 — 기본값은 추천 수단이에요.
-            </p>
-            <div className="tp-seg-list">
-              {bulkTransitPicker.segments.map((s) => {
-                const pairKey = `${s.fromBlockId}-${s.toBlockId}`;
-                const chosen = bulkTransitPicker.choices[pairKey];
-                const routable = s.candidates?.some((c) => c.status === "OK");
-                return (
-                  <div key={pairKey} className="tp-seg">
-                    <div className="tp-seg-route">
-                      {items[s.fromBlockId]?.name ?? "?"} →{" "}
-                      {items[s.toBlockId]?.name ?? "?"}
-                      {!routable && (
-                        <em className="tp-seg-none">경로 없음</em>
-                      )}
-                    </div>
-                    {s.timetableApplied === false && s.timetableSkipReason && (
-                      <p className="tp-banner tp-banner-warn">
-                        {s.timetableSkipReason}
-                      </p>
-                    )}
-                    {routable && (
-                      <div className="tp-chips">
-                        {s.candidates.map((c, idx) => (
-                          <TransitCandidateCard
-                            key={`${c.mode}-${idx}`}
-                            candidate={c}
-                            mode="select"
-                            selected={chosen?.candidate === c}
-                            onSelectCandidate={(cand) =>
-                              setBulkChoice(pairKey, {
-                                candidate: cand,
-                                departure: cand.departures?.[0] ?? null,
-                              })
-                            }
-                            selectedDepartureName={
-                              chosen?.candidate === c
-                                ? (chosen?.departure?.name ?? null)
-                                : null
-                            }
-                            onSelectDeparture={(d) =>
-                              setBulkChoice(pairKey, { candidate: c, departure: d })
-                            }
-                          />
-                        ))}
-                        <button
-                          type="button"
-                          className={`tp-chip tp-chip-skip ${chosen === null ? "on" : ""}`}
-                          onClick={() => setBulkChoice(pairKey, null)}
-                        >
-                          제외
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-            <div className="tp-actions">
-              <button
-                type="button"
-                className="tp-cancel"
-                onClick={() => setBulkTransitPicker(null)}
-              >
-                취소
-              </button>
-              <button
-                type="button"
-                className="tp-apply"
-                onClick={confirmBulkTransit}
-              >
-                {
-                  Object.values(bulkTransitPicker.choices).filter(Boolean)
-                    .length
-                }
-                개 구간 적용
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <TransitPickerModals
+        items={items}
+        bulkTransitPicker={bulkTransitPicker}
+        setBulkTransitPicker={setBulkTransitPicker}
+        setBulkChoice={setBulkChoice}
+        confirmBulkTransit={confirmBulkTransit}
+        transitPicker={transitPicker}
+        setTransitPicker={setTransitPicker}
+        setTransitPickerCandidate={setTransitPickerCandidate}
+        confirmTransitChoice={confirmTransitChoice}
+        transportReselectPicker={transportReselectPicker}
+        setTransportReselectPicker={setTransportReselectPicker}
+        setReselectCandidate={setReselectCandidate}
+        applyReselectTransport={applyReselectTransport}
+      />
 
-      {/* 이동수단 선택 — 구간 버튼이 후보를 받아 오면 열린다. 고른 수단으로
-          그 자리에 교통 블록이 생성된다 (confirmTransitChoice) */}
-      {transitPicker && (
-        <div className="blk-modal-ov" onClick={() => setTransitPicker(null)}>
-          <div className="transit-picker" onClick={(e) => e.stopPropagation()}>
-            <h3 className="tp-title">이동수단 선택</h3>
-            <p className="tp-route">
-              {items[transitPicker.currentId]?.name ?? "출발지"} →{" "}
-              {items[transitPicker.nextId]?.name ?? "도착지"}
-            </p>
-            {transitPicker.segment?.timetableApplied === false &&
-              transitPicker.segment?.timetableSkipReason && (
-                <p className="tp-banner tp-banner-warn">
-                  {transitPicker.segment.timetableSkipReason}
-                </p>
-              )}
-            <div className="tp-list">
-              {transitPicker.candidates.map((c, idx) => (
-                <TransitCandidateCard
-                  key={`${c.mode}-${idx}`}
-                  candidate={c}
-                  mode="select"
-                  selected={transitPicker.chosenCandidate === c}
-                  onSelectCandidate={setTransitPickerCandidate}
-                  selectedDepartureName={
-                    transitPicker.chosenCandidate === c
-                      ? (transitPicker.chosenDeparture?.name ?? null)
-                      : null
-                  }
-                  // 편을 고르면 그 편이 속한 후보도 함께 선택된다 — 선택 안 된
-                  // 후보의 편을 바로 눌렀을 때 후보가 안 바뀌던 문제 방지
-                  onSelectDeparture={(d) =>
-                    setTransitPicker((prev) =>
-                      prev
-                        ? { ...prev, chosenCandidate: c, chosenDeparture: d }
-                        : prev,
-                    )
-                  }
-                />
-              ))}
-            </div>
-            <div className="tp-actions">
-              <button
-                type="button"
-                className="tp-cancel"
-                onClick={() => setTransitPicker(null)}
-              >
-                취소
-              </button>
-              <button
-                type="button"
-                className="tp-apply"
-                disabled={transitPicker.chosenCandidate?.status !== "OK"}
-                onClick={confirmTransitChoice}
-              >
-                이 수단으로 추가
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* 교통 블록 편집 재선택 — 저장된 candidates 스냅샷으로 재조회 없이 연다.
-          "저장"을 눌러야 PATCH /blocks/{id}/fields 로 transportMeta 를 통째 교체한다 */}
-      {transportReselectPicker && (
-        <div
-          className="blk-modal-ov"
-          onClick={() => setTransportReselectPicker(null)}
-        >
-          <div className="transit-picker" onClick={(e) => e.stopPropagation()}>
-            <h3 className="tp-title">이동 수단 변경</h3>
-            <div className="tp-list">
-              {transportReselectPicker.candidates.map((c, idx) => (
-                <TransitCandidateCard
-                  key={`${c.mode}-${idx}`}
-                  candidate={c}
-                  mode="select"
-                  selected={transportReselectPicker.chosenCandidate === c}
-                  onSelectCandidate={setReselectCandidate}
-                  selectedDepartureName={
-                    transportReselectPicker.chosenCandidate === c
-                      ? (transportReselectPicker.chosenDeparture?.name ?? null)
-                      : null
-                  }
-                  // 편 선택 = 그 후보 선택까지 (단일 피커와 같은 이유)
-                  onSelectDeparture={(d) =>
-                    setTransportReselectPicker((prev) =>
-                      prev
-                        ? { ...prev, chosenCandidate: c, chosenDeparture: d }
-                        : prev,
-                    )
-                  }
-                />
-              ))}
-            </div>
-            <div className="tp-actions">
-              <button
-                type="button"
-                className="tp-cancel"
-                onClick={() => setTransportReselectPicker(null)}
-              >
-                취소
-              </button>
-              <button
-                type="button"
-                className="tp-apply"
-                disabled={transportReselectPicker.chosenCandidate?.status !== "OK"}
-                onClick={applyReselectTransport}
-              >
-                저장
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* 보이스 위젯 — 화면 맨 아래 가장자리에 붙은 탭(Vue DevTools 의 그 탭처럼).
-          평소엔 윗부분만 빼꼼 보이다가 올리면 다 나오고, 누르면 그 위로 마이크·
-          스피커 아이콘이 펼쳐진다. 입장하면 자동 연결(권한 거부 시 듣기 전용)이고,
-          버튼은 송신(마이크)·수신(스피커)만 끄고 켠다 — 접어 둬도 연결은
-          대시보드를 떠날 때까지 유지된다. */}
-      <div className={`voice-bar ${voiceOpen ? "is-open" : ""}`}>
-        {voiceOpen && (
-          <div className="voice-items" role="group" aria-label="음성 채팅 컨트롤">
-            <button
-              type="button"
-              className={`voice-mic ${voice.micOn && !voice.listenOnly ? "on" : "off"}`}
-              onClick={voice.toggleMic}
-              disabled={voice.listenOnly}
-              title={
-                voice.listenOnly
-                  ? "마이크 권한이 거부되어 듣기만 가능해요"
-                  : voice.micOn
-                    ? "마이크 끄기"
-                    : "마이크 켜기"
-              }
-            >
-              {voice.listenOnly ? "🎧" : voice.micOn ? "🎤" : "🔇"}
-            </button>
-            {/* 전체 음소거 ↔ 전체 듣기 — 상대 소리만 끈다(내 목소리는 계속 나감) */}
-            <button
-              type="button"
-              className={`voice-mic ${voice.speakerOn ? "on" : "off"}`}
-              onClick={voice.toggleSpeaker}
-              title={
-                voice.speakerOn
-                  ? "전체 음소거 — 모두의 소리 끄기"
-                  : "전체 듣기 — 다시 듣기"
-              }
-            >
-              {voice.speakerOn ? "🔊" : "🔈"}
-            </button>
-            <span className="voice-status">
-              {/* 인원은 나를 포함해 센다 — 나+A+B 면 3명 */}
-              {!voice.joined
-                ? "음성 연결 중..."
-                : voice.listenOnly
-                  ? `듣기 전용 · ${voice.connectedCount + 1}명`
-                  : voice.connectedCount > 0
-                    ? `음성 연결됨 · ${voice.connectedCount + 1}명`
-                    : "혼자 있어요"}
-            </span>
-            {/* 참여자 아바타 (QA 배치3) — 나 + 음성 연결이 수립된 멤버들 */}
-            {voice.joined && (
-              <span className="voice-peers">
-                {[currentUser?.id, ...voice.connectedIds]
-                  .filter((id) => id != null)
-                  .map((id) => {
-                    const isMe = id === currentUser?.id;
-                    const member = isMe
-                      ? {
-                          nickname: currentUser?.nickname ?? "나",
-                          profileImg: currentUser?.profileImg,
-                        }
-                      : boardMembers.find((m) => m.memberId === id);
-                    if (!member) return null;
-                    return (
-                      <i
-                        key={id}
-                        className="voice-peer"
-                        title={isMe ? `${member.nickname} (나)` : member.nickname}
-                      >
-                        {member.profileImg?.startsWith("http") ? (
-                          <img src={member.profileImg} alt="" />
-                        ) : (
-                          (member.nickname?.[0] ?? "?")
-                        )}
-                      </i>
-                    );
-                  })}
-              </span>
-            )}
-          </div>
-        )}
-
-        {/* 하단 탭 — 접힘/펼침만 한다. 마이크를 토글하지 않는다(접힌 채로 잘못
-            눌러 목소리가 나가는 사고 방지). 접었을 때는 마이크 상태와 인원수를
-            여기서 읽는다 — 아이콘이 사라져도 상태는 알아야 한다. */}
-        <button
-          type="button"
-          className="voice-tab"
-          onClick={() => setVoiceOpen((open) => !open)}
-          aria-expanded={voiceOpen}
-          title={voiceOpen ? "음성 컨트롤 접기" : "음성 컨트롤 펼치기"}
-          aria-label={voiceOpen ? "음성 컨트롤 접기" : "음성 컨트롤 펼치기"}
-        >
-          <span>{voice.listenOnly ? "🎧" : voice.micOn ? "🎤" : "🔇"}</span>
-          {voice.joined && <span>{voice.connectedCount + 1}</span>}
-          <span className="voice-tab-caret" aria-hidden="true">
-            {voiceOpen ? "▼" : "▲"}
-          </span>
-        </button>
-      </div>
+      <VoiceBar
+        voice={voice}
+        voiceOpen={voiceOpen}
+        setVoiceOpen={setVoiceOpen}
+        currentUser={currentUser}
+        boardMembers={boardMembers}
+      />
 
       {/* 프로젝트 수정 — 그룹 페이지의 ✎ 와 같은 모달을 그대로 쓴다.
           저장 뒤에는 스냅샷을 다시 읽어야 제목·Day 탭·기간이 따라온다
