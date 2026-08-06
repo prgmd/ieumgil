@@ -210,6 +210,8 @@ export async function fetchOpsAfter(projectId, afterSeq) {
   try {
     const { data } = await axiosInstance.get(`/projects/${projectId}/ops`, {
       params: { afterSeq },
+      // 갭 복구는 사용자가 시작한 요청이 아니다 — 전역 스피너를 띄우지 않는다
+      meta: { silent: true },
     });
     return unwrap(data) ?? [];
   } catch (error) {
@@ -238,8 +240,9 @@ export async function sendChatbotMessage(
     const { data } = await axiosInstance.post(
       `/projects/${projectId}/chatbot/messages`,
       { message, mode, ...(mapContext ? { mapContext } : {}) },
-      // LLM 응답은 전역 기본(10초)을 넘기기 쉽다 — 이 요청만 넉넉히
-      { timeout: 30000 },
+      // LLM 응답은 전역 기본(10초)을 넘기기 쉽다 — 이 요청만 넉넉히.
+      // 진행 표시는 대화창의 "이음이가 생각 중"이 이미 하므로 전역 스피너는 뺀다.
+      { timeout: 30000, meta: { silent: true } },
     );
     return unwrap(data);
   } catch (error) {
@@ -318,6 +321,11 @@ export async function calculateTransitCandidates(projectId, blockIds) {
 // ── 세부 내용 편집 락 (advisory) ─────────────────────
 // Redis SET NX + TTL 30s. 서버가 detail 쓰기를 막지는 않는다 — 편집 배지용이다.
 // 락 상태 변화(획득·해제)는 presence 토픽에 DETAIL_LOCK 메시지로 전파된다.
+//
+// 세 요청 모두 전역 스피너에서 뺀다(silent) — 하트비트는 10초마다 도는 배경
+// 요청이고, 획득·해제도 폼을 열고 닫는 부수 효과라 사용자가 기다리는 대상이 아니다.
+// 실패해도 편집을 막지 않는(advisory) 요청에 로딩을 띄우면 의미가 어긋난다.
+const LOCK_CFG = { meta: { silent: true } };
 
 /**
  * 편집 락 획득. 실패해도 편집을 막지 않는다(advisory) — holder 를 배지에 쓴다.
@@ -325,7 +333,11 @@ export async function calculateTransitCandidates(projectId, blockIds) {
  */
 export async function acquireDetailLock(blockId) {
   try {
-    const { data } = await axiosInstance.post(`/blocks/${blockId}/detail-lock`);
+    const { data } = await axiosInstance.post(
+      `/blocks/${blockId}/detail-lock`,
+      null,
+      LOCK_CFG,
+    );
     return unwrap(data);
   } catch (error) {
     unwrapError(error);
@@ -335,7 +347,11 @@ export async function acquireDetailLock(blockId) {
 /** 락 TTL 연장 — 10초 주기, 소유자만 가능(비소유 하트비트 = BLOCK409). */
 export async function heartbeatDetailLock(blockId) {
   try {
-    const { data } = await axiosInstance.put(`/blocks/${blockId}/detail-lock`);
+    const { data } = await axiosInstance.put(
+      `/blocks/${blockId}/detail-lock`,
+      null,
+      LOCK_CFG,
+    );
     return unwrap(data);
   } catch (error) {
     unwrapError(error);
@@ -345,7 +361,10 @@ export async function heartbeatDetailLock(blockId) {
 /** 락 해제 — 멱등(만료 직후 해제 요청도 에러가 아니다). */
 export async function releaseDetailLock(blockId) {
   try {
-    const { data } = await axiosInstance.delete(`/blocks/${blockId}/detail-lock`);
+    const { data } = await axiosInstance.delete(
+      `/blocks/${blockId}/detail-lock`,
+      LOCK_CFG,
+    );
     return unwrap(data);
   } catch (error) {
     unwrapError(error);

@@ -1,6 +1,7 @@
 import axios from "axios";
 import { tokenStorage } from "../util/tokenStorage";
 import { getClientId } from "./clientId";
+import { useLoadingStore } from "../stores/loadingStore";
 
 /**
  * 전역 Axios 인스턴스
@@ -36,6 +37,21 @@ const axiosInstance = axios.create({
 // 빠뜨리면 에러 없이 자기 변경이 이중 적용되는, 원인 찾기 어려운 종류의 버그가 된다.
 const MUTATING_METHODS = new Set(["post", "put", "patch", "delete"]);
 
+/**
+ * 전역 로딩 표시기 카운팅.
+ *
+ * 개별 요청이 `{ meta: { silent: true } }` 로 빠질 수 있다 — 하트비트·갭 복구처럼
+ * 사용자가 시작하지 않은 배경 요청이나, 이미 제 화면에 진행 표시를 가진 요청
+ * (챗봇의 "생각 중")이 대상이다. 이것들을 세면 스피너가 상시로 떠 있게 된다.
+ *
+ * counted 는 begin() 을 부른 요청만 end() 를 부르게 하는 표식이다. 401 재발급으로
+ * 원 요청이 다시 나갈 때는 같은 config 가 인터셉터를 한 번 더 통과하므로
+ * begin/end 가 각각 한 번씩 더 짝지어진다 — 카운터는 그대로 균형이 맞는다.
+ */
+const settleLoading = (config) => {
+  if (config?.meta?.counted) useLoadingStore.getState().end();
+};
+
 axiosInstance.interceptors.request.use(
   (config) => {
     const accessToken = tokenStorage.getAccessToken();
@@ -44,6 +60,10 @@ axiosInstance.interceptors.request.use(
     }
     if (MUTATING_METHODS.has(config.method)) {
       config.headers["X-Client-Id"] = getClientId();
+    }
+    if (!config.meta?.silent) {
+      config.meta = { ...config.meta, counted: true };
+      useLoadingStore.getState().begin();
     }
     return config;
   },
@@ -106,9 +126,15 @@ const reissueAccessToken = async () => {
 };
 
 axiosInstance.interceptors.response.use(
-  (response) => response,
+  (response) => {
+    settleLoading(response.config);
+    return response;
+  },
   async (error) => {
     const originalRequest = error.config;
+    // 성공·실패·취소 어느 쪽으로 끝나든 카운터는 반드시 내린다. 아래 분기들이
+    // 저마다 return 하므로 갈라지기 전에 여기서 한 번만 처리한다.
+    settleLoading(originalRequest);
 
     // 네트워크 오류 등 응답이 없는 경우는 그대로 반환
     if (!error.response || !originalRequest) {

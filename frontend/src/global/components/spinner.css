@@ -1,0 +1,62 @@
+/* 전역 로딩 표시기 — 화면 위쪽 가운데에 뜨는 알약.
+   클릭을 막지 않는다(pointer-events: none). 요청이 늦다고 화면을 덮어 버리면
+   하필 느린 그 순간에 사용자가 아무것도 못 하게 되고, 대시보드는 드래그 중에도
+   저장 요청이 오가는 화면이라 특히 곤란하다 — 상태만 알리고 길은 비워 둔다. */
+.gspin {
+  position: fixed;
+  left: 50%;
+  top: 18px;
+  transform: translate(-50%, -8px);
+  /* 모달 오버레이(대시보드 9999) 위, 토스트(20000) 아래 — 실패 안내가 우선이다 */
+  z-index: 19500;
+
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 9px 16px;
+  border-radius: 999px;
+  background: rgba(35, 28, 22, 0.9);
+  color: #fffdf8;
+  font-size: 13px;
+  font-weight: 500;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
+
+  opacity: 0;
+  pointer-events: none;
+  transition:
+    opacity 0.18s ease,
+    transform 0.18s ease;
+}
+
+.gspin--visible {
+  opacity: 1;
+  transform: translate(-50%, 0);
+}
+
+.gspin__ring {
+  width: 14px;
+  height: 14px;
+  border: 2px solid rgba(255, 255, 255, 0.28);
+  border-top-color: #fff;
+  border-radius: 50%;
+  animation: gspin-turn 0.7s linear infinite;
+}
+
+@keyframes gspin-turn {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes gspin-pulse {
+  50% {
+    opacity: 0.35;
+  }
+}
+
+/* 회전 애니메이션을 원치 않는 사용자에게는 점멸로 대체한다 */
+@media (prefers-reduced-motion: reduce) {
+  .gspin__ring {
+    animation: gspin-pulse 1.2s ease-in-out infinite;
+  }
+}

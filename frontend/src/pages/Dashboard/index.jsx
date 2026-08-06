@@ -3308,9 +3308,17 @@ export function DashboardPage() {
                         드래그로 놓으려는 중에는 드롭존이 대신 보이므로 숨긴다 */}
                     {pool.length === 0 && dragPreview?.region !== "pool" && (
                       <div className="pool-empty">
-                        아직 보관한 블록이 없어요 — 오른쪽 <b>지도 검색</b>이나{" "}
-                        <b>챗봇 이음이</b>의 추천을 끌어다 여기에 보관하고,{" "}
-                        <b>+ 커스텀 블록</b>으로 직접 만들 수도 있어요.
+                        <span className="pool-empty__ico" aria-hidden="true">
+                          🗂️
+                        </span>
+                        <b className="pool-empty__title">
+                          아직 보관한 블록이 없어요
+                        </b>
+                        <span className="pool-empty__desc">
+                          오른쪽 <b>지도 검색</b>이나 <b>챗봇 이음이</b>의 추천을
+                          끌어다 여기에 보관하고, <b>+ 커스텀 블록</b>으로 직접
+                          만들 수도 있어요.
+                        </span>
                       </div>
                     )}
                   </div>

@@ -957,9 +957,17 @@
 .pool-add-btn:hover {
   background: #6a4536;
 }
-/* 후보 목록 빈 상태 (POOL-01) — 어디서 채우는지 알려주는 자리 표시 */
+/* 후보 목록 빈 상태 (POOL-01) — 어디서 채우는지 알려주는 자리 표시.
+   .pool 이 5열 그리드라 grid-column 없이는 첫 칸(폭의 1/5)만 차지해 왼쪽으로
+   쏠린다. 전 열을 가로지르고 카드 자리(min-height) 한가운데에 세로로도 맞춘다. */
 .pool-empty {
-  width: 100%;
+  grid-column: 1 / -1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 130px;
   padding: 22px 16px;
   border: 1.5px dashed var(--border1, #e3dfd8);
   border-radius: 12px;
@@ -967,6 +975,19 @@
   font-size: 12.5px;
   line-height: 1.7;
   color: var(--ink3, #8a776a);
+}
+.pool-empty__ico {
+  font-size: 26px;
+  line-height: 1;
+  opacity: 0.75;
+}
+.pool-empty__title {
+  font-size: 15px;
+  color: var(--ink2, #6b5a4e);
+}
+/* 보드가 넓어도 한 줄이 눈으로 훑기 좋은 길이에서 끊기게 한다 */
+.pool-empty__desc {
+  max-width: 46ch;
 }
 .pool-empty b {
   color: var(--ink2, #6b5a4e);

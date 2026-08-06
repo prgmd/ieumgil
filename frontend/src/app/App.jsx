@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Outlet } from "react-router-dom";
 import { useAuthStore } from "../global/stores/authStore";
 import { Toast } from "../global/components/Toast";
+import { GlobalSpinner } from "../global/components/GlobalSpinner";
 
 /**
  * 공통 레이아웃 컴포넌트.
@@ -47,6 +48,9 @@ function App() {
     <>
       <Outlet />
       <Toast />
+      {/* 늦는 요청에만 뜨는 전역 스피너 — 부트스트랩 화면(위 !booted)에는
+          이미 자체 안내가 있으므로 이 아래로만 둔다 */}
+      <GlobalSpinner />
     </>
   );
 }
