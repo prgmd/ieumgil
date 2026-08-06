@@ -20,8 +20,6 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
-import java.time.LocalTime;
-import java.time.format.DateTimeParseException;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Set;
@@ -34,7 +32,7 @@ public class BlockCommandServiceImpl implements BlockCommandService {
     /** LWW 갱신을 허용하는 필드 화이트리스트 — Block.applyField의 switch와 1:1 */
     private static final Set<String> LWW_FIELDS = Set.of(
             "name", "budget", "durationMin", "detail",
-            "startTime", "endTime", "isTimeFixed", "vehicleFlag", "transportMeta");
+            "isTimeFixed", "vehicleFlag", "transportMeta");
 
     private final BlockRepository blockRepository;
     private final ProjectRepository projectRepository;
@@ -123,21 +121,18 @@ public class BlockCommandServiceImpl implements BlockCommandService {
         return BlockResDTO.FieldsApplied.builder().applied(applied).build();
     }
 
-    /** 블록 이동 (BLK-07, DAY-02) — 옮긴 1행만 UPDATE. 시각 재계산은 클라이언트가 fields로 저장한다 */
+    /** 블록 이동 (BLK-07, DAY-02) — 옮긴 1행만 UPDATE. 목적지는 절대 오프셋 하나로 온다 */
     @Override
     public BlockResDTO.Moved move(Long userId, Long blockId, String clientId, BlockReqDTO.Move request) {
         Block block = getAliveBlock(blockId);
 
-        // 기존 호출부가 넘기던 dayNo를 오프셋으로 환산 — move()는 이제 절대 오프셋을 받는다
-        Integer offset = request.dayNo() == null
-                ? null
-                : (request.dayNo() - 1) * Block.MINUTES_PER_DAY;
-        block.move(offset, request.orderKey());
+        block.move(request.startOffsetMinutes(), request.orderKey());
         // 이동도 편집이다 — 클라이언트가 BLOCK_MOVED의 actorId를 배지로 기록하는 것과 맞춘다(PRS-04)
         block.markEditedBy(userRepository.getReferenceById(userId));
 
         long seq = opPublisher.publish(block.getProject().getId(), userId, clientId, "BLOCK_MOVED",
-                payloadWithNullable("blockId", blockId, "dayNo", request.dayNo(), "orderKey", request.orderKey()));
+                payloadWithNullable("blockId", blockId,
+                        "startOffsetMinutes", request.startOffsetMinutes(), "orderKey", request.orderKey()));
 
         return BlockResDTO.Moved.builder().blockId(blockId).seq(seq).build();
     }
@@ -210,7 +205,6 @@ public class BlockCommandServiceImpl implements BlockCommandService {
                     }
                     yield number;
                 }
-                case "startTime", "endTime" -> raw == null ? null : LocalTime.parse((String) raw);
                 case "isTimeFixed" -> (Boolean) raw;
                 case "vehicleFlag" -> {
                     if (raw == null) {
@@ -224,7 +218,7 @@ public class BlockCommandServiceImpl implements BlockCommandService {
                 case "transportMeta" -> raw;   // 자유 구조 JSON — 스키마 검증 없이 통과(ERD 예시 참조)
                 default -> throw new CustomException(BlockErrorCode.UNSUPPORTED_FIELD);
             };
-        } catch (ClassCastException | IllegalArgumentException | DateTimeParseException e) {
+        } catch (ClassCastException | IllegalArgumentException e) {
             throw new CustomException(BlockErrorCode.INVALID_FIELD_VALUE);
         }
     }
@@ -236,7 +230,7 @@ public class BlockCommandServiceImpl implements BlockCommandService {
         return map;
     }
 
-    /** Map.of는 null 값을 거부하므로(dayNo null = POOL 이동) 직접 담는다 */
+    /** Map.of는 null 값을 거부하므로(startOffsetMinutes null = POOL 이동) 직접 담는다 */
     private static Map<String, Object> payloadWithNullable(Object... kv) {
         Map<String, Object> map = new LinkedHashMap<>();
         for (int i = 0; i < kv.length; i += 2) {

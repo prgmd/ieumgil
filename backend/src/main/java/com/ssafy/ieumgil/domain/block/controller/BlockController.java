@@ -48,7 +48,8 @@ public class BlockController {
     @GroupMember(GroupMember.Source.PROJECT_ID)
     @PostMapping("/projects/{projectId}/blocks")
     @ResponseStatus(HttpStatus.CREATED)
-    @Operation(summary = "블록 생성", description = "지도/직접/교통 블록을 생성합니다. dayNo가 null이면 후보(POOL)로 생성됩니다.")
+    @Operation(summary = "블록 생성",
+            description = "지도/직접/교통 블록을 생성합니다. startOffsetMinutes(Day 1 00:00 기준 경과 분)가 null이면 후보(POOL)로 생성됩니다.")
     public CustomResponse<BlockResDTO.Created> createBlock(
             @Parameter(hidden = true) @AuthenticationPrincipal Long userId,
             @PathVariable Long projectId,
@@ -73,7 +74,7 @@ public class BlockController {
     @GroupMember(GroupMember.Source.BLOCK_ID)
     @PatchMapping("/blocks/{blockId}/position")
     @Operation(summary = "블록 이동",
-            description = "체인 재정렬/후보↔체인/Day 이동. 옮긴 블록 1행만 갱신되며 시각 재계산은 클라이언트가 fields로 저장합니다.")
+            description = "체인 재정렬/후보↔체인/Day 이동. 목적지는 startOffsetMinutes로 지정하며 옮긴 블록 1행만 갱신됩니다.")
     public CustomResponse<BlockResDTO.Moved> move(
             @Parameter(hidden = true) @AuthenticationPrincipal Long userId,
             @PathVariable Long blockId,

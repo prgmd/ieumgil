@@ -10,6 +10,7 @@ import com.ssafy.ieumgil.domain.block.repository.BlockRepository;
 import com.ssafy.ieumgil.domain.block.service.BlockCommandService;
 import com.ssafy.ieumgil.domain.project.entity.Project;
 import com.ssafy.ieumgil.domain.user.entity.User;
+import com.ssafy.ieumgil.support.BlockFixtures;
 import com.ssafy.ieumgil.support.IntegrationTestSupport;
 import jakarta.persistence.EntityManagerFactory;
 import org.hibernate.SessionFactory;
@@ -45,9 +46,7 @@ class OpPipelineIntegrationTest extends IntegrationTestSupport {
 
     private long createBlock(User user, Project project, String name) {
         return blockCommandService.createBlock(user.getId(), project.getId(), null,
-                new BlockReqDTO.Create(BlockCategory.ETC, name, 1, null, null, null,
-                        null, null, null, null, null, null, null, null, null,
-                        BlockSource.MANUAL, null, null))
+                BlockFixtures.at(BlockCategory.ETC, name, null, 0))
                 .seq();
     }
 
@@ -132,9 +131,7 @@ class OpPipelineIntegrationTest extends IntegrationTestSupport {
         User user = seedUser();
         Project project = seedProject(user);
         long blockId = blockCommandService.createBlock(user.getId(), project.getId(), null,
-                new BlockReqDTO.Create(BlockCategory.ETC, "이동 대상", 1, "a0", null, null,
-                        null, null, null, null, null, null, null, null, null,
-                        BlockSource.MANUAL, null, null))
+                BlockFixtures.at(BlockCategory.ETC, "이동 대상", "a0", 0))
                 .blockId();
 
         // 배경: JSONB 스냅샷 딥카피가 Long→Integer로 되살아나 INSERT 직후 매번
@@ -143,7 +140,7 @@ class OpPipelineIntegrationTest extends IntegrationTestSupport {
         Statistics stats = entityManagerFactory.unwrap(SessionFactory.class).getStatistics();
         stats.clear();
 
-        blockCommandService.move(user.getId(), blockId, null, new BlockReqDTO.Move(2, "b0"));
+        blockCommandService.move(user.getId(), blockId, null, new BlockReqDTO.Move(1440, "b0"));
 
         assertThat(stats.getEntityStatistics(ActivityLog.class.getName()).getUpdateCount()).isZero();
         assertThat(stats.getEntityStatistics(ActivityLog.class.getName()).getInsertCount()).isEqualTo(1);
