@@ -9,9 +9,10 @@
 
 import { useState, useRef, useEffect, useCallback } from "react";
 import { ensureKakaoMaps } from "../../../features/dashboard/map/addressLookup";
+import * as placeApi from "../../../features/place/api/placeApi";
 import { planPinImage, searchPinImage, ROUTE_LINE_COLOR } from "../mapPins";
 
-export function useKakaoMap({ chains, items, activeDay }) {
+export function useKakaoMap({ chains, items, activeDay, showToast }) {
   const [map, setMap] = useState(null);
   const [searchKeyword, setSearchKeyword] = useState("");
   const [searchResults, setSearchResults] = useState([]);
@@ -19,6 +20,9 @@ export function useKakaoMap({ chains, items, activeDay }) {
   const infoWindowRef = useRef(null);
   // 검색 결과 핀 — 추적해 둬야 재검색·초기화 때 지도에서 걷을 수 있다
   const searchMarkersRef = useRef([]);
+  // 검색 요청 세대 — SDK 콜백과 달리 HTTP 는 순서가 뒤집힐 수 있어, 늦게 도착한
+  // 이전 응답이 최신 결과를 덮지 않도록 마지막 요청만 반영한다
+  const searchSeqRef = useRef(0);
 
   // 지도 초기화 — 컨테이너 div 의 ref callback 으로 한다.
   //
@@ -225,68 +229,64 @@ export function useKakaoMap({ chains, items, activeDay }) {
     [map],
   );
 
-  const handleSearchPlace = (e) => {
+  // 장소 검색은 서버를 거친다 — 브라우저에서 카카오를 직접 부르지 않는다.
+  // 지도 렌더링(마커·말풍선)만 SDK 를 계속 쓴다.
+  const handleSearchPlace = async (e) => {
     e.preventDefault();
-    if (!searchKeyword.trim()) {
-      alert("검색어를 입력해주세요.");
+    const keyword = searchKeyword.trim();
+    if (!keyword) return;
+
+    const seq = ++searchSeqRef.current;
+    let results;
+    try {
+      // 지도 중심을 주면 그 지점 기준 거리순으로 정렬된다(명세 MAP-02)
+      const center = map?.getCenter();
+      results = await placeApi.searchPlaces(keyword, {
+        lat: center?.getLat(),
+        lng: center?.getLng(),
+      });
+    } catch (err) {
+      if (seq !== searchSeqRef.current) return; // 이미 다음 검색이 시작됐다
+      showToast?.(err?.message ?? "검색 중 오류가 발생했어요.");
       return;
     }
-    if (!window.kakao || !window.kakao.maps || !window.kakao.maps.services) {
-      alert("카카오 장소 검색 API를 사용할 수 없습니다.");
-      return;
-    }
+    if (seq !== searchSeqRef.current) return; // 늦게 온 이전 응답은 버린다
 
-    const ps = new window.kakao.maps.services.Places();
-    ps.keywordSearch(searchKeyword, (data, status) => {
-      if (status === window.kakao.maps.services.Status.OK) {
-        // 검색 결과 데이터 업데이트
-        setSearchResults(data);
+    setSearchResults(results);
 
-        // ✅ 디테일 1: 새 검색을 하면 스크롤을 맨 위로 휙! 올리기
-        if (searchListRef.current) {
-          searchListRef.current.scrollTop = 0;
-        }
+    // 새 검색을 하면 결과 목록 스크롤을 맨 위로 올리고, 열려 있던 말풍선을 닫는다
+    if (searchListRef.current) searchListRef.current.scrollTop = 0;
+    infoWindowRef.current?.close();
 
-        // ✅ 디테일 2 (보너스): 새 검색을 하면 기존에 열려있던 정보 창(말풍선) 닫기!
-        if (infoWindowRef.current) {
-          infoWindowRef.current.close();
-        }
+    // 결과가 없으면 목록의 빈 상태(SearchPanel 의 search-empty)가 알려준다 —
+    // 검색 결과 없음은 에러가 아니므로 토스트를 띄우지 않는다
+    if (!map || results.length === 0) return;
 
-        // 지도 화면 범위를 새 검색 결과들에 맞게 이동시키기
-        if (map) {
-          // 이전 검색의 핀부터 걷는다 — 안 걷으면 검색할 때마다 지도에 쌓인다
-          searchMarkersRef.current.forEach((m) => m.setMap(null));
-          searchMarkersRef.current = [];
+    // 이전 검색의 핀부터 걷는다 — 안 걷으면 검색할 때마다 지도에 쌓인다
+    searchMarkersRef.current.forEach((m) => m.setMap(null));
+    searchMarkersRef.current = [];
 
-          const bounds = new window.kakao.maps.LatLngBounds();
-          data.forEach((place) => {
-            const position = new window.kakao.maps.LatLng(place.y, place.x);
-            bounds.extend(position);
+    const bounds = new window.kakao.maps.LatLngBounds();
+    results.forEach((place) => {
+      const position = new window.kakao.maps.LatLng(place.lat, place.lng);
+      bounds.extend(position);
 
-            const marker = new window.kakao.maps.Marker({
-              map: map,
-              position: position,
-              title: place.place_name,
-              // 파랑 = 아직 후보 (타임라인에 들어간 블록은 초록)
-              image: searchPinImage(),
-              zIndex: 3,
-            });
-            // 마커 클릭 = 상세 말풍선
-            window.kakao.maps.event.addListener(marker, "click", () => {
-              handlePlaceClick(place);
-            });
-            searchMarkersRef.current.push(marker);
-          });
-
-          map.setBounds(bounds);
-        }
-      } else if (status === window.kakao.maps.services.Status.ZERO_RESULT) {
-        alert("검색 결과가 존재하지 않습니다.");
-        setSearchResults([]);
-      } else {
-        alert("검색 중 오류가 발생했습니다.");
-      }
+      const marker = new window.kakao.maps.Marker({
+        map,
+        position,
+        title: place.name,
+        // 파랑 = 아직 후보 (타임라인에 들어간 블록은 초록)
+        image: searchPinImage(),
+        zIndex: 3,
+      });
+      // 마커 클릭 = 상세 말풍선
+      window.kakao.maps.event.addListener(marker, "click", () => {
+        handlePlaceClick(place);
+      });
+      searchMarkersRef.current.push(marker);
     });
+
+    map.setBounds(bounds);
   };
   // 검색 내역 초기화 (QA) — 결과 목록·지도 핀·말풍선·입력어를 한 번에 걷는다
   const handleClearSearch = () => {
@@ -299,7 +299,7 @@ export function useKakaoMap({ chains, items, activeDay }) {
 
   const handlePlaceClick = (place) => {
     if (map && window.kakao && window.kakao.maps) {
-      const moveLatLon = new window.kakao.maps.LatLng(place.y, place.x);
+      const moveLatLon = new window.kakao.maps.LatLng(place.lat, place.lng);
 
       map.setLevel(4);
       map.panTo(moveLatLon);
@@ -316,9 +316,8 @@ export function useKakaoMap({ chains, items, activeDay }) {
       // 현재 앱의 테마 색상(#d97e3c 등)을 사용해 통일감을 주었습니다.
       const content = `
         <div style="padding:15px; font-size:13px; color:#333; min-width:200px; border-radius:8px;">
-          <b style="font-size:15px; display:block; margin-bottom:5px; color:#d97e3c;">${place.place_name}</b>
-          ${place.road_address_name ? `<span style="display:block;">${place.road_address_name}</span>` : ""}
-          <span style="color:#888; display:block; margin-top:2px;">${place.address_name}</span>
+          <b style="font-size:15px; display:block; margin-bottom:5px; color:#d97e3c;">${place.name}</b>
+          ${place.address ? `<span style="display:block;">${place.address}</span>` : ""}
           ${place.phone ? `<span style="display:block; margin-top:5px; color:#6b7fc7;">📞 ${place.phone}</span>` : ""}
         </div>
       `;

@@ -779,7 +779,7 @@ export function DashboardPage() {
     handlePlaceClick,
     focusPlace,
     getMapBounds,
-  } = useKakaoMap({ chains, items, activeDay });
+  } = useKakaoMap({ chains, items, activeDay, showToast });
 
   // (시작 지점 블록은 이제 프로젝트 생성 모달에서 출발지점을 고를 때 함께
   //  만들어진다 — 입장 시 지오코딩하던 부트스트랩은 실패·동시 입장 중복의
@@ -2444,25 +2444,25 @@ export function DashboardPage() {
       let newBlock;
       if (isFromSearch) {
         const place = active.data.current.place;
-        newId = `search-${place.id}-${Date.now()}`;
+        newId = `search-${place.placeId}-${Date.now()}`;
 
-        // 검색 데이터를 우리 앱의 블록 데이터 구조로 변환.
-        // 카카오 응답은 y=위도, x=경도(문자열) — 좌표·placeId 를 버리면 장소성
-        // 블록의 서버 검증(BLOCK400)에 걸리고 지도 핀도 찍을 수 없다.
+        // 검색 결과(백엔드 DTO)를 우리 앱의 블록 데이터 구조로 변환.
+        // 좌표·placeId 를 버리면 장소성 블록의 서버 검증(BLOCK400)에 걸리고
+        // 지도 핀도 찍을 수 없다.
         newBlock = {
           id: newId,
-          cat: catFromKakaoGroup(place.category_group_code),
-          sub: place.category_group_name || "검색된 장소",
-          name: place.place_name,
-          address: place.road_address_name || place.address_name,
+          cat: catFromKakaoGroup(place.categoryCode),
+          sub: place.category || "검색된 장소",
+          name: place.name,
+          address: place.address,
           detail: place.phone || "",
           dur: 60, // 기본 소요시간 1시간
           startMins: null, // 후보(POOL) 블록은 시각 없는 느슨한 블록
           endMins: null,
           cost: 0,
-          lat: Number(place.y),
-          lng: Number(place.x),
-          placeId: String(place.id),
+          lat: place.lat,
+          lng: place.lng,
+          placeId: place.placeId,
           source: "KAKAO",
           auto: false,
         };
@@ -2776,10 +2776,10 @@ export function DashboardPage() {
       const place = activeDragMeta.place;
       draggedItem = {
         id: activeId,
-        cat: catFromKakaoGroup(place.category_group_code),
-        name: place.place_name,
-        sub: place.category_group_name,
-        address: place.road_address_name || place.address_name,
+        cat: catFromKakaoGroup(place.categoryCode),
+        name: place.name,
+        sub: place.category,
+        address: place.address,
         dur: 60,
         cost: 0,
       };
