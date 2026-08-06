@@ -17,6 +17,7 @@ import org.hibernate.stat.Statistics;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.redis.core.StringRedisTemplate;
 
 import java.time.Instant;
@@ -65,7 +66,7 @@ class OpPipelineIntegrationTest extends IntegrationTestSupport {
         assertThat(activityLogRepository.findLastSeq(project.getId())).isEqualTo(s3);
 
         // "s1 이후 전부 줘" — 스냅샷 이후 유실분 복구 경로. 저장된 전문이 그대로 나와야 한다
-        List<Map<String, Object>> ops = activityLogRepository.findOpsAfter(project.getId(), s1);
+        List<Map<String, Object>> ops = activityLogRepository.findOpsAfter(project.getId(), s1, Pageable.unpaged());
         assertThat(ops).hasSize(2);
         assertThat(((Number) ops.get(0).get("seq")).longValue()).isEqualTo(s2);
         assertThat(((Number) ops.get(1).get("seq")).longValue()).isEqualTo(s3);

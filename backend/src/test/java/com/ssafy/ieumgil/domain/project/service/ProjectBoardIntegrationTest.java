@@ -15,6 +15,7 @@ import com.ssafy.ieumgil.support.IntegrationTestSupport;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.domain.Pageable;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -93,7 +94,7 @@ class ProjectBoardIntegrationTest extends IntegrationTestSupport {
         assertThat(projectRepository.findById(project.getId()).orElseThrow().getName()).isEqualTo("이름변경");
 
         // op payload에도 movedToPool이 실려 수신 측이 해당 블록만 옮겨 그릴 수 있다
-        List<Map<String, Object>> ops = activityLogRepository.findOpsAfter(project.getId(), 0);
+        List<Map<String, Object>> ops = activityLogRepository.findOpsAfter(project.getId(), 0, Pageable.unpaged());
         Map<String, Object> lastOp = ops.get(ops.size() - 1);
         assertThat(lastOp.get("type")).isEqualTo("PROJECT_UPDATED");
         @SuppressWarnings("unchecked")
@@ -120,7 +121,7 @@ class ProjectBoardIntegrationTest extends IntegrationTestSupport {
         assertThat(cleared.targetBudget()).isNull();
         assertThat(projectRepository.findById(project.getId()).orElseThrow().getTargetBudget()).isNull();
 
-        List<Map<String, Object>> ops = activityLogRepository.findOpsAfter(project.getId(), 0);
+        List<Map<String, Object>> ops = activityLogRepository.findOpsAfter(project.getId(), 0, Pageable.unpaged());
         Map<String, Object> lastOp = ops.get(ops.size() - 1);
         assertThat(lastOp.get("type")).isEqualTo("TARGET_BUDGET_CHANGED");
         @SuppressWarnings("unchecked")

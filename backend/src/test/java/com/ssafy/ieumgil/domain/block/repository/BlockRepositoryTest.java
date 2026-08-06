@@ -86,4 +86,28 @@ class BlockRepositoryTest extends IntegrationTestSupport {
 
         assertThat(found).isEmpty();
     }
+
+    @Test
+    @DisplayName("findGroupIdById — 살아있는 프로젝트의 블록은 groupId를 돌려준다(tombstone 블록 포함)")
+    void findGroupIdReturnsGroupForAliveProject() {
+        Block alive = blockRepository.save(blockOf(projectA, "산 블록"));
+        Block tombstone = blockRepository.save(blockOf(projectA, "지운 블록"));
+        tombstone.softDelete();
+        blockRepository.saveAndFlush(tombstone);
+
+        Long expected = projectA.getTravelGroup().getId();
+        assertThat(blockRepository.findGroupIdById(alive.getId())).contains(expected);
+        // tombstone 블록의 지연 op는 410 판정을 위해 인가를 통과해야 하므로 groupId가 나온다
+        assertThat(blockRepository.findGroupIdById(tombstone.getId())).contains(expected);
+    }
+
+    @Test
+    @DisplayName("findGroupIdById — 소프트삭제된 프로젝트의 블록은 groupId를 돌려주지 않는다")
+    void findGroupIdSkipsSoftDeletedProject() {
+        Block block = blockRepository.save(blockOf(projectA, "삭제될 프로젝트의 블록"));
+        projectA.softDelete();
+        projectRepository.saveAndFlush(projectA);
+
+        assertThat(blockRepository.findGroupIdById(block.getId())).isEmpty();
+    }
 }
