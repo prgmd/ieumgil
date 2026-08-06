@@ -19,18 +19,14 @@ import {
   BlockLinkBadge,
   BlockEditorBadge,
 } from "./components/BlockBadges";
-import { HoldRepeatButton } from "./components/HoldRepeatButton";
 import { PoolCard } from "./components/PoolCard";
+import { BudgetPanel } from "./components/BudgetPanel";
 import { MapPanel } from "./components/MapPanel";
 import { SearchPanel } from "./components/SearchPanel";
 import { ReadModeView } from "./components/ReadModeView";
 import {
-  CAT_COLORS,
   fmtTime,
-  won,
   catOf,
-  catKeyOf,
-  effectiveCostOf,
   isTempId,
   isServerBlock,
   catFromKakaoGroup,
@@ -39,6 +35,7 @@ import {
   dayDate,
 } from "./dashboardHelpers";
 import { useKakaoMap } from "./hooks/useKakaoMap";
+import { useBudget } from "./hooks/useBudget";
 import {
   DndContext,
   DragOverlay,
@@ -798,20 +795,35 @@ export function DashboardPage() {
     [focusPlace, items],
   );
 
-  // 정산·1인 요금 환산의 기준 인원. 프로젝트에 값이 없으면 최소 1명으로 본다.
-  const headcount = Math.max(1, project?.budgetHeadcount || 1);
-
-  // 예산은 체인에 배치된 블록만 센다(명세) — 후보(POOL)는 아직 계획이 아니라
-  // 검토 중인 카드라서, 합산에 넣으면 "쓸지 말지 모르는 돈"이 예산을 잠식한다.
-  const placedIds = Object.values(chains).flat();
-  const totalBudget = placedIds.reduce(
-    (sum, id) => sum + effectiveCostOf(items[id], headcount),
-    0,
+  // 저장 실패 시 롤백 — "어디서 왔는지"를 복원하는 대신 서버 진실로 보드를
+  // 다시 시드한다. 5.5단계 이후엔 교통 블록까지 전부 서버에 있으므로
+  // reload 로 잃는 것이 없다.
+  // (useBudget 이 목표 예산 저장 실패에 이걸 쓰므로 훅 호출보다 위에 있어야 한다)
+  const rollbackToServer = useCallback(
+    (e) => {
+      showToast(
+        e?.message ?? "변경을 저장하지 못했어요. 서버 상태로 되돌립니다.",
+      );
+      reload();
+    },
+    [showToast, reload],
   );
-  // 총액을 인원으로 나눈 값 — 대중교통처럼 1인 요금인 항목은 이미 곱해 넣었으므로
-  // 여기서 나누면 다시 1인 몫으로 돌아온다.
-  const perPersonBudget = Math.round(totalBudget / headcount);
-  const [targetBudget, setTargetBudget] = useState(0);
+
+  const {
+    headcount,
+    totalBudget,
+    perPersonBudget,
+    targetBudget,
+    setTargetBudget,
+    budgetDraft,
+    setBudgetDraft,
+    commitBudgetDraft,
+    budgetEditCancelledRef,
+    bumpTargetBudget,
+    budgetPct,
+    remainingBudget,
+    budgetSegments,
+  } = useBudget({ projectId, project, chains, items, rollbackToServer });
 
   // ── 스냅샷 → 로컬 보드 시드 ──────────────────────────
   // effect 가 아니라 "렌더 중 조건부 setState"(React 공식 파생 상태 리셋 패턴)를 쓴다.
@@ -841,7 +853,7 @@ export function DashboardPage() {
     if (!serverChains[activeDay]) setActiveDay("d1");
 
     // 목표 예산은 스냅샷의 project 에 실려 오고, 수정은 PATCH /projects 로 저장된다
-    // (백엔드 합의로 targetBudget 필드 추가 — handleTargetBudgetChange 참조).
+    // (백엔드 합의로 targetBudget 필드 추가 — useBudget 참조).
     setTargetBudget(project?.targetBudget ?? 0);
   }
 
@@ -851,105 +863,6 @@ export function DashboardPage() {
     showToast(error?.message ?? "프로젝트를 열 수 없어요.");
     navigate(`/groups/${groupId}`, { replace: true });
   }, [status, error, groupId, navigate, showToast]);
-  // 목표 예산 저장은 디바운스한다 — ± 버튼 연타(십만원 단위)를 요청 1건으로 모은다.
-  // 타이머가 언마운트 후에 발화해도 요청은 그대로 나간다(마지막 조작 유실 방지).
-  // ± 버튼과 직접 입력이 같은 경로(commitTargetBudget)를 탄다.
-  const targetBudgetTimerRef = useRef(null);
-  const commitTargetBudget = (value) => {
-    const next = Math.max(0, value); // 0원 밑으로는 안 내려가게 방지
-    setTargetBudget(next);
-
-    clearTimeout(targetBudgetTimerRef.current);
-    targetBudgetTimerRef.current = setTimeout(() => {
-      blockApi.updateTargetBudget(projectId, next).catch(rollbackToServer);
-    }, 600);
-  };
-  // 홀드 반복(100ms 간격 연속 호출)은 렌더 사이에 여러 번 발화한다 — 클로저의
-  // targetBudget 은 그 사이 낡아 있으므로 최신값은 ref 로 읽어 누적시킨다
-  const targetBudgetRef = useRef(targetBudget);
-  useEffect(() => {
-    targetBudgetRef.current = targetBudget;
-  });
-  const handleTargetBudgetChange = (amount) =>
-    commitTargetBudget(targetBudgetRef.current + amount);
-
-  // 직접 입력 편집 상태 — null 이면 표시 모드, 문자열이면 입력 모드(입력 중 원문 유지)
-  const [budgetDraft, setBudgetDraft] = useState(null);
-  const budgetEditCancelledRef = useRef(false); // Esc 취소가 blur 커밋으로 이어지지 않게
-  const commitBudgetDraft = () => {
-    if (budgetEditCancelledRef.current) {
-      budgetEditCancelledRef.current = false;
-      setBudgetDraft(null);
-      return;
-    }
-    const parsed = Number(budgetDraft);
-    if (budgetDraft !== null && budgetDraft !== "" && Number.isFinite(parsed)) {
-      commitTargetBudget(Math.floor(parsed));
-    }
-    setBudgetDraft(null);
-  };
-  const budgetPercent =
-    targetBudget > 0 ? Math.min(100, (totalBudget / targetBudget) * 100) : 0;
-  const remainingBudget = targetBudget - totalBudget;
-
-  /**
-   * 카테고리(대분류)별 예산 세그먼트.
-   *
-   * 사용량 전체가 갈색 한 덩어리였을 때는 "무엇이 예산을 잡아먹는지"를 알 수 없었다.
-   * 블록 하나하나로 쪼개면 칸이 너무 잘게 나뉘므로, 숙소·식당·명소/활동·기타·교통
-   * 다섯 대분류로 합산해 카테고리 색 그대로 쌓는다.
-   *
-   * 칸의 폭은 "희망 예산 대비 비율"이다 — 그래야 남은 예산(빈 트랙)과 같은 자를 쓴다.
-   * 예산을 넘긴 경우에는 기준을 총 사용액으로 바꿔 막대를 꽉 채우고, 초과분은 아래
-   * 텍스트가 알려준다(비율이 100%를 넘는 칸은 그릴 수 없으므로).
-   *
-   * 순서는 금액순이 아니라 CAT_COLORS 선언 순서다 — 블록을 하나 고칠 때마다 칸이
-   * 자리를 바꾸면 눈으로 따라가기 어렵다.
-   */
-  const budgetSegments = useMemo(() => {
-    const denominator =
-      remainingBudget < 0 || targetBudget <= 0
-        ? totalBudget || 1
-        : targetBudget;
-
-    // 총액(totalBudget)과 같은 기준 — 체인에 배치된 블록만 (후보는 계획이 아니다).
-    // 1인 요금 곱하기도 같은 함수를 써야 칸의 합이 총액과 맞는다.
-    const sumByCat = {};
-    Object.values(chains)
-      .flat()
-      .forEach((id) => {
-        const item = items[id];
-        const cost = effectiveCostOf(item, headcount);
-        if (cost <= 0) return;
-        const cat = catKeyOf(item);
-        sumByCat[cat] = (sumByCat[cat] ?? 0) + cost;
-      });
-
-    return Object.keys(CAT_COLORS)
-      .filter((cat) => sumByCat[cat] > 0)
-      .map((cat) => ({
-        cat,
-        name: CAT_COLORS[cat].nm,
-        color: CAT_COLORS[cat].hex,
-        cost: sumByCat[cat],
-        percent: (sumByCat[cat] / denominator) * 100,
-        shareOfTotal:
-          totalBudget > 0 ? (sumByCat[cat] / totalBudget) * 100 : 0,
-      }));
-  }, [items, chains, headcount, targetBudget, totalBudget, remainingBudget]);
-
-  // 저장 실패 시 롤백 — "어디서 왔는지"를 복원하는 대신 서버 진실로 보드를
-  // 다시 시드한다. 5.5단계 이후엔 교통 블록까지 전부 서버에 있으므로
-  // reload 로 잃는 것이 없다.
-  const rollbackToServer = useCallback(
-    (e) => {
-      showToast(
-        e?.message ?? "변경을 저장하지 못했어요. 서버 상태로 되돌립니다.",
-      );
-      reload();
-    },
-    [showToast, reload],
-  );
 
   /**
    * 자정 쪼개기 결과를 서버에 반영한다 — 잘린 원본의 소요 시간, 통째로 옮겨진 블록의
@@ -3315,107 +3228,20 @@ export function DashboardPage() {
               </div>
 
               <div className="side">
-                <div className="panel">
-                  <div className="bud-total">
-                    <span className="bud-total-label">총 </span>
-                    <span className="bud-total-value">
-                      {won(totalBudget) || "0원"}
-                    </span>
-                    {/* 정산은 결국 1인당 얼마인지가 궁금하다 — 총액 옆에 바로 붙인다 */}
-                    <span className="bud-total-per">
-                      1인당 {won(perPersonBudget) || "0원"}
-                      <span className="bud-total-per-n"> · {headcount}인</span>
-                    </span>
-                  </div>
-
-                  <div className="bud-target">
-                    <span>희망 총 예산</span>
-                    <div className="bud-stepper">
-                      <HoldRepeatButton
-                        onTrigger={() => handleTargetBudgetChange(-100000)}
-                      >
-                        -
-                      </HoldRepeatButton>
-                      {/* 금액을 누르면 직접 입력 — Enter/포커스 아웃으로 저장, Esc 취소 */}
-                      {budgetDraft === null ? (
-                        <button
-                          type="button"
-                          className="bud-stepper-value"
-                          title="클릭해서 직접 입력"
-                          onClick={() => setBudgetDraft(String(targetBudget))}
-                        >
-                          {targetBudget.toLocaleString()}원
-                        </button>
-                      ) : (
-                        <input
-                          className="bud-stepper-input"
-                          type="number"
-                          min="0"
-                          step="10000"
-                          autoFocus
-                          value={budgetDraft}
-                          onChange={(e) => setBudgetDraft(e.target.value)}
-                          onBlur={commitBudgetDraft}
-                          onKeyDown={(e) => {
-                            if (e.key === "Enter") e.currentTarget.blur();
-                            else if (e.key === "Escape") {
-                              budgetEditCancelledRef.current = true;
-                              e.currentTarget.blur();
-                            }
-                          }}
-                        />
-                      )}
-                      <HoldRepeatButton
-                        onTrigger={() => handleTargetBudgetChange(100000)}
-                      >
-                        +
-                      </HoldRepeatButton>
-                    </div>
-                  </div>
-
-                  {/* 블록별 사용량 — 한 덩어리 갈색 바 대신 블록마다 색이 다른 칸으로 쌓는다.
-                      칸에 마우스를 올리면 블록 이름·금액·비중이 툴팁으로 나온다. */}
-                  <div className="bud-track">
-                    {budgetSegments.map((seg) => (
-                      <div
-                        key={seg.cat}
-                        className="bud-seg"
-                        style={{
-                          width: `${seg.percent}%`,
-                          backgroundColor: seg.color,
-                        }}
-                        title={`${seg.name} · ${won(seg.cost)} (사용액의 ${Math.round(seg.shareOfTotal)}%)`}
-                      />
-                    ))}
-                    {budgetSegments.length === 0 && (
-                      <div className="bud-empty">아직 비용이 있는 블록이 없어요</div>
-                    )}
-                  </div>
-
-                  {budgetSegments.length > 0 && (
-                    <div className="bud-legend">
-                      {budgetSegments.map((seg) => (
-                        <span key={seg.cat} className="bud-legend-item">
-                          <i style={{ backgroundColor: seg.color }} />
-                          <b>{seg.name}</b>
-                          {won(seg.cost)}
-                          <em>{Math.round(seg.shareOfTotal)}%</em>
-                        </span>
-                      ))}
-                    </div>
-                  )}
-
-                  <div className="bud-foot">
-                    <span>희망 예산의 {Math.round(budgetPercent)}% 사용</span>
-                    <span
-                      className={`bud-left ${remainingBudget < 0 ? "is-over" : ""}`}
-                    >
-                      {remainingBudget < 0
-                        ? `${won(Math.abs(remainingBudget))} 초과`
-                        : `남은 ${won(remainingBudget) || "0원"}`}
-                    </span>
-                  </div>
-                </div>
+                <BudgetPanel
+                  totalBudget={totalBudget}
+                  perPersonBudget={perPersonBudget}
+                  headcount={headcount}
+                  targetBudget={targetBudget}
+                  budgetDraft={budgetDraft}
+                  setBudgetDraft={setBudgetDraft}
+                  commitBudgetDraft={commitBudgetDraft}
+                  budgetEditCancelledRef={budgetEditCancelledRef}
+                  bumpTargetBudget={bumpTargetBudget}
+                  budgetPct={budgetPct}
+                  remainingBudget={remainingBudget}
+                  budgetSegments={budgetSegments}
+                />
 
                 <MapPanel initMapOnContainer={initMapOnContainer} />
 
