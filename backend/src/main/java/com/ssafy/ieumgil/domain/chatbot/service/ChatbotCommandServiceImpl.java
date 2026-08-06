@@ -21,7 +21,6 @@ import com.ssafy.ieumgil.domain.chatbot.tool.TaxiRouteTool;
 import com.ssafy.ieumgil.domain.chatbot.tool.TrainScheduleTool;
 import com.ssafy.ieumgil.domain.chatbot.tool.WalkingRouteTool;
 import com.ssafy.ieumgil.domain.group.repository.GroupMemberRepository;
-import com.ssafy.ieumgil.domain.festival.RegionCode;
 import com.ssafy.ieumgil.domain.festival.service.FestivalQueryService;
 import com.ssafy.ieumgil.domain.place.service.PlaceQueryService;
 import com.ssafy.ieumgil.domain.project.entity.Project;
@@ -125,16 +124,18 @@ public class ChatbotCommandServiceImpl implements ChatbotCommandService {
         return (int) groupMemberRepository.countMembers(project.getTravelGroup().getId());
     }
 
-    /** 프로젝트 목적지·기간이 지역코드로 해석 가능할 때만 축제 추천 툴을 만든다. 실패해도 예외 없이 빈 Optional. */
+    /**
+     * 프로젝트 목적지·기간이 있을 때 축제 추천 툴을 등록한다. 목적지가 어느 시/도에 속하는지는
+     * 여기서 판정하지 않고(도쿄 같은 해외·시·읍면리도 등록됨), 호출 시점에 모델이 tool 인자 {@code region}으로 넘긴다.
+     */
     Optional<FestivalRecommendationTool> resolveFestivalTool(Optional<Project> loadedProject,
                                                             CandidateCollector candidateCollector) {
         return loadedProject
                 .filter(project -> project.getStartDate() != null && project.getEndDate() != null)
-                .flatMap(project -> RegionCode.findByName(project.getDestination())
-                        .map(regionCode -> new FestivalRecommendationTool(
-                                regionCode, project.getStartDate(), project.getEndDate(),
-                                festivalQueryService, candidateCollector
-                        )));
+                .filter(project -> project.getDestination() != null && !project.getDestination().isBlank())
+                .map(project -> new FestivalRecommendationTool(
+                        project.getStartDate(), project.getEndDate(),
+                        festivalQueryService, candidateCollector));
     }
 
     /** 프로젝트 목적지가 있을 때만 카카오 tool 3개(장소검색/도보/택시)를 만든다. 목적지 없으면 빈 리스트. */

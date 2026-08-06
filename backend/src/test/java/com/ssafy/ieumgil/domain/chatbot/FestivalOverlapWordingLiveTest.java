@@ -4,7 +4,6 @@ import com.ssafy.ieumgil.domain.chatbot.service.ChatbotPrompt;
 import com.ssafy.ieumgil.domain.chatbot.service.TripContextBuilder;
 import com.ssafy.ieumgil.domain.chatbot.tool.CandidateCollector;
 import com.ssafy.ieumgil.domain.chatbot.tool.FestivalRecommendationTool;
-import com.ssafy.ieumgil.domain.festival.RegionCode;
 import com.ssafy.ieumgil.domain.festival.entity.Festival;
 import com.ssafy.ieumgil.domain.festival.service.FestivalQueryService;
 import com.ssafy.ieumgil.domain.project.entity.Project;
@@ -77,7 +76,7 @@ class FestivalOverlapWordingLiveTest {
                         new SystemMessage(systemPrompt),
                         new UserMessage("여행 기간에 즐길만한 축제 있어?"))))
                 .tools(new FestivalRecommendationTool(
-                        RegionCode.BUSAN, TRIP_START, TRIP_END, festivalQueryService, new CandidateCollector()))
+                        TRIP_START, TRIP_END, festivalQueryService, new CandidateCollector()))
                 .call()
                 .content();
 

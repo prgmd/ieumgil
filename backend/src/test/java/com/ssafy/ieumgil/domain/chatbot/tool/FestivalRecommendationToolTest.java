@@ -1,6 +1,5 @@
 package com.ssafy.ieumgil.domain.chatbot.tool;
 
-import com.ssafy.ieumgil.domain.festival.RegionCode;
 import com.ssafy.ieumgil.domain.festival.entity.Festival;
 import com.ssafy.ieumgil.domain.festival.service.FestivalQueryService;
 import org.junit.jupiter.api.DisplayName;
@@ -16,6 +15,8 @@ import java.util.List;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -41,9 +42,9 @@ class FestivalRecommendationToolTest {
                 .thenReturn(List.of(festival));
 
         FestivalRecommendationTool tool = new FestivalRecommendationTool(
-                RegionCode.JEJU, start, end, festivalQueryService, new CandidateCollector());
+                start, end, festivalQueryService, new CandidateCollector());
 
-        FestivalRecommendationResult result = tool.findFestivalsForCurrentTrip();
+        FestivalRecommendationResult result = tool.findFestivalsForCurrentTrip("제주");
 
         assertThat(result.regionName()).isEqualTo("제주");
         assertThat(result.festivals()).hasSize(1);
@@ -80,9 +81,9 @@ class FestivalRecommendationToolTest {
                 .thenReturn(List.of());
 
         FestivalRecommendationTool tool = new FestivalRecommendationTool(
-                RegionCode.SEOUL, start, end, festivalQueryService, new CandidateCollector());
+                start, end, festivalQueryService, new CandidateCollector());
 
-        FestivalRecommendationResult result = tool.findFestivalsForCurrentTrip();
+        FestivalRecommendationResult result = tool.findFestivalsForCurrentTrip("서울");
 
         assertThat(result.available()).isTrue();
         assertThat(result.festivals()).isEmpty();
@@ -97,9 +98,9 @@ class FestivalRecommendationToolTest {
                 .thenThrow(new RuntimeException("db down"));
 
         FestivalRecommendationTool tool = new FestivalRecommendationTool(
-                RegionCode.SEOUL, start, end, festivalQueryService, new CandidateCollector());
+                start, end, festivalQueryService, new CandidateCollector());
 
-        FestivalRecommendationResult result = tool.findFestivalsForCurrentTrip();
+        FestivalRecommendationResult result = tool.findFestivalsForCurrentTrip("서울");
 
         // "행사가 없다"와 "지금 못 찾는다"가 같은 모양이면 모델이 없다고 단언한다
         assertThat(result.available()).isFalse();
@@ -110,7 +111,7 @@ class FestivalRecommendationToolTest {
     @Test
     @DisplayName("설명이 available=false(조회 실패)와 '행사 없음'을 구분하도록 지시한다")
     void descriptionDistinguishesUnavailableFromNoFestivals() throws NoSuchMethodException {
-        String description = FestivalRecommendationTool.class.getMethod("findFestivalsForCurrentTrip")
+        String description = FestivalRecommendationTool.class.getMethod("findFestivalsForCurrentTrip", String.class)
                 .getAnnotation(org.springframework.ai.tool.annotation.Tool.class).description();
 
         assertThat(description).contains("available");
@@ -138,9 +139,9 @@ class FestivalRecommendationToolTest {
                 .thenReturn(festivals);
 
         FestivalRecommendationTool tool = new FestivalRecommendationTool(
-                RegionCode.JEJU, start, end, festivalQueryService, new CandidateCollector());
+                start, end, festivalQueryService, new CandidateCollector());
 
-        List<FestivalSummary> result = tool.findFestivalsForCurrentTrip().festivals();
+        List<FestivalSummary> result = tool.findFestivalsForCurrentTrip("제주").festivals();
 
         assertThat(result).hasSize(10);
         assertThat(result).isSortedAccordingTo((a, b) -> a.eventStartDate().compareTo(b.eventStartDate()));
@@ -161,11 +162,44 @@ class FestivalRecommendationToolTest {
         when(festivalQueryService.findByRegionAndDateRange("50", start, end)).thenReturn(List.of(festival));
         CandidateCollector collector = new CandidateCollector();
         FestivalRecommendationTool tool = new FestivalRecommendationTool(
-                RegionCode.JEJU, start, end, festivalQueryService, collector);
+                start, end, festivalQueryService, collector);
 
-        tool.findFestivalsForCurrentTrip();
+        tool.findFestivalsForCurrentTrip("제주");
 
         assertThat(collector.candidates()).hasSize(1);
         assertThat(collector.candidates().get(0).placeId()).isEqualTo("555");
+    }
+
+    @Test
+    @DisplayName("모델이 넘긴 시/도 이름을 지역코드로 풀어 조회한다")
+    void resolvesProvinceArgToCode() {
+        LocalDate start = LocalDate.of(2026, 8, 1);
+        LocalDate end = LocalDate.of(2026, 8, 3);
+        when(festivalQueryService.findByRegionAndDateRange(eq("52"), eq(start), eq(end)))
+                .thenReturn(List.of());
+
+        FestivalRecommendationTool tool = new FestivalRecommendationTool(
+                start, end, festivalQueryService, new CandidateCollector());
+
+        FestivalRecommendationResult result = tool.findFestivalsForCurrentTrip("전북");
+
+        assertThat(result.available()).isTrue();
+        assertThat(result.regionName()).isEqualTo("전북");
+    }
+
+    @Test
+    @DisplayName("시/도로 해석 안 되는 region(시·읍면리)은 조회 없이 available=false")
+    void unresolvableRegionReturnsUnavailable() {
+        LocalDate start = LocalDate.of(2026, 8, 1);
+        LocalDate end = LocalDate.of(2026, 8, 3);
+
+        FestivalRecommendationTool tool = new FestivalRecommendationTool(
+                start, end, festivalQueryService, new CandidateCollector());
+
+        FestivalRecommendationResult result = tool.findFestivalsForCurrentTrip("전주");
+
+        assertThat(result.available()).isFalse();
+        assertThat(result.festivals()).isEmpty();
+        verify(festivalQueryService, never()).findByRegionAndDateRange(any(), any(), any());
     }
 }

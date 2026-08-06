@@ -68,8 +68,9 @@ public enum RegionCode {
      * 선언 순서로 {@code findFirst}하면 {@code GWANGJU}가 {@code GYEONGGI}보다 위에 있다는
      * 이유만으로 전남·광주 축제를 받아왔고, 그 사실이 enum 상수 순서에 숨어 있었다.
      *
-     * <p>광역명 17개만 본다. "전주"·"강릉"처럼 시·군 이름만 오면 매칭에 실패하는데, 그러면
-     * 축제 tool 자체가 등록되지 않아 사용자는 이유를 알 수 없다. 그래서 흔적을 남긴다.
+     * <p>광역명 17개만 본다. 축제 tool이 모델에게서 받은 시/도 이름을 이 메서드로 해석하는데,
+     * "전주"·"강릉"처럼 시·군 이름이 그대로 오면 매칭에 실패한다. 그때는 tool이 빈 결과(unavailable)를
+     * 돌려주고, 원인 파악용으로 흔적을 남긴다.
      */
     public static Optional<RegionCode> findByName(String destination) {
         if (destination == null || destination.isBlank()) {
@@ -80,7 +81,7 @@ public enum RegionCode {
                 .min(Comparator.comparingInt((RegionCode region) -> destination.indexOf(region.regionName))
                         .thenComparingInt(Enum::ordinal));
         if (matched.isEmpty()) {
-            log.warn("목적지에서 시도를 찾지 못해 축제 추천을 건너뛴다 destination={}", destination);
+            log.warn("시도로 해석되지 않아 축제 조회를 건너뛴다 name={}", destination);
         }
         return matched;
     }
