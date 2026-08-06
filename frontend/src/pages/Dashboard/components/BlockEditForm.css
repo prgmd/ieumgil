@@ -78,9 +78,12 @@
   display: flex;
   gap: 8px;
   align-items: stretch;
+  /* 버튼이 둘(주소 검색·지도에서 위치 지정)이라 460px 안에서 입력칸이 너무
+     좁아지는 폭이 있다 — 그럴 땐 줄을 넘긴다 */
+  flex-wrap: wrap;
 }
 .bef-addr .bef-input {
-  flex: 1;
+  flex: 1 1 180px;
   min-width: 0;
 }
 .bef-addr-btn {

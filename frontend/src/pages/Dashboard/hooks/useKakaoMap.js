@@ -329,6 +329,99 @@ export function useKakaoMap({ chains, items, activeDay, showToast }) {
     }
   };
 
+  // ── 지도에 핀 직접 찍기 (MAP-04) ──
+  // 검색으로 안 나오는 곳을 지도 클릭 한 번으로 잡는다. 훅은 "클릭 한 번을
+  // 좌표+주소로 돌려주는 약속"만 내주고, 모달을 감췄다 되살리는 건 부모가 맡는다.
+  const [pinPickMode, setPinPickMode] = useState(false);
+  const tempPinRef = useRef(null);
+  const pinPickResolveRef = useRef(null);
+
+  // 대기 중인 약속을 반드시 결말짓고 임시 핀을 걷는다 — 안 그러면 버튼을 두 번
+  // 누른 순간 먼저 만든 Promise 가 영원히 pending 으로 남아, 그걸 await 하던
+  // 호출부까지 같이 멈춘다.
+  const settlePinPick = useCallback((value) => {
+    tempPinRef.current?.setMap(null);
+    tempPinRef.current = null;
+    const resolve = pinPickResolveRef.current;
+    pinPickResolveRef.current = null;
+    resolve?.(value);
+  }, []);
+
+  /** 지도 클릭 한 번을 { lat, lng, address } 로 돌려준다. 취소하면 null 이다 */
+  const startPinPick = useCallback(() => {
+    // 이미 지정을 기다리는 중이면(버튼 연타) 앞선 약속을 취소로 닫고 새로 받는다
+    settlePinPick(null);
+    setPinPickMode(true);
+    return new Promise((resolve) => {
+      pinPickResolveRef.current = resolve;
+    });
+  }, [settlePinPick]);
+
+  const cancelPinPick = useCallback(() => {
+    setPinPickMode(false);
+    settlePinPick(null);
+  }, [settlePinPick]);
+
+  // 지정 모드일 때만 지도 클릭·Esc 리스너를 붙인다
+  useEffect(() => {
+    if (!map || !pinPickMode || !window.kakao?.maps) return undefined;
+
+    // 이 지정 세션이 이미 끝났는지 표시한다. 역지오코딩을 기다리는 사이 취소되면
+    // 그 사이 시작된 "다음" 세션의 약속을 뒤늦게 온 응답이 취소된 좌표로 채워
+    // 버린다 — A 블록에서 찍고 Esc → B 블록에서 지정 시작 → B 폼에 A 의 좌표가
+    // 꽂히는 식이다. 정리(cleanup)는 지정 모드가 꺼질 때마다 도므로,
+    // settle 된 세션의 클로저는 전부 여기서 stale 로 찍힌다.
+    let stale = false;
+
+    const onClick = async (mouseEvent) => {
+      const latlng = mouseEvent.latLng;
+      const lat = latlng.getLat();
+      const lng = latlng.getLng();
+
+      // 역지오코딩을 기다리는 동안 찍은 자리를 보여 준다(끝나면 걷는다)
+      tempPinRef.current?.setMap(null);
+      tempPinRef.current = new window.kakao.maps.Marker({
+        map,
+        position: latlng,
+        image: searchPinImage(),
+        zIndex: 5,
+      });
+
+      // 주소를 못 얻어도 좌표는 유효하다 — 주소만 비우고 사용자가 직접 쓰게 둔다
+      let address;
+      try {
+        const found = await placeApi.reverseGeocode(lat, lng);
+        address = found?.roadAddress || found?.address || "";
+      } catch {
+        address = "";
+      }
+
+      // 기다리는 사이 이 세션이 끝났으면(취소·모달 닫힘) 아무것도 하지 않는다.
+      // 임시 핀은 그 취소가 이미 걷었다.
+      if (stale) return;
+
+      setPinPickMode(false);
+      settlePinPick({ lat, lng, address });
+    };
+
+    const onKeyDown = (e) => {
+      if (e.key !== "Escape") return;
+      // 지정 중의 Esc 는 지정 취소만 한다 — 같은 Esc 가 다른 닫기 핸들러까지
+      // 타고 가면 한 번 누른 걸로 두 가지가 닫힌다. capture 로 먼저 잡아 끊는다.
+      e.stopPropagation();
+      e.preventDefault();
+      cancelPinPick();
+    };
+
+    window.kakao.maps.event.addListener(map, "click", onClick);
+    document.addEventListener("keydown", onKeyDown, true);
+    return () => {
+      stale = true;
+      window.kakao.maps.event.removeListener(map, "click", onClick);
+      document.removeEventListener("keydown", onKeyDown, true);
+    };
+  }, [map, pinPickMode, cancelPinPick, settlePinPick]);
+
   // MAP 모드 챗봇에 넘길 지도 뷰포트 (남서·북동) — 지도가 아직 없으면 null(위젯이 안내)
   const getMapBounds = () => {
     if (!map) return null;
@@ -354,5 +447,8 @@ export function useKakaoMap({ chains, items, activeDay, showToast }) {
     handlePlaceClick,
     focusPlace,
     getMapBounds,
+    pinPickMode,
+    startPinPick,
+    cancelPinPick,
   };
 }

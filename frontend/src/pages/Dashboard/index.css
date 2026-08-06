@@ -1284,6 +1284,47 @@
   border-radius: 12px;
 }
 
+/* ── 지도 핀 직접 지정 (MAP-04) ───────────────────────────── */
+.map-wrap {
+  position: relative;
+}
+/* 카카오 SDK 가 드래그 레이어에 커서를 인라인으로 박아 넣어서, 지정 모드임을
+   보여주려면 하위 요소까지 덮어써야 한다 */
+.map-wrap.is-picking .map-box,
+.map-wrap.is-picking .map-box * {
+  cursor: crosshair !important;
+}
+.map-pick-banner {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  right: 8px;
+  /* 지도 내부 오버레이(마커·컨트롤)보다 확실히 위에 */
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 10px 8px 12px;
+  border-radius: 8px;
+  background: rgba(217, 126, 60, 0.95);
+  color: #fff;
+  font-size: 12.5px;
+  line-height: 1.3;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.18);
+}
+.map-pick-cancel {
+  flex-shrink: 0;
+  border: 0;
+  border-radius: 6px;
+  padding: 4px 10px;
+  background: #fff;
+  color: #a4611f;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
 /* ── 사이드 패널 공통(예산·지도·검색) ───────────────────────
    테두리·기본 라운드는 .panel 을 그대로 쓰고, 사이드에서만 크림색 배경과
    그림자를 덧입힌다(예전에 각 패널에 인라인으로 붙어 있던 값들). */
@@ -1541,6 +1582,12 @@
    내용이 화면보다 높을 때 위쪽이 스크롤로 닿지 않게 잘려 나간다 */
 .blk-modal-ov > * {
   margin: auto;
+}
+/* 지도에서 위치를 찍는 동안 — 언마운트가 아니라 감추기다. 언마운트하면 폼이
+   들고 있던 state 가 통째로 날아가, 이름·비용까지 고쳐 두고 위치만 찍으러 간
+   사용자가 그 입력을 전부 잃는다 */
+.blk-modal-ov.is-hidden {
+  display: none;
 }
 
 /* ── 이동수단 선택 모달 — 구간 버튼 → 후보 목록에서 하나 고르면 블록 생성 ── */
