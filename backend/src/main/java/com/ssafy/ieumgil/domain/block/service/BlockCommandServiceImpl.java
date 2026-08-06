@@ -61,7 +61,7 @@ public class BlockCommandServiceImpl implements BlockCommandService {
 
         String orderKey = request.orderKey() != null
                 ? request.orderKey()
-                : tailOrderKey(projectId, request.dayNo());
+                : tailOrderKey(projectId);
 
         Block block = blockRepository.save(
                 BlockConverter.toBlock(project, userRepository.getReferenceById(userId), orderKey, request));
@@ -173,17 +173,16 @@ public class BlockCommandServiceImpl implements BlockCommandService {
     }
 
     /**
-     * orderKey 미지정 시 대상 체인(Day 또는 POOL)의 말단 키 뒤에 붙인다.
+     * orderKey 미지정 시 프로젝트 체인의 말단 키 뒤에 붙인다. Day 스코프는 없다 —
+     * 보드 순서는 절대 오프셋이 정하고 orderKey는 tie-break만 맡는다.
      * "V"는 fractional index 알파벳의 중간값 — 어떤 키 k에 대해서도 k+"V" > k (사전순)이므로
      * 항상 말단이 된다. 서버 부여가 반복되면 키가 길어지지만, 정식 키 계산은 클라이언트
      * 몫이고 이 경로는 폴백이라 감수한다.
      */
-    private String tailOrderKey(Long projectId, Integer dayNo) {
-        var last = dayNo == null
-                ? blockRepository.findTopByProject_IdAndDayNoIsNullAndDeletedAtIsNullOrderByOrderKeyDescIdDesc(projectId)
-                : blockRepository.findTopByProject_IdAndDayNoAndDeletedAtIsNullOrderByOrderKeyDescIdDesc(projectId, dayNo);
-
-        return last.map(block -> block.getOrderKey() + "V").orElse("a0");
+    private String tailOrderKey(Long projectId) {
+        return blockRepository.findTopByProject_IdAndDeletedAtIsNullOrderByOrderKeyDescIdDesc(projectId)
+                .map(block -> block.getOrderKey() + "V")
+                .orElse("a0");
     }
 
     /** JSON 원시 값을 필드 타입으로 파싱·검증한다. 실패는 전부 400(INVALID_FIELD_VALUE)로 통일 */

@@ -56,6 +56,7 @@ class ProjectBoardIntegrationTest extends IntegrationTestSupport {
                 .build());
     }
 
+    /** dayNo는 Day 1 00:00 기준 오프셋으로도 함께 심는다 — 범위 판정이 읽는 쪽은 오프셋이다 */
     private Block seedBlock(Project project, User author, Integer dayNo, String orderKey) {
         return blockRepository.save(Block.builder()
                 .name("블록 day" + dayNo)
@@ -63,6 +64,7 @@ class ProjectBoardIntegrationTest extends IntegrationTestSupport {
                 .orderKey(orderKey)
                 .source(BlockSource.MANUAL)
                 .dayNo(dayNo)
+                .startOffsetMinutes(dayNo == null ? null : (dayNo - 1) * Block.MINUTES_PER_DAY)
                 .project(project)
                 .author(author)
                 .build());
@@ -85,7 +87,8 @@ class ProjectBoardIntegrationTest extends IntegrationTestSupport {
         assertThat(result.movedToPool()).containsExactly(day3.getId());
 
         Block movedDay3 = blockRepository.findById(day3.getId()).orElseThrow();
-        assertThat(movedDay3.getDayNo()).isNull();                 // POOL로
+        assertThat(movedDay3.getStartOffsetMinutes()).isNull();    // POOL로
+        assertThat(movedDay3.getDayNo()).isNull();                 // 병행 기록도 함께 비운다
         assertThat(movedDay3.getOrderKey()).isEqualTo("a1");       // 정렬 키는 유지
         assertThat(blockRepository.findById(day1.getId()).orElseThrow().getDayNo()).isEqualTo(1);
         assertThat(blockRepository.findById(pool.getId()).orElseThrow().getDayNo()).isNull();

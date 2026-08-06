@@ -24,7 +24,9 @@ public interface BlockRepository extends JpaRepository<Block, Long> {
 
     /**
      * 프로젝트의 살아있는 블록 전체 — 스냅샷용.
-     * 정렬은 반드시 (orderKey, id) — 동시 삽입으로 orderKey가 같아질 수 있어 id로 tie-break 한다.
+     * 정렬은 (startOffsetMinutes, orderKey, id) — 보드 순서는 절대 오프셋이 정하고,
+     * 오프셋이 같을 때만 orderKey가 가른다(동시 삽입으로 orderKey까지 같아질 수 있어 id로 최종 tie-break).
+     * 오프셋이 null인 후보(POOL)는 NULLS LAST로 맨 뒤에 모인다.
      * 이 쿼리의 (project_id, deleted_at IS NULL) 조건이 partial index ix_block_chain의 존재 이유다.
      */
     @Query("""
@@ -32,7 +34,7 @@ public interface BlockRepository extends JpaRepository<Block, Long> {
             FROM Block b
             WHERE b.project.id = :projectId
               AND b.deletedAt IS NULL
-            ORDER BY b.orderKey ASC, b.id ASC
+            ORDER BY b.startOffsetMinutes ASC NULLS LAST, b.orderKey ASC, b.id ASC
             """)
     List<Block> findChain(@Param("projectId") Long projectId);
 
@@ -62,13 +64,11 @@ public interface BlockRepository extends JpaRepository<Block, Long> {
     @Query("SELECT b FROM Block b WHERE b.id = :blockId")
     Optional<Block> findByIdForUpdate(@Param("blockId") Long blockId);
 
-    /** 체인 말단 키 조회 — 생성 시 orderKey 미지정이면 이 키 뒤에 붙인다 (Day 체인용) */
-    Optional<Block> findTopByProject_IdAndDayNoAndDeletedAtIsNullOrderByOrderKeyDescIdDesc(
-            Long projectId, Integer dayNo);
-
-    /** 체인 말단 키 조회 — 후보(POOL, dayNo IS NULL)용. 파생 쿼리는 null 파라미터를 못 다뤄 분리한다 */
-    Optional<Block> findTopByProject_IdAndDayNoIsNullAndDeletedAtIsNullOrderByOrderKeyDescIdDesc(
-            Long projectId);
+    /**
+     * 체인 말단 키 — 생성 시 orderKey 미지정 폴백.
+     * Day 구분이 없다: 보드 순서는 이제 오프셋이 정하고 orderKey는 tie-break·POOL 정렬만 맡는다.
+     */
+    Optional<Block> findTopByProject_IdAndDeletedAtIsNullOrderByOrderKeyDescIdDesc(Long projectId);
 
     /**
      * 기간 축소로 범위를 벗어난 블록 id 목록 (PRJ-02 movedToPool).
@@ -78,22 +78,23 @@ public interface BlockRepository extends JpaRepository<Block, Long> {
             SELECT b.id
             FROM Block b
             WHERE b.project.id = :projectId
-              AND b.dayNo > :maxDayNo
+              AND b.startOffsetMinutes >= :tripMinutes
               AND b.deletedAt IS NULL
             """)
-    List<Long> findIdsOutOfRange(@Param("projectId") Long projectId, @Param("maxDayNo") int maxDayNo);
+    List<Long> findIdsOutOfRange(@Param("projectId") Long projectId, @Param("tripMinutes") int tripMinutes);
 
     /**
-     * 범위 밖 블록을 후보(POOL)로 일괄 이동 — dayNo만 비우고 orderKey는 유지한다.
+     * 범위 밖 블록을 후보(POOL)로 일괄 이동 — 오프셋만 비우고 orderKey는 유지한다.
+     * dayNo도 함께 비운다 — Task 6에서 컬럼이 사라질 때까지 병행 기록을 어긋나지 않게 유지한다.
      * clearAutomatically로 영속성 컨텍스트가 비워지므로 다른 엔티티 변경이 끝난 뒤 마지막에 부른다.
      */
     @Modifying(clearAutomatically = true, flushAutomatically = true)
     @Query("""
             UPDATE Block b
-            SET b.dayNo = null
+            SET b.startOffsetMinutes = null, b.dayNo = null
             WHERE b.project.id = :projectId
-              AND b.dayNo > :maxDayNo
+              AND b.startOffsetMinutes >= :tripMinutes
               AND b.deletedAt IS NULL
             """)
-    int moveOutOfRangeToPool(@Param("projectId") Long projectId, @Param("maxDayNo") int maxDayNo);
+    int moveOutOfRangeToPool(@Param("projectId") Long projectId, @Param("tripMinutes") int tripMinutes);
 }
