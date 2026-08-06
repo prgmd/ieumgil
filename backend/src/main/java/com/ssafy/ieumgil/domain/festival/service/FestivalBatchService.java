@@ -59,7 +59,8 @@ public class FestivalBatchService {
      */
     @Scheduled(cron = "0 0 4 * * *")
     public SyncResult syncFestivals() {
-        String today = LocalDate.now().format(DateTimeFormatter.BASIC_ISO_DATE);
+        LocalDate now = LocalDate.now();
+        String today = now.format(DateTimeFormatter.BASIC_ISO_DATE);
 
         int expected;
         try {
@@ -83,6 +84,11 @@ public class FestivalBatchService {
         for (int pageNo = 1; pageNo <= pageCount; pageNo++) {
             collected += collectPage(today, pageNo);
         }
+
+        // 수집이 끝난 뒤에 지난 축제를 정리한다 — 방금 upsert한 축제는 종료일이 오늘 이상이라
+        // 지워지지 않는다. 먼저 정리하면 아직 수집 전인 상태를 잘못 지울 수 있어 순서가 중요하다.
+        int removed = festivalRepository.deleteExpiredBefore(now);
+        log.info("지난 축제 {}건 정리 완료", removed);
 
         SyncResult result = new SyncResult(expected, collected);
         if (result.complete()) {
