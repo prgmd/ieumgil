@@ -1,6 +1,7 @@
 package com.ssafy.ieumgil.global.security.jwt;
 
 import com.ssafy.ieumgil.global.exception.CustomException;
+import com.ssafy.ieumgil.global.security.ActiveUserChecker;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -24,6 +25,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
     private static final String BEARER_PREFIX = "Bearer ";
 
     private final JwtProvider jwtProvider;
+    private final ActiveUserChecker activeUserChecker;
 
     @Override
     protected void doFilterInternal(HttpServletRequest request,
@@ -34,6 +36,16 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         if (token != null) {
             try {
                 Long userId = jwtProvider.getUserIdFromAccessToken(token);
+
+                // 서명·만료가 유효해도 계정이 사라졌으면 인증하지 않는다. 탈퇴는 refresh 토큰만
+                // 지우므로, 이 검사가 없으면 탈퇴 직후에도 남은 access 토큰(최대 30분)으로
+                // 그룹 재가입·편집이 그대로 통과한다.
+                if (!activeUserChecker.isActive(userId)) {
+                    SecurityContextHolder.clearContext();
+                    filterChain.doFilter(request, response);
+                    return;
+                }
+
                 UsernamePasswordAuthenticationToken authentication =
                         new UsernamePasswordAuthenticationToken(
                                 userId, null, List.of(new SimpleGrantedAuthority("ROLE_USER")));

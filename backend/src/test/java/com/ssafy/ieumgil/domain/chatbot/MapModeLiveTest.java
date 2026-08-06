@@ -1,5 +1,6 @@
 package com.ssafy.ieumgil.domain.chatbot;
 
+import com.ssafy.ieumgil.domain.chatbot.config.WebSearchInterceptor;
 import com.ssafy.ieumgil.domain.chatbot.dto.ChatbotReqDTO;
 import com.ssafy.ieumgil.domain.chatbot.service.ChatbotPrompt;
 import com.ssafy.ieumgil.domain.chatbot.service.TripContextBuilder;
@@ -19,6 +20,7 @@ import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.messages.SystemMessage;
 import org.springframework.ai.chat.messages.UserMessage;
 import org.springframework.ai.chat.prompt.Prompt;
+import org.springframework.web.client.RestClient;
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -96,9 +98,13 @@ class MapModeLiveTest {
     }
 
     private AnthropicChatModel buildGmsChatModel(String apiKey) {
+        // 프로덕션과 동일하게 WebSearchInterceptor를 단다 — MAP 모드에서 web_search가 주입되면
+        // 모델이 뷰포트 tool 대신 산문 답을 내 카드가 사라지므로, interceptor의 MAP 스킵이 실제로
+        // 동작하는지까지 이 경로로 검증한다.
         AnthropicApi api = AnthropicApi.builder()
                 .baseUrl("https://gms.ssafy.io/gmsapi/api.anthropic.com")
                 .apiKey(apiKey)
+                .restClientBuilder(RestClient.builder().requestInterceptor(new WebSearchInterceptor()))
                 .build();
         return AnthropicChatModel.builder()
                 .anthropicApi(api)

@@ -6,6 +6,7 @@ import com.ssafy.ieumgil.domain.chatbot.dto.ChatbotResDTO;
 import com.ssafy.ieumgil.domain.chatbot.service.ChatbotCommandService;
 import com.ssafy.ieumgil.domain.chatbot.service.ChatbotQueryService;
 import com.ssafy.ieumgil.global.apiPayload.CustomResponse;
+import com.ssafy.ieumgil.global.security.ActiveUserChecker;
 import com.ssafy.ieumgil.global.security.jwt.JwtProvider;
 import com.ssafy.ieumgil.domain.chatbot.ChatbotMode;
 import org.junit.jupiter.api.DisplayName;
@@ -51,6 +52,9 @@ class ChatbotControllerTest {
 
     @MockitoBean
     private JwtProvider jwtProvider;
+    // 필터가 계정 생존 확인(탈퇴 차단)까지 하므로 이 빈도 슬라이스에 없다
+    @MockitoBean
+    private ActiveUserChecker activeUserChecker;
 
     @Test
     void sendMessageReturnsOkWithReply() throws Exception {

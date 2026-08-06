@@ -55,6 +55,13 @@ public interface GroupMemberRepository extends JpaRepository<GroupMember, GroupM
     @Query("SELECT gm.travelGroup.id FROM GroupMember gm WHERE gm.user.id = :userId")
     List<Long> findGroupIdsByUserId(@Param("userId") Long userId);
 
+    /**
+     * 그룹 삭제 시 WS 세션을 끊을 대상. FK 컬럼만 읽으므로 조인이 없다.
+     * 요청자 한 명만 끊으면 나머지 멤버는 삭제된 그룹의 실시간 스트림을 계속 받는다.
+     */
+    @Query("SELECT gm.user.id FROM GroupMember gm WHERE gm.travelGroup.id = :groupId")
+    List<Long> findUserIdsByGroupId(@Param("groupId") Long groupId);
+
     /** 회원 탈퇴 시 모든 소속을 한 번에 삭제한다 */
     @Modifying(clearAutomatically = true, flushAutomatically = true)
     @Query("DELETE FROM GroupMember gm WHERE gm.user.id = :userId")

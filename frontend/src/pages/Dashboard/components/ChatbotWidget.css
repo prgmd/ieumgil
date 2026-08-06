@@ -236,6 +236,30 @@
   }
 }
 
+/* 예시 프롬프트 칩 — intro 시점(대화 시작 전)에만 노출되는 pill 버튼 */
+.cbw-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-self: flex-start;
+  max-width: 100%;
+}
+.cbw-chip {
+  padding: 6px 12px;
+  border: 1px solid #e6dec8;
+  border-radius: 999px;
+  background: #fff;
+  color: #7c5443;
+  font-family: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.cbw-chip:hover {
+  background: #f4ede4;
+  border-color: #d8c9ae;
+}
+
 /* 추천 후보 카드 — 봇 말풍선 아래에 붙는다 */
 .cbw-cands {
   display: flex;

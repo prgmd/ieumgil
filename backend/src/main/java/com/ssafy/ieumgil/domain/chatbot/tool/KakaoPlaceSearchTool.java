@@ -4,6 +4,7 @@ import com.ssafy.ieumgil.domain.place.dto.PlaceResDTO;
 import com.ssafy.ieumgil.domain.place.service.PlaceQueryService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.tool.annotation.Tool;
+import org.springframework.ai.tool.annotation.ToolParam;
 
 import java.util.List;
 import java.util.Optional;
@@ -33,7 +34,7 @@ public class KakaoPlaceSearchTool {
             Returns matching places. Each result includes a link to view the place directly, so include the link in your answer as well.
             Describe each place using only the returned fields. Do not add reputation claims such as "the most famous" or "a long-established restaurant" — that information is not in the result.
             """)
-    public List<PlaceSearchSummary> searchPlaces(String keyword, String nearPlaceName) {
+    public List<PlaceSearchSummary> searchPlaces(String keyword, @ToolParam(required = false) String nearPlaceName) {
         try {
             // 기준 장소가 있으면 그 좌표 주변을 거리순으로 찾는다. 좌표가 범위를 좁히므로
             // 목적지 접두사는 붙이지 않는다 — 붙이면 검색어 특이성만 떨어진다.
@@ -50,8 +51,11 @@ public class KakaoPlaceSearchTool {
                     .map(PlaceSearchSummary::from)
                     .toList();
         } catch (RuntimeException e) {
+            // 실패를 빈 목록으로 삼키면 모델이 "이 지역엔 없어요"로 오인한다. 실패 신호를
+            // 그대로 올려 Spring AI가 tool 결과로 모델에 전달하게 한다(호출 abort는 아님).
             log.warn("place search tool call failed for keyword={}", keyword, e);
-            return List.of();
+            throw new IllegalStateException(
+                    "Place search failed due to an internal error. Do not claim there are no matching places; tell the user the search could not be completed and to try again.", e);
         }
     }
 

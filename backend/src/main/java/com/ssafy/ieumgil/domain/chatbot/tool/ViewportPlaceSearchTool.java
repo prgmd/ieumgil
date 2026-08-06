@@ -45,8 +45,11 @@ public class ViewportPlaceSearchTool {
                     .map(PlaceSearchSummary::from)
                     .toList();
         } catch (RuntimeException e) {
+            // 실패를 빈 목록으로 삼키면 모델이 "이 지역엔 없어요"로 오인한다. 실패 신호를
+            // 그대로 올려 Spring AI가 tool 결과로 모델에 전달하게 한다(호출 abort는 아님).
             log.warn("viewport place search tool call failed for keyword={}", keyword, e);
-            return List.of();
+            throw new IllegalStateException(
+                    "Place search failed due to an internal error. Do not claim there are no matching places; tell the user the search could not be completed and to try again.", e);
         }
     }
 }

@@ -1,5 +1,6 @@
 package com.ssafy.ieumgil.global.exception;
 
+import com.ssafy.ieumgil.global.security.ActiveUserChecker;
 import com.ssafy.ieumgil.global.security.jwt.JwtProvider;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -31,6 +32,9 @@ class GlobalExceptionHandlerTest {
 
     @MockitoBean
     private JwtProvider jwtProvider;
+    // 필터가 계정 생존 확인(탈퇴 차단)까지 하므로 이 빈도 슬라이스에 없다
+    @MockitoBean
+    private ActiveUserChecker activeUserChecker;
 
     @Test
     void missingRequiredParameterReturns400NotInternalServerError() throws Exception {
