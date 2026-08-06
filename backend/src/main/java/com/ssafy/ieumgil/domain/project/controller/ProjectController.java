@@ -76,8 +76,10 @@ public class ProjectController {
     public CustomResponse<List<Map<String, Object>>> getOps(
             @Parameter(hidden = true) @AuthenticationPrincipal Long userId,
             @PathVariable Long projectId,
-            @RequestParam long afterSeq) {
-        return CustomResponse.onSuccess(activityLogQueryService.getOpsAfter(userId, projectId, afterSeq));
+            @RequestParam(defaultValue = "0") long afterSeq) {
+        // seq는 1부터 시작하므로 음수·누락은 0(처음부터)으로 하한을 건다
+        long from = Math.max(0, afterSeq);
+        return CustomResponse.onSuccess(activityLogQueryService.getOpsAfter(userId, projectId, from));
     }
 
     @GroupMember
