@@ -49,12 +49,22 @@ import java.util.Map;
 @Table(name = "block")
 public class Block extends BaseTimeEntity {
 
+    public static final int MINUTES_PER_DAY = 1440;
+
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
     /** Day 번호. null = 후보 블록(POOL) */
     private Integer dayNo;
+
+    /**
+     * Day 1의 00:00을 원점으로 한 경과 분. null = 후보(POOL).
+     * dayNo·시각·자정 넘김이 전부 이 하나에서 파생된다 — 그래서 자정을 넘는 블록도 한 행이다.
+     * startDate는 Day 1을 달력 날짜에 대응시키는 역할만 한다(오프셋의 원점이 아니다).
+     */
+    @Column(name = "start_offset_minutes")
+    private Integer startOffsetMinutes;
 
     /** fractional index 문자열. 클라이언트가 계산해 보내고, 서버는 말단 키 부여만 한다 */
     @Column(nullable = false)
@@ -170,10 +180,38 @@ public class Block extends BaseTimeEntity {
         return deletedAt != null;
     }
 
+    /** 보드에 있다 ⟺ 시각이 있다. 두 상태가 어긋날 수 없는 것이 이 모델의 요점이다 */
+    public boolean isInPool() {
+        return startOffsetMinutes == null;
+    }
+
+    /**
+     * 화면·LLM 계약용 Day 번호(1-base). 저장하지 않는다 — 벌크 UPDATE 한 번에 스테일이 되기 때문이다.
+     * getter 이름을 피한 것은 Lombok·Jackson·Hibernate 가 property 로 오인하지 못하게 하기 위해서다.
+     */
+    public Integer dayNo() {
+        return isInPool() ? null : startOffsetMinutes / MINUTES_PER_DAY + 1;
+    }
+
+    /** 그 Day 안에서의 분(0~1439). "HH:mm" 표시는 이 값에서 만든다 */
+    public Integer startMinuteOfDay() {
+        return isInPool() ? null : startOffsetMinutes % MINUTES_PER_DAY;
+    }
+
+    /** 종료 오프셋. 자정에서 되감기지 않는다 — LocalTime 으로는 표현할 수 없던 값이다 */
+    public Integer endOffsetMinutes() {
+        return isInPool() ? null : startOffsetMinutes + durationMin;
+    }
+
     /** 이동(BLK-07) — 옮긴 블록 1행만 바뀐다. 다른 블록의 시각 재계산은 클라이언트 책임 */
-    public void move(Integer dayNo, String orderKey) {
-        this.dayNo = dayNo;
+    public void move(Integer startOffsetMinutes, String orderKey) {
+        this.startOffsetMinutes = startOffsetMinutes;
         this.orderKey = orderKey;
+        // Task 6에서 제거되는 병행 기록 — 옛 컬럼을 읽는 코드가 남아 있는 동안만 유지한다
+        this.dayNo = startOffsetMinutes == null ? null : startOffsetMinutes / MINUTES_PER_DAY + 1;
+        this.startTime = startOffsetMinutes == null
+                ? null
+                : java.time.LocalTime.ofSecondOfDay((startOffsetMinutes % MINUTES_PER_DAY) * 60L);
     }
 
     /**

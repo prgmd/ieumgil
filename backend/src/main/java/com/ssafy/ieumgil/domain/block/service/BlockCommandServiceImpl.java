@@ -128,7 +128,11 @@ public class BlockCommandServiceImpl implements BlockCommandService {
     public BlockResDTO.Moved move(Long userId, Long blockId, String clientId, BlockReqDTO.Move request) {
         Block block = getAliveBlock(blockId);
 
-        block.move(request.dayNo(), request.orderKey());
+        // 기존 호출부가 넘기던 dayNo를 오프셋으로 환산 — move()는 이제 절대 오프셋을 받는다
+        Integer offset = request.dayNo() == null
+                ? null
+                : (request.dayNo() - 1) * Block.MINUTES_PER_DAY;
+        block.move(offset, request.orderKey());
         // 이동도 편집이다 — 클라이언트가 BLOCK_MOVED의 actorId를 배지로 기록하는 것과 맞춘다(PRS-04)
         block.markEditedBy(userRepository.getReferenceById(userId));
 
