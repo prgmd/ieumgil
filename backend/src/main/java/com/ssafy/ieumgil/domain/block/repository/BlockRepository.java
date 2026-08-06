@@ -40,8 +40,10 @@ public interface BlockRepository extends JpaRepository<Block, Long> {
      * GroupMemberAspect(BLOCK_ID)의 그룹 역추적용 — blockId → projectId → groupId를 한 쿼리로.
      * tombstone 블록도 포함한다: 삭제된 블록에 온 지연 op는 404가 아니라 410이어야 하므로
      * 인가(AOP)는 통과시키고 서비스가 410을 판정한다.
+     * 단, 프로젝트가 소프트 삭제됐으면 groupId를 돌려주지 않는다 — 삭제된 프로젝트의
+     * 블록까지 인가가 통과하면 안 되므로 프로젝트 생존은 여기서 걸러 인가를 실패시킨다.
      */
-    @Query("SELECT b.project.travelGroup.id FROM Block b WHERE b.id = :blockId")
+    @Query("SELECT b.project.travelGroup.id FROM Block b WHERE b.id = :blockId AND b.project.deletedAt IS NULL")
     Optional<Long> findGroupIdById(@Param("blockId") Long blockId);
 
     /** detail-lock 배지 전파 대상 토픽을 찾기 위한 projectId 조회 — FK 값만, 조인 없음 */
