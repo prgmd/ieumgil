@@ -14,14 +14,19 @@ import java.util.Optional;
 @RequiredArgsConstructor
 public class PlaceQueryServiceImpl implements PlaceQueryService {
 
-    private static final int MAX_RESULTS = 5;
+    /**
+     * 사용자 장소 검색 상한. SDK 시절과 같은 15건이다 — 카카오 keyword.json 의 기본
+     * 페이지 크기가 15라 size 파라미터 없이 그대로 받으면 되고, 결과 수가 지금과
+     * 같아져 서버 전환에 사용자 체감 변화가 없다.
+     */
+    private static final int USER_SEARCH_LIMIT = 15;
 
     private final KakaoLocalClient kakaoLocalClient;
 
     @Override
     public List<PlaceResDTO.Place> searchPlaces(String query, Double lat, Double lng) {
         return kakaoLocalClient.searchByKeyword(query, lat, lng).stream()
-                .limit(MAX_RESULTS)
+                .limit(USER_SEARCH_LIMIT)
                 .map(this::toPlace)
                 .toList();
     }
@@ -30,7 +35,7 @@ public class PlaceQueryServiceImpl implements PlaceQueryService {
     public List<PlaceResDTO.Place> searchPlacesInRect(String query, double swLat, double swLng,
                                                      double neLat, double neLng) {
         return kakaoLocalClient.searchByKeywordInRect(query, swLat, swLng, neLat, neLng).stream()
-                .limit(MAX_RESULTS)
+                .limit(CHATBOT_SEARCH_LIMIT)
                 .map(this::toPlace)
                 .toList();
     }

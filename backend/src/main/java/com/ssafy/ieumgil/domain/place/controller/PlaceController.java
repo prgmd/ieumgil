@@ -27,7 +27,7 @@ public class PlaceController {
     private final PlaceQueryService placeQueryService;
 
     @GetMapping
-    @Operation(summary = "장소 키워드 검색", description = "카카오 로컬 keyword 검색 상위 5건을 반환합니다.")
+    @Operation(summary = "장소 키워드 검색", description = "카카오 로컬 keyword 검색 상위 15건을 반환합니다.")
     public CustomResponse<List<PlaceResDTO.Place>> searchPlaces(
             @RequestParam @NotBlank String query,
             @RequestParam(required = false) @DecimalMin("-90") @DecimalMax("90") Double lat,

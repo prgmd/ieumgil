@@ -14,6 +14,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.util.List;
 import java.util.Optional;
+import java.util.stream.IntStream;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.when;
@@ -48,15 +49,33 @@ class PlaceQueryServiceImplTest {
     }
 
     @Test
-    void searchPlacesLimitsToTopFive() {
+    @DisplayName("사용자 장소 검색은 15건까지 준다 — SDK 시절과 같은 개수다")
+    void 사용자_검색은_열다섯건이다() {
         placeQueryService = new PlaceQueryServiceImpl(kakaoLocalClient);
-        List<KakaoPlaceResponse.Document> sixDocs = List.of(
-                doc("1"), doc("2"), doc("3"), doc("4"), doc("5"), doc("6"));
-        when(kakaoLocalClient.searchByKeyword("카페", null, null)).thenReturn(sixDocs);
+        when(kakaoLocalClient.searchByKeyword("카페", null, null)).thenReturn(documents(20));
 
-        List<PlaceResDTO.Place> result = placeQueryService.searchPlaces("카페", null, null);
+        assertThat(placeQueryService.searchPlaces("카페", null, null)).hasSize(15);
+    }
 
-        assertThat(result).hasSize(5);
+    @Test
+    @DisplayName("챗봇 뷰포트 검색은 5건으로 묶어 둔다 — 결과가 LLM 컨텍스트로 들어간다")
+    void 챗봇_뷰포트_검색은_다섯건이다() {
+        placeQueryService = new PlaceQueryServiceImpl(kakaoLocalClient);
+        when(kakaoLocalClient.searchByKeywordInRect("카페", 37.4, 126.9, 37.6, 127.1))
+                .thenReturn(documents(20));
+
+        // 두 경로가 같은 상수를 다시 공유하면 이 단정이 15로 깨진다
+        assertThat(placeQueryService.searchPlacesInRect("카페", 37.4, 126.9, 37.6, 127.1))
+                .hasSize(5);
+    }
+
+    /** 상한만 보는 테스트라 좌표·이름은 구별만 되면 된다 */
+    private List<KakaoPlaceResponse.Document> documents(int count) {
+        return IntStream.range(0, count)
+                .mapToObj(i -> new KakaoPlaceResponse.Document(
+                        String.valueOf(i), "장소" + i, "카페", "CE7",
+                        "지번주소", "도로명주소", null, "127.0", "37.5"))
+                .toList();
     }
 
     @Test
@@ -82,10 +101,6 @@ class PlaceQueryServiceImplTest {
         Optional<PlaceResDTO.Address> result = placeQueryService.reverseGeocode(100.0, 200.0);
 
         assertThat(result).isEmpty();
-    }
-
-    private KakaoPlaceResponse.Document doc(String id) {
-        return new KakaoPlaceResponse.Document(id, "장소" + id, "카테고리", "CE7", "주소" + id, null, null, "127.0", "37.0");
     }
 
     @Test
@@ -175,21 +190,16 @@ class PlaceQueryServiceImplTest {
     }
 
     @Test
-    void searchPlacesInRectDelegatesToRectSearchAndCapsResults() {
+    void searchPlacesInRectDelegatesToRectSearch() {
         placeQueryService = new PlaceQueryServiceImpl(kakaoLocalClient);
-        List<KakaoPlaceResponse.Document> documents = new java.util.ArrayList<>();
-        for (int i = 0; i < 10; i++) {
-            documents.add(new KakaoPlaceResponse.Document(
-                    "id" + i, "장소" + i, "카페", "CE7", "제주 서귀포시", "제주 서귀포시 일출로", null, "126.94", "33.45"));
-        }
+        KakaoPlaceResponse.Document doc = new KakaoPlaceResponse.Document(
+                "id0", "장소0", "카페", "CE7", "제주 서귀포시", "제주 서귀포시 일출로", null, "126.94", "33.45");
         when(kakaoLocalClient.searchByKeywordInRect("카페", 33.44, 126.93, 33.47, 126.95))
-                .thenReturn(documents);
+                .thenReturn(List.of(doc));
 
         List<PlaceResDTO.Place> result = placeQueryService.searchPlacesInRect(
                 "카페", 33.44, 126.93, 33.47, 126.95);
 
-        // 일반 검색과 같은 상한을 적용한다 — 모델 입력 토큰과 후보 개수를 같은 기준으로 묶는다
-        assertThat(result).hasSize(5);
         assertThat(result.get(0).placeId()).isEqualTo("id0");
         assertThat(result.get(0).lat()).isEqualTo(33.45);
     }
