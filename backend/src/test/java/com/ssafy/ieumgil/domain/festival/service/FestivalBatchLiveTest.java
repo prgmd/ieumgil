@@ -6,6 +6,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.test.context.TestPropertySource;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -16,7 +17,10 @@ import static org.assertj.core.api.Assertions.assertThat;
  * 페이지가 실패하면 배치 전체가 조용히 중단됐다. 그래서 209건 중 100건만 적재된 상태였고
  * 로그에는 "100건 수집"이 정상처럼 찍혔다. 실제 API로 완주를 확인하는 것이 이 테스트의 목적이다.
  */
+// 부모 IntegrationTestSupport가 tourapi.service-key를 비워 배치 bean을 끄지만, 이 live 테스트는
+// 실 API 완주가 목적이므로 키를 다시 공급해 bean을 되살린다.
 @Tag("live")
+@TestPropertySource(properties = "tourapi.service-key=${TOUR_API_KEY:}")
 class FestivalBatchLiveTest extends IntegrationTestSupport {
 
     @Autowired

@@ -71,4 +71,37 @@ class FestivalRepositoryTest extends IntegrationTestSupport {
 
         assertThat(result).extracting(Festival::getContentId).containsExactly("overlap-in-range");
     }
+
+    @Test
+    void deleteExpiredBeforeRemovesOnlyPastFestivals() {
+        // 컨테이너를 전체 테스트가 공유하고 롤백이 없어(IntegrationTestSupport) 다른 테스트가
+        // 남긴 지난 축제가 전역 DELETE에 함께 잡힌다. 삭제 건수를 정확히 세려면 먼저 비운다.
+        festivalRepository.deleteAll();
+        LocalDate today = LocalDate.of(2026, 8, 6);
+        festivalRepository.save(Festival.builder()
+                .contentId("past").title("지난 축제").category("EV01")
+                .lDongRegnCd("11").lDongSignguCd("140").addr("서울")
+                .lat(37.5).lng(127.1)
+                .eventStartDate(LocalDate.of(2026, 8, 1)).eventEndDate(today.minusDays(1))
+                .build());
+        festivalRepository.save(Festival.builder()
+                .contentId("today").title("오늘 끝나는 축제").category("EV01")
+                .lDongRegnCd("11").lDongSignguCd("140").addr("서울")
+                .lat(37.5).lng(127.1)
+                .eventStartDate(LocalDate.of(2026, 8, 1)).eventEndDate(today)
+                .build());
+        festivalRepository.save(Festival.builder()
+                .contentId("future").title("미래 축제").category("EV01")
+                .lDongRegnCd("11").lDongSignguCd("140").addr("서울")
+                .lat(37.5).lng(127.1)
+                .eventStartDate(LocalDate.of(2026, 8, 10)).eventEndDate(today.plusDays(5))
+                .build());
+
+        int removed = festivalRepository.deleteExpiredBefore(today);
+
+        assertThat(removed).isEqualTo(1);
+        assertThat(festivalRepository.findByContentId("past")).isEmpty();
+        assertThat(festivalRepository.findByContentId("today")).isPresent();
+        assertThat(festivalRepository.findByContentId("future")).isPresent();
+    }
 }

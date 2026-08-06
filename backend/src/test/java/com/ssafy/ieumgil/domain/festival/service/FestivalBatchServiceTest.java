@@ -13,6 +13,7 @@ import org.junit.jupiter.api.Test;
 import org.slf4j.LoggerFactory;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
+import org.mockito.InOrder;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
@@ -27,6 +28,10 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.inOrder;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.spy;
+import static org.mockito.Mockito.timeout;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -304,6 +309,51 @@ class FestivalBatchServiceTest {
         assertThat(result.complete()).isFalse();
         // 조용히 잘리면 다음에 또 같은 일이 난다 — 에러로 드러나야 한다
         assertThat(appender.list).anySatisfy(event -> assertThat(event.getLevel()).isEqualTo(Level.ERROR));
+    }
+
+    @Test
+    @DisplayName("수집이 끝난 뒤에 지난 축제를 정리한다 — 방금 적재한 축제가 지워지면 안 된다")
+    void cleansUpExpiredFestivalsAfterCollecting() {
+        festivalBatchService = new FestivalBatchService(tourApiClient, festivalRepository);
+        TourApiResponse.Item item = new TourApiResponse.Item(
+                "new-1", "새 축제", "서울 강동구", "", "127.13", "37.55",
+                "20260801", "20260803", "http://image", "11", "140", "EV01");
+        when(tourApiClient.fetchTotalCount(anyString())).thenReturn(1);
+        when(tourApiClient.searchFestivals(anyString(), anyInt(), anyInt())).thenReturn(List.of(item));
+        when(festivalRepository.findByContentId("new-1")).thenReturn(Optional.empty());
+
+        festivalBatchService.syncFestivals();
+
+        InOrder inOrder = inOrder(festivalRepository);
+        inOrder.verify(festivalRepository).save(any());
+        inOrder.verify(festivalRepository).deleteExpiredBefore(any(LocalDate.class));
+    }
+
+    @Test
+    @DisplayName("축제 데이터가 있으면 기동 동기화를 스킵한다 — 찬 DB를 재수집하지 않는다")
+    void 데이터가_있으면_기동_동기화를_스킵한다() {
+        FestivalBatchService spy = spy(new FestivalBatchService(tourApiClient, festivalRepository));
+        when(festivalRepository.count()).thenReturn(5L);
+
+        spy.syncOnStartupIfEmpty();
+
+        verify(spy, never()).syncFestivals();
+        verify(tourApiClient, never()).fetchTotalCount(anyString());
+    }
+
+    @Test
+    @DisplayName("축제 데이터가 비어 있으면 기동 시 수집을 실행한다")
+    void 데이터가_비어있으면_기동_동기화를_실행한다() {
+        FestivalBatchService spy = spy(new FestivalBatchService(tourApiClient, festivalRepository));
+        when(festivalRepository.count()).thenReturn(0L);
+        // 총건수 0을 주면 syncFestivals가 실호출(searchFestivals) 없이 조기 종료한다 — live를 타지 않는다
+        when(tourApiClient.fetchTotalCount(anyString())).thenReturn(0);
+
+        spy.syncOnStartupIfEmpty();
+
+        // 수집은 CompletableFuture로 비동기 실행되므로 진입을 timeout으로 기다린다
+        verify(tourApiClient, timeout(2000)).fetchTotalCount(anyString());
+        verify(spy).syncFestivals();
     }
 
     private List<TourApiResponse.Item> page(int size) {
