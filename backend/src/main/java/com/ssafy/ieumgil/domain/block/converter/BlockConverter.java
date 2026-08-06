@@ -5,6 +5,7 @@ import com.ssafy.ieumgil.domain.block.dto.BlockResDTO;
 import com.ssafy.ieumgil.domain.block.entity.Block;
 import com.ssafy.ieumgil.domain.project.entity.Project;
 import com.ssafy.ieumgil.domain.user.entity.User;
+import java.time.LocalTime;
 import lombok.AccessLevel;
 import lombok.NoArgsConstructor;
 
@@ -21,6 +22,7 @@ public class BlockConverter {
                 .author(author)
                 .lastEditedBy(author)
                 .dayNo(request.dayNo())
+                .startOffsetMinutes(offsetOf(request.dayNo(), request.startTime()))
                 .orderKey(orderKey)
                 .category(request.category())
                 .subCategory(request.subCategory())
@@ -46,6 +48,15 @@ public class BlockConverter {
             builder.budget(request.budget());
         }
         return builder.build();
+    }
+
+    /** 옛 입력(dayNo + startTime)에서 절대 오프셋을 만든다. Task 4에서 DTO 가 오프셋을 직접 받으면 사라진다 */
+    private static Integer offsetOf(Integer dayNo, LocalTime startTime) {
+        if (dayNo == null) {
+            return null;
+        }
+        int minuteOfDay = startTime == null ? 0 : startTime.getHour() * 60 + startTime.getMinute();
+        return (dayNo - 1) * Block.MINUTES_PER_DAY + minuteOfDay;
     }
 
     public static BlockResDTO.Item toItem(Block block) {
