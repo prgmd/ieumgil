@@ -111,8 +111,11 @@ public class BlockCommandServiceImpl implements BlockCommandService {
             applied.put(field, isFresh);
         }
 
-        // 전부 스테일이면 op를 만들지 않는다 — seq 낭비 + 의미 없는 브로드캐스트 방지
+        // 전부 스테일이면 op를 만들지 않는다 — seq 낭비 + 의미 없는 브로드캐스트 방지.
+        // 마지막 편집자 기록도 같은 조건 — 스테일만 보낸 요청은 편집으로 치지 않아야
+        // op 기반의 클라이언트 배지 기록과 어긋나지 않는다(PRS-04)
         if (!appliedValues.isEmpty()) {
+            block.markEditedBy(userRepository.getReferenceById(userId));
             opPublisher.publish(block.getProject().getId(), userId, clientId, "BLOCK_FIELD_UPDATED",
                     Map.of("blockId", blockId, "fields", appliedValues));
         }
@@ -126,6 +129,8 @@ public class BlockCommandServiceImpl implements BlockCommandService {
         Block block = getAliveBlock(blockId);
 
         block.move(request.dayNo(), request.orderKey());
+        // 이동도 편집이다 — 클라이언트가 BLOCK_MOVED의 actorId를 배지로 기록하는 것과 맞춘다(PRS-04)
+        block.markEditedBy(userRepository.getReferenceById(userId));
 
         long seq = opPublisher.publish(block.getProject().getId(), userId, clientId, "BLOCK_MOVED",
                 payloadWithNullable("blockId", blockId, "dayNo", request.dayNo(), "orderKey", request.orderKey()));
