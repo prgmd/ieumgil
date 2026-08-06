@@ -5,6 +5,7 @@ import com.ssafy.ieumgil.domain.place.dto.KakaoDirectionsResponse;
 import com.ssafy.ieumgil.domain.place.dto.KakaoPlaceResponse;
 import com.ssafy.ieumgil.domain.place.dto.KakaoWalkingRouteResponse;
 import com.ssafy.ieumgil.domain.place.exception.PlaceException;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.client.RestClientTest;
@@ -127,6 +128,33 @@ class KakaoLocalClientTest {
         Optional<KakaoAddressResponse.Document> result = kakaoLocalClient.coord2Address(100.0, 200.0);
 
         assertThat(result).isEmpty();
+    }
+
+    @Test
+    @DisplayName("주소로 좌표를 찾는다")
+    void 주소를_좌표로_바꾼다() {
+        server.expect(requestTo("https://dapi.kakao.com/v2/local/search/address.json?query=%EC%84%9C%EC%9A%B8%EC%8B%9C%EC%B2%AD"))
+                .andRespond(withSuccess("""
+                        { "documents": [ {
+                            "x": "126.9779", "y": "37.5663",
+                            "road_address": { "address_name": "서울 중구 세종대로 110" },
+                            "address": { "address_name": "서울 중구 태평로1가 31" }
+                        } ] }
+                        """, MediaType.APPLICATION_JSON));
+
+        var doc = kakaoLocalClient.addressSearch("서울시청").orElseThrow();
+
+        assertThat(doc.y()).isEqualTo("37.5663");
+        assertThat(doc.road_address().address_name()).isEqualTo("서울 중구 세종대로 110");
+    }
+
+    @Test
+    @DisplayName("결과가 없으면 empty 다 — 예외가 아니다")
+    void 주소_결과가_없으면_empty다() {
+        server.expect(requestTo("https://dapi.kakao.com/v2/local/search/address.json?query=%EC%97%86%EB%8A%94%EC%A3%BC%EC%86%8C"))
+                .andRespond(withSuccess("{ \"documents\": [] }", MediaType.APPLICATION_JSON));
+
+        assertThat(kakaoLocalClient.addressSearch("없는주소")).isEmpty();
     }
 
     @Test

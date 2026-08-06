@@ -21,6 +21,8 @@ public interface PlaceQueryService {
 
     Optional<PlaceResDTO.Address> reverseGeocode(double lat, double lng);
 
+    Optional<PlaceResDTO.Geocode> geocodeAddress(String address);
+
     Optional<PlaceResDTO.WalkingRoute> getWalkingRoute(double startLat, double startLng, double endLat, double endLng);
 
     Optional<PlaceResDTO.TaxiRoute> getTaxiRoute(double startLat, double startLng, double endLat, double endLng);

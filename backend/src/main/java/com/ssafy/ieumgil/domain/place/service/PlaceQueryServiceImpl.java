@@ -46,6 +46,15 @@ public class PlaceQueryServiceImpl implements PlaceQueryService {
     }
 
     @Override
+    public Optional<PlaceResDTO.Geocode> geocodeAddress(String address) {
+        return kakaoLocalClient.addressSearch(address).map(d -> new PlaceResDTO.Geocode(
+                Double.parseDouble(d.y()),
+                Double.parseDouble(d.x()),
+                d.road_address() != null ? d.road_address().address_name() : "",
+                d.address() != null ? d.address().address_name() : ""));
+    }
+
+    @Override
     public Optional<PlaceResDTO.WalkingRoute> getWalkingRoute(
             double startLat, double startLng, double endLat, double endLng) {
         return kakaoLocalClient.getWalkingRoute(startLat, startLng, endLat, endLng)

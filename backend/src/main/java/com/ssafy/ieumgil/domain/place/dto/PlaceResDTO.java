@@ -23,6 +23,10 @@ public class PlaceResDTO {
     public record Address(String address, String roadAddress) {
     }
 
+    /** 주소 → 좌표 결과. 도로명·지번은 카카오가 주는 대로 싣고, 없으면 빈 문자열이다 */
+    public record Geocode(Double lat, Double lng, String roadAddress, String jibunAddress) {
+    }
+
     /** 소요시간은 <b>분</b>이다 — 카카오 응답의 초를 {@code PlaceQueryServiceImpl}에서 변환해 담는다. */
     public record WalkingRoute(int distance, int durationMin) {
     }

@@ -3,6 +3,7 @@ package com.ssafy.ieumgil.domain.place.service;
 import com.ssafy.ieumgil.domain.place.client.KakaoLocalClient;
 import com.ssafy.ieumgil.domain.place.dto.KakaoAddressResponse;
 import com.ssafy.ieumgil.domain.place.dto.KakaoDirectionsResponse;
+import com.ssafy.ieumgil.domain.place.dto.KakaoGeocodeResponse;
 import com.ssafy.ieumgil.domain.place.dto.KakaoPlaceResponse;
 import com.ssafy.ieumgil.domain.place.dto.KakaoWalkingRouteResponse;
 import com.ssafy.ieumgil.domain.place.dto.PlaceResDTO;
@@ -99,6 +100,63 @@ class PlaceQueryServiceImplTest {
         when(kakaoLocalClient.coord2Address(100.0, 200.0)).thenReturn(Optional.empty());
 
         Optional<PlaceResDTO.Address> result = placeQueryService.reverseGeocode(100.0, 200.0);
+
+        assertThat(result).isEmpty();
+    }
+
+    @Test
+    @DisplayName("지오코딩 좌표는 x가 lng, y가 lat이다 — 뒤바뀌면 좌표가 바다로 간다")
+    void geocodeAddressMapsXToLngAndYToLat() {
+        placeQueryService = new PlaceQueryServiceImpl(kakaoLocalClient);
+        KakaoGeocodeResponse.Document doc = new KakaoGeocodeResponse.Document(
+                "127.0276", "37.4979",
+                new KakaoGeocodeResponse.RoadAddress("서울 강남구 테헤란로 1"),
+                new KakaoGeocodeResponse.Address("서울 강남구 역삼동 1"));
+        when(kakaoLocalClient.addressSearch("강남")).thenReturn(Optional.of(doc));
+
+        Optional<PlaceResDTO.Geocode> result = placeQueryService.geocodeAddress("강남");
+
+        assertThat(result).isPresent();
+        assertThat(result.get().lat()).isEqualTo(37.4979);
+        assertThat(result.get().lng()).isEqualTo(127.0276);
+    }
+
+    @Test
+    @DisplayName("road_address가 없으면 roadAddress는 null이 아니라 빈 문자열이다")
+    void geocodeAddressWithNoRoadAddressFallsBackToEmptyString() {
+        placeQueryService = new PlaceQueryServiceImpl(kakaoLocalClient);
+        KakaoGeocodeResponse.Document doc = new KakaoGeocodeResponse.Document(
+                "127.0276", "37.4979", null,
+                new KakaoGeocodeResponse.Address("서울 강남구 역삼동 1"));
+        when(kakaoLocalClient.addressSearch("강남")).thenReturn(Optional.of(doc));
+
+        Optional<PlaceResDTO.Geocode> result = placeQueryService.geocodeAddress("강남");
+
+        assertThat(result).isPresent();
+        assertThat(result.get().roadAddress()).isEqualTo("");
+    }
+
+    @Test
+    @DisplayName("address가 없으면 jibunAddress는 null이 아니라 빈 문자열이다")
+    void geocodeAddressWithNoAddressFallsBackToEmptyString() {
+        placeQueryService = new PlaceQueryServiceImpl(kakaoLocalClient);
+        KakaoGeocodeResponse.Document doc = new KakaoGeocodeResponse.Document(
+                "127.0276", "37.4979",
+                new KakaoGeocodeResponse.RoadAddress("서울 강남구 테헤란로 1"), null);
+        when(kakaoLocalClient.addressSearch("강남")).thenReturn(Optional.of(doc));
+
+        Optional<PlaceResDTO.Geocode> result = placeQueryService.geocodeAddress("강남");
+
+        assertThat(result).isPresent();
+        assertThat(result.get().jibunAddress()).isEqualTo("");
+    }
+
+    @Test
+    void geocodeAddressWithNoMatchReturnsEmpty() {
+        placeQueryService = new PlaceQueryServiceImpl(kakaoLocalClient);
+        when(kakaoLocalClient.addressSearch("존재하지않는주소")).thenReturn(Optional.empty());
+
+        Optional<PlaceResDTO.Geocode> result = placeQueryService.geocodeAddress("존재하지않는주소");
 
         assertThat(result).isEmpty();
     }
