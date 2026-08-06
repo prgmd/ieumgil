@@ -83,12 +83,9 @@ export const effectiveCostOf = (item, headcount) => {
 };
 
 // ── 블록 id 규약 ─────────────────────────────────────
-// 서버에 아직 없는 블록을 구분하는 규약 — custom-(모달 저장 전), search-(생성 요청 중),
-// split-(자정에서 쪼개져 다음 Day 에 생길 "이어서" 블록, 생성 요청 중)
+// 서버에 아직 없는 블록을 구분하는 규약 — custom-(모달 저장 전), search-(생성 요청 중)
 export const isTempId = (id) =>
-  String(id).startsWith("custom-") ||
-  String(id).startsWith("search-") ||
-  String(id).startsWith("split-");
+  String(id).startsWith("custom-") || String(id).startsWith("search-");
 // 서버에 실재하는 블록만 REST 를 태운다 — 임시 id·auto-(로컬 교통)는 제외
 export const isServerBlock = (id) =>
   !isTempId(id) && !String(id).startsWith("auto-");

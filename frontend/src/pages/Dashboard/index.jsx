@@ -71,9 +71,6 @@ const PX = 2.0;
 // 드래그 스냅 1분 (QA ⓑ) — 10분 스냅이던 시절엔 분 단위 교통블록(실제 API 소요시간)
 // 과 완벽하게 맞물리지 않았다. 리사이즈는 원래 분 단위라 이제 둘이 같은 정밀도다.
 const SNAP = 1;
-// 하루의 경계 = 24:00. 블록은 여기까지 채울 수 있고, 넘치는 만큼은 다음 Day
-// 00:00 에 "이어서" 블록으로 쪼개진다(splitOverflowAtMidnight).
-const DAY_END = 1440;
 const TL_PAD_TOP = 20;
 const TL_PAD_LEFT = 70;
 
@@ -135,156 +132,6 @@ const safeKeyBetween = (before, after) => {
   }
 };
 
-/** 하루의 끝을 넘긴 블록이 있는지 — 쪼개기가 필요한지 판단할 때만 쓴다 */
-const chainOverflowsMidnight = (chainIds, itemsMap) =>
-  (chainIds ?? []).some((id) => {
-    const item = itemsMap[id];
-    return (
-      item?.startMins != null && item.startMins + (item.dur || 0) > DAY_END
-    );
-  });
-
-// 마지막 Day 에서 넘치면 넘길 곳이 없다 — 이때만 거부한다.
-const LAST_DAY_OVERFLOW_MSG =
-  "마지막 날이라 넘길 다음 Day 가 없어요 — 여행 기간을 늘리거나 소요 시간을 줄여주세요.";
-
-/** 쪼개기 결과를 한 줄로 — 어느 Day 로 무엇이 갔는지 알려 준다 */
-const midnightSplitNotice = ({ created, moved }) => {
-  const days = [
-    ...new Set([...created.map((c) => c.to), ...moved.map((m) => m.to)]),
-  ]
-    .map((key) => `Day ${dayNoOf(key)}`)
-    .join(", ");
-  const parts = [];
-  if (created.length > 0) parts.push(`${created.length}개를 이어서 만들고`);
-  if (moved.length > 0) parts.push(`${moved.length}개를 옮겼어요`);
-  return `24:00을 넘어 ${days} 에 ${parts.join(" ")}`.replace(/고$/, "었어요");
-};
-
-let splitSeq = 0;
-
-/**
- * 하루의 끝(24:00)을 넘긴 블록을 자정에서 쪼갠다.
- *
- *   Day N  ├ 23:00 야시장 (120분)        →  Day N   ├ 23:00 야시장 (60분, ~24:00)
- *          └ (넘침)                          Day N+1 ├ 00:00 야시장 (이어서) (60분)
- *
- * - 자정에 걸친 블록: 앞부분은 그 Day 에 24:00 까지 남기고, 넘친 만큼을 다음 Day
- *   00:00 에 "(이어서)" 블록으로 새로 만든다. 소요 시간의 합은 원래와 같다.
- * - 시작부터 자정 뒤인 블록(앞 블록에 밀려난 것들): 쪼갤 게 없으니 통째로 옮긴다.
- * - 이월이 생긴 Day 는 00:00 부터 보이게 시작 시각을 0 으로 내린다 — 그러지 않으면
- *   09:00 기준 타임라인 위로 잘려 블록이 안 보인다.
- * - 다음 Day 가 또 넘치면 연쇄로 이어진다. 마지막 Day 면 blocked.
- *
- * @param {Record<string,string[]>} chainsIn  Day별 블록 id 배열
- * @param {Record<string,object>}   itemsIn   블록 사전
- * @param {string[]}                dayKeys   ["d1","d2",...] — 여행 기간 순서
- * @returns {{chains, items,
- *            moved:   Array<{id, from, to}>,            통째로 옮겨진 기존 블록
- *            created: Array<{tempId, sourceId, to}>,    새로 만들어야 할 "이어서" 블록
- *            trimmed: string[],                         소요 시간이 줄어든 원본 블록
- *            dayStarts: Record<string, number>,         0 으로 내려야 할 Day
- *            blocked: boolean}}
- */
-const splitOverflowAtMidnight = (chainsIn, itemsIn, dayKeys) => {
-  const untouched = {
-    chains: chainsIn,
-    items: itemsIn,
-    moved: [],
-    created: [],
-    trimmed: [],
-    dayStarts: {},
-    blocked: true,
-  };
-
-  let chains = { ...chainsIn };
-  let items = itemsIn;
-  const moved = [];
-  const created = [];
-  const trimmed = [];
-  const dayStarts = {};
-
-  for (let i = 0; i < dayKeys.length; i += 1) {
-    const dayKey = dayKeys[i];
-    const chain = chains[dayKey] ?? [];
-
-    const cut = chain.findIndex((id) => {
-      const item = items[id];
-      return (
-        item?.startMins != null && item.startMins + (item.dur || 0) > DAY_END
-      );
-    });
-    if (cut === -1) continue;
-
-    const nextKey = dayKeys[i + 1];
-    if (!nextKey) return untouched;
-
-    const victimId = chain[cut];
-    const victim = items[victimId];
-    const carried = []; // 다음 Day 00:00 부터 놓을 것들 (순서 유지)
-
-    if (victim.startMins < DAY_END) {
-      // 자정에 걸쳐 있다 — 자른다. 앞부분은 제자리에 남는다.
-      const restDur = victim.startMins + victim.dur - DAY_END;
-      items = {
-        ...items,
-        [victimId]: { ...victim, dur: DAY_END - victim.startMins },
-      };
-      chains[dayKey] = chain.slice(0, cut + 1);
-      trimmed.push(victimId);
-
-      splitSeq += 1;
-      const tempId = `split-${victimId}-${splitSeq}`;
-      items = {
-        ...items,
-        [tempId]: {
-          ...victim,
-          id: tempId,
-          name: `${victim.name ?? ""} (이어서)`,
-          dur: restDur,
-          startMins: 0,
-          endMins: restDur,
-          // 비용은 원본에 남긴다 — 복사하면 총 예산이 두 배로 잡힌다
-          cost: 0,
-          dayNo: dayNoOf(nextKey),
-          orderKey: null,
-        },
-      };
-      carried.push(tempId);
-      created.push({ tempId, sourceId: victimId, to: nextKey });
-    } else {
-      // 시작부터 자정 뒤 — 자를 게 없다. 통째로 옮긴다.
-      chains[dayKey] = chain.slice(0, cut);
-      carried.push(victimId);
-      moved.push({ id: victimId, from: dayKey, to: nextKey });
-    }
-
-    // 자정에 걸친 블록 뒤는 전부 자정 뒤다 — 순서를 지켜 함께 옮긴다
-    for (const id of chain.slice(cut + 1)) {
-      carried.push(id);
-      moved.push({ id, from: dayKey, to: nextKey });
-    }
-
-    dayStarts[nextKey] = 0;
-
-    const pulled = { ...items };
-    for (const id of carried) {
-      pulled[id] = { ...pulled[id], startMins: 0, dayNo: dayNoOf(nextKey) };
-    }
-    // 00:00 부터 차례로 쌓고, 원래 있던 블록은 필요한 만큼만 뒤로 밀린다
-    const resolved = resolveOverlaps(
-      pulled,
-      [...carried, ...(chains[nextKey] ?? [])],
-      null,
-    );
-    items = resolved.newItems;
-    chains[nextKey] = resolved.newChain;
-    // 루프가 이어지므로 nextKey 가 또 넘치면 그다음 Day 로 계속 쪼개진다
-  }
-
-  return { chains, items, moved, created, trimmed, dayStarts, blocked: false };
-};
-
 /**
  * 최종 목록에서 pos 위치 블록의 양옆 orderKey 경계를 찾는다.
  * auto- 같은 로컬 전용 블록은 서버에 없어 orderKey 가 없으므로 건너뛰고
@@ -311,11 +158,6 @@ const neighborKeysAround = (finalList, pos, itemsMap) => {
 };
 
 /**
- * 겹침 해소(resolveOverlaps)로 시각이 밀린 체인 내 서버 블록들의 시각을 저장한다.
- * 편집(3단계)·이동(5단계)·리사이즈가 공유한다 — 로컬만 밀면 새로고침 때
- * 이웃들이 옛 시각으로 되돌아간다(명세 320행: 시각 재계산 저장은 클라이언트 몫).
- */
-/**
  * orderKey 정렬 위치에 블록을 삽입한 새 배열 (원격 op 적용용).
  * 로컬 전용 블록(auto- 등, orderKey 없음)은 비교에서 건너뛴다 — 서버 블록들
  * 사이의 상대 위치만 orderKey 가 정하고, 로컬 블록은 제자리를 유지한다.
@@ -335,7 +177,15 @@ const insertByOrderKey = (list, itemsMap, block) => {
   return without;
 };
 
-const persistShiftedTimes = (chainIds, prevItems, nextItems, excludeId) => {
+/**
+ * 겹침 해소(resolveOverlaps)로 밀린 체인 내 서버 블록들의 시작 오프셋을
+ * position PATCH 로 저장한다 — 이웃도 시간축 위치가 바뀐 것이다.
+ * 편집(3단계)·이동(5단계)·리사이즈가 공유한다 — 로컬만 밀면 새로고침 때
+ * 이웃들이 옛 자리로 되돌아간다(명세 320행: 재계산 저장은 클라이언트 몫).
+ * 서버 블록만 보낸다 — 임시 id 는 아직 서버 행이 없고 position 엔드포인트는
+ * 비어 있지 않은 orderKey 를 요구한다.
+ */
+const persistMovedOffsets = (chainIds, prevItems, nextItems, excludeId) => {
   const shifted = (chainIds ?? []).filter(
     (id) =>
       id !== excludeId &&
@@ -343,8 +193,7 @@ const persistShiftedTimes = (chainIds, prevItems, nextItems, excludeId) => {
       nextItems[id]?.startMins != null &&
       nextItems[id].startMins !== prevItems[id]?.startMins,
   );
-  // 시각은 position PATCH 가 나른다 — 이웃도 시간축 위치가 바뀐 것이고,
-  // 순서(orderKey)는 그대로 다시 보낸다
+  // 순서(orderKey)는 그대로 다시 보낸다 — 바뀐 건 시간축 위치뿐이다
   return Promise.all(
     shifted.map((id) =>
       blockApi.moveBlock(id, {
@@ -952,77 +801,6 @@ export function DashboardPage() {
     });
   }, []);
 
-  const persistMidnightSplit = useCallback(
-    async ({ moved, created, trimmed, chains: chainsAfter, items: itemsAfter }) => {
-      let snapshot = itemsAfter;
-
-      // ① 잘린 원본 — 줄어든 소요 시간을 저장한다
-      for (const id of trimmed) {
-        if (!isServerBlock(id)) continue;
-        const block = snapshot[id];
-        await blockApi.updateBlockFields(id, { durationMin: block.dur });
-      }
-
-      // ② 통째로 옮겨진 기존 블록 — 위치와 시각을 position 한 번으로 보낸다
-      for (const { id, to } of moved) {
-        if (!isServerBlock(id)) continue; // auto-·임시 id 는 아직 서버에 없다
-        const chain = chainsAfter[to] ?? [];
-        const [before, after] = neighborKeysAround(
-          chain,
-          chain.indexOf(id),
-          snapshot,
-        );
-        const orderKey = safeKeyBetween(before, after);
-        const block = snapshot[id];
-
-        await blockApi.moveBlock(id, {
-          startOffsetMinutes: block.startMins,
-          orderKey,
-        });
-
-        snapshot = { ...snapshot, [id]: { ...block, orderKey } };
-        setItems((prev) =>
-          prev[id] ? { ...prev, [id]: { ...prev[id], orderKey } } : prev,
-        );
-      }
-
-      // ③ 새로 생긴 "(이어서)" 블록 — 생성 후 임시 id 를 서버 blockId 로 교체
-      for (const { tempId, to } of created) {
-        const chain = chainsAfter[to] ?? [];
-        const [before, after] = neighborKeysAround(
-          chain,
-          chain.indexOf(tempId),
-          snapshot,
-        );
-        const orderKey = safeKeyBetween(before, after);
-        const block = snapshot[tempId];
-
-        const createdBlock = await blockApi.createBlock(projectId, {
-          ...block,
-          orderKey,
-        });
-        // 세부 내용은 생성 바디에 없다(명세) — 원본에서 물려받았으면 따로 저장
-        if (block.detail) {
-          await blockApi.updateBlockFields(createdBlock.blockId, {
-            detail: block.detail,
-          });
-        }
-
-        snapshot = {
-          ...snapshot,
-          [createdBlock.blockId]: {
-            ...block,
-            id: createdBlock.blockId,
-            orderKey,
-          },
-        };
-        delete snapshot[tempId];
-        adoptServerId(tempId, createdBlock.blockId, { orderKey });
-      }
-    },
-    [projectId, adoptServerId],
-  );
-
   // ── Day 전체 자동 생성 = 두 단계: ① 전 구간 후보 조회 → 통합 모달,
   //    ② 구간별 선택 적용 → 일괄 생성 ──
   // choices: "from-to" → 선택한 후보(null = 그 구간 제외)
@@ -1170,25 +948,12 @@ export function DashboardPage() {
           null,
         );
 
-        // 교통 블록이 뒤를 밀어 자정을 넘기면 넘친 만큼 다음 Day 로 쪼갠다 —
-        // 일반 블록 드롭과 같은 규칙. 마지막 Day 라 넘길 곳이 없을 때만 모달을
-        // 열어 둔 채 거부한다(구간을 제외하거나 더 빠른 수단으로 바꿔 재시도).
-        const spilled = splitOverflowAtMidnight(
-          { ...chains, [dayKey]: newChain },
-          resolvedItems,
-          dayKeys,
-        );
-        if (spilled.blocked) {
-          showToast(
-            "마지막 날이라 넘길 다음 Day 가 없어요 — 일부 구간을 제외하거나 더 빠른 수단을 골라주세요.",
-          );
-          return;
-        }
         setBulkTransitPicker(null);
 
-        // 낙관 적용
-        setItems(spilled.items);
-        setChains(spilled.chains);
+        // 낙관 적용 — 교통 블록이 뒤를 밀어 24:00 을 넘겨도 그대로 둔다.
+        // 절대 오프셋에선 1440 을 넘긴 자리가 곧 다음 Day 다(쪼갤 게 없다).
+        setItems(resolvedItems);
+        setChains({ ...chains, [dayKey]: newChain });
 
         // ── 서버 반영 (5.5단계): 기존 생성분 삭제 → 밀린 실블록 시각 저장 →
         //    새 교통 블록 생성 → 로컬 임시 id 를 서버 blockId 로 교체 ──
@@ -1199,42 +964,19 @@ export function DashboardPage() {
               .map((id) => blockApi.deleteBlock(id)),
           );
 
-          // 쪼개기가 이미 맡은 블록들은 여기서 또 보내지 않는다
-          const handled = new Set([
-            ...createdLocalIds,
-            ...spilled.moved.map((m) => m.id),
-            ...spilled.created.map((c) => c.tempId),
-            ...spilled.trimmed,
-          ]);
-          const touched = new Set([
-            dayKey,
-            ...spilled.moved.map((m) => m.to),
-            ...spilled.created.map((c) => c.to),
-          ]);
-          await Promise.all(
-            [...touched].map((day) =>
-              persistShiftedTimes(
-                (spilled.chains[day] ?? []).filter((id) => !handled.has(id)),
-                items,
-                spilled.items,
-                null,
-              ),
-            ),
-          );
+          // 새 교통 블록은 아래에서 만든다 — persistMovedOffsets 의 서버 블록
+          // 필터가 로컬 임시 id 를 이미 걸러 준다
+          await persistMovedOffsets(newChain, items, resolvedItems, null);
 
           for (const localId of createdLocalIds) {
-            const b = spilled.items[localId];
-            if (!b) continue; // 쪼개기 과정에서 사라졌다면 건너뛴다
-            // 교통 블록 자체가 자정 너머로 밀려갔을 수 있다 — 실제 Day 를 따라간다
-            const ownDayNo = blockApi.dayNoOfOffset(b.startMins);
-            const ownDayKey = ownDayNo != null ? `d${ownDayNo}` : dayKey;
-            const ownChain = spilled.chains[ownDayKey] ?? [];
+            const b = resolvedItems[localId];
+            if (!b) continue;
             // 각 교통 블록의 경계는 양옆 실블록 — 아직 로컬인 다른 교통 블록은
             // neighborKeysAround 가 건너뛴다
             const [before, after] = neighborKeysAround(
-              ownChain,
-              ownChain.indexOf(localId),
-              spilled.items,
+              newChain,
+              newChain.indexOf(localId),
+              resolvedItems,
             );
             const orderKey = safeKeyBetween(before, after);
             // transportMeta 는 이미 buildTransportMeta 로 만들어 b 에 실려 있다(...b).
@@ -1250,11 +992,6 @@ export function DashboardPage() {
               transportMeta,
             });
           }
-
-          await persistMidnightSplit(spilled);
-          if (spilled.moved.length + spilled.created.length > 0) {
-            showToast(midnightSplitNotice(spilled));
-          }
         } catch (e) {
           rollbackToServer(e);
         }
@@ -1266,12 +1003,9 @@ export function DashboardPage() {
       bulkTransitPicker,
       chains,
       items,
-      dayKeys,
       projectId,
       adoptServerId,
-      persistMidnightSplit,
       rollbackToServer,
-      showToast,
     ],
   );
 
@@ -1398,56 +1132,22 @@ export function DashboardPage() {
           null,
         );
 
-        // 교통 블록이 뒤를 밀어 자정을 넘기면 넘친 만큼 다음 Day 로 쪼갠다 —
-        // 일반 블록 드롭과 같은 규칙. 마지막 Day 일 때만 거부한다.
-        const spilled = splitOverflowAtMidnight(
-          { ...chains, [dayKey]: newChain },
-          resolvedItems,
-          dayKeys,
-        );
-        if (spilled.blocked) {
-          showToast(LAST_DAY_OVERFLOW_MSG);
-          return;
-        }
+        // 낙관 적용 — 교통 블록이 뒤를 밀어 24:00 을 넘겨도 그대로 둔다.
+        // 절대 오프셋에선 1440 을 넘긴 자리가 곧 다음 Day 다(쪼갤 게 없다).
+        setItems(resolvedItems);
+        setChains({ ...chains, [dayKey]: newChain });
 
-        // 낙관 적용
-        setItems(spilled.items);
-        setChains(spilled.chains);
-
-        // ── 서버 반영 (5.5단계): 밀린 이웃 시각 저장 → 생성 → id 교체 ──
+        // ── 서버 반영 (5.5단계): 밀린 이웃 위치 저장 → 생성 → id 교체 ──
         try {
-          // 쪼개기가 이미 맡은 블록들은 여기서 또 보내지 않는다
-          const handled = new Set([
-            newId,
-            ...spilled.moved.map((m) => m.id),
-            ...spilled.created.map((c) => c.tempId),
-            ...spilled.trimmed,
-          ]);
-          const touched = new Set([
-            dayKey,
-            ...spilled.moved.map((m) => m.to),
-            ...spilled.created.map((c) => c.to),
-          ]);
-          await Promise.all(
-            [...touched].map((day) =>
-              persistShiftedTimes(
-                (spilled.chains[day] ?? []).filter((id) => !handled.has(id)),
-                items,
-                spilled.items,
-                null,
-              ),
-            ),
-          );
+          // 새 교통 블록은 아래에서 만든다 — persistMovedOffsets 의 서버 블록
+          // 필터가 로컬 임시 id 를 이미 걸러 준다
+          await persistMovedOffsets(newChain, items, resolvedItems, null);
 
-          // 새 교통 블록 자체가 자정 너머로 밀려갔을 수 있다 — 실제 Day 를 따라간다
-          const b = spilled.items[newId];
-          const ownDayNo = blockApi.dayNoOfOffset(b?.startMins);
-          const ownDayKey = ownDayNo != null ? `d${ownDayNo}` : dayKey;
-          const ownChain = spilled.chains[ownDayKey] ?? [];
+          const b = resolvedItems[newId];
           const [before, after] = neighborKeysAround(
-            ownChain,
-            ownChain.indexOf(newId),
-            spilled.items,
+            newChain,
+            newChain.indexOf(newId),
+            resolvedItems,
           );
           const orderKey = safeKeyBetween(before, after);
           // transportMeta 는 이미 buildTransportMeta 로 만들어 b 에 실려 있다(...b).
@@ -1462,11 +1162,6 @@ export function DashboardPage() {
             orderKey,
             transportMeta,
           });
-
-          await persistMidnightSplit(spilled);
-          if (spilled.moved.length + spilled.created.length > 0) {
-            showToast(midnightSplitNotice(spilled));
-          }
         } catch (e) {
           rollbackToServer(e);
         }
@@ -1478,10 +1173,8 @@ export function DashboardPage() {
       transitPicker,
       items,
       chains,
-      dayKeys,
       projectId,
       adoptServerId,
-      persistMidnightSplit,
       rollbackToServer,
       showToast,
     ],
@@ -1850,29 +1543,18 @@ export function DashboardPage() {
       return;
     }
 
-    // 소요시간 증가로 이웃이 자정 밖으로 밀려나면, 넘치는 만큼 다음 Day 로 이월한다.
-    // PATCH 전에 미리 계산해 둔다 — 마지막 Day 라 이월할 곳이 없으면 아예 보내지
-    // 않아야 서버와 화면이 어긋나지 않는다.
+    // 소요시간이 늘면 뒤 이웃이 밀린다 — PATCH 전에 밀린 결과를 미리 계산해 둔다.
+    // 24:00 을 넘겨도 그대로 둔다 — 절대 오프셋에선 그 자리가 곧 다음 Day 다.
     const onChain = chains[activeDay]?.includes(targetId);
-    let spilled = null;
+    let resolved = null;
     if (onChain) {
-      const { newItems, newChain } = resolveOverlaps(
+      resolved = resolveOverlaps(
         { ...items, [targetId]: patched },
         chains[activeDay],
         targetId,
       );
-      spilled = splitOverflowAtMidnight(
-        { ...chains, [activeDay]: newChain },
-        newItems,
-        dayKeys,
-      );
-      if (spilled.blocked) {
-        showToast(LAST_DAY_OVERFLOW_MSG);
-        return; // 모달을 열어 둔다 — 소요를 줄여 다시 저장할 수 있게
-      }
     }
 
-    let spillNotice = null;
     try {
       const result = await blockApi.updateBlockFields(targetId, changed);
       // 1인 모드에서 applied:false(스테일)는 나올 수 없다 — 나오면 그 자체가 조사 대상
@@ -1883,46 +1565,25 @@ export function DashboardPage() {
         console.warn("[dashboard] LWW 스테일 필드 (1인 모드에서 비정상):", stale);
       }
 
-      // 로컬 반영. 체인 블록이면 겹침 해소로 밀린 이웃들의 시각도 서버에 저장한다 —
-      // 로컬만 밀면 새로고침 때 이웃들이 옛 시각으로 되돌아간다(명세 320행의
+      // 로컬 반영. 체인 블록이면 겹침 해소로 밀린 이웃들의 위치도 서버에 저장한다 —
+      // 로컬만 밀면 새로고침 때 이웃들이 옛 자리로 되돌아간다(명세 320행의
       // "이동 후 시각 재계산은 클라이언트 몫" 규칙과 같은 경로, 5단계에서 재사용).
-      if (spilled) {
-        const handled = new Set([
-          ...spilled.moved.map((m) => m.id),
-          ...spilled.created.map((c) => c.tempId),
-          ...spilled.trimmed,
-        ]);
-
-        await persistMidnightSplit(spilled);
-        await Promise.all(
-          [
-            ...new Set([
-              activeDay,
-              ...spilled.moved.map((m) => m.to),
-              ...spilled.created.map((c) => c.to),
-            ]),
-          ].map((day) =>
-            persistShiftedTimes(
-              (spilled.chains[day] ?? []).filter((id) => !handled.has(id)),
-              items,
-              spilled.items,
-              targetId,
-            ),
-          ),
+      if (resolved) {
+        await persistMovedOffsets(
+          resolved.newChain,
+          items,
+          resolved.newItems,
+          targetId,
         );
 
-        setItems(spilled.items);
-        setChains(spilled.chains);
-        if (handled.size > 0) {
-          spillNotice = `저장했어요 ✓ ${midnightSplitNotice(spilled)}`;
-        }
+        setItems(resolved.newItems);
+        setChains((prev) => ({ ...prev, [activeDay]: resolved.newChain }));
       } else {
         setItems({ ...items, [targetId]: patched });
       }
 
       setEditingBlockId(null);
-      // 이월이 있었으면 그 사실이 더 중요하다 — 토스트는 하나만 띄운다
-      showToast(spillNotice ?? "블록이 저장됐어요 ✓");
+      showToast("블록이 저장됐어요 ✓");
     } catch (e) {
       // 모달을 열어 둔다 — 재시도하면 같은 diff 가 다시 전송된다(멱등)
       showToast(
@@ -2034,7 +1695,7 @@ export function DashboardPage() {
   // transportMeta 뿐 아니라 소요(durationMin)·종료시각·비용(budget)까지 PATCH 해야
   // 새로고침 후에도 유지된다(예전엔 meta 만 보내 소요·비용이 로컬에만 남았다).
   // 소요가 바뀌면 이웃이 밀린다 — 저장 경로(handleSaveBlock)와 같은
-  // 겹침 해소 + 자정 분할 + 밀린 이웃 시각 저장을 그대로 태운다.
+  // 겹침 해소 + 밀린 이웃 위치 저장을 그대로 태운다.
   const applyReselectTransport = useCallback(async () => {
     const picker = transportReselectPicker;
     const chosen = picker?.chosenCandidate;
@@ -2060,25 +1721,17 @@ export function DashboardPage() {
     const newCost = transitCostOf(chosen, picker.chosenDeparture);
     const merged = { ...block, dur: newDur, cost: newCost, transportMeta: newMeta };
 
-    // 체인 위 블록이면 소요 변경이 이웃을 민다 — 저장 전에 자정 초과를 판정
+    // 체인 위 블록이면 소요 변경이 이웃을 민다 — 저장 전에 밀린 결과를 계산해 둔다.
+    // 24:00 을 넘겨도 그대로 둔다 — 절대 오프셋에선 그 자리가 곧 다음 Day 다.
     const blockDayNo = blockApi.dayNoOfOffset(block.startMins);
     const dayKey = blockDayNo != null ? `d${blockDayNo}` : null;
-    let spilled = null;
+    let resolved = null;
     if (dayKey && chains[dayKey]?.includes(block.id)) {
-      const { newItems, newChain } = resolveOverlaps(
+      resolved = resolveOverlaps(
         { ...items, [block.id]: merged },
         chains[dayKey],
         block.id,
       );
-      spilled = splitOverflowAtMidnight(
-        { ...chains, [dayKey]: newChain },
-        newItems,
-        dayKeys,
-      );
-      if (spilled.blocked) {
-        showToast(LAST_DAY_OVERFLOW_MSG);
-        return; // 모달을 열어 둔다 — 더 빠른 수단을 골라 다시 저장할 수 있게
-      }
     }
 
     setTransportReselectPicker(null);
@@ -2093,53 +1746,25 @@ export function DashboardPage() {
         transportMeta: newMeta,
       });
 
-      if (spilled) {
-        const handled = new Set([
-          ...spilled.moved.map((m) => m.id),
-          ...spilled.created.map((c) => c.tempId),
-          ...spilled.trimmed,
-        ]);
-        await persistMidnightSplit(spilled);
-        await Promise.all(
-          [
-            ...new Set([
-              dayKey,
-              ...spilled.moved.map((m) => m.to),
-              ...spilled.created.map((c) => c.to),
-            ]),
-          ].map((day) =>
-            persistShiftedTimes(
-              (spilled.chains[day] ?? []).filter((id) => !handled.has(id)),
-              items,
-              spilled.items,
-              block.id,
-            ),
-          ),
+      if (resolved) {
+        await persistMovedOffsets(
+          resolved.newChain,
+          items,
+          resolved.newItems,
+          block.id,
         );
-        setItems(spilled.items);
-        setChains(spilled.chains);
-        showToast(
-          handled.size > 0
-            ? `이동 수단을 바꿨어요 ✓ ${midnightSplitNotice(spilled)}`
-            : "이동 수단을 바꿨어요 ✓",
-        );
+        setItems(resolved.newItems);
+        setChains((prev) => ({ ...prev, [dayKey]: resolved.newChain }));
       } else {
         setItems((prev) =>
           prev[block.id] ? { ...prev, [block.id]: merged } : prev,
         );
-        showToast("이동 수단을 바꿨어요 ✓");
       }
+      showToast("이동 수단을 바꿨어요 ✓");
     } catch (e) {
       showToast(e?.message ?? "저장하지 못했어요. 잠시 후 다시 시도해주세요.");
     }
-  }, [
-    transportReselectPicker,
-    items,
-    chains,
-    dayKeys,
-    persistMidnightSplit,
-    showToast,
-  ]);
+  }, [transportReselectPicker, items, chains, showToast]);
 
   // ── 편집 락 수명 = 편집 모달 수명 (6단계, advisory) ──
   // 모달을 열면 획득 → 10초 주기 하트비트(TTL 30초) → 닫으면 해제.
@@ -2291,8 +1916,6 @@ export function DashboardPage() {
           resizingState.originalStartMins + resizingState.startDur + deltaMins;
         if (tentativeEnd - resizingState.originalStartMins < 10)
           tentativeEnd = resizingState.originalStartMins + 10;
-        // 아래로는 23:59 까지만 늘어난다 — 넘기면 저장할 수 없는 시각이 된다
-        if (tentativeEnd > DAY_END) tentativeEnd = DAY_END;
         newDur = tentativeEnd - resizingState.originalStartMins;
       } else {
         let tentativeStart = resizingState.originalStartMins + deltaMins;
@@ -2311,7 +1934,7 @@ export function DashboardPage() {
           resizingState.originalStartMins + resizingState.startDur - newStart;
       }
 
-      setItems((prev) => {
+      setItems(() => {
         const updatedSnapshot = {
           ...resizingState.originalItems,
           [resizingState.id]: {
@@ -2322,13 +1945,11 @@ export function DashboardPage() {
               : {}),
           },
         };
-        const { newItems, newChain } = resolveOverlaps(
+        const { newItems } = resolveOverlaps(
           updatedSnapshot,
           chains[activeDay],
           resizingState.id,
         );
-        // 자정을 넘기는 이동량은 무시한다(정책 A) — 리사이즈가 자정 벽에서 멈춘다
-        if (chainOverflowsMidnight(newChain, newItems)) return prev;
         return newItems;
       });
     };
@@ -2436,7 +2057,7 @@ export function DashboardPage() {
         let dropMins = Math.round(calcMins / SNAP) * SNAP;
         const dur = items[activeIdLocal]?.dur || 60; // 기본 소요시간 60분
         // 시작은 보고 있는 Day 안에 머문다. 끝은 자정을 넘겨도 막지 않는다 —
-        // 넘친 꼬리는 splitOverflowAtMidnight 가 다음 Day 로 이어 붙인다.
+        // 절대 오프셋에선 넘친 꼬리가 그대로 다음 Day 위에 놓인다.
         dropMins = Math.max(
           timelineStart,
           Math.min(dropMins, timelineEnd - SNAP),
@@ -2675,86 +2296,54 @@ export function DashboardPage() {
         activeIdLocal,
       );
 
-      // 놓는 블록은 자정 안이어도 밀려나는 이웃이 자정을 넘을 수 있다 —
-      // 넘치는 만큼은 자정에서 쪼개 다음 Day 로 보낸다. 마지막 Day 일 때만 거부.
-      const baseChains = {};
+      // 낙관 적용 — 밀린 이웃이 24:00 을 넘겨도 그대로 둔다.
+      // 절대 오프셋에선 1440 을 넘긴 자리가 곧 다음 Day 다.
+      const nextChains = {};
       for (const [day, chain] of Object.entries(chains)) {
-        baseChains[day] =
+        nextChains[day] =
           day === activeDay
             ? newChain
             : chain.filter((id) => id !== activeIdLocal);
       }
-      const spilled = splitOverflowAtMidnight(baseChains, newItems, dayKeys);
-      if (spilled.blocked) {
-        showToast(LAST_DAY_OVERFLOW_MSG);
-        return;
-      }
-
-      const movedIds = new Set([
-        ...spilled.moved.map((m) => m.id),
-        ...spilled.created.map((c) => c.tempId),
-      ]);
-      if (movedIds.size > 0) showToast(midnightSplitNotice(spilled));
-
-      // 낙관 적용 — 타임라인이 늘 00:00 부터라 이월 블록도 그대로 보인다
-      setItems(spilled.items);
-      setChains(spilled.chains);
+      setItems(newItems);
+      setChains(nextChains);
       if (isFromPool)
         setPool((prev) => prev.filter((id) => id !== activeIdLocal));
 
       // 서버 저장: 옮긴 블록 1건의 position(시작 오프셋·orderKey) +
       // 겹침 해소로 밀린 이웃들의 위치. resolveOverlaps 는 이동 블록 외의
       // 상대 순서를 보존하므로 position 은 정확히 1건이다(명세와 일치).
-      // 자정에서 쪼개진 것들(자른 원본·옮긴 블록·새 "이어서" 블록)은
-      // Day 와 orderKey 까지 바뀌므로 persistMidnightSplit 이 따로 맡는다.
-      if (isServerBlock(activeIdLocal) || movedIds.size > 0) {
+      if (isServerBlock(activeIdLocal)) {
         (async () => {
           try {
-            if (isServerBlock(activeIdLocal) && !movedIds.has(activeIdLocal)) {
-              const chain = spilled.chains[activeDay] ?? [];
-              const [before, after] = neighborKeysAround(
-                chain,
-                chain.indexOf(activeIdLocal),
-                spilled.items,
-              );
-              const orderKey = safeKeyBetween(before, after);
-              const moved = spilled.items[activeIdLocal];
+            const [before, after] = neighborKeysAround(
+              newChain,
+              newChain.indexOf(activeIdLocal),
+              newItems,
+            );
+            const orderKey = safeKeyBetween(before, after);
 
-              await blockApi.moveBlock(activeIdLocal, {
-                startOffsetMinutes: moved.startMins,
-                orderKey,
-              });
+            await blockApi.moveBlock(activeIdLocal, {
+              startOffsetMinutes: newItems[activeIdLocal].startMins,
+              orderKey,
+            });
 
-              // 다음 이동의 이웃 계산이 정확하도록 로컬에도 새 위치 값을 반영
-              setItems((prev) =>
-                prev[activeIdLocal]
-                  ? {
-                      ...prev,
-                      [activeIdLocal]: { ...prev[activeIdLocal], orderKey },
-                    }
-                  : prev,
-              );
-            }
+            // 다음 이동의 이웃 계산이 정확하도록 로컬에도 새 위치 값을 반영
+            setItems((prev) =>
+              prev[activeIdLocal]
+                ? {
+                    ...prev,
+                    [activeIdLocal]: { ...prev[activeIdLocal], orderKey },
+                  }
+                : prev,
+            );
 
-            await persistMidnightSplit(spilled);
-
-            // 시각만 밀린 나머지 — 이월분·잘린 원본은 위에서 이미 저장했으니 제외
-            const touchedDays = new Set([
-              activeDay,
-              ...spilled.moved.map((m) => m.to),
-              ...spilled.created.map((c) => c.to),
-            ]);
-            await Promise.all(
-              [...touchedDays].map((day) =>
-                persistShiftedTimes(
-                  (spilled.chains[day] ?? []).filter(
-                    (id) => id !== activeIdLocal && !movedIds.has(id),
-                  ),
-                  items,
-                  spilled.items,
-                  null,
-                ),
-              ),
+            // 자리만 밀린 나머지 이웃들
+            await persistMovedOffsets(
+              newChain,
+              items,
+              newItems,
+              activeIdLocal,
             );
           } catch (e) {
             rollbackToServer(e);
@@ -3483,13 +3072,6 @@ export function DashboardPage() {
                 // 서버가 category 필드 갱신을 지원하지 않는다(BLOCK400_2) —
                 // 카테고리는 생성 시에만 정할 수 있다
                 categoryLocked={!isTempId(editingBlockId)}
-                // 평소엔 상한이 없다 — 24:00 을 넘기면 넘친 만큼 다음 Day 로
-                // 쪼개진다. 마지막 Day 만 넘길 곳이 없어 상한이 생긴다.
-                maxDurationMin={
-                  sMins != null && activeDay === dayKeys[dayKeys.length - 1]
-                    ? DAY_END - sMins
-                    : null
-                }
                 // advisory 락 — 편집을 막지 않고 동시 편집 사실만 알린다.
                 // 세부 내용(detail)은 마지막 저장이 통째로 이기므로 겹치면 유실될 수 있다.
                 lockNotice={
