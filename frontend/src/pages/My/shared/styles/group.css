@@ -51,3 +51,10 @@
 .f-row{display:flex;align-items:center;gap:9px;padding:7px 0;font-size:13px;border-bottom:1px solid rgba(61,43,34,.06)}
 .f-row:last-child{border-bottom:none}
 .leave-btn{width:100%;margin-top:14px;border:1px solid #e3c0c0;background:#fbeeee;color:#9c3b3b;border-radius:11px;padding:10px;font-weight:500;font-size:12.5px}
+
+/* 계정(회원 탈퇴) 패널 — 되돌릴 수 없는 동작이라 주 흐름에서 떨어뜨려 두고,
+   버튼도 위험색 테두리로만 표시한다(채운 버튼은 실수 클릭을 부른다) */
+.acct-pnl{margin-top:14px}
+.acct-pnl .btn{margin-top:10px;width:100%}
+.btn-gh.danger{color:#9c3b3b;border-color:rgba(156,59,59,.35)}
+.btn-gh.danger:hover{background:#fdf1ef;border-color:#9c3b3b}

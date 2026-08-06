@@ -8,6 +8,7 @@ import { ERROR_CODE } from '../../global/api/errorCodes';
 import { onEnter } from '../../global/util/onEnter';
 import CreateGroupModal from './components/CreateGroupModal';
 import DeleteGroupModal from './components/DeleteGroupModal';
+import WithdrawModal from './components/WithdrawModal';
 import { AppBar } from './shared/ui/AppBar';
 import { Avatar } from './shared/ui/Avatar';
 
@@ -26,6 +27,21 @@ export function MyPage() {
   const [deleteTarget, setDeleteTarget] = useState(null); // 삭제 모달에 넘길 그룹
   const [editingId, setEditingId] = useState(null); // 인라인 이름 수정 중인 그룹 id
   const [editValue, setEditValue] = useState('');
+  const [withdrawOpen, setWithdrawOpen] = useState(false);
+
+  const withdraw = useAuthStore((s) => s.withdraw);
+
+  // 나 혼자인 그룹은 탈퇴와 함께 서버가 하드 삭제한다(프로젝트·블록까지) —
+  // 모달이 그 사실을 숫자로 알리도록 미리 센다.
+  const soloGroupCount = groups.filter(
+    (g) => (g.memberCount ?? g.members?.length ?? 1) <= 1,
+  ).length;
+
+  async function handleWithdraw() {
+    await withdraw(); // 실패는 모달이 받아 사유를 보여준다
+    showToast('탈퇴가 완료됐어요. 그동안 이용해주셔서 감사합니다.');
+    navigate('/', { replace: true });
+  }
 
   async function handleJoin() {
     if (joining) return;
@@ -184,6 +200,21 @@ export function MyPage() {
             </div>
             {codeErr && <div className="code-err">{codeErr}</div>}
           </div>
+
+          {/* 계정 관리 — 되돌릴 수 없는 동작이라 주 흐름(그룹)에서 멀찍이,
+              패널 맨 아래에 조용히 둔다 */}
+          <div className="pnl acct-pnl">
+            <h3>계정</h3>
+            <p style={{ fontSize: 12.5, color: 'var(--ink2)' }}>
+              탈퇴하면 계정 정보가 파기되고 모든 그룹에서 나가게 됩니다.
+            </p>
+            <button
+              className="btn btn-gh danger"
+              onClick={() => setWithdrawOpen(true)}
+            >
+              회원 탈퇴
+            </button>
+          </div>
         </div>
       </div>
 
@@ -197,6 +228,12 @@ export function MyPage() {
         group={deleteTarget}
         onDelete={deleteGroup}
         onClose={() => setDeleteTarget(null)}
+      />
+      <WithdrawModal
+        open={withdrawOpen}
+        soloGroupCount={soloGroupCount}
+        onWithdraw={handleWithdraw}
+        onClose={() => setWithdrawOpen(false)}
       />
       </div>
     </>
