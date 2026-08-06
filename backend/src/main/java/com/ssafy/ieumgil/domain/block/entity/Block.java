@@ -34,12 +34,14 @@ import java.util.Map;
 /**
  * 일정/후보 블록 — 대시보드 보드의 최소 단위 (ERD: BLOCK).
  *
- * dayNo가 null이면 후보(POOL), 값이 있으면 해당 Day 체인에 속한다.
- * 정렬은 orderKey(fractional index) 오름차순 + 동시 삽입 대비 id tie-break.
+ * startOffsetMinutes가 null이면 후보(POOL), 값이 있으면 그 오프셋이 가리키는 Day 체인에 속한다.
+ * Day 번호·시각·자정 넘김은 전부 이 하나에서 파생한다(dayNo·startTime을 따로 저장하지 않는다).
+ * 정렬은 startOffsetMinutes 오름차순 → orderKey(fractional index) → 동시 삽입 대비 id tie-break.
  * 삭제는 tombstone(deletedAt) — 지연 도착한 op를 404가 아니라 410으로 구분해야 하므로 행을 남긴다.
  *
  * 체인 조회용 partial index는 JPA로 선언할 수 없다 —
- * docker/postgres/migration/002-dashboard-indexes.sql 수동 반영 필요.
+ * docker/postgres/migration/006-block-time-model.sql의
+ * (project_id, start_offset_minutes, order_key, id) 인덱스를 수동 반영해야 한다.
  */
 @Entity
 @Getter

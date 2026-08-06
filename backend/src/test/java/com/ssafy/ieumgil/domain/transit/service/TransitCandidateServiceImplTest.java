@@ -135,15 +135,21 @@ class TransitCandidateServiceImplTest {
 
     /**
      * startTime을 지정하는 오버로드. 시외 구간의 기준 시각(base = startTime + durationMin)이
-     * from 블록의 저장된 시각에서 나오므로, 시간표가 붙는 시외 구간을 테스트할 때는 이 오버로드로
-     * from 블록의 startTime을 채워야 한다.
+     * from 블록의 저장된 오프셋에서 나오므로, 시간표가 붙는 시외 구간을 테스트할 때는 이 오버로드로
+     * from 블록의 시각을 채워야 한다.
+     *
+     * <p>dayNo·시각은 저장되지 않고 {@code startOffsetMinutes} 하나에서 파생한다. 그래서
+     * startTime이 없는 블록은 오프셋도 없는 후보(POOL) 블록이 되고 — 기준 시각을 만들 수 없다는
+     * 뜻은 전과 같다 — 이때 dayNo는 쓰이지 않는다(기준 시각이 있는 블록에만 필요한 값이다).
      */
     private Block blockAt(long id, double lat, double lng, int dayNo, LocalTime startTime) {
+        Integer offset = startTime == null
+                ? null
+                : (dayNo - 1) * 1440 + startTime.getHour() * 60 + startTime.getMinute();
         return Block.builder()
-                .id(id).dayNo(dayNo).orderKey("a" + id).name("블록" + id)
+                .id(id).startOffsetMinutes(offset).orderKey("a" + id).name("블록" + id)
                 .category(BlockCategory.SPOT).durationMin(60).budget(0)
                 .lat(BigDecimal.valueOf(lat)).lng(BigDecimal.valueOf(lng))
-                .startTime(startTime)
                 .source(BlockSource.KAKAO)
                 .build();
     }
@@ -393,7 +399,7 @@ class TransitCandidateServiceImplTest {
         givenProject(TransportPref.PUBLIC);
         // 장소성 없는 블록(ETC 등)은 좌표가 없다. 구간의 끝점이 될 수 없으므로 계산 자체를 막는다.
         Block noCoordinates = Block.builder()
-                .id(2L).dayNo(1).orderKey("a2").name("자유시간")
+                .id(2L).startOffsetMinutes(9 * 60).orderKey("a2").name("자유시간")
                 .category(BlockCategory.ETC).durationMin(60).budget(0)
                 .source(BlockSource.MANUAL)
                 .build();
@@ -943,10 +949,9 @@ class TransitCandidateServiceImplTest {
         // 훨씬 이른 시각을 기준으로 삼아 실제로는 탈 수 없는 10:00발 열차까지 후보에 남겼다.
         Block block1 = blockAt(1L, LAT_A, LNG_A, 1, LocalTime.of(10, 0));
         Block block2 = Block.builder()
-                .id(2L).dayNo(1).orderKey("a2").name("블록2")
+                .id(2L).startOffsetMinutes(14 * 60).orderKey("a2").name("블록2")
                 .category(BlockCategory.SPOT).durationMin(0).budget(0)
                 .lat(BigDecimal.valueOf(LAT_A)).lng(BigDecimal.valueOf(LNG_A))
-                .startTime(LocalTime.of(14, 0))
                 .source(BlockSource.KAKAO)
                 .build();
         Block block3 = blockAt(3L, LAT_BUSAN, LNG_BUSAN, 1);
@@ -1044,10 +1049,9 @@ class TransitCandidateServiceImplTest {
         // 23:50 시작 + 90분 체류 = base 1520분(24:20) — from 블록 자체의 저장 시각만으로도
         // 자정을 넘긴다(수단 여유를 더하기 전에 이미 그렇다).
         Block lateBlock = Block.builder()
-                .id(1L).dayNo(1).orderKey("a1").name("블록1")
+                .id(1L).startOffsetMinutes(23 * 60 + 50).orderKey("a1").name("블록1")
                 .category(BlockCategory.SPOT).durationMin(90).budget(0)
                 .lat(BigDecimal.valueOf(LAT_SEOUL)).lng(BigDecimal.valueOf(LNG_SEOUL))
-                .startTime(LocalTime.of(23, 50))
                 .source(BlockSource.KAKAO)
                 .build();
         given(blockRepository.findAllByIdInAndProject_IdAndDeletedAtIsNull(List.of(1L, 2L), PROJECT_ID))

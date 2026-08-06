@@ -147,8 +147,9 @@ class TransitCandidateLiveScenarioTest extends IntegrationTestSupport {
                 .source(BlockSource.MANUAL)
                 .project(project)
                 .author(member)
-                .dayNo(1)
-                .startTime(startTime)
+                .startOffsetMinutes(startTime == null
+                        ? null
+                        : startTime.getHour() * 60 + startTime.getMinute())
                 .durationMin(60)
                 .lat(BigDecimal.valueOf(coord.lat()))
                 .lng(BigDecimal.valueOf(coord.lng()))

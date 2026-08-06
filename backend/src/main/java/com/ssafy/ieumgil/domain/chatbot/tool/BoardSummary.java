@@ -52,22 +52,24 @@ public record BoardSummary(
     }
 
     /**
-     * @param blocks {@code BlockRepository.findChain} 결과 — (orderKey, id) 순으로 정렬돼 있고
-     *               dayNo가 null인 후보(POOL) 블록도 함께 들어 있다.
+     * @param blocks {@code BlockRepository.findChain} 결과 — 시작 오프셋이 null인 후보(POOL)
+     *               블록도 함께 들어 있다. Day 번호와 시각은 저장된 값이 아니라 그 오프셋에서
+     *               파생하므로, 자정을 넘긴 블록은 다음 Day로 접힌다.
      */
     public static BoardSummary from(List<Block> blocks) {
-        // Day 번호 순으로 내보낸다. 입력은 orderKey 기준 정렬이라 Day가 섞여 들어올 수 있다.
+        // Day 번호 순으로 내보낸다. 입력은 오프셋 기준 정렬이라 Day가 섞여 들어올 수 있다.
         Map<Integer, List<Block>> byDay = new TreeMap<>();
         List<Block> poolBlocks = new ArrayList<>();
 
         for (Block block : blocks) {
-            if (block.getDayNo() == null) {
+            if (block.isInPool()) {
                 poolBlocks.add(block);
             } else {
-                byDay.computeIfAbsent(block.getDayNo(), key -> new ArrayList<>()).add(block);
+                byDay.computeIfAbsent(block.dayNo(), key -> new ArrayList<>()).add(block);
             }
         }
 
+        // 키 언박싱이 안전한 이유: POOL을 위에서 걸렀으므로 dayNo()가 null인 블록은 여기 없다.
         List<DayPlan> days = new ArrayList<>();
         byDay.forEach((dayNo, dayBlocks) -> days.add(new DayPlan(dayNo, toBoardBlocks(dayBlocks))));
 
@@ -88,13 +90,23 @@ public record BoardSummary(
                 block.getId(),
                 block.getName(),
                 block.getCategory().name(),
-                // 시각 없는(느슨한) 블록은 null로 남긴다 — 서버가 시각을 지어내지 않는다
-                block.getStartTime() == null ? null : block.getStartTime().toString(),
+                // 시각이 없는(=후보) 블록은 null로 남긴다 — 서버가 시각을 지어내지 않는다
+                toHhmm(block.startMinuteOfDay()),
                 block.getDurationMin(),
                 block.getBudget(),
                 toDouble(block.getLat()),
                 toDouble(block.getLng())
         );
+    }
+
+    /**
+     * Day 안의 분을 {@code "HH:mm"}으로 — 옛 {@code LocalTime.toString()}과 같은 문자열이다.
+     * 이 표기는 프롬프트 계약이라 자릿수·구분자가 달라지면 모델 동작이 조용히 바뀐다.
+     */
+    private static String toHhmm(Integer minuteOfDay) {
+        return minuteOfDay == null
+                ? null
+                : String.format("%02d:%02d", minuteOfDay / 60, minuteOfDay % 60);
     }
 
     private static Double toDouble(BigDecimal value) {
