@@ -57,7 +57,8 @@ public record BoardSummary(
      *               파생하므로, 자정을 넘긴 블록은 다음 Day로 접힌다.
      */
     public static BoardSummary from(List<Block> blocks) {
-        // Day 번호 순으로 내보낸다. 입력은 오프셋 기준 정렬이라 Day가 섞여 들어올 수 있다.
+        // Day 번호 순으로 내보낸다. 오프셋이 오름차순이면 Day도 오름차순이라 입력 순서만으로도
+        // 충분하지만, 정렬을 호출부 계약에 기대지 않으려고 TreeMap으로 한 번 더 못박는다.
         Map<Integer, List<Block>> byDay = new TreeMap<>();
         List<Block> poolBlocks = new ArrayList<>();
 

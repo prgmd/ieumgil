@@ -477,8 +477,8 @@ export function DashboardPage() {
   // 타임라인 좌표계 = 블록의 startOffsetMinutes 와 같은 공간(Day 1 00:00 기준 절대 분).
   // 보이는 창만 활성 Day 의 00:00~24:00 으로 잘라 쓰므로, 렌더 식은 전부
   // (값 - timelineStart) * PX 꼴 그대로다 — 기준선만 Day 베이스로 옮긴다.
-  // dayKeys 가 비는 한 프레임에 dayNoOf 가 NaN 을 주면 좌표 전체가 NaN 이 되므로 Day 1 로 받친다.
-  const dayBase = ((dayNoOf(activeDay) || 1) - 1) * blockApi.MINUTES_PER_DAY;
+  // dayKeysOf 는 항상 Day 를 하나 이상 주므로 activeDay 는 언제나 "dN" 이다.
+  const dayBase = (dayNoOf(activeDay) - 1) * blockApi.MINUTES_PER_DAY;
   const timelineStart = dayBase;
   const timelineEnd = dayBase + blockApi.MINUTES_PER_DAY;
 
@@ -784,14 +784,6 @@ export function DashboardPage() {
     navigate(`/groups/${groupId}`, { replace: true });
   }, [status, error, groupId, navigate, showToast]);
 
-  /**
-   * 자정 쪼개기 결과를 서버에 반영한다 — 잘린 원본의 소요 시간, 통째로 옮겨진 블록의
-   * 위치·시각, 그리고 새로 생긴 "(이어서)" 블록의 생성.
-   *
-   * 순차로 처리한다. orderKey 는 양옆 이웃의 키에서 뽑는데, 앞서 처리한 블록이 아직
-   * 새 키를 못 받았으면 neighborKeysAround 가 그 블록을 건너뛰어 경계가 어긋난다 —
-   * 한 건씩 스냅샷을 갱신해야 뒤 블록이 앞 블록의 새 키를 본다.
-   */
   // 임시 id 로 만든 로컬 블록을 서버 blockId 로 교체한다 (items + pool + chains).
   // 생성 요청이 도는 사이 사용자가 블록을 지웠으면(items 에 없음) 조용히 무시한다.
   const adoptServerId = useCallback((tempId, blockId, extra) => {
@@ -2104,6 +2096,8 @@ export function DashboardPage() {
         // 옮기는 블록 자신은 제외한다 — 제 꼬리에 제가 막히면 안 된다.
         // 한 Day 를 통째로 덮는 블록(24시간 초과)이면 바닥이 24:00 을 넘어서고,
         // 놓인 블록은 그 끝(=다음 Day)으로 내려간다 — 이 Day 에는 빈 시간이 없다.
+        // 그러면 regroupChainsByOffset 이 그 블록을 다음 Day 체인으로 옮기므로,
+        // 놓은 탭에서는 사라지고 다음 Day 탭에 나타난다.
         const floorMins = spilloverFloorOf(items, dayBase, activeIdLocal);
         dropMins = Math.max(floorMins, Math.min(dropMins, timelineEnd - SNAP));
         return { region: "timeline", dropMins, dur };
@@ -2615,7 +2609,6 @@ export function DashboardPage() {
     timelineEnd,
   );
 
-
   return (
     <>
       {/* 개인 페이지 › 그룹명 › 프로젝트명. 그룹·프로젝트를 못 불러온 동안에는
@@ -2777,7 +2770,12 @@ export function DashboardPage() {
                           className="tl-mark"
                           style={{ top: `${(t - timelineStart) * PX}px` }}
                         >
-                          <span className="tl-mark-time">{fmtTime(t)}</span>
+                          {/* 마지막 눈금은 다음 Day 의 00:00 과 같은 값이라 fmtTime 이
+                              "00:00" 을 준다 — 자의 끝은 24:00 으로 읽혀야 한다.
+                              경계가 있는 건 눈금뿐이라 fmtTime 이 아니라 여기서 다룬다. */}
+                          <span className="tl-mark-time">
+                            {t === timelineEnd ? "24:00" : fmtTime(t)}
+                          </span>
                           <div className="tl-mark-line" />
                         </div>
                       ))}
