@@ -763,6 +763,16 @@ export function DashboardPage() {
     const dropped = goneDays.flatMap((key) => chains[key]);
     if (dropped.length > 0) {
       setPool((p) => [...dropped.filter((id) => !p.includes(id)), ...p]);
+      // 후보의 자리는 "오프셋 없음"이다 — 체인에서만 빼고 오프셋을 남기면
+      // Day 를 오프셋에서 유도하는 곳들이 이 블록을 사라진 Day 소속으로 계속 읽는다
+      setItems((prev) => {
+        const next = { ...prev };
+        for (const id of dropped) {
+          if (!next[id]) continue;
+          next[id] = { ...next[id], startMins: null, endMins: null };
+        }
+        return next;
+      });
     }
     const next = {};
     dayKeys.forEach((key) => {
@@ -1480,11 +1490,12 @@ export function DashboardPage() {
   });
 
   // ── 원격 op 적용 ─────────────────────────────────────
-  // 원격 블록을 dayNo·orderKey 가 가리키는 자리로 배치한다 (생성·이동 공용).
-  // 시각(startMins)은 여기서 계산하지 않는다 — 보낸 클라이언트가 position 직후
-  // fields 로 시각을 저장하므로 후속 op 가 바로 따라와 채운다(대개 같은 drain 배치).
+  // 원격 블록을 startMins(절대 오프셋)·orderKey 가 가리키는 자리로 배치한다
+  // (생성·이동 공용). Day 는 오프셋에서 유도한다 — 위치와 시각이 한 정수라
+  // 블록이 이미 두 값을 다 들고 온다. null 오프셋은 후보(POOL) 자리다.
   const placeRemoteBlock = (block) => {
-    const targetDay = block.dayNo == null ? null : `d${block.dayNo}`;
+    const dayNo = blockApi.dayNoOfOffset(block.startMins);
+    const targetDay = dayNo == null ? null : `d${dayNo}`;
 
     setPool((prev) => {
       const without = prev.filter((id) => id !== block.id);
@@ -1567,9 +1578,14 @@ export function DashboardPage() {
           reload(); // 모르는 블록의 이동 — 로컬이 어긋난 상태라 재시드가 정직하다
           break;
         }
+        // 위치와 시각이 같은 정수다 — 전에는 Day 만 먼저 오고 시각이 뒤늦게
+        // 필드 op 로 따라와, 원격 화면에 "Day 는 옮겨졌는데 시각은 옛 값"인
+        // 창이 열렸다. 서버는 POOL 이동도 명시적 null 로 보낸다(키는 항상 있다).
+        const offset = payload.startOffsetMinutes ?? null;
         const moved = {
           ...base,
-          dayNo: payload.dayNo ?? null,
+          startMins: offset,
+          endMins: offset == null ? null : offset + base.dur,
           orderKey: payload.orderKey,
         };
         itemsRef.current = { ...itemsRef.current, [moved.id]: moved };
