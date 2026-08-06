@@ -2064,10 +2064,35 @@ export function DashboardPage() {
     }
   }, [activeId, resizingState]);
 
-  const handleSaveBlock = async (form) => {
+  /**
+   * @param form     폼의 현재 값(서버 필드명)
+   * @param baseline 모달을 연 시점의 폼 값 — "사용자가 만진 필드"의 판정 기준.
+   *                 지금의 items[targetId] 와 비교하면, 모달이 열린 사이 다른
+   *                 멤버가 바꾼 필드까지 내 변경으로 잡혀 옛 값이 함께 전송되고
+   *                 서버 LWW(수신 시각)가 그걸 최신으로 받아 남의 변경을 지운다.
+   */
+  const handleSaveBlock = async (form, baseline) => {
     const targetId = editingBlockId;
     const base = items[targetId];
     if (!base) return;
+
+    // baseline 이 없으면(구 호출부) 지금 값 기준으로 되돌아간다 — 없는 편이 낫지만
+    // 최소한 저장이 통째로 막히지는 않게 한다
+    const openedWith = baseline ?? {
+      name: base.name ?? "",
+      detail: base.detail ?? "",
+      durationMin: base.dur,
+      budget: base.cost,
+    };
+    // 폼 입력은 문자열로 온다("70") — 숫자 필드는 정규화해서 비교해야
+    // "70" !== 70 이 거짓 변경으로 잡히지 않는다
+    const numOf = (v) => (v === "" || v == null ? null : Number(v));
+    const touched = {
+      name: form.name !== openedWith.name,
+      detail: form.detail !== openedWith.detail,
+      dur: numOf(form.durationMin) !== numOf(openedWith.durationMin),
+      cost: numOf(form.budget) !== numOf(openedWith.budget),
+    };
 
     // 폼(서버 필드명) → 화면 블록 필드.
     // cat 은 어댑터 매핑으로 되돌린다 — toLowerCase 는 TRANSPORT→"transport" 가
@@ -2134,18 +2159,21 @@ export function DashboardPage() {
       return;
     }
 
-    // ── 기존 블록: 변경 필드만 PATCH /fields 배치로 저장한다 (3단계) ──
-    // 안 바뀐 필드는 보내지 않는다 — 서버가 필드 화이트리스트(BLOCK400_2)와
-    // 필드 단위 LWW 로 판정하므로, diff 가 곧 요청 바디다.
+    // ── 기존 블록: 사용자가 만진 필드만 PATCH /fields 배치로 저장한다 (3단계) ──
+    // 판정 기준은 모달 오픈 시점(openedWith)이고, 만지지 않은 필드는 지금 서버
+    // 값(base)을 그대로 둔다 — 그래야 모달이 열린 사이 도착한 남의 변경이
+    // 전송에서도, 로컬 상태에서도 살아남는다.
+    const patched = { ...base };
+    if (touched.name) patched.name = form.name;
+    if (touched.detail) patched.detail = form.detail;
+    if (touched.dur) patched.dur = numOf(form.durationMin) ?? base.dur;
+    if (touched.cost) patched.cost = numOf(form.budget) ?? base.cost;
+
     const changed = {};
-    for (const [local, server] of [
-      ["name", "name"],
-      ["detail", "detail"],
-      ["dur", "durationMin"],
-      ["cost", "budget"],
-    ]) {
-      if (merged[local] !== base[local]) changed[server] = merged[local];
-    }
+    if (touched.name) changed.name = patched.name;
+    if (touched.detail) changed.detail = patched.detail;
+    if (touched.dur) changed.durationMin = patched.dur;
+    if (touched.cost) changed.budget = patched.cost;
     // category·subCategory·address 는 보내지 않는다 — 서버 LWW 화이트리스트
     // (LWW_FIELDS: name·budget·durationMin·detail·startTime·endTime·isTimeFixed·
     // vehicleFlag·transportMeta)에 없어 BLOCK400_2 로 배치 전체가 거부된다.
@@ -2154,7 +2182,7 @@ export function DashboardPage() {
     // 소요시간이 바뀌면 종료 시각도 함께 맞춘다 — ERD 불변식:
     // 시각이 둘 다 있으면 end_time − start_time == duration_min
     if (changed.durationMin != null && base.startMins != null) {
-      changed.endTime = blockApi.minsToTime(base.startMins + merged.dur);
+      changed.endTime = blockApi.minsToTime(base.startMins + patched.dur);
     }
 
     if (Object.keys(changed).length === 0) {
@@ -2169,7 +2197,7 @@ export function DashboardPage() {
     let spilled = null;
     if (onChain) {
       const { newItems, newChain } = resolveOverlaps(
-        { ...items, [targetId]: merged },
+        { ...items, [targetId]: patched },
         chains[activeDay],
         0, // 타임라인은 00:00 부터
         targetId,
@@ -2230,7 +2258,7 @@ export function DashboardPage() {
           spillNotice = `저장했어요 ✓ ${midnightSplitNotice(spilled)}`;
         }
       } else {
-        setItems({ ...items, [targetId]: merged });
+        setItems({ ...items, [targetId]: patched });
       }
 
       setEditingBlockId(null);

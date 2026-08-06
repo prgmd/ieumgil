@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { CAT_TO_SERVER } from "../../../features/dashboard/api/dashboardApi";
 import {
   openAddressSearch,
@@ -41,6 +41,12 @@ export function BlockEditForm({
     budget: initialData.cost || 0,
     detail: initialData.detail || "",
   });
+
+  // 모달을 연 시점의 값 — 저장 시 "사용자가 실제로 만진 필드"를 가리는 기준이다.
+  // 부모가 지금의 블록(items[id])과 비교하면 안 된다: 모달이 열려 있는 사이
+  // 다른 멤버가 바꾼 필드까지 "내가 바꾼 것"으로 잡혀, 폼이 들고 있던 옛 값이
+  // 함께 전송되고 서버 LWW(수신 시각)가 그걸 최신으로 받아들여 남의 변경을 지운다.
+  const baselineRef = useRef(formData);
 
   // 저장이 서버 왕복이 되면서(2단계) 중복 제출을 막는다.
   // 실패 안내·모달 유지는 부모(onSave)가 처리하므로 여기서는 상태만 되돌린다.
@@ -131,7 +137,9 @@ export function BlockEditForm({
         }
       }
 
-      await onSave({ ...formData, lat, lng });
+      // 두 번째 인자 = 모달 오픈 시점 스냅샷. 부모는 이것과 비교해 사용자가
+      // 만진 필드만 골라 PATCH 한다(원격 변경 되덮기 방지).
+      await onSave({ ...formData, lat, lng }, baselineRef.current);
     } catch {
       /* 부모가 토스트로 안내한다 — 모달은 열린 채 재시도 가능 */
     } finally {
