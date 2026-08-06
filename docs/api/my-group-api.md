@@ -168,7 +168,7 @@
     "groupId": 7,
     "name": "제주 여행팀",
     "inviteCode": "ABCD2345",
-    "inviteExpiresAt": "2026-08-04T12:00:00+09:00"
+    "inviteExpiresAt": "2026-08-04T12:00:00"
   }
 }
 ```
@@ -248,7 +248,7 @@
   "message": "요청에 성공했습니다.",
   "result": {
     "inviteCode": "ABCD2345",
-    "inviteExpiresAt": "2026-08-04T12:00:00+09:00",
+    "inviteExpiresAt": "2026-08-04T12:00:00",
     "members": [
       { "memberId": 1, "nickname": "동혁", "profileImg": "https://...", "online": true },
       { "memberId": 2, "nickname": "지수", "profileImg": null, "online": false }
@@ -270,7 +270,7 @@
   "isSuccess": true,
   "code": "COMMON200",
   "message": "요청에 성공했습니다.",
-  "result": { "inviteCode": "EFGH6789", "inviteExpiresAt": "2026-08-04T12:00:00+09:00" }
+  "result": { "inviteCode": "EFGH6789", "inviteExpiresAt": "2026-08-04T12:00:00" }
 }
 ```
 
@@ -312,8 +312,7 @@
       "destination": "제주",
       "budgetHeadcount": 4,
       "transportPrefs": ["CAR"],
-      "status": "PLANNING",
-      "themeColor": "sunset"
+      "status": "PLANNING"
     }
   ]
 }
@@ -377,7 +376,7 @@
 
 **Request Body:** (부분 갱신, 변경 필드만 전송)
 ```json
-{ "name": "제주 4박 5일", "startDate": "2026-08-10", "endDate": "2026-08-14", "transportPrefs": ["CAR", "PUBLIC"] }
+{ "name": "제주 4박 5일", "startDate": "2026-08-10", "endDate": "2026-08-14", "destination": "제주", "transportPrefs": ["CAR", "PUBLIC"] }
 ```
 
 | 필드 | 타입 | 필수 | 설명 |
@@ -385,6 +384,7 @@
 | `name` | string | N | 프로젝트 이름 |
 | `startDate` | date | N | 시작일 |
 | `endDate` | date | N | 종료일 |
+| `destination` | string | N | 여행지, 100자 이하. `null`이면 미변경 |
 | `transportPrefs` | array\<enum\> | N | 이동수단 선호(복수 선택 가능), 값은 `CAR`\|`PUBLIC`. `null`이면 미변경 |
 
 **Response `200`:**

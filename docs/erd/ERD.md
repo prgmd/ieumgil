@@ -5,6 +5,8 @@
 > 작성일: 2026-07-28 — 백엔드 설계 v3 스키마 기준으로 정리
 > DB: PostgreSQL(RDS) — JSONB · partial index 활용
 
+> **타임스탬프 타입은 `TIMESTAMP`(timezone 없음)** — 엔티티의 시각 필드가 전부 `LocalDateTime`이라 Hibernate가 `timestamp without time zone`으로 컬럼을 생성한다. tz 보존이 필요해지면 엔티티를 `OffsetDateTime`/`Instant`로 바꿔야 한다.
+
 ---
 
 ## 목차
@@ -34,21 +36,23 @@ erDiagram
         bigint kakao_id "카카오 고유 ID, UK, 탈퇴 시 null"
         varchar nickname "탈퇴 시 '탈퇴한 멤버'로 값 교체"
         varchar profile_img "nullable, 탈퇴 시 null"
-        timestamptz created_at
-        timestamptz deleted_at "탈퇴 시각, nullable"
+        timestamp created_at
+        timestamp updated_at
+        timestamp deleted_at "탈퇴 시각, nullable"
     }
     TRAVEL_GROUP {
         bigint id PK
         varchar name "2~20자"
-        char_8 invite_code "UK, I·O·0·1 제외"
-        timestamptz invite_expires_at "발급 +7일"
-        timestamptz created_at
-        timestamptz deleted_at "소프트 삭제, +30일 후 완전 삭제"
+        varchar invite_code "UK, I·O·0·1 제외"
+        timestamp invite_expires_at "발급 +7일"
+        timestamp created_at
+        timestamp updated_at
+        timestamp deleted_at "소프트 삭제, +30일 후 완전 삭제"
     }
     GROUP_MEMBER {
         bigint group_id PK_FK
         bigint member_id PK_FK
-        timestamptz joined_at "가입 시점, 멤버 목록 표시 순서용"
+        timestamp joined_at "가입 시점, 멤버 목록 표시 순서용"
     }
     PROJECT {
         bigint id PK
@@ -62,10 +66,10 @@ erDiagram
         int target_budget "프로젝트 전체 목표 예산, nullable"
         jsonb keywords "챗봇 키워드 최대 5개, nullable"
         varchar status "PLANNING | DONE (양방향)"
-        timestamptz done_at "되돌리면 null"
-        varchar theme_color "카드 썸네일 그라데이션 키"
-        timestamptz created_at
-        timestamptz deleted_at
+        timestamp done_at "되돌리면 null"
+        timestamp created_at
+        timestamp updated_at
+        timestamp deleted_at
     }
     BLOCK {
         bigint id PK
@@ -90,8 +94,9 @@ erDiagram
         varchar source "KAKAO | MANUAL | BOT"
         bigint author_id FK
         jsonb field_updated_at "필드별 서버 수신 시각(LWW)"
-        timestamptz created_at
-        timestamptz deleted_at "tombstone"
+        timestamp created_at
+        timestamp updated_at
+        timestamp deleted_at "tombstone"
     }
     ACTIVITY_LOG {
         bigint id PK
@@ -100,7 +105,8 @@ erDiagram
         varchar op_type
         jsonb payload "브로드캐스트 op 전문(clientId 포함)"
         bigint seq "프로젝트 내 단조 증가"
-        timestamptz created_at
+        timestamp created_at
+        timestamp updated_at
     }
     FESTIVAL {
         bigint id PK
@@ -115,8 +121,9 @@ erDiagram
         date event_start_date
         date event_end_date
         varchar first_image "nullable"
-        timestamptz created_at
-        timestamptz updated_at
+        varchar homepage "nullable, 공식 홈페이지"
+        timestamp created_at
+        timestamp updated_at
     }
 ```
 
@@ -145,8 +152,9 @@ erDiagram
 | kakao_id | BIGINT | UNIQUE, NULL | 카카오 고유 ID. 탈퇴 시 null |
 | nickname | VARCHAR(30) | NOT NULL | 표시 이름. 탈퇴 시 `"탈퇴한 멤버"`로 값 교체 |
 | profile_img | VARCHAR(512) | NULL | 프로필 이미지 URL. 탈퇴 시 null |
-| created_at | TIMESTAMPTZ | NOT NULL, DEFAULT NOW | 가입 시점 |
-| deleted_at | TIMESTAMPTZ | NULL | 소프트 삭제(탈퇴) 시각 |
+| created_at | TIMESTAMP | NOT NULL, DEFAULT NOW | 가입 시점 |
+| updated_at | TIMESTAMP | NOT NULL | 마지막 수정 시점(`BaseTimeEntity` 상속) |
+| deleted_at | TIMESTAMP | NULL | 소프트 삭제(탈퇴) 시각 |
 
 > **소셜 제공자는 카카오 단일** — `provider` / `provider_id` 2컬럼 대신 `kakao_id` 단일 컬럼을 쓴다. 네이버 로그인은 v1 범위에서 제외하며, 추가 시 스키마 변경이 필요하다.
 >
@@ -167,10 +175,11 @@ erDiagram
 |---|---|---|---|
 | id | BIGINT | PK, IDENTITY | 그룹 식별자 |
 | name | VARCHAR(20) | NOT NULL | 그룹 이름 (2~20자) |
-| invite_code | CHAR(8) | UNIQUE, NOT NULL | 초대 코드. 대문자+숫자(I·O·0·1 제외) 랜덤 |
-| invite_expires_at | TIMESTAMPTZ | NOT NULL | 초대 코드 만료 (발급 +7일) |
-| created_at | TIMESTAMPTZ | NOT NULL, DEFAULT NOW | 생성 시점 |
-| deleted_at | TIMESTAMPTZ | NULL | 소프트 삭제 시각 (+30일 후 하드 삭제) |
+| invite_code | VARCHAR(8) | UNIQUE, NOT NULL | 초대 코드. 대문자+숫자(I·O·0·1 제외) 랜덤 |
+| invite_expires_at | TIMESTAMP | NOT NULL | 초대 코드 만료 (발급 +7일) |
+| created_at | TIMESTAMP | NOT NULL, DEFAULT NOW | 생성 시점 |
+| updated_at | TIMESTAMP | NOT NULL | 마지막 수정 시점(`BaseTimeEntity` 상속) |
+| deleted_at | TIMESTAMP | NULL | 소프트 삭제 시각 (+30일 후 하드 삭제) |
 
 > **방장 / owner 개념 없음 (flat 모델)** — 초대 코드로 공유하는 방 컨셉이라 모든 멤버가 동등하다. 소유자 컬럼을 두지 않는다.
 > 초대 코드 재발급 시 값 교체 = 기존 코드 즉시 무효(GRP-06). 스케줄러가 30일 경과분 하드 삭제(MY-04).
@@ -182,7 +191,7 @@ erDiagram
 |---|---|---|---|
 | group_id | BIGINT | PK, FK(TRAVEL_GROUP) | 그룹 식별자 (ON DELETE CASCADE) |
 | member_id | BIGINT | PK, FK(MEMBER) | 회원 식별자 (ON DELETE CASCADE) |
-| joined_at | TIMESTAMPTZ | NOT NULL, DEFAULT NOW | 가입 시점 (멤버 목록 표시 순서용) |
+| joined_at | TIMESTAMP | NOT NULL, DEFAULT NOW | 가입 시점 (멤버 목록 표시 순서용) |
 
 > **PK: `(group_id, member_id)`** 복합키. 정원(최대 10명) 검증은 서비스 레이어에서 count 후 삽입, 동시 가입 경합은 그룹 행 `SELECT ... FOR UPDATE`로 방지.
 >
@@ -204,10 +213,10 @@ erDiagram
 | target_budget | INT | NULL | 프로젝트 전체 목표 예산 |
 | keywords | JSONB | NULL | 챗봇 키워드 (최대 5개) |
 | status | VARCHAR(10) | NOT NULL | `PLANNING` / `DONE` (양방향 전환) |
-| done_at | TIMESTAMPTZ | NULL | 완료 시각 (되돌리면 null) |
-| theme_color | VARCHAR(30) | NULL | 카드 썸네일 그라데이션 키 |
-| created_at | TIMESTAMPTZ | NOT NULL, DEFAULT NOW | 생성 시점 |
-| deleted_at | TIMESTAMPTZ | NULL | 소프트 삭제 시각 |
+| done_at | TIMESTAMP | NULL | 완료 시각 (되돌리면 null) |
+| created_at | TIMESTAMP | NOT NULL, DEFAULT NOW | 생성 시점 |
+| updated_at | TIMESTAMP | NOT NULL | 마지막 수정 시점(`BaseTimeEntity` 상속) |
+| deleted_at | TIMESTAMP | NULL | 소프트 삭제 시각 |
 
 > **예산은 프로젝트 전체(총액) 기준.** `target_budget`은 프로젝트 전체 목표 예산이고, 지출 합계도 각 블록 `budget`(총액)의 합으로 계산한다.
 > **`budget_headcount`(1인당 표시용)**: 생성 폼의 "여행 인원" 입력을 초기값으로 사용. **정산 자체는 총액 기준**이며, 이 값은 "1인당 = 총액 ÷ 인원" N빵 표시에만 쓴다. null이면 조회 시점 그룹 멤버 수로 계산, 직접 지정 후에는 멤버 수 변동에 자동 연동하지 않음(BGT-03).
@@ -227,11 +236,11 @@ erDiagram
 | category | VARCHAR(20) | NOT NULL | `SPOT` / `FOOD` / `STAY` / `ETC` / `TRANSPORT` |
 | sub_category | VARCHAR(50) | NULL | 자유 텍스트 소분류 |
 | name | VARCHAR(255) | NOT NULL | 블록 이름 |
-| duration_min | INT | NOT NULL, DEFAULT 60 | 소요 시간(분, 30분 단위). 시각 재계산·표시용 |
+| duration_min | INT | NOT NULL, DEFAULT 60† | 소요 시간(분, 30분 단위). 시각 재계산·표시용 |
 | start_time | TIME | NULL | 일정 시작 시각. 시각 없는(느슨한) 블록은 null |
 | end_time | TIME | NULL | 일정 종료 시각. null이면 미지정 |
-| is_time_fixed | BOOLEAN | NOT NULL, DEFAULT FALSE | 시각 고정 여부. TRUE면 드래그 재계산에서 제외(앵커) |
-| budget | INT | NOT NULL, DEFAULT 0 | 예산(원) — **프로젝트 전체(총액) 기준** |
+| is_time_fixed | BOOLEAN | NOT NULL, DEFAULT FALSE† | 시각 고정 여부. TRUE면 드래그 재계산에서 제외(앵커) |
+| budget | INT | NOT NULL, DEFAULT 0† | 예산(원) — **프로젝트 전체(총액) 기준** |
 | detail | VARCHAR(500) | NULL | 세부 내용 (최대 500자) |
 | lat | DECIMAL(10,7) | NULL | 위도. **장소성 블록은 NOT NULL** |
 | lng | DECIMAL(10,7) | NULL | 경도. **장소성 블록은 NOT NULL** |
@@ -242,8 +251,11 @@ erDiagram
 | source | VARCHAR(10) | NOT NULL | 생성 출처 `KAKAO` / `MANUAL` / `BOT` |
 | author_id | BIGINT | FK(MEMBER) NOT NULL | 작성자 (ON DELETE RESTRICT — 탈퇴는 소프트) |
 | field_updated_at | JSONB | NOT NULL, DEFAULT '{}' | 필드별 서버 수신 시각 (LWW) |
-| created_at | TIMESTAMPTZ | NOT NULL, DEFAULT NOW | 생성 시점 |
-| deleted_at | TIMESTAMPTZ | NULL | tombstone (소프트 삭제) |
+| created_at | TIMESTAMP | NOT NULL, DEFAULT NOW | 생성 시점 |
+| updated_at | TIMESTAMP | NOT NULL | 마지막 수정 시점(`BaseTimeEntity` 상속) |
+| deleted_at | TIMESTAMP | NULL | tombstone (소프트 삭제) |
+
+> † `DEFAULT 60`/`DEFAULT FALSE`/`DEFAULT 0`은 애플리케이션 기본값(`@Builder.Default`)이며 DB `DEFAULT` 절이 아니다 — 직접 INSERT 시 값 지정이 필수다.
 
 > **체인 조회는 partial index** (tombstone 필터가 항상 붙으므로):
 > ```sql
@@ -288,7 +300,8 @@ erDiagram
 | op_type | VARCHAR(40) | NOT NULL | op 종류 (예: `BLOCK_CREATED`) |
 | payload | JSONB | NOT NULL | 브로드캐스트 op 전문 (clientId 포함) |
 | seq | BIGINT | NOT NULL | 프로젝트 내 단조 증가 시퀀스 |
-| created_at | TIMESTAMPTZ | NOT NULL, DEFAULT NOW | 기록 시점 |
+| created_at | TIMESTAMP | NOT NULL, DEFAULT NOW | 기록 시점 |
+| updated_at | TIMESTAMP | NOT NULL | 마지막 수정 시점(`BaseTimeEntity` 상속, `@Immutable`이나 INSERT 시 기록) |
 
 > **UNIQUE KEY: `(project_id, seq)`**.
 > **payload에는 브로드캐스트한 op 전문을 그대로 저장** — "재전송 = 저장된 걸 그대로 쏜다"가 구조적으로 보장. 재연결 시 `WHERE project_id=? AND seq > :lastSeq ORDER BY seq`로 유실분 재전송(NFR-01).
@@ -311,8 +324,9 @@ erDiagram
 | event_start_date | DATE | NOT NULL | 행사 시작일 |
 | event_end_date | DATE | NOT NULL | 행사 종료일 |
 | first_image | VARCHAR(255) | NULL | 대표 이미지 URL |
-| created_at | TIMESTAMPTZ | NOT NULL, DEFAULT NOW | 최초 수집 시점 |
-| updated_at | TIMESTAMPTZ | NOT NULL | 마지막 배치 갱신 시점 |
+| homepage | VARCHAR(500) | NULL | 공식 홈페이지 (배치 `detailCommon2`) |
+| created_at | TIMESTAMP | NOT NULL, DEFAULT NOW | 최초 수집 시점 |
+| updated_at | TIMESTAMP | NOT NULL | 마지막 배치 갱신 시점 |
 
 > **별도 도메인(`domain.festival`), 다른 엔티티와 FK 관계 없음.** 한국관광공사 TourAPI(`contentTypeId=15`)에서 매일 새벽 배치로 수집해 upsert. 카카오맵은 상시 장소만 제공하고 "이 장소가 이 기간에만 연다"는 시간 제한 이벤트 개념이 없어서 보강하는 용도 — 그래서 `event_start_date`/`event_end_date`가 정본(카카오 데이터엔 대응 컬럼 자체가 없음).
 >
@@ -349,3 +363,5 @@ MEMBER ──< ACTIVITY_LOG (member_id)
 | 세부 내용 텍스트 편집 락 | Redis `SET NX` | TTL 30초(OI-04) |
 | seq 채번 카운터 | Redis `INCR` | 기동 시 `max(seq)` 리시드 |
 | 예산 합계 · Day 종료 시각 | 클라이언트 파생 계산 | 각 블록 `budget`(총액) 합산, Day 종료 = 마지막 블록 `end_time` |
+| 교통(ODsay)·장소(카카오 로컬) 조회 결과 | 외부 API (실시간 조회) | `domain.transit`/`domain.place`, DB에 영속하지 않음 |
+| 챗봇 대화 히스토리 | Redis `ChatTurn` | TTL 기반, 최근 N턴만 저장 |

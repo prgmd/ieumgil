@@ -18,6 +18,7 @@
   프론트 `VITE_API_BASE_URL` 기본값은 `http://localhost:8080/api`.
 - **토큰 정책(AUTH-04)**: Access 30분 — 응답 바디로만 전달, 프론트는 메모리 보관.
   Refresh 14일 — `HttpOnly; Secure; SameSite=Lax; Path=/api/auth` 쿠키. 프론트는 JS로 다루지 않으며 `withCredentials: true`로 자동 전송.
+  (`Secure`는 기본값 `false`(dev), prod에서만 `true` — `auth.refresh-cookie.secure`)
 
 ---
 

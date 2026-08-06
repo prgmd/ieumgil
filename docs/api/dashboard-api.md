@@ -89,8 +89,7 @@
       "budgetHeadcount": 4,
       "targetBudget": 300000,
       "keywords": ["오름", "카페"],
-      "status": "PLANNING",
-      "themeColor": "sunset"
+      "status": "PLANNING"
     },
     "blocks": [
       {
@@ -170,6 +169,8 @@
 
 `PLANNING↔DONE` 양방향 전환(GRP-10). `PROJECT_STATUS_CHANGED` op 브로드캐스트.
 
+> v1: 완료 상태는 프론트가 현재시각↔여행기간 비교로 파생 표시(지난/계획중/여행중). 이 status 엔드포인트·op는 잔존하나 프론트 미배선.
+
 **Request Body:**
 ```json
 { "status": "DONE" }
@@ -190,7 +191,8 @@
 
 | code | HTTP | 상황 |
 |---|---|---|
-| `COMMON400_1` | 400 | status가 PLANNING/DONE 이외 |
+| `COMMON400_4` | 400 | status가 PLANNING/DONE 이외의 값(enum 역직렬화 실패) |
+| `COMMON400_1` | 400 | status 필드 누락(null) |
 
 ---
 
@@ -343,6 +345,15 @@
 > LWW 대상 필드: `name`, `budget`, `durationMin`, `detail`, `startTime`, `endTime`, `isTimeFixed`, `vehicleFlag`, `transportMeta` 등.
 > 드래그 재정렬 후 재계산된 시각도 이 엔드포인트로 저장한다(§ position 참조).
 
+**Errors:**
+
+| code | HTTP | 상황 |
+|---|---|---|
+| `BLOCK400_2` | 400 | LWW 미지원 필드 지정 |
+| `BLOCK400_3` | 400 | 필드 값 형식 오류 |
+| `BLOCK404` | 404 | 블록 없음 |
+| `BLOCK410` | 410 | tombstone(이미 삭제된 블록) |
+
 ---
 
 ### PATCH /api/blocks/{blockId}/position
@@ -377,6 +388,7 @@
 
 | code | HTTP | 상황 |
 |---|---|---|
+| `BLOCK404` | 404 | 블록 없음 |
 | `BLOCK410` | 410 | 이미 삭제된 블록에 대한 지연 op |
 
 ---
@@ -399,6 +411,12 @@
 ### PUT /api/blocks/{blockId}/detail-lock
 
 락 하트비트 (10초 주기 TTL 연장). **Response `200`:** `result: { ttlRemaining: 30 }`.
+
+**Errors:**
+
+| code | HTTP | 상황 |
+|---|---|---|
+| `BLOCK409` | 409 | LOCK_NOT_HELD — 본인이 보유한 락이 아님(TTL 만료·타인 재획득 등) |
 
 ### DELETE /api/blocks/{blockId}/detail-lock
 
@@ -800,7 +818,7 @@ coord2address 역지오코딩(MAP-04 핀 지정).
   "isSuccess": true,
   "code": "COMMON200",
   "message": "요청에 성공했습니다.",
-  "result": { "durationMin": 42, "fare": 1400, "intervalMin": 13, "estimated": false, "fareConfidence": "CONFIRMED" }
+  "result": { "durationMin": 42, "fare": 1400, "intervalMin": 13, "distanceM": 8420, "estimated": false, "fareConfidence": "CONFIRMED" }
 }
 ```
 > `intervalMin`은 ODsay의 `totalIntervalTime`(환승 구간 배차간격 합, 분)이다.
@@ -1036,7 +1054,7 @@ REST로 변경 요청을 보내면, 서버가 seq를 붙여 STOMP로 전파한�
   "type": "BLOCK_FIELD_UPDATED",
   "actorId": 3,
   "clientId": "uuid",
-  "payload": { "blockId": 77, "fields": { "budget": 15000 }, "fieldUpdatedAt": { "budget": "..." } }
+  "payload": { "blockId": 77, "fields": { "budget": 15000 } }
 }
 ```
 

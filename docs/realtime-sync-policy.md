@@ -28,6 +28,8 @@
 
 시퀀서는 커서 전진을 위해 자기 op까지 전부 넘기고(자기 op도 seq를 소비한다), 적용 여부는 op 종류별로 정한다:
 
+> 아래 표는 **블록·예산 op 한정**이다. `PROJECT_DELETED`·`PROJECT_STATUS_CHANGED`·`MEMBER_JOINED`·`MEMBER_LEFT`·`BUDGET_HEADCOUNT_CHANGED` 등 멤버십/프로젝트 라이프사이클 op는 이 표의 정책과 무관하게 별도 처리(토스트·이탈·재시드)된다.
+
 | op | own 처리 | 이유 |
 |---|---|---|
 | `BLOCK_MOVED` | **적용(에코)** | 마지막 쓰기 승리형 — 남의 op에 덮인 자리를 자기 에코가 제 위치로 재확정 |
