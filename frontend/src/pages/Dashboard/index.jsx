@@ -788,7 +788,30 @@ export function DashboardPage() {
     handlePlaceClick,
     focusPlace,
     getMapBounds,
-  } = useKakaoMap({ chains, items, activeDay });
+    pinPickMode,
+    startPinPick,
+    cancelPinPick,
+  } = useKakaoMap({ chains, items, activeDay, showToast });
+
+  // 지도에서 찍어 온 위치 — 폼이 prop 으로 읽어 좌표·주소만 갈아끼운다.
+  // 지정할 때마다 새 객체가 되므로 폼이 "새로 찍었다"를 객체 정체성으로 안다.
+  const [pinnedLocation, setPinnedLocation] = useState(null);
+
+  const handleRequestPinPick = useCallback(async () => {
+    const picked = await startPinPick();
+    if (!picked) return; // Esc·취소·연타로 밀려난 앞선 요청
+    setPinnedLocation(picked);
+  }, [startPinPick]);
+
+  // 모달이 닫히거나 다른 블록으로 갈아타면 찍어 둔 위치와 지정 모드를 걷는다 —
+  // 남겨 두면 다음에 여는 블록에 엉뚱한 좌표가 스며들고, 임시 핀도 지도에 남는다.
+  useEffect(() => {
+    if (!editingBlockId) return undefined;
+    return () => {
+      setPinnedLocation(null);
+      cancelPinPick();
+    };
+  }, [editingBlockId, cancelPinPick]);
 
   // (시작 지점 블록은 이제 프로젝트 생성 모달에서 출발지점을 고를 때 함께
   //  만들어진다 — 입장 시 지오코딩하던 부트스트랩은 실패·동시 입장 중복의
@@ -2453,25 +2476,25 @@ export function DashboardPage() {
       let newBlock;
       if (isFromSearch) {
         const place = active.data.current.place;
-        newId = `search-${place.id}-${Date.now()}`;
+        newId = `search-${place.placeId}-${Date.now()}`;
 
-        // 검색 데이터를 우리 앱의 블록 데이터 구조로 변환.
-        // 카카오 응답은 y=위도, x=경도(문자열) — 좌표·placeId 를 버리면 장소성
-        // 블록의 서버 검증(BLOCK400)에 걸리고 지도 핀도 찍을 수 없다.
+        // 검색 결과(백엔드 DTO)를 우리 앱의 블록 데이터 구조로 변환.
+        // 좌표·placeId 를 버리면 장소성 블록의 서버 검증(BLOCK400)에 걸리고
+        // 지도 핀도 찍을 수 없다.
         newBlock = {
           id: newId,
-          cat: catFromKakaoGroup(place.category_group_code),
-          sub: place.category_group_name || "검색된 장소",
-          name: place.place_name,
-          address: place.road_address_name || place.address_name,
+          cat: catFromKakaoGroup(place.categoryCode),
+          sub: place.category || "검색된 장소",
+          name: place.name,
+          address: place.address,
           detail: place.phone || "",
           dur: 60, // 기본 소요시간 1시간
           startMins: null, // 후보(POOL) 블록은 시각 없는 느슨한 블록
           endMins: null,
           cost: 0,
-          lat: Number(place.y),
-          lng: Number(place.x),
-          placeId: String(place.id),
+          lat: place.lat,
+          lng: place.lng,
+          placeId: place.placeId,
           source: "KAKAO",
           auto: false,
         };
@@ -2498,6 +2521,18 @@ export function DashboardPage() {
           auto: false,
         };
       }
+
+      // 명세 MAP-03: 중복 등록 자체는 정상 시나리오라 막지 않는다 — 같은 카페를
+      // 다른 날 재방문하거나 같은 환승역을 왕복으로 지난다. 담는 순간 "이미 있다"만
+      // 알려주고 생성은 그대로 한다.
+      //
+      // 숙소는 뺀다. 3박이면 숙소 블록이 당연히 여러 개고, 하루도 숙소에서 열어
+      // 숙소로 닫는다 — 알릴수록 방해만 된다.
+      const isDuplicatePlace =
+        newBlock.placeId != null &&
+        newBlock.cat !== "stay" &&
+        Object.values(items).some((b) => b.placeId === newBlock.placeId);
+      if (isDuplicatePlace) showToast("이미 담은 장소예요");
 
       const insertAt = Math.max(0, Math.min(target.insertIndex, pool.length));
       const nextPool = [...pool];
@@ -2785,10 +2820,10 @@ export function DashboardPage() {
       const place = activeDragMeta.place;
       draggedItem = {
         id: activeId,
-        cat: catFromKakaoGroup(place.category_group_code),
-        name: place.place_name,
-        sub: place.category_group_name,
-        address: place.road_address_name || place.address_name,
+        cat: catFromKakaoGroup(place.categoryCode),
+        name: place.name,
+        sub: place.category,
+        address: place.address,
         dur: 60,
         cost: 0,
       };
@@ -3286,7 +3321,11 @@ export function DashboardPage() {
                   budgetSegments={budgetSegments}
                 />
 
-                <MapPanel initMapOnContainer={initMapOnContainer} />
+                <MapPanel
+                  initMapOnContainer={initMapOnContainer}
+                  pinPickMode={pinPickMode}
+                  onCancelPinPick={cancelPinPick}
+                />
 
                 <SearchPanel
                   searchKeyword={searchKeyword}
@@ -3378,7 +3417,9 @@ export function DashboardPage() {
       </div>
 
       {editingBlockId && items[editingBlockId] && (
-        <div className="blk-modal-ov">
+        // 지도에서 위치를 찍는 동안엔 감추기만 한다(언마운트 아님) — 조건에서
+        // 빼 버리면 폼 state 가 통째로 날아가 지정하러 가기 전 입력이 사라진다
+        <div className={`blk-modal-ov${pinPickMode ? " is-hidden" : ""}`}>
           {(() => {
             const item = items[editingBlockId];
             const sMins = item.startMins;
@@ -3393,6 +3434,14 @@ export function DashboardPage() {
             const lockedByName = lockBadgeOf(editingBlockId);
             return (
               <BlockEditForm
+                // 블록이 바뀌면 폼을 새로 만든다. formData 는 마운트 때 한 번만
+                // initialData 로 씨를 뿌리므로, 같은 인스턴스를 재사용하면 A 의
+                // 입력값을 든 채 저장 대상만 B 로 바뀌어 A 의 이름·비용·비고가
+                // B 에 덮여 쓰인다. 지정 모드에선 모달을 감추기만 해서(언마운트
+                // 아님) 그 동안 보드가 클릭 가능해졌고, 그래서 A→B 전환이 실제로
+                // 닿을 수 있는 경로가 됐다. key 는 pinPickMode 로는 안 바뀌므로
+                // "지정 중에도 폼을 살려 둔다"는 성질은 그대로다.
+                key={editingBlockId}
                 initialData={item}
                 timeString={timeStr}
                 // 서버가 category 필드 갱신을 지원하지 않는다(BLOCK400_2) —
@@ -3412,6 +3461,8 @@ export function DashboardPage() {
                     ? `✎ ${lockedByName} 님도 이 블록을 편집하고 있어요`
                     : ""
                 }
+                pinnedLocation={pinnedLocation}
+                onRequestPinPick={handleRequestPinPick}
                 onSave={handleSaveBlock}
                 onCancel={handleCancelEdit}
                 onReselectTransport={handleReselectTransport}

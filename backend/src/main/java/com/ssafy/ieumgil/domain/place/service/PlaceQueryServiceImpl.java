@@ -14,14 +14,19 @@ import java.util.Optional;
 @RequiredArgsConstructor
 public class PlaceQueryServiceImpl implements PlaceQueryService {
 
-    private static final int MAX_RESULTS = 5;
+    /**
+     * 사용자 장소 검색 상한. SDK 시절과 같은 15건이다 — 카카오 keyword.json 의 기본
+     * 페이지 크기가 15라 size 파라미터 없이 그대로 받으면 되고, 결과 수가 지금과
+     * 같아져 서버 전환에 사용자 체감 변화가 없다.
+     */
+    private static final int USER_SEARCH_LIMIT = 15;
 
     private final KakaoLocalClient kakaoLocalClient;
 
     @Override
     public List<PlaceResDTO.Place> searchPlaces(String query, Double lat, Double lng) {
         return kakaoLocalClient.searchByKeyword(query, lat, lng).stream()
-                .limit(MAX_RESULTS)
+                .limit(USER_SEARCH_LIMIT)
                 .map(this::toPlace)
                 .toList();
     }
@@ -30,7 +35,7 @@ public class PlaceQueryServiceImpl implements PlaceQueryService {
     public List<PlaceResDTO.Place> searchPlacesInRect(String query, double swLat, double swLng,
                                                      double neLat, double neLng) {
         return kakaoLocalClient.searchByKeywordInRect(query, swLat, swLng, neLat, neLng).stream()
-                .limit(MAX_RESULTS)
+                .limit(CHATBOT_SEARCH_LIMIT)
                 .map(this::toPlace)
                 .toList();
     }
@@ -38,6 +43,15 @@ public class PlaceQueryServiceImpl implements PlaceQueryService {
     @Override
     public Optional<PlaceResDTO.Address> reverseGeocode(double lat, double lng) {
         return kakaoLocalClient.coord2Address(lat, lng).map(this::toAddress);
+    }
+
+    @Override
+    public Optional<PlaceResDTO.Geocode> geocodeAddress(String address) {
+        return kakaoLocalClient.addressSearch(address).map(d -> new PlaceResDTO.Geocode(
+                Double.parseDouble(d.y()),
+                Double.parseDouble(d.x()),
+                d.road_address() != null ? d.road_address().address_name() : "",
+                d.address() != null ? d.address().address_name() : ""));
     }
 
     @Override
@@ -81,7 +95,14 @@ public class PlaceQueryServiceImpl implements PlaceQueryService {
                 .lat(Double.parseDouble(d.y()))
                 .lng(Double.parseDouble(d.x()))
                 .category(d.category_group_name())
+                .categoryCode(d.category_group_code())
+                // 빈 문자열은 "번호 없음"이다 — 그대로 두면 화면에 빈 줄이 생긴다
+                .phone(blankToNull(d.phone()))
                 .build();
+    }
+
+    private String blankToNull(String value) {
+        return (value == null || value.isBlank()) ? null : value;
     }
 
     private PlaceResDTO.Address toAddress(KakaoAddressResponse.Document d) {

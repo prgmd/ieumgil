@@ -41,10 +41,16 @@ public class KakaoPlaceSearchTool {
             // 좌표는 보드 우선으로 해석되므로 일정에 올려둔 블록이면 카카오 재검색이 없다.
             Optional<PlaceResDTO.Place> anchor = resolveAnchor(nearPlaceName);
             String query = anchor.isPresent() ? keyword : destination + " " + keyword;
+            // searchPlaces는 사용자 검색 패널 상한(15)으로 오므로, 여기서 챗봇 상한으로
+            // 다시 자른다 — 뷰포트 tool과 같은 CHATBOT_SEARCH_LIMIT을 공유해 LLM 프롬프트
+            // 토큰이 3배로 뛰지 않게 한다.
             List<PlaceResDTO.Place> places = placeQueryService.searchPlaces(
                     query,
                     anchor.map(PlaceResDTO.Place::lat).orElse(null),
-                    anchor.map(PlaceResDTO.Place::lng).orElse(null));
+                    anchor.map(PlaceResDTO.Place::lng).orElse(null))
+                    .stream()
+                    .limit(PlaceQueryService.CHATBOT_SEARCH_LIMIT)
+                    .toList();
             // 모델에는 좌표를 넘기지 않으므로(요약만), 블록 생성용 원본은 수집기가 따로 보관한다
             places.forEach(candidateCollector::addPlace);
             return places.stream()

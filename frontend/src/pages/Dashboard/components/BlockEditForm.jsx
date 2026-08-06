@@ -2,9 +2,9 @@ import { useEffect, useRef, useState } from "react";
 import { CAT_TO_SERVER } from "../../../features/dashboard/api/dashboardApi";
 import {
   openAddressSearch,
-  geocodeAddress,
   preloadAddressSearch,
 } from "../../../features/dashboard/map/addressLookup";
+import { geocodeAddress } from "../../../features/place/api/placeApi";
 import { TransitCandidateCard } from "./TransitCandidateCard";
 import "./BlockEditForm.css";
 
@@ -20,6 +20,10 @@ export function BlockEditForm({
   // 소요 시간 상한(분). 보통은 null — 24:00 을 넘기면 넘친 만큼 다음 Day 로
   // 쪼개지므로 제한이 없다. 마지막 Day 의 체인 블록에만 값이 온다(넘길 곳이 없다).
   maxDurationMin = null,
+  // 지도에서 찍어 온 위치 { lat, lng, address }. 부모가 지정할 때마다 새 객체를
+  // 넘기고, 모달을 닫을 때 null 로 되돌린다.
+  pinnedLocation = null,
+  onRequestPinPick,
   onSave,
   onCancel,
   onReselectTransport,
@@ -65,6 +69,27 @@ export function BlockEditForm({
   useEffect(() => {
     preloadAddressSearch();
   }, []);
+
+  // 지도에서 찍어 온 위치를 폼에 얹는다 — 좌표·주소만 갈아끼우고 나머지 필드는
+  // 손대지 않는다(지정하러 가기 전에 고쳐 둔 이름·비용이 살아 있어야 한다).
+  // 부모가 찍을 때마다 새 객체를 주므로 "새로 찍혔다"를 객체 정체성으로 가른다 —
+  // 무관한 리렌더로는 같은 객체가 오므로 다시 적용되지 않는다.
+  // effect 가 아니라 "렌더 중 보정"인 이유: 좌표 반영은 외부 시스템 동기화가
+  // 아니라 prop 변화에 따른 state 조정이다. effect 로 쓰면 lint 가
+  // react-hooks/set-state-in-effect 로 막고(값이 한 번 어긋난 채 그려졌다가
+  // 다시 그려진다), ref 로 이전 값을 들면 react-hooks/refs 가 막는다.
+  const [appliedPin, setAppliedPin] = useState(pinnedLocation);
+  if (pinnedLocation && pinnedLocation !== appliedPin) {
+    setAppliedPin(pinnedLocation);
+    setFormData((prev) => ({
+      ...prev,
+      lat: pinnedLocation.lat,
+      lng: pinnedLocation.lng,
+      // 역지오코딩이 빈손이면 주소는 그대로 두고 사용자가 직접 쓰게 한다 —
+      // 좌표는 이미 잡혔으니 저장에는 문제가 없다
+      ...(pinnedLocation.address ? { address: pinnedLocation.address } : null),
+    }));
+  }
 
   /** 도로명 주소 팝업 → 고른 주소를 좌표까지 변환해 폼에 채운다 */
   const handleAddressSearch = async () => {
@@ -122,7 +147,9 @@ export function BlockEditForm({
       // 봐서는 "주소를 검색으로 고르라"는 걸 알 수 없다.
       if (needsCoords && !hasCoords) {
         if (!formData.address.trim()) {
-          setError("명소·식당·숙소 블록은 주소가 필요해요. 주소 검색으로 골라주세요.");
+          setError(
+            "명소·식당·숙소 블록은 위치가 필요해요. 주소를 검색하거나 지도에서 위치를 지정해주세요.",
+          );
           return;
         }
         try {
@@ -131,7 +158,7 @@ export function BlockEditForm({
           lng = coords.lng;
         } catch {
           setError(
-            "입력한 주소의 좌표를 찾지 못했어요. 주소 검색으로 골라주세요.",
+            "입력한 주소의 좌표를 찾지 못했어요. 주소 검색으로 고르거나 지도에서 위치를 지정해주세요.",
           );
           return;
         }
@@ -272,6 +299,17 @@ export function BlockEditForm({
             >
               {addrBusy ? "불러오는 중..." : "주소 검색"}
             </button>
+            {/* 검색으로 안 나오는 곳(신규 가게·이름 없는 지점)을 위한 탈출구.
+                주소 검색과 같은 조건으로 잠근다 — 기존 블록은 서버가 주소·좌표
+                갱신을 받지 않아(BLOCK400_2) 찍어 봐야 저장되지 않는다 */}
+            <button
+              type="button"
+              className="bef-addr-btn"
+              onClick={onRequestPinPick}
+              disabled={categoryLocked || addrBusy}
+            >
+              지도에서 위치 지정
+            </button>
           </div>
 
           {/* 좌표가 잡혔는지를 눈에 보이게 한다 — 저장 버튼을 눌러서야
@@ -285,7 +323,8 @@ export function BlockEditForm({
             ) : (
               needsCoords && (
                 <p className="bef-addr-hint is-warn">
-                  명소·식당·숙소는 좌표가 필요해요 — 주소 검색으로 골라주세요.
+                  명소·식당·숙소는 좌표가 필요해요 — 주소를 검색하거나 지도에서
+                  위치를 지정해주세요.
                 </p>
               )
             ))}

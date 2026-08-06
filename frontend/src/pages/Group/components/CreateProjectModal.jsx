@@ -2,7 +2,7 @@ import { useState } from 'react';
 import Modal from '../../My/shared/ui/Modal';
 import TransportPicker from '../../My/shared/ui/TransportPicker';
 import { useToastStore } from '../../../global/stores/toastStore';
-import { searchPlaces } from '../../../features/dashboard/map/addressLookup';
+import { searchPlaces } from '../../../features/place/api/placeApi';
 import { createBlock } from '../../../features/dashboard/api/dashboardApi';
 
 function todayISO() {
@@ -44,7 +44,8 @@ export default function CreateProjectModal({ open, onClose, onCreate }) {
     if (!keyword || depSearching) return;
     setDepSearching(true);
     try {
-      setDepResults(await searchPlaces(keyword));
+      // 서버는 15건까지 준다 — 좁은 드롭다운이라 기존대로 5건만 보여준다.
+      setDepResults((await searchPlaces(keyword)).slice(0, 5));
     } catch (e) {
       setError(e?.message ?? '장소를 검색하지 못했어요.');
     } finally {

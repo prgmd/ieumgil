@@ -4,7 +4,7 @@
 // 여기서는 컨테이너 div 만 내주고 ref callback 으로 넘긴다 — 그래야 읽기 모드
 // 전환으로 div 가 사라졌다 다시 생겨도 훅이 그 순간을 알아채고 다시 바인딩한다.
 
-export function MapPanel({ initMapOnContainer }) {
+export function MapPanel({ initMapOnContainer, pinPickMode, onCancelPinPick }) {
   return (
     <div className="panel">
       <h4 className="panel-title">
@@ -18,11 +18,30 @@ export function MapPanel({ initMapOnContainer }) {
           ⓘ
         </span>
       </h4>
-      {/* 높이는 CSS(.map-box)에서 화면 높이에 맞춰 늘린다 — 사이드 폭이
-          넓어진 만큼 지도도 남는 공간을 다 쓰게 하기 위함.
-          초기화는 ref callback 으로 — getElementById 방식은 로딩 가드가
-          null 을 반환하는 동안 컨테이너가 없어 재진입 시 회색 지도가 됐다 */}
-      <div id="kakao-map-container" className="map-box" ref={initMapOnContainer} />
+      {/* 배너를 지도 위에 얹어야 해서 위치 기준 상자로 한 번 감싼다 */}
+      <div className={`map-wrap${pinPickMode ? " is-picking" : ""}`}>
+        {pinPickMode && (
+          <div className="map-pick-banner">
+            <span>지도를 클릭해 위치를 지정하세요 (Esc 취소)</span>
+            <button
+              type="button"
+              className="map-pick-cancel"
+              onClick={onCancelPinPick}
+            >
+              취소
+            </button>
+          </div>
+        )}
+        {/* 높이는 CSS(.map-box)에서 화면 높이에 맞춰 늘린다 — 사이드 폭이
+            넓어진 만큼 지도도 남는 공간을 다 쓰게 하기 위함.
+            초기화는 ref callback 으로 — getElementById 방식은 로딩 가드가
+            null 을 반환하는 동안 컨테이너가 없어 재진입 시 회색 지도가 됐다 */}
+        <div
+          id="kakao-map-container"
+          className="map-box"
+          ref={initMapOnContainer}
+        />
+      </div>
     </div>
   );
 }

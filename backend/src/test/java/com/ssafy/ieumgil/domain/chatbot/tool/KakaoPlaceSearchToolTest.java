@@ -12,6 +12,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.util.List;
+import java.util.stream.IntStream;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -139,5 +140,25 @@ class KakaoPlaceSearchToolTest {
 
         assertThat(tool.searchPlaces("카페", "없는곳"))
                 .extracting(PlaceSearchSummary::name).containsExactly("아무 카페");
+    }
+
+    @Test
+    @DisplayName("사용자 검색 상한(15)이 그대로 와도 챗봇 상한 5로 다시 자른다 — LLM 프롬프트 토큰 폭증 방지")
+    void capsResultsAtChatbotLimitEvenWhenServiceReturnsUserSearchLimit() {
+        List<PlaceResDTO.Place> fifteenPlaces = IntStream.range(0, 15)
+                .mapToObj(i -> PlaceResDTO.Place.builder()
+                        .placeId(String.valueOf(i)).name("카페" + i).address("제주")
+                        .lat(33.1).lng(126.1).category("카페")
+                        .build())
+                .toList();
+        when(placeQueryService.searchPlaces(anyString(), any(), any())).thenReturn(fifteenPlaces);
+        CandidateCollector collector = new CandidateCollector();
+        KakaoPlaceSearchTool tool = new KakaoPlaceSearchTool("제주도", placeQueryService, collector,
+                new KakaoPlaceCoordinateResolver(placeQueryService));
+
+        List<PlaceSearchSummary> result = tool.searchPlaces("카페", null);
+
+        assertThat(result).hasSize(5);
+        assertThat(collector.candidates()).hasSize(5);
     }
 }

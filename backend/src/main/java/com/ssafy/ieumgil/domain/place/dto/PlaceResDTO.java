@@ -11,11 +11,20 @@ public class PlaceResDTO {
             String address,
             Double lat,
             Double lng,
-            String category
+            /** category_group_name — 사람이 읽는 이름("카페") */
+            String category,
+            /** category_group_code — 프론트가 블록 카테고리를 정하는 키("CE7") */
+            String categoryCode,
+            /** 없으면 null. 카카오는 없을 때 빈 문자열을 준다 */
+            String phone
     ) {
     }
 
     public record Address(String address, String roadAddress) {
+    }
+
+    /** 주소 → 좌표 결과. 도로명·지번은 카카오가 주는 대로 싣고, 없으면 빈 문자열이다 */
+    public record Geocode(Double lat, Double lng, String roadAddress, String jibunAddress) {
     }
 
     /** 소요시간은 <b>분</b>이다 — 카카오 응답의 초를 {@code PlaceQueryServiceImpl}에서 변환해 담는다. */

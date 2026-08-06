@@ -1,25 +1,28 @@
 /**
- * 주소 입력 배관 — 도로명 주소 검색(다음 우편번호) + 좌표 변환(카카오 지오코딩).
+ * 외부 스크립트 배관 — 카카오 지도 SDK(지도 렌더링) + 다음 우편번호(도로명 주소 검색).
  *
- * 커스텀 블록은 카카오 장소 검색을 거치지 않아 좌표가 없다. 그런데 장소성
+ * 커스텀 블록은 장소 검색을 거치지 않아 좌표가 없다. 그런데 장소성
  * 카테고리(SPOT·FOOD·STAY)는 서버가 lat/lng 를 필수로 본다(BLOCK400) — 그래서
  * "주소를 고르면 좌표까지 따라오는" 경로가 필요하다:
  *
- *   openAddressSearch()  도로명 주소 팝업에서 주소 고르기
+ *   openAddressSearch()        도로명 주소 팝업에서 주소 고르기
  *        ↓
- *   geocodeAddress()     그 주소를 카카오 지오코딩으로 좌표(lat/lng)로
+ *   placeApi.geocodeAddress()  그 주소를 서버(/api/places/geocode)로 좌표(lat/lng)로
  *        ↓
- *   createBlock()        좌표까지 실어 블록 생성
+ *   createBlock()              좌표까지 실어 블록 생성
  *
- * 외부 스크립트 두 개(카카오 지도 SDK·다음 우편번호)를 다루므로 로딩을
- * 여기 한곳에 모은다 — 화면 곳곳에서 <script> 를 직접 붙이면 중복 삽입과
- * "붙였는데 아직 로딩 중"인 레이스를 매번 다시 만들게 된다.
+ * 외부 스크립트 두 개를 다루므로 로딩을 여기 한곳에 모은다 — 화면 곳곳에서
+ * <script> 를 직접 붙이면 중복 삽입과 "붙였는데 아직 로딩 중"인 레이스를
+ * 매번 다시 만들게 된다.
  */
 
 // 지도 SDK 키 — JS 키(도메인 등록 기준)다. 로그인에 쓰는 REST 키(.env)와 다르다.
 const KAKAO_APP_KEY = "71b94eabee0913242230da390f4d20f2";
 const KAKAO_SCRIPT_ID = "kakao-map-script";
-const KAKAO_SRC = `https://dapi.kakao.com/v2/maps/sdk.js?appkey=${KAKAO_APP_KEY}&autoload=false&libraries=services`;
+// 검색·지오코딩은 백엔드(/api/places)로 옮겼다 — 이 로더는 지도 렌더링(마커·
+// InfoWindow·LatLngBounds)에만 SDK 를 쓴다. 그래서 libraries=services 가 없다.
+// appkey 자체는 지도를 그리려면 필요해 여전히 클라이언트에 남는다.
+const KAKAO_SRC = `https://dapi.kakao.com/v2/maps/sdk.js?appkey=${KAKAO_APP_KEY}&autoload=false`;
 
 const POSTCODE_SCRIPT_ID = "daum-postcode-script";
 const POSTCODE_SRC =
@@ -70,12 +73,13 @@ function loadScriptOnce(id, src) {
 }
 
 /**
- * 카카오 지도 SDK 를 services 라이브러리까지 준비된 상태로 보장한다.
+ * 카카오 지도 SDK 를 바로 쓸 수 있는 상태로 보장한다.
  * autoload=false 로 받으므로 스크립트 로드 후 maps.load() 까지 끝나야 쓸 수 있다.
+ * 준비 여부는 LatLng 로 본다 — load() 전에는 window.kakao.maps 에 load 만 있다.
  * @returns {Promise<object>} window.kakao.maps
  */
 export function ensureKakaoMaps() {
-  if (window.kakao?.maps?.services) return Promise.resolve(window.kakao.maps);
+  if (window.kakao?.maps?.LatLng) return Promise.resolve(window.kakao.maps);
 
   return loadScriptOnce(KAKAO_SCRIPT_ID, KAKAO_SRC).then(
     () =>
@@ -126,63 +130,5 @@ export async function openAddressSearch() {
       },
       onclose: () => resolve(picked),
     }).open();
-  });
-}
-
-/**
- * 카카오 키워드 장소 검색 — 프로젝트 생성 폼의 출발지점 선택처럼 지도 화면이
- * 없는 곳에서도 쓸 수 있게 SDK 로딩까지 여기서 책임진다.
- * @returns {Promise<Array<{placeId, name, address, lat, lng}>>} 상위 5건 (없으면 빈 배열)
- */
-export async function searchPlaces(keyword) {
-  const maps = await ensureKakaoMaps();
-
-  return new Promise((resolve, reject) => {
-    new maps.services.Places().keywordSearch(keyword, (data, status) => {
-      if (status === maps.services.Status.ZERO_RESULT) {
-        resolve([]);
-        return;
-      }
-      if (status !== maps.services.Status.OK) {
-        reject(
-          new Error("장소를 검색하지 못했어요. 잠시 후 다시 시도해주세요."),
-        );
-        return;
-      }
-      resolve(
-        data.slice(0, 5).map((p) => ({
-          placeId: String(p.id),
-          name: p.place_name,
-          address: p.road_address_name || p.address_name || "",
-          lat: Number(p.y),
-          lng: Number(p.x),
-        })),
-      );
-    });
-  });
-}
-
-/**
- * 주소 → 좌표. 카카오 응답은 x=경도·y=위도이고 값이 문자열이다(헷갈리기 쉬운 지점).
- * @returns {Promise<{lat:number, lng:number, roadAddress:string, jibunAddress:string}>}
- * @throws  좌표를 못 찾으면 사용자에게 그대로 보여줄 수 있는 메시지로 던진다
- */
-export async function geocodeAddress(address) {
-  const maps = await ensureKakaoMaps();
-
-  return new Promise((resolve, reject) => {
-    new maps.services.Geocoder().addressSearch(address, (result, status) => {
-      if (status !== maps.services.Status.OK || !result?.length) {
-        reject(new Error("이 주소로는 좌표를 찾지 못했어요."));
-        return;
-      }
-      const top = result[0];
-      resolve({
-        lat: Number(top.y),
-        lng: Number(top.x),
-        roadAddress: top.road_address?.address_name ?? "",
-        jibunAddress: top.address?.address_name ?? "",
-      });
-    });
   });
 }

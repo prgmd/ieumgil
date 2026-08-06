@@ -3,6 +3,7 @@ package com.ssafy.ieumgil.domain.place.service;
 import com.ssafy.ieumgil.domain.place.client.KakaoLocalClient;
 import com.ssafy.ieumgil.domain.place.dto.KakaoAddressResponse;
 import com.ssafy.ieumgil.domain.place.dto.KakaoDirectionsResponse;
+import com.ssafy.ieumgil.domain.place.dto.KakaoGeocodeResponse;
 import com.ssafy.ieumgil.domain.place.dto.KakaoPlaceResponse;
 import com.ssafy.ieumgil.domain.place.dto.KakaoWalkingRouteResponse;
 import com.ssafy.ieumgil.domain.place.dto.PlaceResDTO;
@@ -14,6 +15,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.util.List;
 import java.util.Optional;
+import java.util.stream.IntStream;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.when;
@@ -30,8 +32,8 @@ class PlaceQueryServiceImplTest {
     void searchPlacesNormalizesFieldsAndPrefersRoadAddress() {
         placeQueryService = new PlaceQueryServiceImpl(kakaoLocalClient);
         KakaoPlaceResponse.Document doc = new KakaoPlaceResponse.Document(
-                "26338954", "성산일출봉", "관광명소",
-                "제주 서귀포시 성산읍 성산리", "제주 서귀포시 성산읍 일출로 284-12",
+                "26338954", "성산일출봉", "관광명소", "AT4",
+                "제주 서귀포시 성산읍 성산리", "제주 서귀포시 성산읍 일출로 284-12", "064-123-4567",
                 "126.9425", "33.4581");
         when(kakaoLocalClient.searchByKeyword("성산일출봉", 33.5, 126.5)).thenReturn(List.of(doc));
 
@@ -48,15 +50,33 @@ class PlaceQueryServiceImplTest {
     }
 
     @Test
-    void searchPlacesLimitsToTopFive() {
+    @DisplayName("사용자 장소 검색은 15건까지 준다 — SDK 시절과 같은 개수다")
+    void 사용자_검색은_열다섯건이다() {
         placeQueryService = new PlaceQueryServiceImpl(kakaoLocalClient);
-        List<KakaoPlaceResponse.Document> sixDocs = List.of(
-                doc("1"), doc("2"), doc("3"), doc("4"), doc("5"), doc("6"));
-        when(kakaoLocalClient.searchByKeyword("카페", null, null)).thenReturn(sixDocs);
+        when(kakaoLocalClient.searchByKeyword("카페", null, null)).thenReturn(documents(20));
 
-        List<PlaceResDTO.Place> result = placeQueryService.searchPlaces("카페", null, null);
+        assertThat(placeQueryService.searchPlaces("카페", null, null)).hasSize(15);
+    }
 
-        assertThat(result).hasSize(5);
+    @Test
+    @DisplayName("챗봇 뷰포트 검색은 5건으로 묶어 둔다 — 결과가 LLM 컨텍스트로 들어간다")
+    void 챗봇_뷰포트_검색은_다섯건이다() {
+        placeQueryService = new PlaceQueryServiceImpl(kakaoLocalClient);
+        when(kakaoLocalClient.searchByKeywordInRect("카페", 37.4, 126.9, 37.6, 127.1))
+                .thenReturn(documents(20));
+
+        // 두 경로가 같은 상수를 다시 공유하면 이 단정이 15로 깨진다
+        assertThat(placeQueryService.searchPlacesInRect("카페", 37.4, 126.9, 37.6, 127.1))
+                .hasSize(5);
+    }
+
+    /** 상한만 보는 테스트라 좌표·이름은 구별만 되면 된다 */
+    private List<KakaoPlaceResponse.Document> documents(int count) {
+        return IntStream.range(0, count)
+                .mapToObj(i -> new KakaoPlaceResponse.Document(
+                        String.valueOf(i), "장소" + i, "카페", "CE7",
+                        "지번주소", "도로명주소", null, "127.0", "37.5"))
+                .toList();
     }
 
     @Test
@@ -84,8 +104,61 @@ class PlaceQueryServiceImplTest {
         assertThat(result).isEmpty();
     }
 
-    private KakaoPlaceResponse.Document doc(String id) {
-        return new KakaoPlaceResponse.Document(id, "장소" + id, "카테고리", "주소" + id, null, "127.0", "37.0");
+    @Test
+    @DisplayName("지오코딩 좌표는 x가 lng, y가 lat이다 — 뒤바뀌면 좌표가 바다로 간다")
+    void geocodeAddressMapsXToLngAndYToLat() {
+        placeQueryService = new PlaceQueryServiceImpl(kakaoLocalClient);
+        KakaoGeocodeResponse.Document doc = new KakaoGeocodeResponse.Document(
+                "127.0276", "37.4979",
+                new KakaoGeocodeResponse.RoadAddress("서울 강남구 테헤란로 1"),
+                new KakaoGeocodeResponse.Address("서울 강남구 역삼동 1"));
+        when(kakaoLocalClient.addressSearch("강남")).thenReturn(Optional.of(doc));
+
+        Optional<PlaceResDTO.Geocode> result = placeQueryService.geocodeAddress("강남");
+
+        assertThat(result).isPresent();
+        assertThat(result.get().lat()).isEqualTo(37.4979);
+        assertThat(result.get().lng()).isEqualTo(127.0276);
+    }
+
+    @Test
+    @DisplayName("road_address가 없으면 roadAddress는 null이 아니라 빈 문자열이다")
+    void geocodeAddressWithNoRoadAddressFallsBackToEmptyString() {
+        placeQueryService = new PlaceQueryServiceImpl(kakaoLocalClient);
+        KakaoGeocodeResponse.Document doc = new KakaoGeocodeResponse.Document(
+                "127.0276", "37.4979", null,
+                new KakaoGeocodeResponse.Address("서울 강남구 역삼동 1"));
+        when(kakaoLocalClient.addressSearch("강남")).thenReturn(Optional.of(doc));
+
+        Optional<PlaceResDTO.Geocode> result = placeQueryService.geocodeAddress("강남");
+
+        assertThat(result).isPresent();
+        assertThat(result.get().roadAddress()).isEqualTo("");
+    }
+
+    @Test
+    @DisplayName("address가 없으면 jibunAddress는 null이 아니라 빈 문자열이다")
+    void geocodeAddressWithNoAddressFallsBackToEmptyString() {
+        placeQueryService = new PlaceQueryServiceImpl(kakaoLocalClient);
+        KakaoGeocodeResponse.Document doc = new KakaoGeocodeResponse.Document(
+                "127.0276", "37.4979",
+                new KakaoGeocodeResponse.RoadAddress("서울 강남구 테헤란로 1"), null);
+        when(kakaoLocalClient.addressSearch("강남")).thenReturn(Optional.of(doc));
+
+        Optional<PlaceResDTO.Geocode> result = placeQueryService.geocodeAddress("강남");
+
+        assertThat(result).isPresent();
+        assertThat(result.get().jibunAddress()).isEqualTo("");
+    }
+
+    @Test
+    void geocodeAddressWithNoMatchReturnsEmpty() {
+        placeQueryService = new PlaceQueryServiceImpl(kakaoLocalClient);
+        when(kakaoLocalClient.addressSearch("존재하지않는주소")).thenReturn(Optional.empty());
+
+        Optional<PlaceResDTO.Geocode> result = placeQueryService.geocodeAddress("존재하지않는주소");
+
+        assertThat(result).isEmpty();
     }
 
     @Test
@@ -175,22 +248,50 @@ class PlaceQueryServiceImplTest {
     }
 
     @Test
-    void searchPlacesInRectDelegatesToRectSearchAndCapsResults() {
+    void searchPlacesInRectDelegatesToRectSearch() {
         placeQueryService = new PlaceQueryServiceImpl(kakaoLocalClient);
-        List<KakaoPlaceResponse.Document> documents = new java.util.ArrayList<>();
-        for (int i = 0; i < 10; i++) {
-            documents.add(new KakaoPlaceResponse.Document(
-                    "id" + i, "장소" + i, "카페", "제주 서귀포시", "제주 서귀포시 일출로", "126.94", "33.45"));
-        }
+        KakaoPlaceResponse.Document doc = new KakaoPlaceResponse.Document(
+                "id0", "장소0", "카페", "CE7", "제주 서귀포시", "제주 서귀포시 일출로", null, "126.94", "33.45");
         when(kakaoLocalClient.searchByKeywordInRect("카페", 33.44, 126.93, 33.47, 126.95))
-                .thenReturn(documents);
+                .thenReturn(List.of(doc));
 
         List<PlaceResDTO.Place> result = placeQueryService.searchPlacesInRect(
                 "카페", 33.44, 126.93, 33.47, 126.95);
 
-        // 일반 검색과 같은 상한을 적용한다 — 모델 입력 토큰과 후보 개수를 같은 기준으로 묶는다
-        assertThat(result).hasSize(5);
         assertThat(result.get(0).placeId()).isEqualTo("id0");
         assertThat(result.get(0).lat()).isEqualTo(33.45);
+    }
+
+    @Test
+    @DisplayName("카카오 응답의 category_group_code·phone 이 Place 에 실린다")
+    void 카테고리코드와_전화번호를_싣는다() {
+        placeQueryService = new PlaceQueryServiceImpl(kakaoLocalClient);
+        KakaoPlaceResponse.Document doc = new KakaoPlaceResponse.Document(
+                "12345", "스타벅스 강남점", "카페", "CE7",
+                "서울 강남구 역삼동 1", "서울 강남구 테헤란로 1",
+                "02-123-4567", "127.0276", "37.4979");
+        when(kakaoLocalClient.searchByKeyword("스타벅스", null, null)).thenReturn(List.of(doc));
+
+        PlaceResDTO.Place place = placeQueryService.searchPlaces("스타벅스", null, null).get(0);
+
+        // categoryCode 가 없으면 프론트의 catFromKakaoGroup 이 전부 "명소"로 떨어진다
+        assertThat(place.categoryCode()).isEqualTo("CE7");
+        assertThat(place.category()).isEqualTo("카페");
+        assertThat(place.phone()).isEqualTo("02-123-4567");
+    }
+
+    @Test
+    @DisplayName("카카오가 전화번호를 빈 문자열로 주면 null 로 정규화한다")
+    void 빈_전화번호는_null_이다() {
+        placeQueryService = new PlaceQueryServiceImpl(kakaoLocalClient);
+        KakaoPlaceResponse.Document doc = new KakaoPlaceResponse.Document(
+                "999", "한강공원", "관광명소", "AT4",
+                "서울 영등포구 여의동", "", "", "126.9", "37.5");
+        when(kakaoLocalClient.searchByKeyword("공원", null, null)).thenReturn(List.of(doc));
+
+        PlaceResDTO.Place place = placeQueryService.searchPlaces("공원", null, null).get(0);
+
+        // 빈 문자열을 그대로 두면 프론트가 detail 에 ""를 넣고 말풍선에 빈 줄이 생긴다
+        assertThat(place.phone()).isNull();
     }
 }

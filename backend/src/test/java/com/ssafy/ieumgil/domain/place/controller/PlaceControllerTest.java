@@ -4,6 +4,7 @@ import com.ssafy.ieumgil.domain.place.dto.PlaceResDTO;
 import com.ssafy.ieumgil.domain.place.service.PlaceQueryService;
 import com.ssafy.ieumgil.global.security.ActiveUserChecker;
 import com.ssafy.ieumgil.global.security.jwt.JwtProvider;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
@@ -109,6 +110,30 @@ class PlaceControllerTest {
                         .with(authentication(memberAuthentication(1L))))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.result").doesNotExist());
+    }
+
+    @Test
+    @DisplayName("주소→좌표: 결과가 있으면 좌표와 두 주소를 준다")
+    void 지오코딩_성공() throws Exception {
+        when(placeQueryService.geocodeAddress(eq("서울시청")))
+                .thenReturn(Optional.of(new PlaceResDTO.Geocode(
+                        37.5663, 126.9779, "서울 중구 세종대로 110", "서울 중구 태평로1가 31")));
+
+        mockMvc.perform(get("/api/places/geocode").param("address", "서울시청"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.result.lat").value(37.5663))
+                .andExpect(jsonPath("$.result.roadAddress").value("서울 중구 세종대로 110"));
+    }
+
+    @Test
+    @DisplayName("주소→좌표: 결과가 없으면 404다 — 200에 null 을 주지 않는다")
+    void 지오코딩_결과_없으면_404다() throws Exception {
+        when(placeQueryService.geocodeAddress(eq("없는주소"))).thenReturn(Optional.empty());
+
+        // 200 + result:null 로 주면 프론트가 "성공했는데 값이 없다"를 매번 분기해야 한다
+        mockMvc.perform(get("/api/places/geocode").param("address", "없는주소"))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value("PLACE404"));
     }
 
     private UsernamePasswordAuthenticationToken memberAuthentication(Long memberId) {

@@ -54,7 +54,7 @@ export function SearchPanel({
         <div className="search-results" ref={searchListRef}>
           {searchResults.map((place) => (
             <SearchResultDraggable
-              key={place.id}
+              key={place.placeId}
               place={place}
               // 클릭 = 지도 이동 + 상세 말풍선 (드래그와 별개 동작)
               onClick={handlePlaceClick}

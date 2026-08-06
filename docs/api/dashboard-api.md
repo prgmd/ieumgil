@@ -45,8 +45,9 @@
 
 | Method | Path | 설명 | Auth |
 |---|---|---|---|
-| GET | `/api/places?query=&lat=&lng=` | 카카오 로컬 keyword 검색 상위 5건 | Yes |
+| GET | `/api/places?query=&lat=&lng=` | 카카오 로컬 keyword 검색, 최대 15건 | Yes |
 | GET | `/api/places/address?lat=&lng=` | coord2address 역지오코딩 | Yes |
+| GET | `/api/places/geocode?address=` | 주소→좌표 지오코딩 | Yes |
 | GET | `/api/transit/route?sx=&sy=&ex=&ey=&mode=` | 길찾기 소요 시간·요금 | Yes |
 | GET | `/api/trains?dep=&arr=&after=` | KTX 시간표 출발 후보 | Yes |
 | GET | `/api/stations?type=&query=` | 역/터미널 이름검색 | Yes |
@@ -776,9 +777,9 @@
 
 ### GET /api/places
 
-카카오 로컬 keyword 검색 상위 5건(MAP-02).
+카카오 로컬 keyword 검색, 최대 15건(MAP-02).
 
-**Query Params:** `query`(필수), `lat`, `lng`(중심 좌표, 선택)
+**Query Params:** `query`(필수), `lat`, `lng`(선택 — 주면 그 지점 기준 거리순으로 정렬하지만 검색 범위 자체를 좁히지는 않는다)
 
 **Response `200`:**
 ```json
@@ -787,10 +788,12 @@
   "code": "COMMON200",
   "message": "요청에 성공했습니다.",
   "result": [
-    { "placeId": "12345", "name": "성산일출봉", "address": "제주 서귀포시 성산읍", "lat": 33.4581, "lng": 126.9425, "category": "관광명소" }
+    { "placeId": "12345", "name": "성산일출봉", "address": "제주 서귀포시 성산읍 성산리", "lat": 33.4581, "lng": 126.9425, "category": "관광명소", "categoryCode": "AT4", "phone": "064-123-4567" }
   ]
 }
 ```
+> `address`는 도로명 주소가 있으면 그것을, 없으면 지번 주소를 쓴다(서버가 합성). `category`는 카카오 `category_group_name`(사람이 읽는 이름), `categoryCode`는 `category_group_code`(프론트가 블록 카테고리를 정하는 키, 예: `CE7`=카페). `phone`은 카카오가 빈 문자열로 줘도 서버가 `null`로 정규화한다.
+> 챗봇 지도 추천(MAP 모드, 뷰포트 장소검색)은 이 엔드포인트가 아니라 별도 도구를 쓰며 상한이 5건으로 다르다(검색 결과가 LLM 컨텍스트로 들어가기 때문에 낮춘다) — 아래 "상세 명세 — 챗봇" MAP 모드 참조.
 
 ### GET /api/places/address
 
@@ -798,7 +801,23 @@ coord2address 역지오코딩(MAP-04 핀 지정).
 
 **Query Params:** `lat`(필수), `lng`(필수)
 
-**Response `200`:** `result: { address, roadAddress }`
+**Response `200`:** `result: { address, roadAddress }`. 좌표에 대응하는 주소를 찾지 못하면 `200` + `result: null`.
+
+### GET /api/places/geocode
+
+주소→좌표 지오코딩(MAP-04 주소 검색). `/api/places/address`의 역방향이다.
+
+**Query Params:** `address`(필수)
+
+**Response `200`:** `result: { lat, lng, roadAddress, jibunAddress }`
+
+**Errors:**
+
+| code | HTTP | 상황 |
+|---|---|---|
+| `PLACE404` | 404 | 이 주소로는 좌표를 찾지 못했습니다 |
+
+> `/api/places/address`와 응답 규약이 다르다 — 그쪽은 못 찾아도 `200` + `result: null`이지만, 이 엔드포인트는 **404 `PLACE404`**다. 프론트는 두 실패를 같은 방식으로 분기하면 안 된다.
 
 ### GET /api/transit/route
 
@@ -886,7 +905,7 @@ ODsay 열차 시간표(KTX·무궁화 등) → 출발 후보 목록(앞 일정 �
 
 가게 영업여부·폐업·리뷰처럼 학습 지식만으로 답할 수 없는 실시간 정보는 Anthropic `web_search` 서버 도구로 실검색해 요약 응답한다. 남용·비용 방지를 위해 시스템 프롬프트와 `max_uses`로 용도를 실시간 확인이 필요한 정보에 한정한다(날씨·환율처럼 검색으로도 신뢰하기 어려운 값은 제외). Spring AI 1.1.8이 서버 도구 선언 API를 제공하지 않아, `AnthropicApi`의 RestClient 인터셉터로 요청에 도구를 주입하고 응답의 검색 결과 블록을 정규화한다.
 
-**MAP 모드**: `mapContext`(현재 지도 뷰포트의 남서·북동 좌표) 필수. GENERAL과 마찬가지로 **LLM이 검색어를 도출해 도구를 호출**하며, 다른 점은 그 도구가 뷰포트 범위로 결과를 한정한다는 것이다(카카오 로컬 `rect` 파라미터). 등록 도구는 뷰포트 장소검색 **하나뿐**이다 — 축제는 일반 채팅 전용(BOT-05)이고 경로·시간표는 "보이는 범위에서 장소를 고른다"는 흐름과 무관하며, 노출 도구가 적을수록 모델의 선택 정확도가 높다. 검색어에 목적지 문자열을 붙이지 않는다(보이는 범위가 곧 검색 범위다).
+**MAP 모드**: `mapContext`(현재 지도 뷰포트의 남서·북동 좌표) 필수. GENERAL과 마찬가지로 **LLM이 검색어를 도출해 도구를 호출**하며, 다른 점은 그 도구가 뷰포트 범위로 결과를 한정한다는 것이다(카카오 로컬 `rect` 파라미터). 등록 도구는 뷰포트 장소검색 **하나뿐**이다 — 축제는 일반 채팅 전용(BOT-05)이고 경로·시간표는 "보이는 범위에서 장소를 고른다"는 흐름과 무관하며, 노출 도구가 적을수록 모델의 선택 정확도가 높다. 검색어에 목적지 문자열을 붙이지 않는다(보이는 범위가 곧 검색 범위다). 결과 상한은 **5건**이다 — 사용자 검색(`GET /api/places`, 최대 15건)보다 적은 것은 결과가 LLM 컨텍스트로 그대로 들어가기 때문이다.
 
 > 뷰포트가 아주 넓으면(전국 규모) 범위 제한이 사실상 무의미해져 결과가 산개한다. 오류는 아니며 카카오도 정상 응답한다.
 

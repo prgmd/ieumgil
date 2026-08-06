@@ -2,6 +2,7 @@ package com.ssafy.ieumgil.domain.place.client;
 
 import com.ssafy.ieumgil.domain.place.dto.KakaoAddressResponse;
 import com.ssafy.ieumgil.domain.place.dto.KakaoDirectionsResponse;
+import com.ssafy.ieumgil.domain.place.dto.KakaoGeocodeResponse;
 import com.ssafy.ieumgil.domain.place.dto.KakaoPlaceResponse;
 import com.ssafy.ieumgil.domain.place.dto.KakaoWalkingRouteResponse;
 import com.ssafy.ieumgil.domain.place.exception.PlaceErrorCode;
@@ -88,6 +89,22 @@ public class KakaoLocalClient {
             return Optional.of(response.documents().get(0));
         } catch (RestClientException | IllegalArgumentException e) {
             log.warn("카카오 좌표→주소 변환 실패: {}", e.getMessage());
+            throw new PlaceException(PlaceErrorCode.KAKAO_API_CALL_FAILED);
+        }
+    }
+
+    /** 주소 → 좌표(정지오코딩). {@code coord2Address}의 반대 방향이다 */
+    public Optional<KakaoGeocodeResponse.Document> addressSearch(String address) {
+        try {
+            URI uri = URI.create(properties.baseUrl() + "/v2/local/search/address.json"
+                    + "?query=" + URLEncoder.encode(address, StandardCharsets.UTF_8));
+            KakaoGeocodeResponse response = callKakao(uri, KakaoGeocodeResponse.class);
+            if (response == null || response.documents() == null || response.documents().isEmpty()) {
+                return Optional.empty();
+            }
+            return Optional.of(response.documents().get(0));
+        } catch (RestClientException | IllegalArgumentException e) {
+            log.warn("카카오 주소→좌표 변환 실패: {}", e.getMessage());
             throw new PlaceException(PlaceErrorCode.KAKAO_API_CALL_FAILED);
         }
     }

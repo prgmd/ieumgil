@@ -1,6 +1,8 @@
 package com.ssafy.ieumgil.domain.place.controller;
 
 import com.ssafy.ieumgil.domain.place.dto.PlaceResDTO;
+import com.ssafy.ieumgil.domain.place.exception.PlaceErrorCode;
+import com.ssafy.ieumgil.domain.place.exception.PlaceException;
 import com.ssafy.ieumgil.domain.place.service.PlaceQueryService;
 import com.ssafy.ieumgil.global.apiPayload.CustomResponse;
 import io.swagger.v3.oas.annotations.Operation;
@@ -27,7 +29,7 @@ public class PlaceController {
     private final PlaceQueryService placeQueryService;
 
     @GetMapping
-    @Operation(summary = "장소 키워드 검색", description = "카카오 로컬 keyword 검색 상위 5건을 반환합니다.")
+    @Operation(summary = "장소 키워드 검색", description = "카카오 로컬 keyword 검색 상위 15건을 반환합니다.")
     public CustomResponse<List<PlaceResDTO.Place>> searchPlaces(
             @RequestParam @NotBlank String query,
             @RequestParam(required = false) @DecimalMin("-90") @DecimalMax("90") Double lat,
@@ -41,5 +43,12 @@ public class PlaceController {
             @RequestParam @DecimalMin("-90") @DecimalMax("90") double lat,
             @RequestParam @DecimalMin("-180") @DecimalMax("180") double lng) {
         return CustomResponse.onSuccess(placeQueryService.reverseGeocode(lat, lng).orElse(null));
+    }
+
+    @GetMapping("/geocode")
+    @Operation(summary = "주소→좌표 변환", description = "카카오 로컬 address.json 상위 1건의 좌표를 반환합니다.")
+    public CustomResponse<PlaceResDTO.Geocode> geocode(@RequestParam @NotBlank String address) {
+        return CustomResponse.onSuccess(placeQueryService.geocodeAddress(address)
+                .orElseThrow(() -> new PlaceException(PlaceErrorCode.ADDRESS_NOT_FOUND)));
     }
 }
