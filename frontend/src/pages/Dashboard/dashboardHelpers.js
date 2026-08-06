@@ -1,3 +1,5 @@
+import { MINUTES_PER_DAY } from "../../features/dashboard/api/dashboardApi";
+
 /**
  * 카테고리(대분류) 표. 색은 값을 직접 적지 않고 공통 토큰(tokens.css)을 가리킨다 —
  * 팔레트를 바꿀 일이 생기면 CSS 한 곳만 고치면 된다.
@@ -19,9 +21,16 @@ export const CAT_COLORS = {
   },
 };
 
+/**
+ * 시간축 값(Day 1 00:00 기준 절대 분)을 하루 안의 "HH:mm" 으로 찍는다.
+ * 나머지를 취하지 않으면 Day 2 의 00:30(=1470분)이 "24:30" 으로, Day 3 은
+ * "48:30" 으로 보인다 — 화면이 읽는 시각은 언제나 그 Day 안의 시각이다.
+ * Day 번호가 함께 필요한 자리는 dayNoOfOffset 으로 따로 얻는다.
+ */
 export const fmtTime = (mins) => {
-  const h = Math.floor(mins / 60);
-  const m = mins % 60;
+  const minuteOfDay = mins % MINUTES_PER_DAY;
+  const h = Math.floor(minuteOfDay / 60);
+  const m = minuteOfDay % 60;
   return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
 };
 

@@ -632,7 +632,7 @@ export function DashboardPage() {
         const next = { ...prev };
         for (const id of dropped) {
           if (!next[id]) continue;
-          next[id] = { ...next[id], startMins: null, endMins: null };
+          next[id] = { ...next[id], startMins: null };
         }
         return next;
       });
@@ -1290,7 +1290,6 @@ export function DashboardPage() {
         const moved = {
           ...base,
           startMins: offset,
-          endMins: offset == null ? null : offset + base.dur,
           orderKey: payload.orderKey,
         };
         itemsRef.current = { ...itemsRef.current, [moved.id]: moved };
@@ -1604,7 +1603,6 @@ export function DashboardPage() {
       dur: 60,
       // 후보(POOL) 블록은 시각 없는 느슨한 블록 — 시각은 체인에 놓일 때 계산된다
       startMins: null,
-      endMins: null,
       lat: null,
       lng: null,
       cost: 0,
@@ -2135,7 +2133,6 @@ export function DashboardPage() {
           detail: place.phone || "",
           dur: 60, // 기본 소요시간 1시간
           startMins: null, // 후보(POOL) 블록은 시각 없는 느슨한 블록
-          endMins: null,
           cost: 0,
           lat: place.lat,
           lng: place.lng,
@@ -2157,7 +2154,6 @@ export function DashboardPage() {
           detail: cand.detail || "",
           dur: 60,
           startMins: null,
-          endMins: null,
           cost: 0,
           lat: cand.lat ?? null,
           lng: cand.lng ?? null,
@@ -2264,7 +2260,6 @@ export function DashboardPage() {
                     [activeIdLocal]: {
                       ...prev[activeIdLocal],
                       startMins: null,
-                      endMins: null,
                       orderKey,
                     },
                   }

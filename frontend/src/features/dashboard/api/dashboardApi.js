@@ -79,9 +79,9 @@ export function toUiBlock(b) {
     dur: b.durationMin,
     // Day 1 00:00 기준 절대 오프셋. null = 후보(POOL) — Day 는 dayNoOfOffset 으로 얻는다
     startMins: b.startOffsetMinutes ?? null,
-    // 서버는 종료를 보내지 않는다 — 소비처가 많아 경계에서 한 번 계산해 둔다
-    endMins:
-      b.startOffsetMinutes == null ? null : b.startOffsetMinutes + b.durationMin,
+    // 종료 시각은 싣지 않는다 — startMins + dur 이라 저장해 두면 소요만 바뀌는
+    // 필드 op(durationMin)가 도착했을 때 둘이 어긋난다. 소비처(카드·눈금·간격)는
+    // 모두 그리는 시점에 더해 쓰므로 보관해서 얻는 것도 없다.
     isTimeFixed: b.isTimeFixed ?? false,
     cost: b.budget ?? 0,
     detail: b.detail ?? null,

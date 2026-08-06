@@ -123,7 +123,6 @@ export default function CreateProjectModal({ open, onClose, onCreate }) {
             address: departure.address,
             dur: 60,
             startMins: 540, // Day 1 09:00
-            endMins: 600,
             cost: 0,
             lat: departure.lat,
             lng: departure.lng,
