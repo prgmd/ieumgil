@@ -54,11 +54,13 @@
   font-size: 11px;
   color: #9c3b3b;
 }
+/* 소요·요금·배차는 이 카드의 본문이다 — 보조 회색(--ink3)으로 두면 정작 읽어야 할
+   값이 흐려 보인다. 위계는 글자 크기로 주고 색은 본문색으로 통일한다. */
 .tcc-dur,
 .tcc-fare,
 .tcc-interval {
   font-size: 12px;
-  color: var(--ink3, #8a776a);
+  color: var(--ink1, #3d2b22);
 }
 
 .tcc-labels {
@@ -75,18 +77,20 @@
   color: var(--ink2, #6b5a4e);
 }
 
+/* 환승 횟수·도보 거리, 그리고 노선 구간 — "어느 버스를 타고 어디서 갈아타는지"가
+   이 카드를 보는 이유다. 회색이 아니라 본문색으로 읽히게 한다. */
 .tcc-sub {
   display: flex;
   gap: 10px;
   font-size: 11.5px;
-  color: var(--ink3, #8a776a);
+  color: var(--ink1, #3d2b22);
 }
 
 .tcc-legs {
   display: flex;
   flex-wrap: wrap;
   font-size: 11.5px;
-  color: var(--ink3, #8a776a);
+  color: var(--ink1, #3d2b22);
 }
 .tcc-leg-sep {
   margin: 0 4px;
@@ -127,10 +131,11 @@
   font-size: 10.5px;
   color: var(--ink3, #8a776a);
 }
+/* 출발·도착 시각과 요금도 골라야 할 값이라 본문색으로 (등급 배지만 회색으로 남긴다) */
 .tcc-dep-time,
 .tcc-dep-fare {
   font-size: 11.5px;
-  color: var(--ink3, #8a776a);
+  color: var(--ink1, #3d2b22);
 }
 .tcc-dep-labels {
   display: flex;

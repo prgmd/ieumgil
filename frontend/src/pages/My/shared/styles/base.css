@@ -51,3 +51,29 @@ body{background:linear-gradient(150deg,#fdf6ea 0%,#f4ecd9 30%,#e2e8d8 65%,#cfe0d
 .sec-head h2{font-family:var(--font-app);font-size:24px}
 .sec-head span{color:var(--ink2);font-size:12.5px}
 .sec-head .right{margin-left:auto}
+
+/* ── 모바일(≤768px) ─────────────────────────────────────────
+   상단바는 로고·경로·멤버·프로필이 한 줄에 들어가는 전제로 짜여 있어서,
+   좁은 화면에서는 요소들이 서로 밀려 겹친다. 여백·크기를 줄이고
+   없어도 되는 것(로그아웃 글자·내 닉네임)은 접는다. */
+@media (max-width: 768px) {
+  .appbar { gap: 8px; padding: 6px 12px; }
+  .appbar .logo .logo-img { height: 40px; }
+  .appbar .crumb { gap: 5px; font-size: 12.5px; max-width: 26vw; }
+  .appbar .crumb b { font-size: 12.5px; }
+  /* 경로가 길면 제목만 남긴다 — 뒤로가기는 브라우저 제스처로 충분하다 */
+  .appbar .crumb-item:not(:last-child) { display: none; }
+  .appbar .crumb-sep { display: none; }
+  /* 함께 보는 멤버 표시는 접는다 — 좁은 화면에서는 지금 무엇을 보고 있는지
+     (프로젝트 제목)가 누가 접속했는지보다 먼저다. 폭도 그만큼 제목에 넘긴다. */
+  .appbar .crew { display: none; }
+  .appbar .crew-item .mini-av,
+  .appbar .crew-more,
+  .appbar .me-avatar,
+  .appbar .me-avatar-fallback { width: 24px; height: 24px; font-size: 10.5px; }
+  .appbar .me { gap: 5px; font-size: 0; }  /* 닉네임 감추고 아바타만 */
+  .appbar .logout-btn { margin-left: 4px; padding: 4px 7px; font-size: 11px; }
+
+  .page { padding: 16px 12px 80px; }
+  .sec-head h2 { font-size: 19px; }
+}

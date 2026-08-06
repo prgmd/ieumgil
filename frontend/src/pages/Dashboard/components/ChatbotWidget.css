@@ -349,3 +349,23 @@
 .cbw-send:hover {
   background: #5a3f32;
 }
+
+/* ── 모바일(≤768px) ─────────────────────────────────────────
+   패널이 340px 고정이라 좁은 화면에서 오른쪽으로 삐져나갔다. 좌우로 붙인다.
+   보이스 탭은 모바일에서 렌더되지 않으므로 하단을 나눠 쓸 일이 없다. */
+@media (max-width: 768px) {
+  .cbw-fab {
+    right: 14px;
+    bottom: 16px;
+    width: 50px;
+    height: 50px;
+    font-size: 24px;
+  }
+  .cbw {
+    right: 12px;
+    left: 12px;
+    bottom: 76px;
+    width: auto;
+    max-height: min(70vh, 520px);
+  }
+}
