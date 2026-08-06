@@ -81,7 +81,14 @@ public class PlaceQueryServiceImpl implements PlaceQueryService {
                 .lat(Double.parseDouble(d.y()))
                 .lng(Double.parseDouble(d.x()))
                 .category(d.category_group_name())
+                .categoryCode(d.category_group_code())
+                // 빈 문자열은 "번호 없음"이다 — 그대로 두면 화면에 빈 줄이 생긴다
+                .phone(blankToNull(d.phone()))
                 .build();
+    }
+
+    private String blankToNull(String value) {
+        return (value == null || value.isBlank()) ? null : value;
     }
 
     private PlaceResDTO.Address toAddress(KakaoAddressResponse.Document d) {

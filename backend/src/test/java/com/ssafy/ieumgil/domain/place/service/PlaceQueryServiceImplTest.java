@@ -30,8 +30,8 @@ class PlaceQueryServiceImplTest {
     void searchPlacesNormalizesFieldsAndPrefersRoadAddress() {
         placeQueryService = new PlaceQueryServiceImpl(kakaoLocalClient);
         KakaoPlaceResponse.Document doc = new KakaoPlaceResponse.Document(
-                "26338954", "성산일출봉", "관광명소",
-                "제주 서귀포시 성산읍 성산리", "제주 서귀포시 성산읍 일출로 284-12",
+                "26338954", "성산일출봉", "관광명소", "AT4",
+                "제주 서귀포시 성산읍 성산리", "제주 서귀포시 성산읍 일출로 284-12", "064-123-4567",
                 "126.9425", "33.4581");
         when(kakaoLocalClient.searchByKeyword("성산일출봉", 33.5, 126.5)).thenReturn(List.of(doc));
 
@@ -85,7 +85,7 @@ class PlaceQueryServiceImplTest {
     }
 
     private KakaoPlaceResponse.Document doc(String id) {
-        return new KakaoPlaceResponse.Document(id, "장소" + id, "카테고리", "주소" + id, null, "127.0", "37.0");
+        return new KakaoPlaceResponse.Document(id, "장소" + id, "카테고리", "CE7", "주소" + id, null, null, "127.0", "37.0");
     }
 
     @Test
@@ -180,7 +180,7 @@ class PlaceQueryServiceImplTest {
         List<KakaoPlaceResponse.Document> documents = new java.util.ArrayList<>();
         for (int i = 0; i < 10; i++) {
             documents.add(new KakaoPlaceResponse.Document(
-                    "id" + i, "장소" + i, "카페", "제주 서귀포시", "제주 서귀포시 일출로", "126.94", "33.45"));
+                    "id" + i, "장소" + i, "카페", "CE7", "제주 서귀포시", "제주 서귀포시 일출로", null, "126.94", "33.45"));
         }
         when(kakaoLocalClient.searchByKeywordInRect("카페", 33.44, 126.93, 33.47, 126.95))
                 .thenReturn(documents);
@@ -192,5 +192,38 @@ class PlaceQueryServiceImplTest {
         assertThat(result).hasSize(5);
         assertThat(result.get(0).placeId()).isEqualTo("id0");
         assertThat(result.get(0).lat()).isEqualTo(33.45);
+    }
+
+    @Test
+    @DisplayName("카카오 응답의 category_group_code·phone 이 Place 에 실린다")
+    void 카테고리코드와_전화번호를_싣는다() {
+        placeQueryService = new PlaceQueryServiceImpl(kakaoLocalClient);
+        KakaoPlaceResponse.Document doc = new KakaoPlaceResponse.Document(
+                "12345", "스타벅스 강남점", "카페", "CE7",
+                "서울 강남구 역삼동 1", "서울 강남구 테헤란로 1",
+                "02-123-4567", "127.0276", "37.4979");
+        when(kakaoLocalClient.searchByKeyword("스타벅스", null, null)).thenReturn(List.of(doc));
+
+        PlaceResDTO.Place place = placeQueryService.searchPlaces("스타벅스", null, null).get(0);
+
+        // categoryCode 가 없으면 프론트의 catFromKakaoGroup 이 전부 "명소"로 떨어진다
+        assertThat(place.categoryCode()).isEqualTo("CE7");
+        assertThat(place.category()).isEqualTo("카페");
+        assertThat(place.phone()).isEqualTo("02-123-4567");
+    }
+
+    @Test
+    @DisplayName("카카오가 전화번호를 빈 문자열로 주면 null 로 정규화한다")
+    void 빈_전화번호는_null_이다() {
+        placeQueryService = new PlaceQueryServiceImpl(kakaoLocalClient);
+        KakaoPlaceResponse.Document doc = new KakaoPlaceResponse.Document(
+                "999", "한강공원", "관광명소", "AT4",
+                "서울 영등포구 여의동", "", "", "126.9", "37.5");
+        when(kakaoLocalClient.searchByKeyword("공원", null, null)).thenReturn(List.of(doc));
+
+        PlaceResDTO.Place place = placeQueryService.searchPlaces("공원", null, null).get(0);
+
+        // 빈 문자열을 그대로 두면 프론트가 detail 에 ""를 넣고 말풍선에 빈 줄이 생긴다
+        assertThat(place.phone()).isNull();
     }
 }

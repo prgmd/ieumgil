@@ -11,7 +11,12 @@ public class PlaceResDTO {
             String address,
             Double lat,
             Double lng,
-            String category
+            /** category_group_name — 사람이 읽는 이름("카페") */
+            String category,
+            /** category_group_code — 프론트가 블록 카테고리를 정하는 키("CE7") */
+            String categoryCode,
+            /** 없으면 null. 카카오는 없을 때 빈 문자열을 준다 */
+            String phone
     ) {
     }
 
