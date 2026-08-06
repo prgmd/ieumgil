@@ -2649,6 +2649,23 @@ export function DashboardPage() {
       ]);
       if (movedIds.size > 0) showToast(midnightSplitNotice(spilled));
 
+      // 명세 MAP-03: 중복 등록 자체는 정상 시나리오라 막지 않는다. 실수로 두 번
+      // 담는 경우만 알려준다 — 장소가 실제로 이 Day에 합류하는 순간(POOL→
+      // 타임라인)에만 "이미 있다"가 참이 되므로 여기서 검사하고, 생성/이동은
+      // 그대로 진행하며 토스트만 한 번 띄운다. 자기 자신은 비교에서 뺀다 —
+      // 이미 이 Day에 있는 블록을 같은 Day 안에서 시각만 옮길 때 오탐하지 않도록.
+      // 거부(spilled.blocked)와 자정 쪼개기 안내 뒤에 둔다 — 토스트는 한 칸뿐이라
+      // 앞에 두면 "합류했다"는 안내가 거부 메시지를 스치듯 덮어쓴다.
+      const movedPlaceId = items[activeIdLocal]?.placeId;
+      const alreadyInDay =
+        movedPlaceId != null &&
+        (chains[activeDay] ?? []).some(
+          (id) => id !== activeIdLocal && items[id]?.placeId === movedPlaceId,
+        );
+      if (alreadyInDay && movedIds.size === 0) {
+        showToast("이 날에 이미 있는 장소예요");
+      }
+
       // 낙관 적용 — 타임라인이 늘 00:00 부터라 이월 블록도 그대로 보인다
       setItems(spilled.items);
       setChains(spilled.chains);
