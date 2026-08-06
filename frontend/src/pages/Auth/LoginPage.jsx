@@ -2,10 +2,6 @@ import "./Login.css"; // 동일 폴더에 생성할 CSS 파일 임포트
 import logo from "../../assets/img/logo.png";
 
 export function LoginPage() {
-  console.log("=== 환경변수 로드 테스트 ===");
-  console.log("REST API KEY:", import.meta.env.VITE_KAKAO_REST_API_KEY);
-  console.log("REDIRECT URI:", import.meta.env.VITE_KAKAO_REDIRECT_URI);
-
   const handleKakaoLogin = () => {
     const REST_API_KEY = import.meta.env.VITE_KAKAO_REST_API_KEY;
     const REDIRECT_URI = import.meta.env.VITE_KAKAO_REDIRECT_URI;
