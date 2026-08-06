@@ -56,6 +56,24 @@ export async function logout() {
 }
 
 /**
+ * 회원 탈퇴 — DELETE /members/me (204 No Content, 본문 없음).
+ *
+ * 서버(UserCommandServiceImpl.withdraw)가 하는 일: 개인정보 파기 + 소속 그룹 전부
+ * 탈퇴(나간 뒤 아무도 없는 그룹은 하드 삭제) + refreshToken 폐기 + Set-Cookie 로
+ * 쿠키 만료 + WS 세션 강제 종료.
+ *
+ * logout 과 달리 실패를 삼키지 않는다 — "탈퇴됐다"고 알린 뒤 계정이 남아 있으면
+ * 그게 더 나쁘다. 호출부가 사유를 보여주고 로그인 상태를 유지해야 한다.
+ */
+export const withdraw = async () => {
+  try {
+    await axiosInstance.delete("/members/me");
+  } catch (error) {
+    unwrapError(error);
+  }
+};
+
+/**
  * 로그인한 사용자의 정보를 조회한다.
  * 사용자 식별은 서버가 accessToken 으로 하므로 파라미터가 없다.
  * @returns {Promise<{ id: number, nickname: string, profileImg: string }>}

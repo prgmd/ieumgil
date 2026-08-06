@@ -17,12 +17,16 @@ import com.ssafy.ieumgil.domain.transit.dto.TransitLegResDTO;
 import com.ssafy.ieumgil.domain.transit.dto.TransitResDTO;
 import com.ssafy.ieumgil.domain.transit.dto.TransitScheduleResDTO;
 import com.ssafy.ieumgil.domain.transit.exception.OdsayNoRouteException;
+import com.ssafy.ieumgil.domain.transit.exception.OdsayTooCloseException;
 import com.ssafy.ieumgil.domain.transit.exception.TransitErrorCode;
 import com.ssafy.ieumgil.domain.transit.exception.TransitException;
 import com.ssafy.ieumgil.domain.transit.util.BoardingMargin;
 import com.ssafy.ieumgil.domain.transit.util.ConnectionPlanner;
 import com.ssafy.ieumgil.domain.transit.util.Haversine;
+import com.ssafy.ieumgil.domain.transit.util.LandReachability;
+import com.ssafy.ieumgil.domain.transit.util.IntercityLabel;
 import com.ssafy.ieumgil.domain.transit.util.IntercityLegs;
+import com.ssafy.ieumgil.domain.transit.util.OdsayClock;
 import com.ssafy.ieumgil.domain.transit.util.StationIdBands;
 import com.ssafy.ieumgil.global.exception.CustomException;
 import lombok.RequiredArgsConstructor;
@@ -317,7 +321,7 @@ public class TransitCandidateServiceImpl implements TransitCandidateService {
     private RoadResult unavailableFor(Leg leg, List<TransportPref> prefs) {
         LegModes modes = modesFor(prefs, straightDistanceOf(leg));
         return new RoadResult(List.of(), modes.transit(),
-                modes.road().stream().map(mode -> Candidate.lookupFailed(mode.mode())).toList(), false);
+                modes.road().stream().map(mode -> Candidate.lookupFailed(mode.mode())).toList(), false, false);
     }
 
     /**
@@ -385,11 +389,20 @@ public class TransitCandidateServiceImpl implements TransitCandidateService {
         // 물어 세 자리에서 나눠 쓴다. 셋 다 필요 없는 leg(도보만)라면 부르지 않는다.
         RouteLookup lookup = modes.transit() || needsDriving
                 ? routeLookupOf(leg)
-                : new RouteLookup(List.of(), false);
-        PlaceResDTO.TaxiRoute driving = needsDriving ? callDriving(leg) : null;
+                : new RouteLookup(List.of(), false, false);
+        // 차로 갈 수 없는 목적지(시외 경로가 전부 항공)면 자차·택시를 아예 만들지 않는다. 후보를
+        // 만들어 두고 status로 감추지 않는 이유: 프론트는 status와 무관하게 모든 후보를 그리므로
+        // "조회 실패" 회색 줄이 남고, 그게 사용자가 신고한 증상이다. 도보는 그대로 둔다 —
+        // 2km 임계로 이미 걸러지고, 육지와 이어진 섬(영도 등)까지 잘못 걸린다.
+        boolean landUnreachable = LandReachability.isLandUnreachable(intercityPathsOf(lookup.paths()));
+        // 버릴 답에 카카오 쿼터를 쓰지 않는다 — 판정 근거인 경로 목록은 이미 위에서 받았다.
+        PlaceResDTO.TaxiRoute driving = needsDriving && !landUnreachable ? callDriving(leg) : null;
 
         List<Candidate> roadCandidates = new ArrayList<>();
         for (RoadMode mode : modes.road()) {
+            if (landUnreachable && (mode == RoadMode.CAR || mode == RoadMode.TAXI)) {
+                continue;
+            }
             Candidate candidate = switch (mode) {
                 case TAXI -> taxiCandidate(driving);
                 case CAR -> carCandidate(driving);
@@ -397,7 +410,13 @@ public class TransitCandidateServiceImpl implements TransitCandidateService {
             };
             roadCandidates.add(candidate);
         }
-        return new RoadResult(lookup.paths(), modes.transit(), List.copyOf(roadCandidates), lookup.noRoute());
+        return new RoadResult(lookup.paths(), modes.transit(), List.copyOf(roadCandidates),
+                lookup.noRoute(), lookup.tooClose());
+    }
+
+    /** 시외 경로만 남긴다({@link #INTERCITY_PATH_TYPES}). 시내 구간이면 빈 목록이다 */
+    private static List<OdsayRouteResponse.Path> intercityPathsOf(List<OdsayRouteResponse.Path> paths) {
+        return paths.stream().filter(path -> INTERCITY_PATH_TYPES.contains(path.pathType())).toList();
     }
 
     /**
@@ -411,13 +430,16 @@ public class TransitCandidateServiceImpl implements TransitCandidateService {
         try {
             List<OdsayRouteResponse.Path> paths = publicTransitQueryService
                     .getCombinedRoutes(leg.fromLat(), leg.fromLng(), leg.toLat(), leg.toLng());
-            return new RouteLookup(paths, false);
+            return new RouteLookup(paths, false, false);
         } catch (OdsayNoRouteException e) {
             log.info("ODsay가 경로를 주지 않는 구간: leg={}", leg);
-            return new RouteLookup(List.of(), true);
+            return new RouteLookup(List.of(), true, false);
+        } catch (OdsayTooCloseException e) {
+            log.info("700m 이내라 대중교통 경로가 없는 구간 — 걸어갈 거리다: leg={}", leg);
+            return new RouteLookup(List.of(), false, true);
         } catch (RuntimeException e) {
             log.warn("대중교통 경로 목록 조회 실패: leg={}", leg, e);
-            return new RouteLookup(List.of(), false);
+            return new RouteLookup(List.of(), false, false);
         }
     }
 
@@ -431,7 +453,13 @@ public class TransitCandidateServiceImpl implements TransitCandidateService {
     }
 
     /** 1단 경로 조회 결과. 빈 목록 하나로는 "조회 실패"와 "ODsay가 경로 없다고 답함"이 구분되지 않는다. */
-    private record RouteLookup(List<OdsayRouteResponse.Path> paths, boolean noRoute) {
+    /**
+     * 1단 경로 조회 결과. 빈 목록 하나로는 세 가지가 구분되지 않는다 — 조회 실패,
+     * ODsay가 "경로 없음"이라고 답함({@code noRoute}), 700m 이내라 낼 경로가 없음
+     * ({@code tooClose}). 뒤 둘은 영구적인 답이지만 사용자가 할 일이 정반대다:
+     * 경로 없음은 "그 수단으로는 못 간다", 700m 이내는 "걸어가면 된다"다.
+     */
+    private record RouteLookup(List<OdsayRouteResponse.Path> paths, boolean noRoute, boolean tooClose) {
     }
 
     /** 블록 → 승차 지점(접근). {@link IntercityLegs.Point}는 x=경도·y=위도다 */
@@ -449,35 +477,74 @@ public class TransitCandidateServiceImpl implements TransitCandidateService {
     /**
      * 블록 → 승차 지점, 하차 지점 → 블록. 시외 경로엔 이 leg가 없어(실측 537건 전부 0) 따로 부른다.
      *
-     * <p>접근·이탈 중 하나라도 경로가 없으면(빈 목록) {@code empty}다 — 0분으로 추측하지 않는다.
+     * <p>접근·이탈 중 하나라도 <b>구할 수 없으면</b> {@code empty}다 — 0분으로 추측하지 않는다.
      * 호출자가 이 empty를 "그 수단 후보를 만들지 않는다"로 읽고 {@code log.warn}으로 남긴다.
-     * package-private인 이유는 {@code TransitCandidateServiceImplTest}가 직접 부르기 때문이다
+     *
+     * <p>단 ODsay가 <b>700m 이내</b>라고 답한 경우는 구할 수 없는 것이 아니라 <b>걸어가는 것</b>이다
+     * ({@link OdsayTooCloseException}) — 카카오 도보 길찾기로 대신 채운다. 이 둘을 뭉갰다가
+     * 서울→속초에서 고속버스 후보가 통째로 사라졌다: 하차 지점(속초시외버스터미널)이 목적지
+     * (속초시청)에서 700m 이내라 이탈 조회가 실패로 취급됐다. 목적지가 터미널 근처인 것은
+     * 최선의 경우인데 그 때문에 수단이 지워졌다.
+     *
+     * <p>package-private인 이유는 {@code TransitCandidateServiceImplTest}가 직접 부르기 때문이다
      * ({@link #TIMETABLE_TIMEOUT}과 같은 이유).
      */
     Optional<AccessLegs> accessLegsOf(Pair pair, IntercityLegs legs) {
         IntercityLegs.Point boarding = legs.boardingPoint();
         IntercityLegs.Point alighting = legs.alightingPoint();
 
-        List<OdsayRouteResponse.Path> access = combinedRoutesFor(pair.from(), boarding);
+        Optional<SideLeg> access = sideLegOf(new Leg(
+                pair.from().getLat().doubleValue(), pair.from().getLng().doubleValue(),
+                boarding.y(), boarding.x()));
         if (access.isEmpty()) {
             log.warn("접근 경로 없음: fromBlockId={}, boarding={}", pair.from().getId(), boarding);
             return Optional.empty();
         }
-        List<OdsayRouteResponse.Path> egress = combinedRoutesFor(alighting, pair.to());
+        Optional<SideLeg> egress = sideLegOf(new Leg(
+                alighting.y(), alighting.x(),
+                pair.to().getLat().doubleValue(), pair.to().getLng().doubleValue()));
         if (egress.isEmpty()) {
             log.warn("이탈 경로 없음: alighting={}, toBlockId={}", alighting, pair.to().getId());
             return Optional.empty();
         }
 
-        OdsayRouteResponse.Path accessPath = access.get(0);
-        OdsayRouteResponse.Path egressPath = egress.get(0);
         return Optional.of(new AccessLegs(
-                TransitLegResDTO.fromSubPaths(accessPath.subPath()),
-                accessPath.info().totalTime(),
-                accessPath.info().payment(),
-                TransitLegResDTO.fromSubPaths(egressPath.subPath()),
-                egressPath.info().totalTime(),
-                egressPath.info().payment()));
+                access.get().legs(), access.get().durationMin(), access.get().fare(),
+                egress.get().legs(), egress.get().durationMin(), egress.get().fare()));
+    }
+
+    /**
+     * 접근·이탈 한 쪽. 대중교통 경로가 있으면 그것, ODsay가 700m 이내라고 답하면 도보다.
+     *
+     * <p>도보 소요는 카카오 도보 길찾기의 실측값이다 — 700m를 걷는 시간을 0분으로 두면
+     * 그만큼 이른 편을 탈 수 있다고 내밀게 되고, 거리로 지어내면 그건 추정이다. 도보 조회까지
+     * 실패하면 {@code empty}다 — 그때는 정말 모른다.
+     */
+    private Optional<SideLeg> sideLegOf(Leg leg) {
+        RouteLookup lookup = routeLookupOf(leg);
+        if (!lookup.paths().isEmpty()) {
+            OdsayRouteResponse.Path path = lookup.paths().get(0);
+            return Optional.of(new SideLeg(
+                    TransitLegResDTO.fromSubPaths(path.subPath()),
+                    path.info().totalTime(),
+                    path.info().payment()));
+        }
+        if (!lookup.tooClose()) {
+            return Optional.empty();
+        }
+        return placeQueryService
+                .getWalkingRoute(leg.fromLat(), leg.fromLng(), leg.toLat(), leg.toLng())
+                .map(walk -> new SideLeg(
+                        List.of(TransitLegResDTO.Leg.builder()
+                                .type(TransitLegResDTO.LegType.WALK)
+                                .durationMin(walk.durationMin())
+                                .build()),
+                        walk.durationMin(),
+                        0));
+    }
+
+    /** 접근 또는 이탈 한 쪽의 구간·소요·요금. 도보로 채워졌으면 요금은 0이다 */
+    private record SideLeg(List<TransitLegResDTO.Leg> legs, int durationMin, Integer fare) {
     }
 
     /**
@@ -534,8 +601,12 @@ public class TransitCandidateServiceImpl implements TransitCandidateService {
         Map<TransitMode, IntercityLegs> legsByMode = IntercityLegs.pick(road.paths());
         List<Candidate> candidates = new ArrayList<>();
         for (TransitMode mode : INTERCITY_MODES) {
-            candidates.add(noTimetableCandidate(
-                    mode, legsByMode.get(mode), road.firstStartStation(), road.lastEndStation()));
+            Candidate candidate = noTimetableCandidate(
+                    mode, legsByMode.get(mode), road.firstStartStation(), road.lastEndStation());
+            // ODsay가 이 수단의 경로를 주지 않으면 후보 자체가 없다 — null을 걸러낸다
+            if (candidate != null) {
+                candidates.add(candidate);
+            }
         }
         candidates.addAll(road.roadCandidates());
 
@@ -551,19 +622,26 @@ public class TransitCandidateServiceImpl implements TransitCandidateService {
     }
 
     /**
-     * 시간표를 적용하지 않는 시외 후보 하나. {@code legs}가 없으면(ODsay 응답에 이 수단의 경로
-     * 자체가 없음) {@link #departureCandidate}의 빈 편 목록 분기와 같은 모양으로 낸다 — 지어낼
-     * 근거가 없다. 있으면 그 경로 자신의 시각·leg을 채운다(브리프 상태 분기 3:
-     * "시간표 미적용 → OK, ODsay 시외 leg 시간 사용"). 접근·이탈은 채우지 않는다 — 그건 시간표가
-     * 붙어야 기준 시각을 만들 수 있는 door-to-door({@link #doorToDoorCandidate})의 몫이다.
+     * 시간표를 적용하지 않는 시외 후보 하나.
+     *
+     * <p>{@code legs}가 있으면 그 경로 자신의 시각·leg을 채운다 — 시간표를 못 붙인 것이
+     * "아무것도 모른다"는 뜻은 아니다. 접근·이탈은 채우지 않는다: 그건 시간표가 붙어야 기준
+     * 시각을 만들 수 있는 door-to-door({@link #doorToDoorCandidate})의 몫이다.
+     *
+     * <p>{@code legs}가 없으면(ODsay 응답에 이 수단의 경로 자체가 없음) {@code null}이다 —
+     * 호출자가 걸러낸다. 예전에는 빈 편 목록을 가진 {@code status=OK} 후보를 남겼다. 그
+     * 근거는 "서울→부산→제주에서 뒤 구간만 항공이 사라지면 제주에 배로 가라는 말이 된다"였는데,
+     * 그 논리는 <b>경로는 있고 시간표만 못 붙인</b> 경우를 지키는 것이고 ODsay가 애초에 경로를
+     * 주지 않은 수단까지 덮지 않는다. 서울→제주에서 빈 고속버스 슬롯을 내면 버스로 제주에 갈 수
+     * 있다는 말이 된다.
      */
     private Candidate noTimetableCandidate(TransitMode mode, IntercityLegs legs, String from, String to) {
         if (legs == null) {
-            return departureCandidate(mode, List.of(), from, to, 0);
+            return null;
         }
         return Candidate.builder()
                 .mode(mode)
-                .label(mode.label())
+                .label(IntercityLabel.of(legs.legs(), mode))
                 .status(CandidateStatus.OK)
                 .durationMin(legs.path().info().totalTime())
                 .fareConfidence(TransitResDTO.FareConfidence.UNKNOWN)
@@ -584,7 +662,9 @@ public class TransitCandidateServiceImpl implements TransitCandidateService {
      */
     private TransitCandidateResDTO.Segment citySegment(Pair pair, RoadResult road, boolean multiPref) {
         List<Candidate> candidates = new ArrayList<>();
-        if (road.transitRequested()) {
+        // 700m 이내면 대중교통 후보를 만들지 않는다 — ODsay가 낼 경로가 없다고 답한 것이지
+        // 조회가 실패한 게 아니고, 그 거리는 이미 도보 후보가 답한다(2km까지 도보가 목록에 있다).
+        if (road.transitRequested() && !road.tooClose()) {
             candidates.addAll(road.noRoute()
                     ? List.of(Candidate.noRoute(TransitMode.TRANSIT))
                     : transitCandidates(road.paths()));
@@ -704,9 +784,14 @@ public class TransitCandidateServiceImpl implements TransitCandidateService {
     }
 
     /**
-     * 수단별 시외 후보. {@code legs}가 없으면(=ODsay 응답에 이 수단의 경로가 없거나 첫 leg의
-     * 역 ID 대역을 판별할 수 없음) 조회 자체를 시도하지 않고 조회 실패로 낸다 — 이름 검색으로
-     * 대체하지 않는다.
+     * 수단별 시외 후보. 어느 쪽으로든 이름 검색으로 대체하지 않는다.
+     *
+     * <p>{@code legs}가 없으면(=ODsay 응답에 <b>이 수단의 경로가 아예 없음</b>) 후보를 만들지
+     * 않고 {@code null}이다 — 조회가 실패한 것이 아니라 그런 경로가 없다. 제주에 기차로 갈 수
+     * 없는 것은 몇 번을 물어도 같은 답이라 {@code LOOKUP_FAILED}로 내면 프론트가 회색 "조회 실패"
+     * 행을 그리고 사용자는 영원히 재시도한다. 반대로 첫 leg의 <b>역 ID 대역을 판별하지 못한</b>
+     * 경우는 {@code LOOKUP_FAILED}다 — 그건 경로가 없는 것이 아니라 우리가 판별하지 못한 것이고,
+     * 그 구분을 뭉개면 실제 장애가 "여기엔 그 수단이 없다"로 위장된다.
      *
      * <p>환승 경로(leg 2개)는 첫 leg 후보를 만든 뒤 {@link #withConnections}가 두 번째 leg
      * 시간표를 붙인다. 첫 leg 조회 자체가 실패했으면(조회 실패) 두 번째 leg를 붙일 수 없으므로
@@ -717,11 +802,23 @@ public class TransitCandidateServiceImpl implements TransitCandidateService {
      * 실패·경로 없음) 시간표를 조회해 보지도 않고 {@code null}을 반환한다 — 그 수단 후보를
      * 만들지 않는다(접근시간을 0으로 추측하지 않는다). 호출자({@link #intercityCandidates})가
      * 이 {@code null}을 걸러낸다.
+     *
+     * <p>{@code mode}(대표 수단)는 후보의 <b>정체</b>일 뿐이다 — {@link IntercityLegs}가 목적지에
+     * 도달하는 마지막 leg에서 뽑으므로 {@code pathType 20}에서는 첫 leg의 수단과 다르다. 그래서
+     * 첫 leg의 시간표·탑승 여유는 대표 수단이 아니라 <b>그 leg 자신의 대역</b>으로 판별한
+     * {@code boardingMode}를 쓴다({@link #withConnections}가 두 번째 leg에 하는 것과 대칭이다) —
+     * 대표 수단을 넘기면 기차 역 ID가 항공 시간표 API로 가고, 기차편이 항공 여유(40분) 기준으로
+     * 걸러진다.
      */
     private Candidate candidateFor(
             TransitMode mode, IntercityLegs legs, Pair pair, int base, LocalDate startDate, int dayNo,
             String from, String to) {
         if (legs == null) {
+            return null;
+        }
+        Optional<TransitMode> boardingMode = modeOfLeg(legs.legs().get(0));
+        if (boardingMode.isEmpty()) {
+            log.warn("첫 leg의 역 ID 대역을 판별할 수 없다: mode={}", mode);
             return Candidate.lookupFailed(mode);
         }
         Optional<AccessLegs> access = accessLegsOf(pair, legs);
@@ -729,8 +826,8 @@ public class TransitCandidateServiceImpl implements TransitCandidateService {
             return null;
         }
         int accessArrival = base + access.get().accessMin();
-        Candidate firstLegCandidate =
-                timetableCandidateFor(mode, legs.legs().get(0), accessArrival, startDate, dayNo, from, to);
+        Candidate firstLegCandidate = timetableCandidateFor(
+                boardingMode.get(), legs.legs().get(0), accessArrival, startDate, dayNo, from, to);
         if (firstLegCandidate.status() != CandidateStatus.OK) {
             return firstLegCandidate;
         }
@@ -740,7 +837,16 @@ public class TransitCandidateServiceImpl implements TransitCandidateService {
         if (legCandidate.status() != CandidateStatus.OK) {
             return legCandidate;
         }
-        return doorToDoorCandidate(mode, legs, access.get(), legCandidate, base, startDate, dayNo);
+        return doorToDoorCandidate(
+                mode, boardingMode.get(), legs, access.get(), legCandidate, base, startDate, dayNo);
+    }
+
+    /**
+     * leg 하나의 수단. 그 leg의 출발역 ID 대역으로 판별한다({@link StationIdBands#modeOf}).
+     * 역 ID가 없거나 대역을 모르면 empty다 — 추측하지 않는다.
+     */
+    private Optional<TransitMode> modeOfLeg(OdsayRouteResponse.SubPath leg) {
+        return leg.startID() == null ? Optional.empty() : StationIdBands.modeOf(leg.startID());
     }
 
     /**
@@ -755,10 +861,17 @@ public class TransitCandidateServiceImpl implements TransitCandidateService {
      * 조회 자체는 성공했으니 {@code LOOKUP_FAILED}가 아니다. 그래도 {@code legs}·{@code fare}·
      * {@code accessMin}·{@code egressMin}·{@code referenceAt}은 채운다 — 그 값들은 특정 편에
      * 좌우되지 않는 구조적인 값이다. {@code durationMin}만 편이 있어야 계산되므로 null이다.
+     *
+     * @param mode         후보의 정체가 되는 대표 수단(목적지에 도달하는 수단). 버킷·아이콘 키다 —
+     *                     사용자에게 보이는 이름({@code label})은 leg 순서대로 이어 붙인
+     *                     {@link IntercityLabel}이라 복합 경로에서는 이 수단 이름과 다르다
+     * @param boardingMode 실제로 탑승하는 첫 leg의 수단. {@code referenceAt}은 이 수단의 탑승
+     *                     여유로 계산한다 — 그 값이 곧 첫 leg 편을 걸러낸 기준이므로 대표 수단의
+     *                     여유를 쓰면 기차+항공 경로에서 화면 기준 시각과 실제 기준이 어긋난다
      */
     private Candidate doorToDoorCandidate(
-            TransitMode mode, IntercityLegs legs, AccessLegs access, Candidate legCandidate,
-            int base, LocalDate startDate, int dayNo) {
+            TransitMode mode, TransitMode boardingMode, IntercityLegs legs, AccessLegs access,
+            Candidate legCandidate, int base, LocalDate startDate, int dayNo) {
         List<TransitLegResDTO.Leg> allLegs = new ArrayList<>();
         allLegs.addAll(access.access());
         allLegs.addAll(TransitLegResDTO.fromSubPaths(legs.legs()));
@@ -767,11 +880,14 @@ public class TransitCandidateServiceImpl implements TransitCandidateService {
         int transferCount = vehicleLegCountOf(allLegs) - 1;
         Integer fare = fareOf(access, legs);
         TransitResDTO.FareConfidence fareConfidence = fareConfidenceOf(access, legs);
-        String referenceAt = referenceFor(startDate, dayNo, base + access.accessMin(), mode).time().format(HHMM);
+        String referenceAt =
+                referenceFor(startDate, dayNo, base + access.accessMin(), boardingMode).time().format(HHMM);
 
         Candidate.CandidateBuilder builder = Candidate.builder()
                 .mode(mode)
-                .label(mode.label())
+                // 표시 이름은 leg 순서대로 이어 붙인다("시외버스+항공") — 대표 수단만으로 이름을
+                // 붙이면 앞 구간이 화면에서 사라진다({@link IntercityLabel})
+                .label(IntercityLabel.of(legs.legs(), mode))
                 .fare(fare)
                 .fareConfidence(fareConfidence)
                 .transferCount(transferCount)
@@ -846,15 +962,15 @@ public class TransitCandidateServiceImpl implements TransitCandidateService {
         return elapsed + egressMin;
     }
 
+    /** ODsay는 심야편을 "24:10"으로 준다 — {@link OdsayClock}이 그 표기를 읽는다 */
     private int minutesOf(String hhmm) {
-        LocalTime time = LocalTime.parse(hhmm);
-        return time.getHour() * 60 + time.getMinute();
+        return OdsayClock.minutesOf(hhmm);
     }
 
     /**
      * 환승 경로의 두 번째 leg 시간표를 <b>한 번만</b> 불러 첫 leg의 편마다 연결편을 붙인다.
      *
-     * <p>두 번째 leg의 수단은 첫 leg과 같다고 가정하지 않고 다시 판별한다({@link StationIdBands#modeOf}) —
+     * <p>두 번째 leg의 수단은 첫 leg과 같다고 가정하지 않고 다시 판별한다({@link #modeOfLeg}) —
      * {@code pathType 20}처럼 두 leg가 서로 다른 수단(기차→항공 등)일 수 있어서다. 판별할 수
      * 없거나 두 번째 leg 조회 자체가 실패하면 추측하지 않고 조회 실패로 낸다 — 첫 leg만 있는
      * 반쪽 경로를 직통처럼 내보내지 않는다.
@@ -862,7 +978,7 @@ public class TransitCandidateServiceImpl implements TransitCandidateService {
     private Candidate withConnections(
             TransitMode mode, IntercityLegs legs, Candidate firstLegCandidate,
             int base, LocalDate startDate, int dayNo, String from, String to) {
-        Optional<TransitMode> secondMode = StationIdBands.modeOf(legs.legs().get(1).startID());
+        Optional<TransitMode> secondMode = modeOfLeg(legs.legs().get(1));
         if (secondMode.isEmpty()) {
             log.warn("환승 두 번째 leg의 역 ID 대역을 판별할 수 없다: mode={}", mode);
             return Candidate.lookupFailed(mode);
@@ -975,7 +1091,7 @@ public class TransitCandidateServiceImpl implements TransitCandidateService {
                 .departureAt(b.departureTime())
                 .arrivalAt(durationMin == null
                         ? null
-                        : LocalTime.parse(b.departureTime()).plusMinutes(durationMin).format(HHMM))
+                        : OdsayClock.format(OdsayClock.minutesOf(b.departureTime()) + durationMin))
                 .durationMin(durationMin)
                 .fare(b.fare())
                 .fareConfidence(TransitResDTO.confidenceOf(b.fare()))
@@ -1017,12 +1133,18 @@ public class TransitCandidateServiceImpl implements TransitCandidateService {
      * {@link DepartureSelector}가 정렬을 전제하므로 여기서 보장한다.
      *
      * <p>운행 요일 필터는 이미 시간표 조회에서 끝났다 — 여기서 다시 걸지 않는다.
+     *
+     * <p>비교를 {@code LocalTime}이 아니라 자정 기준 분으로 하는 이유는 ODsay가 심야편을
+     * {@code "24:10"}으로 주기 때문이다({@link OdsayClock}) — 그 표기는 {@code LocalTime}으로
+     * 읽히지 않고, 읽히지 않는 편 하나가 그 수단 후보 전체를 조회 실패로 만들었다.
+     * 24시 넘김 편은 1440 이상이라 기준 시각보다 항상 뒤에 오고, 정렬도 자연히 맨 뒤다.
      */
     private List<TransitCandidateResDTO.Departure> afterReference(
             List<TransitCandidateResDTO.Departure> all, LocalTime reference) {
+        int referenceMinutes = reference.getHour() * 60 + reference.getMinute();
         return all.stream()
-                .filter(d -> !LocalTime.parse(d.departureAt()).isBefore(reference))
-                .sorted(Comparator.comparing(d -> LocalTime.parse(d.departureAt())))
+                .filter(d -> OdsayClock.minutesOf(d.departureAt()) >= referenceMinutes)
+                .sorted(Comparator.comparingInt(d -> OdsayClock.minutesOf(d.departureAt())))
                 .toList();
     }
 
@@ -1082,12 +1204,9 @@ public class TransitCandidateServiceImpl implements TransitCandidateService {
         };
     }
 
+    /** 자정을 넘는 편(23:30 출발 05:10 도착)도, 24시 넘김 표기("24:10")도 {@link OdsayClock}이 다룬다 */
     private int minutesBetween(String departureAt, String arrivalAt) {
-        LocalTime departure = LocalTime.parse(departureAt);
-        LocalTime arrival = LocalTime.parse(arrivalAt);
-        int minutes = (int) Duration.between(departure, arrival).toMinutes();
-        // 자정을 넘는 편(23:30 출발 05:10 도착)은 음수가 나온다
-        return minutes < 0 ? minutes + (int) Duration.ofDays(1).toMinutes() : minutes;
+        return OdsayClock.minutesBetween(departureAt, arrivalAt);
     }
 
     /**
@@ -1263,7 +1382,9 @@ public class TransitCandidateServiceImpl implements TransitCandidateService {
             List<OdsayRouteResponse.Path> paths,
             boolean transitRequested,
             List<Candidate> roadCandidates,
-            boolean noRoute
+            boolean noRoute,
+            /** ODsay가 700m 이내라 경로를 주지 않았다 — 걸어갈 거리다({@link RouteLookup}) */
+            boolean tooClose
     ) {
 
         /**

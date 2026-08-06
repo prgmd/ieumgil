@@ -76,10 +76,6 @@ public class Project extends BaseTimeEntity {
     /** 완료 시각. PLANNING으로 되돌리면 null */
     private LocalDateTime doneAt;
 
-    /** 카드 썸네일 그라데이션 키 */
-    @Column(length = 30)
-    private String themeColor;
-
     /**
      * 챗봇이 저장하는 여행 키워드. 대시보드 스냅샷 응답에 그대로 실린다.
      *

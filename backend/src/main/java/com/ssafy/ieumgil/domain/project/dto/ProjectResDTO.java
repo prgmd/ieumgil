@@ -42,8 +42,7 @@ public class ProjectResDTO {
             String destination,
             Integer budgetHeadcount,
             List<TransportPref> transportPrefs,
-            ProjectStatus status,
-            String themeColor
+            ProjectStatus status
     ) {
     }
 
@@ -74,8 +73,7 @@ public class ProjectResDTO {
             Integer budgetHeadcount,
             Integer targetBudget,
             List<String> keywords,
-            ProjectStatus status,
-            String themeColor
+            ProjectStatus status
     ) {
     }
 

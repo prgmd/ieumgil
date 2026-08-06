@@ -1,5 +1,10 @@
 import { create } from "zustand";
-import { getMe, loginWithKakao, logout } from "../../features/auth/api/authApi";
+import {
+  getMe,
+  loginWithKakao,
+  logout,
+  withdraw,
+} from "../../features/auth/api/authApi";
 import { tokenStorage } from "../util/tokenStorage";
 
 /**
@@ -98,6 +103,19 @@ export const useAuthStore = create((set) => ({
     await logout();
     // 서버가 refreshToken 쿠키를 만료시키고, 프론트는 accessToken 을 지운다.
     // (이걸 빼면 ProtectedRoute·useAuth 가 계속 로그인 상태로 판단한다.)
+    tokenStorage.clear();
+    set({ currentUser: null, status: "idle", error: null });
+  },
+
+  /**
+   * 회원 탈퇴. 성공하면 로그아웃과 같은 뒷정리를 한다 — 서버가 쿠키·refreshToken·
+   * WS 세션을 정리하고, 여기서 accessToken 과 상태를 비운다.
+   *
+   * 실패는 삼키지 않고 던진다(logout 과 다른 점): 계정이 그대로인데 로그아웃만
+   * 시키면 사용자는 탈퇴된 줄 알고 떠난다. 호출부가 사유를 알리고 화면을 유지한다.
+   */
+  withdraw: async () => {
+    await withdraw();
     tokenStorage.clear();
     set({ currentUser: null, status: "idle", error: null });
   },
