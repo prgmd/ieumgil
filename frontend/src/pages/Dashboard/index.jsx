@@ -33,6 +33,9 @@ import {
   dayNoOf,
   dayKeysOf,
   dayDate,
+  spilloversInto,
+  spilloverFloorOf,
+  regroupChainsByOffset,
 } from "./dashboardHelpers";
 import { useKakaoMap } from "./hooks/useKakaoMap";
 import { useBudget } from "./hooks/useBudget";
@@ -206,11 +209,16 @@ const persistMovedOffsets = (chainIds, prevItems, nextItems, excludeId) => {
 
 /**
  * 체인 위 블록들의 겹침을 해소한다. 시각은 모두 절대 오프셋(Day 1 00:00 기준 분)이라
- * Day 경계나 "그 Day 의 시작 시각" 같은 바닥 개념이 없다 — 겹치지 않는 블록은
- * 제자리에 두고(공백 보존), 겹치는 블록만 앞 블록 끝까지 뒤로 민다.
+ * 겹치지 않는 블록은 제자리에 두고(공백 보존), 겹치는 블록만 앞 블록 끝까지 뒤로 민다.
  * fixedId 가 있으면 그 블록만 고정하고 나머지가 비켜난다.
+ *
+ * dayBase 는 지금 해소하는 Day 의 00:00(절대 분)이다. 이 값이 필요한 이유는
+ * 자정을 넘겨 이어지는 블록 때문이다 — Day 1 23:30 에 시작해 Day 2 05:00 에
+ * 끝나는 블록은 한 행이고 chains["d1"] 에만 있으므로, Day 2 를 해소할 때
+ * dayChain 만 봐서는 그 꼬리가 보이지 않는다. 예전 두-행 모델에는 Day 2 쪽에
+ * "(이어서)" 행이 실재해 자연히 보였다.
  */
-const resolveOverlaps = (currentItems, dayChain, fixedId) => {
+const resolveOverlaps = (currentItems, dayChain, fixedId, dayBase) => {
   let newItems = { ...currentItems };
   const others = dayChain.filter((id) => id !== fixedId);
   others.sort((a, b) => newItems[a].startMins - newItems[b].startMins);
@@ -218,8 +226,11 @@ const resolveOverlaps = (currentItems, dayChain, fixedId) => {
   const fixedStart = fixedId ? newItems[fixedId].startMins : -1;
   const fixedEnd = fixedId ? fixedStart + newItems[fixedId].dur : -1;
 
-  // 절대 오프셋은 음수가 될 수 없어 보드 원점(Day 1 00:00)이 곧 바닥이다
-  let lastEnd = 0;
+  // 이 Day 의 바닥은 00:00 이거나, 자정을 넘어온 블록이 있으면 그 블록의 끝이다.
+  // 그 블록은 다른 Day 의 체인에 있으므로 dayChain 이 아니라 보드 전체를 훑는다
+  // (spilloverFloorOf). 드롭 클램프도 같은 함수를 쓴다 — 두 벌로 계산하면
+  // 미리보기와 확정이 갈라진다.
+  let lastEnd = spilloverFloorOf(currentItems, dayBase, fixedId);
 
   others.forEach((id) => {
     let start = Math.max(lastEnd, newItems[id].startMins);
@@ -946,6 +957,7 @@ export function DashboardPage() {
           newItems,
           rebuilt,
           null,
+          (dayNoOf(dayKey) - 1) * blockApi.MINUTES_PER_DAY,
         );
 
         setBulkTransitPicker(null);
@@ -953,7 +965,12 @@ export function DashboardPage() {
         // 낙관 적용 — 교통 블록이 뒤를 밀어 24:00 을 넘겨도 그대로 둔다.
         // 절대 오프셋에선 1440 을 넘긴 자리가 곧 다음 Day 다(쪼갤 게 없다).
         setItems(resolvedItems);
-        setChains({ ...chains, [dayKey]: newChain });
+        setChains(
+          regroupChainsByOffset(
+            { ...chains, [dayKey]: newChain },
+            resolvedItems,
+          ),
+        );
 
         // ── 서버 반영 (5.5단계): 기존 생성분 삭제 → 밀린 실블록 시각 저장 →
         //    새 교통 블록 생성 → 로컬 임시 id 를 서버 blockId 로 교체 ──
@@ -1130,12 +1147,18 @@ export function DashboardPage() {
           newItems,
           currentChain,
           null,
+          (dayNoOf(dayKey) - 1) * blockApi.MINUTES_PER_DAY,
         );
 
         // 낙관 적용 — 교통 블록이 뒤를 밀어 24:00 을 넘겨도 그대로 둔다.
         // 절대 오프셋에선 1440 을 넘긴 자리가 곧 다음 Day 다(쪼갤 게 없다).
         setItems(resolvedItems);
-        setChains({ ...chains, [dayKey]: newChain });
+        setChains(
+          regroupChainsByOffset(
+            { ...chains, [dayKey]: newChain },
+            resolvedItems,
+          ),
+        );
 
         // ── 서버 반영 (5.5단계): 밀린 이웃 위치 저장 → 생성 → id 교체 ──
         try {
@@ -1551,6 +1574,7 @@ export function DashboardPage() {
         { ...items, [targetId]: patched },
         chains[activeDay],
         targetId,
+        dayBase,
       );
     }
 
@@ -1576,7 +1600,12 @@ export function DashboardPage() {
         );
 
         setItems(resolved.newItems);
-        setChains((prev) => ({ ...prev, [activeDay]: resolved.newChain }));
+        setChains((prev) =>
+          regroupChainsByOffset(
+            { ...prev, [activeDay]: resolved.newChain },
+            resolved.newItems,
+          ),
+        );
       } else {
         setItems({ ...items, [targetId]: patched });
       }
@@ -1729,6 +1758,7 @@ export function DashboardPage() {
         { ...items, [block.id]: merged },
         chains[dayKey],
         block.id,
+        (blockDayNo - 1) * blockApi.MINUTES_PER_DAY,
       );
     }
 
@@ -1752,7 +1782,12 @@ export function DashboardPage() {
           block.id,
         );
         setItems(resolved.newItems);
-        setChains((prev) => ({ ...prev, [dayKey]: resolved.newChain }));
+        setChains((prev) =>
+          regroupChainsByOffset(
+            { ...prev, [dayKey]: resolved.newChain },
+            resolved.newItems,
+          ),
+        );
       } else {
         setItems((prev) =>
           prev[block.id] ? { ...prev, [block.id]: merged } : prev,
@@ -1947,6 +1982,7 @@ export function DashboardPage() {
           updatedSnapshot,
           chains[activeDay],
           resizingState.id,
+          dayBase,
         );
         return newItems;
       });
@@ -1954,6 +1990,11 @@ export function DashboardPage() {
 
     const handleGlobalClick = () => {
       persistResize(resizingState); // fire-and-forget — 실패는 내부에서 reload 롤백
+      // 리사이즈도 이웃을 자정 너머로 민다. 소속 재배치는 끌기가 끝난 뒤에 한 번만
+      // 한다 — mousemove 마다 옮기면 끌던 중에 카드가 다른 Day 로 사라지고,
+      // persistResize 가 chains[activeDay] 로 저장 대상을 고르므로 밀린 블록의
+      // 위치가 저장되지 않는다. persistResize 는 위에서 이미 옛 소속을 읽었다.
+      setChains((prev) => regroupChainsByOffset(prev, itemsRef.current));
       setResizingState(null);
     };
     window.addEventListener("mousemove", handleMouseMove);
@@ -1966,7 +2007,7 @@ export function DashboardPage() {
       window.removeEventListener("mousemove", handleMouseMove);
       window.removeEventListener("click", handleGlobalClick);
     };
-  }, [resizingState, activeDay, chains, persistResize]);
+  }, [resizingState, activeDay, dayBase, chains, persistResize]);
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
@@ -2056,10 +2097,15 @@ export function DashboardPage() {
         const dur = items[activeIdLocal]?.dur || 60; // 기본 소요시간 60분
         // 시작은 보고 있는 Day 안에 머문다. 끝은 자정을 넘겨도 막지 않는다 —
         // 절대 오프셋에선 넘친 꼬리가 그대로 다음 Day 위에 놓인다.
-        dropMins = Math.max(
-          timelineStart,
-          Math.min(dropMins, timelineEnd - SNAP),
-        );
+        //
+        // 바닥은 00:00 이 아니라 "자정을 넘어온 블록의 끝"이다(화면의 .tl-spill
+        // 띠가 덮은 구간). 겹침 해소가 어차피 그 아래로 밀어낼 자리라, 여기서
+        // 같은 값으로 잡아 두어야 미리보기(고스트)와 확정 위치가 일치한다.
+        // 옮기는 블록 자신은 제외한다 — 제 꼬리에 제가 막히면 안 된다.
+        // 한 Day 를 통째로 덮는 블록(24시간 초과)이면 바닥이 24:00 을 넘어서고,
+        // 놓인 블록은 그 끝(=다음 Day)으로 내려간다 — 이 Day 에는 빈 시간이 없다.
+        const floorMins = spilloverFloorOf(items, dayBase, activeIdLocal);
+        dropMins = Math.max(floorMins, Math.min(dropMins, timelineEnd - SNAP));
         return { region: "timeline", dropMins, dur };
       }
 
@@ -2069,7 +2115,7 @@ export function DashboardPage() {
       if (active.data?.current?.from === "search") return { region: null };
       return { region: "discard" };
     },
-    [pool, items, timelineStart, timelineEnd],
+    [pool, items, timelineStart, timelineEnd, dayBase],
   );
 
   // 렌더에서 쓰는 드래그 출처 정보({ from, place })는 state 로 둔다 —
@@ -2289,6 +2335,7 @@ export function DashboardPage() {
         updatedItems,
         currentDayList,
         activeIdLocal,
+        dayBase,
       );
 
       // 낙관 적용 — 밀린 이웃이 24:00 을 넘겨도 그대로 둔다.
@@ -2301,7 +2348,7 @@ export function DashboardPage() {
             : chain.filter((id) => id !== activeIdLocal);
       }
       setItems(newItems);
-      setChains(nextChains);
+      setChains(regroupChainsByOffset(nextChains, newItems));
       if (isFromPool)
         setPool((prev) => prev.filter((id) => id !== activeIdLocal));
 
@@ -2467,6 +2514,7 @@ export function DashboardPage() {
       tempItems,
       tempChain,
       activeId,
+      dayBase,
     );
     displayItems = newItems;
     displayChain = newChain;
@@ -2489,6 +2537,13 @@ export function DashboardPage() {
     // 수 있는데, 이 배열의 "다음 항목"이 이동 버튼(🚗) 위치·간격과 boundTop 의
     // 기준이라 시간이 곧 순서여야 한다 (버튼이 엉뚱한 높이에 그려지던 버그)
     .sort((a, b) => a.startMins - b.startMins);
+
+  // 자정을 넘어 이 Day 로 이어지는 블록들 — 앞 Day 의 체인에 있는 한 행이라
+  // 이 Day 의 카드 목록(activeDayItems)에는 없다. 그대로 두면 Day 2 의 새벽이
+  // 텅 빈 것처럼 보여서(예전 두-행 모델엔 "(이어서)" 행이 있었다) 읽기 전용
+  // 띠로만 그린다. 상호작용하는 목록과 섞지 않는 이유가 이것이다 —
+  // 이 목록은 오직 렌더 재료이고, 체인·블록 수·예산·교통 짝짓기에는 끼지 않는다.
+  const spilloverBands = spilloversInto(displayItems, dayBase, activeId);
 
   // 편집 배지에 쓸 이름 — 락 소유자가 멤버 목록에 없으면(탈퇴 직후 등) 뭉뚱그린다
   const nicknameOf = (memberId) =>
@@ -2726,6 +2781,33 @@ export function DashboardPage() {
                           <div className="tl-mark-line" />
                         </div>
                       ))}
+                      {/* 앞 Day 에서 자정을 넘어온 블록 — 카드가 아니라 띠다.
+                          이 Day 의 00:00 에서 그 블록이 끝나는 시각까지 덮는다.
+                          클릭·드래그·리사이즈 모두 없다(.tl-bg 가 pointer-events:none) —
+                          실물은 앞 Day 에 있고 여기 있는 건 그 그림자일 뿐이다.
+                          하루를 통째로 덮는 블록(24시간 초과)이면 자정에서 잘라
+                          이 Day 를 가득 채우고, 라벨이 "온종일 이어짐"으로 바뀐다. */}
+                      {spilloverBands.map((band) => (
+                        <div
+                          key={`spill-${band.id}`}
+                          className="tl-spill"
+                          style={{
+                            "--dc": catOf(band.item).hex,
+                            height: `${(Math.min(band.endMins, timelineEnd) - timelineStart) * PX}px`,
+                          }}
+                        >
+                          <span className="tl-spill-label">
+                            <span className="tl-spill-name">
+                              {band.item.name}
+                            </span>
+                            <span className="tl-spill-time">
+                              {band.endMins >= timelineEnd
+                                ? `Day ${blockApi.dayNoOfOffset(band.item.startMins)} 에서 이어짐 · 온종일`
+                                : `Day ${blockApi.dayNoOfOffset(band.item.startMins)} 에서 이어짐 · ${fmtTime(band.endMins)} 까지`}
+                            </span>
+                          </span>
+                        </div>
+                      ))}
                       {dragPreview?.region === "timeline" && draggedItem && (
                         <div
                           className="tl-ghost"
@@ -2751,10 +2833,20 @@ export function DashboardPage() {
                       }}
                     >
                       {activeDayItems.map((data, index) => {
+                        // 위 모서리를 끌어올릴 수 있는 한계. 앞 카드가 있으면 그
+                        // 끝이고, 첫 카드면 이 Day 의 바닥이다 — 00:00 이 아니라
+                        // 자정을 넘어온 블록의 끝(화면의 .tl-spill 띠가 덮은 구간).
+                        // 드롭 클램프와 같은 헬퍼를 써서 "이어지는 블록보다 먼저
+                        // 시작하는 것은 없다"가 드롭·리사이즈 양쪽에 똑같이 선다.
+                        // 이 값이 리사이즈 핸들러의 유일한 하한이라(resizingState.
+                        // boundTop) 여기만 올리면 미리보기와 확정이 갈라지지 않는다.
                         const boundTop =
                           index > 0
                             ? activeDayItems[index - 1].endMins
-                            : timelineStart;
+                            : Math.max(
+                                timelineStart,
+                                spilloverFloorOf(displayItems, dayBase, data.id),
+                              );
 
                         const nextData = activeDayItems[index + 1];
                         const showGapBtn =
