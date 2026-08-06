@@ -207,13 +207,15 @@ class ChatbotCommandServiceImplTest {
     }
 
     @Test
-    void skipsFestivalToolWhenDestinationUnmatched() {
+    void registersFestivalToolEvenWhenDestinationNotAProvince() {
+        // 시/도로 매칭 안 되는(해외) 목적지여도 목적지·기간만 있으면 툴은 등록된다.
+        // 어느 시/도인지의 판정은 호출 시점에 모델이 준 region 인자로 하며, 여기서 게이팅하지 않는다.
         Project project = Project.builder()
                 .destination("도쿄")
                 .startDate(LocalDate.of(2026, 8, 1))
                 .endDate(LocalDate.of(2026, 8, 3))
                 .build();
-        assertThat(chatbotCommandService.resolveFestivalTool(Optional.of(project), new CandidateCollector())).isEmpty();
+        assertThat(chatbotCommandService.resolveFestivalTool(Optional.of(project), new CandidateCollector())).isPresent();
     }
 
     @Test

@@ -9,7 +9,6 @@ import com.ssafy.ieumgil.domain.chatbot.tool.CandidateCollector;
 import com.ssafy.ieumgil.domain.chatbot.tool.TaxiRouteTool;
 import com.ssafy.ieumgil.domain.chatbot.tool.TrainScheduleTool;
 import com.ssafy.ieumgil.domain.chatbot.tool.WalkingRouteTool;
-import com.ssafy.ieumgil.domain.festival.RegionCode;
 import com.ssafy.ieumgil.domain.festival.entity.Festival;
 import com.ssafy.ieumgil.domain.festival.service.FestivalQueryService;
 import com.ssafy.ieumgil.domain.chatbot.ChatbotMode;
@@ -44,6 +43,7 @@ import java.util.Properties;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyDouble;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -96,6 +96,15 @@ class ChatbotToolCallingRegressionTest {
 		verify(mocks.placeQueryService, never()).getWalkingRoute(anyDouble(), anyDouble(), anyDouble(), anyDouble());
 		verify(mocks.placeQueryService, never()).getTaxiRoute(anyDouble(), anyDouble(), anyDouble(), anyDouble());
 		verify(mocks.trainScheduleProvider, never()).findSchedule(any(), any());
+	}
+
+	@Test
+	void modelMapsCityDestinationToProvince_forFestivalRequest() throws IOException {
+		// 전주는 광역명이 아니라 시(市)다 — 모델이 전북(코드 52)으로 매핑해 region 인자를 넘겨야
+		// 축제 조회가 나간다. 시·읍면리 목적지가 축제 툴을 못 쓰던 버그의 회귀 가드다.
+		ToolMocks mocks = runAllTools("전주", "전주에서 3박 4일 여행하는데 이 근처 축제나 행사 추천해줘.");
+
+		verify(mocks.festivalQueryService).findByRegionAndDateRange(eq("52"), any(), any());
 	}
 
 	@Test
@@ -193,6 +202,10 @@ class ChatbotToolCallingRegressionTest {
 	 * GMS_API_KEY가 없으면 assumeTrue로 스킵된다.
 	 */
 	private ToolMocks runAllTools(String userText) throws IOException {
+		return runAllTools(DESTINATION, userText);
+	}
+
+	private ToolMocks runAllTools(String promptDestination, String userText) throws IOException {
 		String apiKey = readGmsApiKeyFromDotenv();
 		Assumptions.assumeTrue(apiKey != null && !apiKey.isBlank(), "GMS_API_KEY 없음 — .env 확인 필요");
 
@@ -203,7 +216,7 @@ class ChatbotToolCallingRegressionTest {
 		// 프로덕션 프롬프트를 바꿔도 이 회귀 테스트가 영향을 검증하지 못했다.
 		String systemPrompt = ChatbotPrompt.SYSTEM
 				+ ChatbotPrompt.modeTail(ChatbotMode.GENERAL)
-				+ TripContextBuilder.build(regressionProject(), 4);
+				+ TripContextBuilder.build(regressionProject(promptDestination), 4);
 		Prompt prompt = new Prompt(List.of(new SystemMessage(systemPrompt), new UserMessage(userText)));
 		ChatClient.builder(buildGmsChatModel(apiKey)).build()
 				.prompt(prompt)
@@ -215,9 +228,9 @@ class ChatbotToolCallingRegressionTest {
 	}
 
 	/** 실제 서비스가 주입하는 것과 같은 여행 메타데이터를 만든다 */
-	private Project regressionProject() {
+	private Project regressionProject(String destination) {
 		return Project.builder()
-				.destination(DESTINATION)
+				.destination(destination)
 				.startDate(TRIP_START)
 				.endDate(TRIP_END)
 				.budgetHeadcount(4)
@@ -284,7 +297,7 @@ class ChatbotToolCallingRegressionTest {
 				new BusScheduleTool(mocks.busScheduleProvider),
 				new FlightScheduleTool(mocks.flightScheduleProvider),
 				new FestivalRecommendationTool(
-						RegionCode.findByName(DESTINATION).orElseThrow(), TRIP_START, TRIP_END, mocks.festivalQueryService, new CandidateCollector())
+						TRIP_START, TRIP_END, mocks.festivalQueryService, new CandidateCollector())
 		};
 	}
 

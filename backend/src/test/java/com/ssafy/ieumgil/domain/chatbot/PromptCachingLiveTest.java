@@ -16,7 +16,6 @@ import com.ssafy.ieumgil.domain.chatbot.tool.RequestScopedBoard;
 import com.ssafy.ieumgil.domain.chatbot.tool.TaxiRouteTool;
 import com.ssafy.ieumgil.domain.chatbot.tool.TrainScheduleTool;
 import com.ssafy.ieumgil.domain.chatbot.tool.WalkingRouteTool;
-import com.ssafy.ieumgil.domain.festival.RegionCode;
 import com.ssafy.ieumgil.domain.festival.service.FestivalQueryService;
 import com.ssafy.ieumgil.domain.place.service.PlaceQueryService;
 import com.ssafy.ieumgil.domain.project.entity.Project;
@@ -158,7 +157,7 @@ class PromptCachingLiveTest {
                 new TrainScheduleTool(trainProvider),
                 new BusScheduleTool(busProvider),
                 new FlightScheduleTool(flightProvider),
-                new FestivalRecommendationTool(RegionCode.JEJU,
+                new FestivalRecommendationTool(
                         LocalDate.of(2026, 10, 1), LocalDate.of(2026, 10, 3),
                         festivalQueryService, collector)
         };
