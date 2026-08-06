@@ -4,6 +4,14 @@ import { useCallback, useEffect, useRef, useState } from "react";
 // 서로 다른 NAT 뒤의 두 사용자 간 연결이 안 되면 이게 원인이다(TURN 필요).
 const ICE_SERVERS = [{ urls: "stun:stun.l.google.com:19302" }];
 
+// 발화 감지 — 내 스트림은 memberId 대신 이 키로 담는다(내 id 를 알기 전에도 붙는다)
+const SELF_KEY = "me";
+// 말하는 중 판정 문턱(파형 RMS). 낮추면 숨소리·키보드에도 링이 켜지고,
+// 높이면 조용히 말하는 사람이 안 잡힌다 — 실측으로 이 값이 무난했다.
+const SPEAKING_RMS = 0.02;
+/** 소리가 끊긴 뒤에도 링을 유지하는 시간 — 음절 사이 침묵의 깜빡임 방지 */
+const SPEAKING_HOLD_MS = 400;
+
 /** 이 시간 안에 연결이 수립되지 않은 피어는 걷어내고 다시 제안한다(시그널 유실 흡수) */
 const RETRY_MS = 8000;
 
@@ -59,6 +67,8 @@ export function useVoiceChat({
   const [speakerOn, setSpeakerOn] = useState(true);
   const [connectedIds, setConnectedIds] = useState(() => new Set());
   const [retryTick, setRetryTick] = useState(0); // 피어 청소 후 재제안 유발
+  // 지금 말하고 있는 멤버(나 포함) — 아바타 링 표시용
+  const [speakingIds, setSpeakingIds] = useState(() => new Set());
 
   const localStreamRef = useRef(null);
   const peersRef = useRef(new Map()); // memberId → { pc, audioEl, pendingIce, createdAt }
@@ -67,6 +77,55 @@ export function useVoiceChat({
   const joinedRef = useRef(false);
   const micOnRef = useRef(micOn); // 스트림이 늦게 도착해도 현재 토글 상태를 적용
   const speakerOnRef = useRef(speakerOn); // 토글 후에 생기는 새 피어에도 적용
+
+  // ── 발화 감지 (Web Audio) ──
+  // 스트림마다 analyser 를 달고 한 타이머가 전부를 훑는다 — 스트림마다 루프를
+  // 돌리면 인원수만큼 타이머가 늘고, rAF 로 60fps 검사하면 링 하나 켜자고
+  // 매 프레임 계산하게 된다. 120ms 주기면 사람 눈에는 즉각적이다.
+  const audioCtxRef = useRef(null);
+  const analysersRef = useRef(new Map()); // key(memberId | "me") → {analyser, source, data, lastLoudAt}
+
+  const attachAnalyser = useCallback((key, stream) => {
+    if (!stream || analysersRef.current.has(key)) return;
+    try {
+      const Ctx = window.AudioContext ?? window.webkitAudioContext;
+      if (!Ctx) return; // 미지원 브라우저 — 링만 없고 통화는 정상
+      audioCtxRef.current ??= new Ctx();
+      const ctx = audioCtxRef.current;
+      // 자동재생 정책으로 suspended 로 생성될 수 있다 — 마이크 사용 중이면 허용된다
+      if (ctx.state === "suspended") ctx.resume().catch(() => {});
+
+      const source = ctx.createMediaStreamSource(stream);
+      const analyser = ctx.createAnalyser();
+      analyser.fftSize = 512;
+      source.connect(analyser); // analyser 를 destination 에 잇지 않는다 — 재생은 audioEl 몫
+      analysersRef.current.set(key, {
+        analyser,
+        source,
+        data: new Uint8Array(analyser.fftSize),
+        lastLoudAt: 0,
+      });
+    } catch {
+      /* 분석 실패는 부가 기능의 문제일 뿐 — 통화는 그대로 */
+    }
+  }, []);
+
+  const detachAnalyser = useCallback((key) => {
+    const entry = analysersRef.current.get(key);
+    if (!entry) return;
+    analysersRef.current.delete(key);
+    try {
+      entry.source.disconnect();
+    } catch {
+      /* 이미 끊김 */
+    }
+    setSpeakingIds((prev) => {
+      if (!prev.has(key)) return prev;
+      const next = new Set(prev);
+      next.delete(key);
+      return next;
+    });
+  }, []);
 
   const setPeerConnected = useCallback((memberId, connected) => {
     if (disposedRef.current) return;
@@ -91,9 +150,10 @@ export function useVoiceChat({
       }
       peer.audioEl.pause();
       peer.audioEl.srcObject = null;
+      detachAnalyser(memberId);
       setPeerConnected(memberId, false);
     },
-    [setPeerConnected],
+    [setPeerConnected, detachAnalyser],
   );
 
   const createPeer = useCallback(
@@ -118,15 +178,20 @@ export function useVoiceChat({
         if (e.candidate) sendVoiceSignal(memberId, "ICE", e.candidate.toJSON());
       };
       pc.ontrack = (e) => {
-        audioEl.srcObject = e.streams[0] ?? new MediaStream([e.track]);
+        const remoteStream = e.streams[0] ?? new MediaStream([e.track]);
+        audioEl.srcObject = remoteStream;
         audioEl.play().catch(() => {});
+        // 상대 목소리 크기를 재서 "말하는 중" 링을 켠다.
+        // 내 스피커 음소거(speakerOn=false)와 무관하다 — 안 듣는 것과 상대가
+        // 말하지 않는 것은 다르다. 스트림은 그대로 오므로 링은 정직하게 뜬다.
+        attachAnalyser(memberId, remoteStream);
       };
       pc.onconnectionstatechange = () => {
         setPeerConnected(memberId, pc.connectionState === "connected");
       };
       return peer;
     },
-    [sendVoiceSignal, setPeerConnected],
+    [sendVoiceSignal, setPeerConnected, attachAnalyser],
   );
 
   const offerTo = useCallback(
@@ -244,6 +309,8 @@ export function useVoiceChat({
           t.enabled = micOnRef.current;
         });
         localStreamRef.current = stream;
+        // 내 목소리도 잰다 — 마이크를 끄면 트랙이 무음이라 링도 자연히 꺼진다
+        attachAnalyser(SELF_KEY, stream);
         joinedRef.current = true;
         setJoined(true);
       })
@@ -259,10 +326,51 @@ export function useVoiceChat({
       disposedRef.current = true;
       joinedRef.current = false;
       for (const id of [...peers.keys()]) closePeer(id);
+      detachAnalyser(SELF_KEY);
       localStreamRef.current?.getTracks().forEach((t) => t.stop());
       localStreamRef.current = null;
+      // AudioContext 는 탭당 개수 제한이 있다 — 대시보드를 드나들 때마다 새로
+      // 만들고 안 닫으면 몇 번 만에 생성이 실패한다
+      audioCtxRef.current?.close().catch(() => {});
+      audioCtxRef.current = null;
     };
-  }, [enabled, myId, closePeer]);
+  }, [enabled, myId, closePeer, attachAnalyser, detachAnalyser]);
+
+  // 발화 감지 루프 — 붙어 있는 analyser 전부를 한 타이머로 훑는다.
+  // 결과가 바뀔 때만 setState 하므로, 아무도 말하지 않는 동안은 리렌더가 없다.
+  useEffect(() => {
+    if (!joined) return undefined;
+    const timer = setInterval(() => {
+      const now = Date.now();
+      const speaking = new Set();
+
+      for (const [key, entry] of analysersRef.current) {
+        entry.analyser.getByteTimeDomainData(entry.data);
+        // 파형의 중앙(128)에서 벗어난 정도의 RMS — 소리가 없으면 0에 수렴한다
+        let sum = 0;
+        for (let i = 0; i < entry.data.length; i += 1) {
+          const dev = (entry.data[i] - 128) / 128;
+          sum += dev * dev;
+        }
+        if (Math.sqrt(sum / entry.data.length) > SPEAKING_RMS) {
+          entry.lastLoudAt = now;
+        }
+        // 여운을 둔다 — 음절 사이의 짧은 침묵마다 링이 깜빡이면 더 산만하다
+        if (now - entry.lastLoudAt < SPEAKING_HOLD_MS) speaking.add(key);
+      }
+
+      setSpeakingIds((prev) => {
+        if (
+          prev.size === speaking.size &&
+          [...speaking].every((k) => prev.has(k))
+        ) {
+          return prev;
+        }
+        return speaking;
+      });
+    }, 120);
+    return () => clearInterval(timer);
+  }, [joined]);
 
   // 권한 응답을 기다리는 동안 보관해 둔 시그널을 순서대로 처리한다
   useEffect(() => {
@@ -338,5 +446,9 @@ export function useVoiceChat({
     toggleSpeaker,
     connectedCount: connectedIds.size,
     connectedIds,
+    /** 지금 말하고 있는 상대 memberId 들 */
+    speakingIds,
+    /** 내가 말하는 중인지 — 내 스트림은 memberId 가 아니라 SELF_KEY 로 담긴다 */
+    selfSpeaking: speakingIds.has(SELF_KEY),
   };
 }

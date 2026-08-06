@@ -63,11 +63,17 @@ export function VoiceBar({ voice, voiceOpen, setVoiceOpen, currentUser, boardMem
                       }
                     : boardMembers.find((m) => m.memberId === id);
                   if (!member) return null;
+                  // 말하는 중이면 링 — 내 것은 memberId 가 아니라 selfSpeaking 이다
+                  const speaking = isMe
+                    ? voice.selfSpeaking
+                    : voice.speakingIds?.has(id);
                   return (
                     <i
                       key={id}
-                      className="voice-peer"
-                      title={isMe ? `${member.nickname} (나)` : member.nickname}
+                      className={`voice-peer ${speaking ? "is-speaking" : ""}`}
+                      title={`${member.nickname}${isMe ? " (나)" : ""}${
+                        speaking ? " · 말하는 중" : ""
+                      }`}
                     >
                       {member.profileImg?.startsWith("http") ? (
                         <img src={member.profileImg} alt="" />
@@ -87,7 +93,10 @@ export function VoiceBar({ voice, voiceOpen, setVoiceOpen, currentUser, boardMem
           여기서 읽는다 — 아이콘이 사라져도 상태는 알아야 한다. */}
       <button
         type="button"
-        className="voice-tab"
+        // 접어 둬도 "지금 누가 말한다"는 건 보여야 한다 — 탭 테두리가 링 역할
+        className={`voice-tab ${
+          voice.selfSpeaking || voice.speakingIds?.size > 0 ? "is-speaking" : ""
+        }`}
         onClick={() => setVoiceOpen((open) => !open)}
         aria-expanded={voiceOpen}
         title={voiceOpen ? "음성 컨트롤 접기" : "음성 컨트롤 펼치기"}

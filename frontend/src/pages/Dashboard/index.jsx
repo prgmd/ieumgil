@@ -3616,11 +3616,19 @@ export function DashboardPage() {
                         }
                       : boardMembers.find((m) => m.memberId === id);
                     if (!member) return null;
+                    // 말하는 중이면 링 — 내 것은 SELF_KEY 로 담기므로 따로 본다
+                    const speaking = isMe
+                      ? voice.selfSpeaking
+                      : voice.speakingIds.has(id);
                     return (
                       <i
                         key={id}
-                        className="voice-peer"
-                        title={isMe ? `${member.nickname} (나)` : member.nickname}
+                        className={`voice-peer ${speaking ? "is-speaking" : ""}`}
+                        title={
+                          isMe
+                            ? `${member.nickname} (나)${speaking ? " · 말하는 중" : ""}`
+                            : `${member.nickname}${speaking ? " · 말하는 중" : ""}`
+                        }
                       >
                         {member.profileImg?.startsWith("http") ? (
                           <img src={member.profileImg} alt="" />
@@ -3640,7 +3648,10 @@ export function DashboardPage() {
             여기서 읽는다 — 아이콘이 사라져도 상태는 알아야 한다. */}
         <button
           type="button"
-          className="voice-tab"
+          // 접어 둬도 "지금 누가 말한다"는 건 보여야 한다 — 탭 자체가 링을 띤다
+          className={`voice-tab ${
+            voice.selfSpeaking || voice.speakingIds.size > 0 ? "is-speaking" : ""
+          }`}
           onClick={() => setVoiceOpen((open) => !open)}
           aria-expanded={voiceOpen}
           title={voiceOpen ? "음성 컨트롤 접기" : "음성 컨트롤 펼치기"}
