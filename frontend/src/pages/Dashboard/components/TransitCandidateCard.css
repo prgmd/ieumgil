@@ -54,6 +54,11 @@
   font-size: 11px;
   color: #9c3b3b;
 }
+/* 재시도가 유효한 실패만 다른 색이다 — 경로 없음·운행 없음은 다시 눌러도 같은 답이라
+   같은 붉은색으로 두면 사용자가 계속 재시도한다 */
+.tcc-fail.is-retryable {
+  color: var(--ink3, #8a776a);
+}
 .tcc-dur,
 .tcc-fare,
 .tcc-interval {
@@ -131,6 +136,17 @@
 .tcc-dep-fare {
   font-size: 11.5px;
   color: var(--ink3, #8a776a);
+}
+.tcc-dep-wait {
+  font-size: 11.5px;
+  color: var(--ink3, #8a776a);
+}
+/* 연결편은 줄을 통째로 차지한다 — 첫 편 옆에 붙이면 어느 편의 환승인지 흐려진다 */
+.tcc-dep-conn {
+  flex-basis: 100%;
+  font-size: 11px;
+  color: var(--ink2, #6b5a4e);
+  padding-left: 2px;
 }
 .tcc-dep-labels {
   display: flex;

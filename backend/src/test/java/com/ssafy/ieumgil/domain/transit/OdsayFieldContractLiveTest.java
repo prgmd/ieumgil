@@ -2,6 +2,7 @@ package com.ssafy.ieumgil.domain.transit;
 
 import com.ssafy.ieumgil.domain.transit.client.DomesticAirport;
 import com.ssafy.ieumgil.domain.transit.client.OdsayClient;
+import com.ssafy.ieumgil.domain.transit.client.TransitApiCache;
 import com.ssafy.ieumgil.domain.transit.client.OdsayProperties;
 import com.ssafy.ieumgil.domain.transit.dto.OdsayRouteResponse;
 import com.ssafy.ieumgil.domain.transit.dto.TransitScheduleResDTO;
@@ -213,7 +214,7 @@ class OdsayFieldContractLiveTest {
 	void 고속버스_필드_계약() throws IOException {
 		String apiKey = readKeyFromDotenv("ODSAY_API_KEY");
 		Assumptions.assumeTrue(apiKey != null && !apiKey.isBlank(), "ODSAY_API_KEY 없음 — .env 확인 필요");
-		OdsayClient client = new OdsayClient(RestClient.builder(), new OdsayProperties(apiKey, BASE_URL));
+		OdsayClient client = new OdsayClient(RestClient.builder(), new OdsayProperties(apiKey, BASE_URL), TransitApiCache.disabled());
 		TransitScheduleQueryService scheduleQueryService = new TransitScheduleQueryServiceImpl(client);
 
 		Optional<TransitScheduleResDTO.TerminalSearchResult> seoul =
@@ -260,7 +261,7 @@ class OdsayFieldContractLiveTest {
 	private OdsayClient liveOdsayClient() throws IOException {
 		String key = readKeyFromDotenv("ODSAY_API_KEY");
 		Assumptions.assumeTrue(key != null && !key.isBlank(), "ODSAY_API_KEY 없음 — .env 확인 필요");
-		return new OdsayClient(RestClient.builder(), new OdsayProperties(key, BASE_URL));
+		return new OdsayClient(RestClient.builder(), new OdsayProperties(key, BASE_URL), TransitApiCache.disabled());
 	}
 
 	private TransitScheduleQueryService liveScheduleService() throws IOException {

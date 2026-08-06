@@ -103,7 +103,7 @@ class OdsayClientLiveTest {
 	private OdsayClient liveClient() throws IOException {
 		String key = readKeyFromDotenv("ODSAY_API_KEY");
 		Assumptions.assumeTrue(key != null && !key.isBlank(), "ODSAY_API_KEY 없음 — .env 확인 필요");
-		return new OdsayClient(RestClient.builder(), new OdsayProperties(key, BASE_URL));
+		return new OdsayClient(RestClient.builder(), new OdsayProperties(key, BASE_URL), TransitApiCache.disabled());
 	}
 
 	private String readKeyFromDotenv(String name) throws IOException {

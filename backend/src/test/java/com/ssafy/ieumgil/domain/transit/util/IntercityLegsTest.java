@@ -59,7 +59,8 @@ class IntercityLegsTest {
 
         assertThat(legs.legs()).hasSize(2);
         assertThat(legs.isTransfer()).isTrue();
-        assertThat(legs.mode()).isEqualTo(TransitMode.TRAIN);   // 첫 leg 기준
+        // 마지막 leg 기준이지만 기차 환승이라 첫 leg와 같은 대역이다 — pathType 11은 늘 그렇다
+        assertThat(legs.mode()).isEqualTo(TransitMode.TRAIN);
         // boardingPoint는 첫 leg의 승차 좌표, alightingPoint는 마지막 leg의 하차 좌표다 —
         // 둘을 뒤바꿔도(legs.get(0) ↔ legs.get(size-1)) 위 assertion은 안 걸린다
         assertThat(legs.boardingPoint()).isEqualTo(new IntercityLegs.Point(126.9673, 37.5299));
@@ -67,9 +68,11 @@ class IntercityLegsTest {
     }
 
     @Test
-    @DisplayName("복합 경로는 수단이 섞인다 — 대표는 첫 leg")
+    @DisplayName("복합 경로는 수단이 섞인다 — 대표는 목적지에 도달하는 마지막 leg다")
     void 복합_경로() {
-        // pathType 20: 기차 오송(3300302)→광주송정 + 항공 광주공항(3500008)→제주(3500003)
+        // pathType 20: 기차 오송(3300302)→광주송정 + 항공 광주공항(3500008)→제주(3500003).
+        // 첫 leg 기준으로 정하면 "제주행 기차"가 되어 존재하지 않는 이동수단을 제안하게 된다 —
+        // 제주에 닿는 수단은 항공이다.
         Path path = new Path(20,
                 new Info(220, null, null, 400000, null, null, null, "오송", "제주", null, 1),
                 List.of(
@@ -78,8 +81,43 @@ class IntercityLegsTest {
 
         IntercityLegs legs = IntercityLegs.of(path).orElseThrow();
 
-        assertThat(legs.mode()).isEqualTo(TransitMode.TRAIN);
-        assertThat(StationIdBands.modeOf(legs.legs().get(1).startID())).contains(TransitMode.AIR);
+        assertThat(legs.mode()).isEqualTo(TransitMode.AIR);
+        // 승·하차 지점은 대표 수단과 무관하다 — 승차는 첫 leg, 하차는 마지막 leg다
+        assertThat(legs.boardingPoint()).isEqualTo(new IntercityLegs.Point(127.3255, 36.6203));
+        assertThat(legs.alightingPoint()).isEqualTo(new IntercityLegs.Point(126.4930, 33.5107));
+        // 첫 leg의 수단은 여전히 기차다 — 시간표 조회는 leg마다 자기 수단으로 가야 한다
+        assertThat(StationIdBands.modeOf(legs.legs().get(0).startID())).contains(TransitMode.TRAIN);
+    }
+
+    @Test
+    @DisplayName("[실측] 단일 수단 경로(pathType 11·12·13)는 마지막 leg 기준으로도 대표 수단이 그대로다")
+    void 단일_수단_경로는_대표_수단이_바뀌지_않는다() throws IOException {
+        // 실측(2026-08-05, 서울→부산 19 · 서울→여수 22 · 대구→서울 18 · 안동→목포 18 · 제천→포항 20 ·
+        // 서울→안동 9 = 106경로): pathType 11·12·13은 leg가 2개여도 첫 leg와 마지막 leg의 역 ID
+        // 대역이 항상 같았다. 대역이 섞이는 것은 pathType 20뿐이다.
+        Path trainTransfer = new Path(11,   // 안동(3300164)→서울역 환승 → 목포(3300087). 둘 다 3300xxx
+                new Info(330, null, null, 400000, null, null, null, "안동", "목포", 60000, 2),
+                List.of(
+                        trainLeg(3300164, 3300128, 128.7294, 36.5684, 126.9707, 37.5546),
+                        trainLeg(3300128, 3300087, 126.9707, 37.5546, 126.3922, 34.8118)));
+        Path busTransfer = new Path(12,     // 센트럴시티(4000059)→환승(4000134) → 여수(4000064)
+                new Info(300, null, null, 380000, null, null, null, "서울", "여수", 40000, 2),
+                List.of(
+                        busLeg(4000059, 4000134, 127.0058, 37.5057, 127.1500, 35.9500),
+                        busLeg(4000134, 4000064, 127.1500, 35.9500, 127.6622, 34.7604)));
+
+        assertThat(IntercityLegs.of(trainTransfer).orElseThrow().mode()).isEqualTo(TransitMode.TRAIN);
+        assertThat(IntercityLegs.of(busTransfer).orElseThrow().mode()).isEqualTo(TransitMode.EXPRESS_BUS);
+
+        // 실측 픽스처의 시외 경로 전부에 대해 "대표 수단 == 첫 leg 대역"이 유지되는지 본다 —
+        // odsay-intercity.json에는 pathType 11·12·13만 있다(복합 20은 없다)
+        for (Path path : readFixture("odsay-intercity.json").result().path()) {
+            if (path.pathType() != 11 && path.pathType() != 12 && path.pathType() != 13) {
+                continue;
+            }
+            assertThat(IntercityLegs.of(path).orElseThrow().mode())
+                    .isEqualTo(StationIdBands.modeOf(path.subPath().get(0).startID()).orElseThrow());
+        }
     }
 
     @Test

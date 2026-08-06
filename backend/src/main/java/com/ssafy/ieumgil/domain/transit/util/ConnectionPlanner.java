@@ -4,7 +4,6 @@ import com.ssafy.ieumgil.domain.transit.dto.TransitCandidateResDTO.Connection;
 import com.ssafy.ieumgil.domain.transit.dto.TransitCandidateResDTO.Departure;
 import com.ssafy.ieumgil.domain.transit.dto.TransitCandidateResDTO.TransitMode;
 
-import java.time.LocalTime;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
@@ -79,8 +78,8 @@ public final class ConnectionPlanner {
         return first.toBuilder().connection(connection).build();
     }
 
+    /** ODsay는 심야편을 "24:10"으로 준다 — {@link OdsayClock}이 그 표기를 읽는다 */
     private static int minutesOf(String hhmm) {
-        LocalTime time = LocalTime.parse(hhmm);
-        return time.getHour() * 60 + time.getMinute();
+        return OdsayClock.minutesOf(hhmm);
     }
 }
