@@ -34,6 +34,7 @@ public class BlockReqDTO {
             String name,
 
             @Schema(description = "Day 1 00:00 기준 경과 분. null 이면 후보(POOL)", example = "1410")
+            @PositiveOrZero(message = "시작 오프셋은 0 이상이어야 합니다.")
             Integer startOffsetMinutes,
 
             @Schema(description = "정렬 키. 미지정 시 서버가 말단 키 부여", example = "a0")
@@ -95,6 +96,7 @@ public class BlockReqDTO {
     /** 블록 이동 (PATCH /api/blocks/{blockId}/position). startOffsetMinutes null = 후보(POOL)로 이동 */
     public record Move(
             @Schema(description = "Day 1 00:00 기준 경과 분. null 이면 후보(POOL)로 내린다")
+            @PositiveOrZero(message = "시작 오프셋은 0 이상이어야 합니다.")
             Integer startOffsetMinutes,
 
             @NotBlank(message = "orderKey는 필수입니다.")
