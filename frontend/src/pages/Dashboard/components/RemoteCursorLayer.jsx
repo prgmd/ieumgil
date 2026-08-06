@@ -12,12 +12,13 @@ const EXPIRE_MS = 5000;
  * 여기 가두면 이 레이어만 다시 그린다.
  *
  * 커서 메시지 계약(송신 측 handlePageCursorMove 와 짝) — area 로 좌표 공간을 구분한다:
- *   { area: "tl",   x: 타임라인 가로 비율(0~1), y: 분(minutes), dayNo }
+ *   { area: "tl",   x: 타임라인 가로 비율(0~1), y: 절대 분 오프셋, dayNo }
  *   { area: "page", x: 페이지 가로 비율(0~1),   y: 페이지 세로 비율(0~1), dayNo }
  *   { area: "view", dayNo }   ← 위치 없는 하트비트(Day 탭 표시용) — 커서를 안 건드린다
  *   { area: "leave", dayNo }  ← 대시보드 이탈 — 커서를 걷는다
  * "tl" 의 y 가 픽셀이 아니라 시각(분)인 이유: 상대와 내 스크롤·타임라인 시작이
- * 달라도 "같은 시간 위치"에 그려진다.
+ * 달라도 "같은 시간 위치"에 그려진다. 단위는 블록의 startOffsetMinutes 와 같은
+ * Day 1 00:00 기준 절대 분이다(하루 안 0~1439 가 아니다).
  *
  * 한 멤버의 커서는 한 레이어에만 존재한다 — 내 mode 와 다른 area 메시지가 오면
  * (다른 영역으로 이동) 이 레이어에서 걷는 것으로 이동을 표현한다.
@@ -29,6 +30,8 @@ const EXPIRE_MS = 5000;
  *   레이어에서도 그리지 않는다. 서로 다른 화면 위에 커서만 겹치면 "저 사람이 내
  *   화면을 가리키고 있다"는 착시가 생긴다(QA: 시작시간 부근에서 day 무관 노출)
  * @param {(memberId: number) => string} nicknameOf 커서에 붙일 이름표
+ * @param {number} timelineStart mode="tl" 의 기준선 — 활성 Day 00:00 의 절대 분 오프셋.
+ *   커서 y 도 같은 절대 공간이라 (y - timelineStart) 가 창 안 상대 분이 된다.
  */
 export function RemoteCursorLayer({
   register,

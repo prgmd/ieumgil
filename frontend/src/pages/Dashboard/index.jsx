@@ -275,7 +275,6 @@ const splitOverflowAtMidnight = (chainsIn, itemsIn, dayKeys) => {
     const resolved = resolveOverlaps(
       pulled,
       [...carried, ...(chains[nextKey] ?? [])],
-      0,
       null,
     );
     items = resolved.newItems;
@@ -356,7 +355,13 @@ const persistShiftedTimes = (chainIds, prevItems, nextItems, excludeId) => {
   );
 };
 
-const resolveOverlaps = (currentItems, dayChain, dayStartMins, fixedId) => {
+/**
+ * 체인 위 블록들의 겹침을 해소한다. 시각은 모두 절대 오프셋(Day 1 00:00 기준 분)이라
+ * Day 경계나 "그 Day 의 시작 시각" 같은 바닥 개념이 없다 — 겹치지 않는 블록은
+ * 제자리에 두고(공백 보존), 겹치는 블록만 앞 블록 끝까지 뒤로 민다.
+ * fixedId 가 있으면 그 블록만 고정하고 나머지가 비켜난다.
+ */
+const resolveOverlaps = (currentItems, dayChain, fixedId) => {
   let newItems = { ...currentItems };
   const others = dayChain.filter((id) => id !== fixedId);
   others.sort((a, b) => newItems[a].startMins - newItems[b].startMins);
@@ -364,7 +369,8 @@ const resolveOverlaps = (currentItems, dayChain, dayStartMins, fixedId) => {
   const fixedStart = fixedId ? newItems[fixedId].startMins : -1;
   const fixedEnd = fixedId ? fixedStart + newItems[fixedId].dur : -1;
 
-  let lastEnd = dayStartMins;
+  // 절대 오프셋은 음수가 될 수 없어 보드 원점(Day 1 00:00)이 곧 바닥이다
+  let lastEnd = 0;
 
   others.forEach((id) => {
     let start = Math.max(lastEnd, newItems[id].startMins);
@@ -437,7 +443,7 @@ function TimelineCard({
   endMins,
   resizingState,
   onResizeStart,
-  dayStartMins,
+  timelineStart,
   boundTop,
   onEditBlock,
   lockedBy,
@@ -471,7 +477,7 @@ function TimelineCard({
   };
 
   // 위치·높이는 시간 계산 결과라 인라인으로 남기고, 색·모양은 CSS(.slot/.card)가 쥔다.
-  const topPx = (startMins - dayStartMins) * PX;
+  const topPx = (startMins - timelineStart) * PX;
   const slotStyle = {
     "--dc": catStyle.hex,
     "--cb": catStyle.bg,
@@ -607,6 +613,14 @@ export function DashboardPage() {
   // 렌더 시점에 정하므로 "없는 Day 를 가리키는 한 프레임"이 생기지 않는다.
   const activeDay = dayKeys.includes(selectedDay) ? selectedDay : dayKeys[0];
   const activeDayIndex = Math.max(0, dayKeys.indexOf(activeDay));
+
+  // 타임라인 좌표계 = 블록의 startOffsetMinutes 와 같은 공간(Day 1 00:00 기준 절대 분).
+  // 보이는 창만 활성 Day 의 00:00~24:00 으로 잘라 쓰므로, 렌더 식은 전부
+  // (값 - timelineStart) * PX 꼴 그대로다 — 기준선만 Day 베이스로 옮긴다.
+  // dayKeys 가 비는 한 프레임에 dayNoOf 가 NaN 을 주면 좌표 전체가 NaN 이 되므로 Day 1 로 받친다.
+  const dayBase = ((dayNoOf(activeDay) || 1) - 1) * blockApi.MINUTES_PER_DAY;
+  const timelineStart = dayBase;
+  const timelineEnd = dayBase + blockApi.MINUTES_PER_DAY;
 
   // 보드 편집 상태 — 초기값은 비워 두고, 스냅샷이 도착하면 아래 시드 effect 가 채운다.
   const [items, setItems] = useState({});
@@ -1153,7 +1167,6 @@ export function DashboardPage() {
         const { newItems: resolvedItems, newChain } = resolveOverlaps(
           newItems,
           rebuilt,
-          0, // 타임라인은 00:00 부터 — 시작 시각 개념이 없어졌다
           null,
         );
 
@@ -1382,7 +1395,6 @@ export function DashboardPage() {
         const { newItems: resolvedItems, newChain } = resolveOverlaps(
           newItems,
           currentChain,
-          0, // 타임라인은 00:00 부터
           null,
         );
 
@@ -1847,7 +1859,6 @@ export function DashboardPage() {
       const { newItems, newChain } = resolveOverlaps(
         { ...items, [targetId]: patched },
         chains[activeDay],
-        0, // 타임라인은 00:00 부터
         targetId,
       );
       spilled = splitOverflowAtMidnight(
@@ -2057,7 +2068,6 @@ export function DashboardPage() {
       const { newItems, newChain } = resolveOverlaps(
         { ...items, [block.id]: merged },
         chains[dayKey],
-        0,
         block.id,
       );
       spilled = splitOverflowAtMidnight(
@@ -2315,7 +2325,6 @@ export function DashboardPage() {
         const { newItems, newChain } = resolveOverlaps(
           updatedSnapshot,
           chains[activeDay],
-          0, // 타임라인은 00:00 부터
           resizingState.id,
         );
         // 자정을 넘기는 이동량은 무시한다(정책 A) — 리사이즈가 자정 벽에서 멈춘다
@@ -2421,10 +2430,17 @@ export function DashboardPage() {
 
         const relativeY =
           topY - tlRect.top + (timelineDOMRef.current?.scrollTop || 0);
-        const calcMins = Math.round((relativeY - TL_PAD_TOP) / PX); // 0 = 00:00
+        // 픽셀은 창(활성 Day) 기준이라 절대 오프셋으로 되돌린다 — timelineStart = 이 Day 의 00:00
+        const calcMins =
+          timelineStart + Math.round((relativeY - TL_PAD_TOP) / PX);
         let dropMins = Math.round(calcMins / SNAP) * SNAP;
         const dur = items[activeIdLocal]?.dur || 60; // 기본 소요시간 60분
-        dropMins = Math.max(0, Math.min(dropMins, DAY_END - dur));
+        // 시작은 보고 있는 Day 안에 머문다. 끝은 자정을 넘겨도 막지 않는다 —
+        // 넘친 꼬리는 splitOverflowAtMidnight 가 다음 Day 로 이어 붙인다.
+        dropMins = Math.max(
+          timelineStart,
+          Math.min(dropMins, timelineEnd - SNAP),
+        );
         return { region: "timeline", dropMins, dur };
       }
 
@@ -2434,7 +2450,7 @@ export function DashboardPage() {
       if (active.data?.current?.from === "search") return { region: null };
       return { region: "discard" };
     },
-    [pool, items],
+    [pool, items, timelineStart, timelineEnd],
   );
 
   // 렌더에서 쓰는 드래그 출처 정보({ from, place })는 state 로 둔다 —
@@ -2656,7 +2672,6 @@ export function DashboardPage() {
       const { newItems, newChain } = resolveOverlaps(
         updatedItems,
         currentDayList,
-        0, // 타임라인은 00:00 부터
         activeIdLocal,
       );
 
@@ -2749,12 +2764,9 @@ export function DashboardPage() {
     }
   };
 
-  // Day 개수가 프로젝트 기간을 따라 바뀌므로, 동기화 effect 가 돌기 전 한 프레임 동안
-  // 아직 없는 Day 를 가리킬 수 있다 — 기본 09:00 으로 받쳐 NaN 좌표를 만들지 않는다.
-  // 타임라인은 항상 00:00~24:00 전체를 덮는다 — "시작 시각" 개념을 없앴다.
+  // 타임라인은 활성 Day 의 00:00~24:00 전체를 덮는다 — "시작 시각" 개념을 없앴다.
+  // (timelineStart/timelineEnd 는 위 dayBase 에서 잡는다.)
   // 새벽 빈 공간은 아래 자동 스크롤이 첫 블록(없으면 09:00) 위치로 건너뛴다.
-  const timelineStart = 0;
-  const timelineEnd = DAY_END;
   const timeSlots = [];
   for (let t = timelineStart; t <= timelineEnd; t += 30) timeSlots.push(t);
 
@@ -2766,17 +2778,18 @@ export function DashboardPage() {
     const el = timelineDOMRef.current;
     if (!el || lastScrollDayRef.current === activeDay) return;
     lastScrollDayRef.current = activeDay;
-    let first = 540;
+    // first 도 절대 오프셋 — 기본값은 이 Day 의 09:00. 스크롤은 창 기준이라 베이스를 뺀다.
+    let first = timelineStart + 540;
     for (const id of chains[activeDay] || []) {
       const s = items[id]?.startMins;
       if (s != null && s < first) first = s;
     }
-    el.scrollTop = Math.max(0, (first - 15) * PX);
-  }, [status, activeDay, chains, items]);
+    el.scrollTop = Math.max(0, (first - timelineStart - 15) * PX);
+  }, [status, activeDay, chains, items, timelineStart]);
 
   // ── 라이브 커서 송신 (7단계) — 명세의 50ms 스로틀, 대시보드 전역 ──
-  // 타임라인 위에서는 "가로 비율 + 분(시각)"(area:"tl") — 상대와 내 스크롤·시작
-  // 시각이 달라도 같은 시간 위치에 그려진다. 그 밖(후보·사이드 등)에서는 페이지
+  // 타임라인 위에서는 "가로 비율 + 절대 분 오프셋"(area:"tl") — 상대와 내 스크롤·시작
+  // 시각이 달라도 같은 시간 위치에 그려진다(timelineStart 를 더해 Day 베이스를 싣는다). 그 밖(후보·사이드 등)에서는 페이지
   // 비율 좌표(area:"page") — 창 크기가 달라도 대략 같은 자리를 가리킨다.
   const lastCursorSendRef = useRef(0);
   const handlePageCursorMove = (e) => {
@@ -2869,7 +2882,6 @@ export function DashboardPage() {
     const { newItems, newChain } = resolveOverlaps(
       tempItems,
       tempChain,
-      timelineStart,
       activeId,
     );
     displayItems = newItems;
@@ -2956,6 +2968,13 @@ export function DashboardPage() {
     });
     activeDayItems.sort((a, b) => a.startMins - b.startMins);
   }
+
+  // 자정을 넘긴 블록이 마지막 눈금 밖으로도 그려져야 한다 — 컨테이너를 그만큼 늘린다.
+  // endMins 가 유한하지 않은 항목(startMins 가 없는 후보 등)은 높이를 NaN 으로 만들므로 건너뛴다.
+  const contentEnd = activeDayItems.reduce(
+    (acc, it) => (Number.isFinite(it.endMins) ? Math.max(acc, it.endMins) : acc),
+    timelineEnd,
+  );
 
 
   return (
@@ -3100,9 +3119,9 @@ export function DashboardPage() {
                       if (activeDragRef.current)
                         setDragPreview(computeDropTarget(activeDragRef.current));
                     }}
-                    // 하루 길이(분 × PX)만 인라인으로 넘긴다 — 나머지 모양은 CSS(.tl)
+                    // 그릴 길이(분 × PX)만 인라인으로 넘긴다 — 나머지 모양은 CSS(.tl)
                     style={{
-                      height: `${(timelineEnd - timelineStart) * PX + 120}px`,
+                      height: `${(contentEnd - timelineStart) * PX + 120}px`,
                     }}
                   >
                     {/* 눈금·안내선 (--tl-pad-top/left 로 여백만 넘기고 색은 CSS) */}
@@ -3179,7 +3198,7 @@ export function DashboardPage() {
                                   item={data.item}
                                   startMins={data.startMins}
                                   endMins={data.endMins}
-                                  dayStartMins={timelineStart}
+                                  timelineStart={timelineStart}
                                 />
                               </div>
                             ) : (
@@ -3190,7 +3209,7 @@ export function DashboardPage() {
                                 endMins={data.endMins}
                                 resizingState={resizingState}
                                 onResizeStart={handleResizeStart}
-                                dayStartMins={timelineStart}
+                                timelineStart={timelineStart}
                                 boundTop={boundTop}
                                 onEditBlock={openBlockDetail}
                                 lockedBy={lockBadgeOf(data.id)}
