@@ -19,6 +19,7 @@ public class BlockConverter {
         Block.BlockBuilder builder = Block.builder()
                 .project(project)
                 .author(author)
+                .lastEditedBy(author)
                 .dayNo(request.dayNo())
                 .orderKey(orderKey)
                 .category(request.category())
@@ -70,6 +71,8 @@ public class BlockConverter {
                 .source(block.getSource())
                 // FK 값만 필요하므로 LAZY 프록시의 getId()로 읽는다 — 추가 쿼리가 나가지 않는다
                 .authorId(block.getAuthor().getId())
+                // 005 마이그레이션 이전 행은 null — 클라이언트가 authorId로 폴백한다
+                .lastEditedById(block.getLastEditedBy() == null ? null : block.getLastEditedBy().getId())
                 .fieldUpdatedAt(block.getFieldUpdatedAt())
                 .createdAt(block.getCreatedAt())
                 .build();

@@ -150,6 +150,16 @@ public class Block extends BaseTimeEntity {
     @JoinColumn(name = "author_id", nullable = false)
     private User author;
 
+    /**
+     * 마지막 편집자 (PRS-04) — 생성 시 작성자로 시작하고, 필드 수정·이동이 실제로
+     * 적용될 때마다 갱신된다. author와 같은 이유로 @OnDelete 없음.
+     * 005 마이그레이션 이전에 만들어진 행은 null일 수 있어 nullable — 이때 표시는
+     * 클라이언트가 작성자로 폴백한다.
+     */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "last_edited_by")
+    private User lastEditedBy;
+
     // ----- 비즈니스 메서드 -----
 
     public void softDelete() {
@@ -188,6 +198,11 @@ public class Block extends BaseTimeEntity {
     /** 필드의 LWW 타임스탬프(서버 수신 시각)를 기록한다 */
     public void markFieldUpdated(String field, Instant receivedAt) {
         this.fieldUpdatedAt.put(field, receivedAt.toString());
+    }
+
+    /** 마지막 편집자 기록 — 적용된 변경(필드 수정·이동)이 있을 때만 호출한다. 스테일 요청은 편집이 아니다 */
+    public void markEditedBy(User editor) {
+        this.lastEditedBy = editor;
     }
 
     @SuppressWarnings("unchecked")
