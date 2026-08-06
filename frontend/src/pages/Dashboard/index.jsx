@@ -73,8 +73,6 @@ const PX = 2.0;
 const SNAP = 1;
 // 하루의 경계 = 24:00. 블록은 여기까지 채울 수 있고, 넘치는 만큼은 다음 Day
 // 00:00 에 "이어서" 블록으로 쪼개진다(splitOverflowAtMidnight).
-// 서버 저장은 23:59 가 최대다(java.time.LocalTime) — minsToTime 이 24:00 만
-// 23:59 로 낮춰 보낸다. 화면 종료 시각은 startMins + dur 로 따로 계산해 24:00 로 보인다.
 const DAY_END = 1440;
 const TL_PAD_TOP = 20;
 const TL_PAD_LEFT = 70;
@@ -346,13 +344,13 @@ const persistShiftedTimes = (chainIds, prevItems, nextItems, excludeId) => {
       nextItems[id]?.startMins != null &&
       nextItems[id].startMins !== prevItems[id]?.startMins,
   );
+  // 시각은 position PATCH 가 나른다 — 이웃도 시간축 위치가 바뀐 것이고,
+  // 순서(orderKey)는 그대로 다시 보낸다
   return Promise.all(
     shifted.map((id) =>
-      blockApi.updateBlockFields(id, {
-        startTime: blockApi.minsToTime(nextItems[id].startMins),
-        endTime: blockApi.minsToTime(
-          nextItems[id].startMins + nextItems[id].dur,
-        ),
+      blockApi.moveBlock(id, {
+        startOffsetMinutes: nextItems[id].startMins,
+        orderKey: nextItems[id].orderKey,
       }),
     ),
   );
@@ -934,18 +932,14 @@ export function DashboardPage() {
     async ({ moved, created, trimmed, chains: chainsAfter, items: itemsAfter }) => {
       let snapshot = itemsAfter;
 
-      // ① 잘린 원본 — 소요 시간이 줄었으니 종료 시각까지 함께 맞춘다
+      // ① 잘린 원본 — 줄어든 소요 시간을 저장한다
       for (const id of trimmed) {
         if (!isServerBlock(id)) continue;
         const block = snapshot[id];
-        await blockApi.updateBlockFields(id, {
-          durationMin: block.dur,
-          startTime: blockApi.minsToTime(block.startMins),
-          endTime: blockApi.minsToTime(block.startMins + block.dur),
-        });
+        await blockApi.updateBlockFields(id, { durationMin: block.dur });
       }
 
-      // ② 통째로 옮겨진 기존 블록 — Day 가 바뀌므로 position 부터
+      // ② 통째로 옮겨진 기존 블록 — 위치와 시각을 position 한 번으로 보낸다
       for (const { id, to } of moved) {
         if (!isServerBlock(id)) continue; // auto-·임시 id 는 아직 서버에 없다
         const chain = chainsAfter[to] ?? [];
@@ -956,17 +950,15 @@ export function DashboardPage() {
         );
         const orderKey = safeKeyBetween(before, after);
         const block = snapshot[id];
-        const dayNo = dayNoOf(to);
 
-        await blockApi.moveBlock(id, { dayNo, orderKey });
-        await blockApi.updateBlockFields(id, {
-          startTime: blockApi.minsToTime(block.startMins),
-          endTime: blockApi.minsToTime(block.startMins + block.dur),
+        await blockApi.moveBlock(id, {
+          startOffsetMinutes: block.startMins,
+          orderKey,
         });
 
-        snapshot = { ...snapshot, [id]: { ...block, dayNo, orderKey } };
+        snapshot = { ...snapshot, [id]: { ...block, orderKey } };
         setItems((prev) =>
-          prev[id] ? { ...prev, [id]: { ...prev[id], dayNo, orderKey } } : prev,
+          prev[id] ? { ...prev, [id]: { ...prev[id], orderKey } } : prev,
         );
       }
 
@@ -980,12 +972,9 @@ export function DashboardPage() {
         );
         const orderKey = safeKeyBetween(before, after);
         const block = snapshot[tempId];
-        const dayNo = dayNoOf(to);
 
         const createdBlock = await blockApi.createBlock(projectId, {
           ...block,
-          endMins: block.startMins + block.dur,
-          dayNo,
           orderKey,
         });
         // 세부 내용은 생성 바디에 없다(명세) — 원본에서 물려받았으면 따로 저장
@@ -1000,12 +989,11 @@ export function DashboardPage() {
           [createdBlock.blockId]: {
             ...block,
             id: createdBlock.blockId,
-            dayNo,
             orderKey,
           },
         };
         delete snapshot[tempId];
-        adoptServerId(tempId, createdBlock.blockId, { dayNo, orderKey });
+        adoptServerId(tempId, createdBlock.blockId, { orderKey });
       }
     },
     [projectId, adoptServerId],
@@ -1215,7 +1203,8 @@ export function DashboardPage() {
             const b = spilled.items[localId];
             if (!b) continue; // 쪼개기 과정에서 사라졌다면 건너뛴다
             // 교통 블록 자체가 자정 너머로 밀려갔을 수 있다 — 실제 Day 를 따라간다
-            const ownDayKey = b.dayNo != null ? `d${b.dayNo}` : dayKey;
+            const ownDayNo = blockApi.dayNoOfOffset(b.startMins);
+            const ownDayKey = ownDayNo != null ? `d${ownDayNo}` : dayKey;
             const ownChain = spilled.chains[ownDayKey] ?? [];
             // 각 교통 블록의 경계는 양옆 실블록 — 아직 로컬인 다른 교통 블록은
             // neighborKeysAround 가 건너뛴다
@@ -1230,13 +1219,10 @@ export function DashboardPage() {
             const transportMeta = b.transportMeta;
             const created = await blockApi.createBlock(projectId, {
               ...b,
-              endMins: b.startMins + b.dur,
-              dayNo: dayNoOf(ownDayKey),
               orderKey,
               transportMeta,
             });
             adoptServerId(localId, created.blockId, {
-              dayNo: dayNoOf(ownDayKey),
               orderKey,
               transportMeta,
             });
@@ -1433,7 +1419,8 @@ export function DashboardPage() {
 
           // 새 교통 블록 자체가 자정 너머로 밀려갔을 수 있다 — 실제 Day 를 따라간다
           const b = spilled.items[newId];
-          const ownDayKey = b?.dayNo != null ? `d${b.dayNo}` : dayKey;
+          const ownDayNo = blockApi.dayNoOfOffset(b?.startMins);
+          const ownDayKey = ownDayNo != null ? `d${ownDayNo}` : dayKey;
           const ownChain = spilled.chains[ownDayKey] ?? [];
           const [before, after] = neighborKeysAround(
             ownChain,
@@ -1446,13 +1433,10 @@ export function DashboardPage() {
           const transportMeta = b.transportMeta;
           const created = await blockApi.createBlock(projectId, {
             ...b,
-            endMins: b.startMins + b.dur,
-            dayNo: dayNoOf(ownDayKey),
             orderKey,
             transportMeta,
           });
           adoptServerId(newId, created.blockId, {
-            dayNo: dayNoOf(ownDayKey),
             orderKey,
             transportMeta,
           });
@@ -1781,7 +1765,7 @@ export function DashboardPage() {
       try {
         const created = await blockApi.createBlock(projectId, {
           ...merged,
-          dayNo: null, // 커스텀 블록은 후보(POOL)로 생성된다
+          startMins: null, // 커스텀 블록은 후보(POOL)로 생성된다
           orderKey,
         });
         // 세부 내용(detail)은 생성 바디에 없다(명세) — 생성 직후 필드 갱신으로 저장
@@ -1791,7 +1775,7 @@ export function DashboardPage() {
           });
         }
 
-        const saved = { ...merged, id: created.blockId, dayNo: null, orderKey };
+        const saved = { ...merged, id: created.blockId, orderKey };
         setItems((prev) => {
           const next = { ...prev };
           delete next[targetId];
@@ -1828,15 +1812,10 @@ export function DashboardPage() {
     if (touched.dur) changed.durationMin = patched.dur;
     if (touched.cost) changed.budget = patched.cost;
     // category·subCategory·address 는 보내지 않는다 — 서버 LWW 화이트리스트
-    // (LWW_FIELDS: name·budget·durationMin·detail·startTime·endTime·isTimeFixed·
-    // vehicleFlag·transportMeta)에 없어 BLOCK400_2 로 배치 전체가 거부된다.
+    // (LWW_FIELDS: name·budget·durationMin·detail·isTimeFixed·vehicleFlag·
+    // transportMeta)에 없어 BLOCK400_2 로 배치 전체가 거부된다.
     // 셋 다 "생성 시에만" 정하는 값으로 폼에서 잠갔다.
-
-    // 소요시간이 바뀌면 종료 시각도 함께 맞춘다 — ERD 불변식:
-    // 시각이 둘 다 있으면 end_time − start_time == duration_min
-    if (changed.durationMin != null && base.startMins != null) {
-      changed.endTime = blockApi.minsToTime(base.startMins + patched.dur);
-    }
+    // 종료 시각은 보내지 않는다 — 시작 오프셋 + 소요에서 파생되는 값이다.
 
     if (Object.keys(changed).length === 0) {
       setEditingBlockId(null); // 변경 없음 — 요청을 보내지 않는다
@@ -2055,7 +2034,8 @@ export function DashboardPage() {
     const merged = { ...block, dur: newDur, cost: newCost, transportMeta: newMeta };
 
     // 체인 위 블록이면 소요 변경이 이웃을 민다 — 저장 전에 자정 초과를 판정
-    const dayKey = block.dayNo != null ? `d${block.dayNo}` : null;
+    const blockDayNo = blockApi.dayNoOfOffset(block.startMins);
+    const dayKey = blockDayNo != null ? `d${blockDayNo}` : null;
     let spilled = null;
     if (dayKey && chains[dayKey]?.includes(block.id)) {
       const { newItems, newChain } = resolveOverlaps(
@@ -2080,15 +2060,12 @@ export function DashboardPage() {
     // 그대로 두면 사용자가 폼 저장을 눌러 방금 바꾼 값을 되돌려버린다
     setEditingBlockId(null);
     try {
-      const fields = {
+      // 종료 시각은 보내지 않는다 — 시작 오프셋 + 소요에서 파생되는 값이다
+      await blockApi.updateBlockFields(picker.blockId, {
         durationMin: newDur,
         budget: newCost,
         transportMeta: newMeta,
-      };
-      if (block.startMins != null) {
-        fields.endTime = blockApi.minsToTime(block.startMins + newDur);
-      }
-      await blockApi.updateBlockFields(picker.blockId, fields);
+      });
 
       if (spilled) {
         const handled = new Set([
@@ -2245,15 +2222,24 @@ export function DashboardPage() {
       if (dirty.length === 0) return;
 
       try {
+        // 소요는 필드 PATCH, 시작 오프셋은 position PATCH 로 나뉜다 —
+        // 시각이 위치가 되면서 더 이상 LWW 필드가 아니다
         await Promise.all(
-          dirty.map((id) => {
+          dirty.flatMap((id) => {
             const b = current[id];
-            const fields = {
-              startTime: blockApi.minsToTime(b.startMins),
-              endTime: blockApi.minsToTime(b.startMins + b.dur),
-            };
-            if (b.dur !== original[id].dur) fields.durationMin = b.dur;
-            return blockApi.updateBlockFields(id, fields);
+            const calls = [];
+            if (b.dur !== original[id].dur) {
+              calls.push(blockApi.updateBlockFields(id, { durationMin: b.dur }));
+            }
+            if (b.startMins !== original[id].startMins) {
+              calls.push(
+                blockApi.moveBlock(id, {
+                  startOffsetMinutes: b.startMins,
+                  orderKey: b.orderKey,
+                }),
+              );
+            }
+            return calls;
           }),
         );
       } catch (e) {
@@ -2554,7 +2540,7 @@ export function DashboardPage() {
           const orderKey = safeKeyBetween(before, after);
           const created = await blockApi.createBlock(projectId, {
             ...newBlock,
-            dayNo: null,
+            startMins: null, // 후보(POOL)로 생성된다
             orderKey,
           });
           // 전화번호(detail)는 생성 바디에 없다(명세) — 생성 직후 별도 저장
@@ -2563,7 +2549,7 @@ export function DashboardPage() {
               detail: newBlock.detail,
             });
           }
-          adoptServerId(newId, created.blockId, { dayNo: null, orderKey });
+          adoptServerId(newId, created.blockId, { orderKey });
         } catch (e) {
           rollbackToServer(e);
         }
@@ -2606,15 +2592,17 @@ export function DashboardPage() {
       });
       setPool(nextPool);
 
-      // 서버 저장: 후보로 이동/재정렬 = dayNo null + 이웃 사이 orderKey.
-      // 시각(startTime/endTime)은 건드리지 않는다 — 후보 블록의 옛 시각은 무해하고,
-      // 체인에 다시 올라갈 때 드롭 위치로 재계산된다.
+      // 서버 저장: 후보로 이동/재정렬 = startOffsetMinutes null + 이웃 사이 orderKey.
+      // 후보는 시간축 위에 없다 — 체인에 다시 올라갈 때 드롭 위치로 다시 정해진다.
       if (isServerBlock(activeIdLocal)) {
         (async () => {
           try {
             const [before, after] = neighborKeysAround(nextPool, insertAt, items);
             const orderKey = safeKeyBetween(before, after);
-            await blockApi.moveBlock(activeIdLocal, { dayNo: null, orderKey });
+            await blockApi.moveBlock(activeIdLocal, {
+              startOffsetMinutes: null,
+              orderKey,
+            });
             // 다음 이동의 이웃 계산이 정확하도록 로컬에도 새 위치 값을 반영
             setItems((prev) =>
               prev[activeIdLocal]
@@ -2622,7 +2610,8 @@ export function DashboardPage() {
                     ...prev,
                     [activeIdLocal]: {
                       ...prev[activeIdLocal],
-                      dayNo: null,
+                      startMins: null,
+                      endMins: null,
                       orderKey,
                     },
                   }
@@ -2682,8 +2671,8 @@ export function DashboardPage() {
       if (isFromPool)
         setPool((prev) => prev.filter((id) => id !== activeIdLocal));
 
-      // 서버 저장: 옮긴 블록 1건의 position(dayNo·orderKey) + 자기 시각 +
-      // 겹침 해소로 밀린 이웃들의 시각. resolveOverlaps 는 이동 블록 외의
+      // 서버 저장: 옮긴 블록 1건의 position(시작 오프셋·orderKey) +
+      // 겹침 해소로 밀린 이웃들의 위치. resolveOverlaps 는 이동 블록 외의
       // 상대 순서를 보존하므로 position 은 정확히 1건이다(명세와 일치).
       // 자정에서 쪼개진 것들(자른 원본·옮긴 블록·새 "이어서" 블록)은
       // Day 와 orderKey 까지 바뀌므로 persistMidnightSplit 이 따로 맡는다.
@@ -2701,12 +2690,8 @@ export function DashboardPage() {
               const moved = spilled.items[activeIdLocal];
 
               await blockApi.moveBlock(activeIdLocal, {
-                dayNo: dayNoOf(activeDay),
+                startOffsetMinutes: moved.startMins,
                 orderKey,
-              });
-              await blockApi.updateBlockFields(activeIdLocal, {
-                startTime: blockApi.minsToTime(moved.startMins),
-                endTime: blockApi.minsToTime(moved.startMins + moved.dur),
               });
 
               // 다음 이동의 이웃 계산이 정확하도록 로컬에도 새 위치 값을 반영
@@ -2714,11 +2699,7 @@ export function DashboardPage() {
                 prev[activeIdLocal]
                   ? {
                       ...prev,
-                      [activeIdLocal]: {
-                        ...prev[activeIdLocal],
-                        dayNo: dayNoOf(activeDay),
-                        orderKey,
-                      },
+                      [activeIdLocal]: { ...prev[activeIdLocal], orderKey },
                     }
                   : prev,
               );

@@ -129,7 +129,6 @@ export default function CreateProjectModal({ open, onClose, onCreate }) {
             lng: departure.lng,
             placeId: departure.placeId,
             source: 'MANUAL',
-            dayNo: 1,
           });
         } catch {
           showToast('출발지점 블록은 만들지 못했어요 — 대시보드에서 직접 추가해주세요.');

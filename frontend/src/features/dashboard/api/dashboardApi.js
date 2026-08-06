@@ -5,7 +5,7 @@
 // ── 경계 정규화 ──────────────────────────────────────
 // 서버 블록 모델과 화면(pages/Dashboard)의 블록 모델은 이름이 다르다:
 //
-//   서버: blockId, category(대문자), subCategory, durationMin, budget, startTime("HH:mm")
+//   서버: blockId, category(대문자), subCategory, durationMin, budget, startOffsetMinutes
 //   화면: id,      cat(소문자),      sub,          dur,          cost,   startMins(분)
 //
 // groupApi 의 withId 와 같은 원칙으로 이 경계에서 한 번만 변환하고,
@@ -46,32 +46,22 @@ export const CAT_TO_SERVER = {
   trans: "TRANSPORT",
 };
 
-/** "09:30" → 570. null(시각 없는 느슨한 블록)은 그대로 null */
-export function timeToMins(time) {
-  if (time == null) return null;
-  const [h, m] = time.split(":").map(Number);
-  return h * 60 + m;
-}
+// 블록의 시간축 위치는 Day 1 00:00 기준 경과 분 하나(startOffsetMinutes)다 —
+// Day 번호도 하루 안의 시각도 여기서 유도한다. "HH:mm" 왕복이 사라지면서
+// 자정(24:00)을 23:59 로 낮춰 보내며 1분을 잃던 자리도 함께 없어졌다.
+export const MINUTES_PER_DAY = 1440;
 
-/**
- * 570 → "09:30". null 은 그대로 null.
- *
- * 하루의 끝(1440 = 24:00)만 23:59 로 낮춰 보낸다 — 서버가 "HH:mm" 를
- * java.time.LocalTime 으로 파싱하는데 그 최대가 23:59 라 "24:00" 은 저장할 수 없다.
- * 자정까지 꽉 채운 블록은 정상 상태이므로(넘친 부분은 다음 Day 로 쪼개진다) 거부가
- * 아니라 표현을 낮추는 게 맞다. 화면 종료 시각은 startMins + dur 로 따로 계산하므로
- * 24:00 으로 그대로 보이고, 서버도 end−start == duration 을 검사하지 않는다.
- *
- * 1440 을 넘는 값은 그대로 통과시킨다 — 그건 쪼개기가 빠진 호출부의 버그이고,
- * 조용히 잘라내 숨기느니 서버 400 으로 드러나는 편이 낫다.
- */
-export function minsToTime(mins) {
-  if (mins == null) return null;
-  const safe = mins === 1440 ? 1439 : mins;
-  const h = String(Math.floor(safe / 60)).padStart(2, "0");
-  const m = String(safe % 60).padStart(2, "0");
-  return `${h}:${m}`;
-}
+/** 절대 오프셋 → Day 번호(1-base). null 이면 후보(POOL) */
+export const dayNoOfOffset = (offset) =>
+  offset == null ? null : Math.floor(offset / MINUTES_PER_DAY) + 1;
+
+/** 절대 오프셋 → 그 Day 안에서의 분(0~1439) */
+export const minuteOfDayOf = (offset) =>
+  offset == null ? null : offset % MINUTES_PER_DAY;
+
+/** Day 번호와 그 Day 안의 분 → 절대 오프셋 */
+export const offsetOf = (dayNo, minuteOfDay) =>
+  (dayNo - 1) * MINUTES_PER_DAY + minuteOfDay;
 
 // ── 블록 모델 변환 ────────────────────────────────────
 
@@ -82,14 +72,16 @@ export function minsToTime(mins) {
 export function toUiBlock(b) {
   return {
     id: b.blockId,
-    dayNo: b.dayNo, // null = 후보(POOL)
     orderKey: b.orderKey,
     cat: CAT_FROM_SERVER[b.category] ?? "etc",
     sub: b.subCategory ?? null,
     name: b.name,
     dur: b.durationMin,
-    startMins: timeToMins(b.startTime),
-    endMins: timeToMins(b.endTime),
+    // Day 1 00:00 기준 절대 오프셋. null = 후보(POOL) — Day 는 dayNoOfOffset 으로 얻는다
+    startMins: b.startOffsetMinutes ?? null,
+    // 서버는 종료를 보내지 않는다 — 소비처가 많아 경계에서 한 번 계산해 둔다
+    endMins:
+      b.startOffsetMinutes == null ? null : b.startOffsetMinutes + b.durationMin,
     isTimeFixed: b.isTimeFixed ?? false,
     cost: b.budget ?? 0,
     detail: b.detail ?? null,
@@ -119,7 +111,7 @@ function toCreatePayload(block) {
   return {
     category: CAT_TO_SERVER[block.cat] ?? "ETC",
     name: block.name,
-    dayNo: block.dayNo ?? null, // null 이면 후보(POOL) 생성
+    startOffsetMinutes: block.startMins ?? null, // null 이면 후보(POOL) 생성
     orderKey: block.orderKey ?? undefined, // 미지정 시 서버가 말단 키 부여
     lat: block.lat ?? undefined, // 장소성 카테고리(SPOT·FOOD·STAY)는 필수 — 누락 시 BLOCK400
     lng: block.lng ?? undefined,
@@ -127,8 +119,6 @@ function toCreatePayload(block) {
     address: block.address ?? undefined,
     subCategory: block.sub ?? undefined,
     durationMin: block.dur ?? undefined, // 미지정 시 서버 기본 60
-    startTime: minsToTime(block.startMins) ?? undefined,
-    endTime: minsToTime(block.endMins) ?? undefined,
     isTimeFixed: block.isTimeFixed ?? false,
     budget: block.cost ?? 0,
     vehicleFlag: block.vehicleFlag ?? undefined, // ETC 전용 — 위반 시 BLOCK400 계열
@@ -157,12 +147,7 @@ export function serverFieldsToUiPatch(fields) {
       case "durationMin":
         patch.dur = value;
         break;
-      case "startTime":
-        patch.startMins = timeToMins(value);
-        break;
-      case "endTime":
-        patch.endMins = timeToMins(value);
-        break;
+      // 시각은 필드 op 로 오지 않는다 — 위치와 한 몸이라 BLOCK_MOVED 가 나른다
       case "isTimeFixed":
         patch.isTimeFixed = value;
         break;
@@ -409,13 +394,13 @@ export async function updateBlockFields(blockId, fields) {
 
 /**
  * 블록 이동 — 체인 재정렬 / 후보↔체인 / Day 이동.
- * 후보로 보낼 때는 dayNo: null. 이동 후 영향받은 블록들의 시각 재계산·저장은
- * 명세(320행)상 클라이언트 몫이며 updateBlockFields 로 이어서 처리한다.
+ * startOffsetMinutes 가 시간축 위치 그 자체다 — 후보로 내릴 때는 null.
+ * 시각은 더 이상 updateBlockFields 가 나르지 않는다(계약에서 제거됨).
  */
-export async function moveBlock(blockId, { dayNo, orderKey }) {
+export async function moveBlock(blockId, { startOffsetMinutes, orderKey }) {
   try {
     const { data } = await axiosInstance.patch(`/blocks/${blockId}/position`, {
-      dayNo,
+      startOffsetMinutes,
       orderKey,
     });
     return unwrap(data);
