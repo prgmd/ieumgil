@@ -81,6 +81,7 @@ public class BlockResDTO {
             Map<String, Object> transportMeta,
             BlockSource source,
             Long authorId,
+            Long lastEditedById,
             Map<String, String> fieldUpdatedAt,
             LocalDateTime createdAt
     ) {
