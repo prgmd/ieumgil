@@ -62,6 +62,7 @@ import * as blockApi from "../../features/dashboard/api/dashboardApi";
 import { getClientId } from "../../global/api/clientId";
 import { useGroupDetail } from "../../features/group/hooks/useGroupDetail";
 import { useProjects } from "../../features/group/hooks/useProjects";
+import { useIsMobile } from "../../global/hooks/useIsMobile";
 import { useAuthStore } from "../../global/stores/authStore";
 import { useToastStore } from "../../global/stores/toastStore";
 import "./index.css";
@@ -593,7 +594,12 @@ export function DashboardPage() {
   // 탭도 함께 바뀐다.
   const dayKeys = useMemo(() => dayKeysOf(project), [project]);
 
-  const [viewMode, setViewMode] = useState("edit");
+  // 모바일은 읽기 전용이다 — 편집이 드래그·리사이즈에 기대고 있어 좁은 터치
+  // 화면에서는 쓸 수 없다. 상태를 모바일에서 강제로 덮어써서, 창을 좁히는
+  // 도중에 편집 모드가 남아 있는 경우까지 함께 막는다(초기값만 바꾸면 샌다).
+  const isMobile = useIsMobile();
+  const [selectedViewMode, setViewMode] = useState("edit");
+  const viewMode = isMobile ? "read" : selectedViewMode;
   // 보이스 아이콘 펼침 여부. 기본은 접힘 — 평소엔 하단의 작은 타원 토글만 두고,
   // 누를 때만 마이크·스피커 아이콘이 나온다(보드를 가리지 않게).
   const [voiceOpen, setVoiceOpen] = useState(false);
@@ -685,6 +691,9 @@ export function DashboardPage() {
     onlineIds,
     sendVoiceSignal,
     registerSignalHandler: registerVoiceSignalHandler,
+    // 모바일은 보이스를 아예 안 쓴다 — 위젯만 감추면 마이크 권한 팝업과
+    // P2P 연결은 그대로 돌아간다. 연결 자체를 끊어야 배터리·데이터도 아낀다.
+    enabled: !isMobile,
   });
 
   // 펼쳐 둔 아이콘은 Esc 로도 접는다
@@ -2924,8 +2933,10 @@ export function DashboardPage() {
               {project?.name ?? "여행 대시보드"}
             </h1>
             {/* 예전엔 그룹 페이지로 돌아가야만 수정할 수 있었다 — 보고 있는
-                화면에서 바로 열 수 있게 제목 옆에 둔다 */}
-            {project && (
+                화면에서 바로 열 수 있게 제목 옆에 둔다.
+                모바일은 읽기 전용이라 뺀다 — 보드는 못 고치는데 프로젝트 설정만
+                고칠 수 있으면 앞뒤가 안 맞고, 제목에 쓸 폭도 그만큼 넓어진다. */}
+            {project && !isMobile && (
               <button
                 type="button"
                 className="dash-headbar-edit"
@@ -2936,20 +2947,24 @@ export function DashboardPage() {
                 ✎
               </button>
             )}
-            <div className="mode-switch">
-              <button
-                className={`mode-tab ${viewMode === "edit" ? "on" : ""}`}
-                onClick={() => setViewMode("edit")}
-              >
-                ✎ 편집
-              </button>
-              <button
-                className={`mode-tab ${viewMode === "read" ? "on" : ""}`}
-                onClick={() => setViewMode("read")}
-              >
-                ≡ 읽기
-              </button>
-            </div>
+            {/* 모바일은 읽기 전용이라 고를 게 없다 — 토글 자체를 걷는다.
+                누를 수 없는 버튼을 흐리게 남겨 두면 "왜 안 눌리지"가 된다. */}
+            {!isMobile && (
+              <div className="mode-switch">
+                <button
+                  className={`mode-tab ${viewMode === "edit" ? "on" : ""}`}
+                  onClick={() => setViewMode("edit")}
+                >
+                  ✎ 편집
+                </button>
+                <button
+                  className={`mode-tab ${viewMode === "read" ? "on" : ""}`}
+                  onClick={() => setViewMode("read")}
+                >
+                  ≡ 읽기
+                </button>
+              </div>
+            )}
           </div>
         }
         // 프로젝트 멤버(스냅샷 시드 + MEMBER_JOINED/LEFT 갱신)와 실시간 접속
@@ -3422,13 +3437,223 @@ export function DashboardPage() {
         applyReselectTransport={applyReselectTransport}
       />
 
-      <VoiceBar
-        voice={voice}
-        voiceOpen={voiceOpen}
-        setVoiceOpen={setVoiceOpen}
-        currentUser={currentUser}
-        boardMembers={boardMembers}
-      />
+      {/* 이동수단 선택 — 구간 버튼이 후보를 받아 오면 열린다. 고른 수단으로
+          그 자리에 교통 블록이 생성된다 (confirmTransitChoice) */}
+      {transitPicker && (
+        <div className="blk-modal-ov" onClick={() => setTransitPicker(null)}>
+          <div className="transit-picker" onClick={(e) => e.stopPropagation()}>
+            <h3 className="tp-title">이동수단 선택</h3>
+            <p className="tp-route">
+              {items[transitPicker.currentId]?.name ?? "출발지"} →{" "}
+              {items[transitPicker.nextId]?.name ?? "도착지"}
+            </p>
+            {transitPicker.segment?.timetableApplied === false &&
+              transitPicker.segment?.timetableSkipReason && (
+                <p className="tp-banner tp-banner-warn">
+                  {transitPicker.segment.timetableSkipReason}
+                </p>
+              )}
+            <div className="tp-list">
+              {transitPicker.candidates.map((c, idx) => (
+                <TransitCandidateCard
+                  key={`${c.mode}-${idx}`}
+                  candidate={c}
+                  mode="select"
+                  selected={transitPicker.chosenCandidate === c}
+                  onSelectCandidate={setTransitPickerCandidate}
+                  selectedDepartureName={
+                    transitPicker.chosenCandidate === c
+                      ? (transitPicker.chosenDeparture?.name ?? null)
+                      : null
+                  }
+                  // 편을 고르면 그 편이 속한 후보도 함께 선택된다 — 선택 안 된
+                  // 후보의 편을 바로 눌렀을 때 후보가 안 바뀌던 문제 방지
+                  onSelectDeparture={(d) =>
+                    setTransitPicker((prev) =>
+                      prev
+                        ? { ...prev, chosenCandidate: c, chosenDeparture: d }
+                        : prev,
+                    )
+                  }
+                />
+              ))}
+            </div>
+            <div className="tp-actions">
+              <button
+                type="button"
+                className="tp-cancel"
+                onClick={() => setTransitPicker(null)}
+              >
+                취소
+              </button>
+              <button
+                type="button"
+                className="tp-apply"
+                disabled={transitPicker.chosenCandidate?.status !== "OK"}
+                onClick={confirmTransitChoice}
+              >
+                이 수단으로 추가
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 교통 블록 편집 재선택 — 저장된 candidates 스냅샷으로 재조회 없이 연다.
+          "저장"을 눌러야 PATCH /blocks/{id}/fields 로 transportMeta 를 통째 교체한다 */}
+      {transportReselectPicker && (
+        <div
+          className="blk-modal-ov"
+          onClick={() => setTransportReselectPicker(null)}
+        >
+          <div className="transit-picker" onClick={(e) => e.stopPropagation()}>
+            <h3 className="tp-title">이동 수단 변경</h3>
+            <div className="tp-list">
+              {transportReselectPicker.candidates.map((c, idx) => (
+                <TransitCandidateCard
+                  key={`${c.mode}-${idx}`}
+                  candidate={c}
+                  mode="select"
+                  selected={transportReselectPicker.chosenCandidate === c}
+                  onSelectCandidate={setReselectCandidate}
+                  selectedDepartureName={
+                    transportReselectPicker.chosenCandidate === c
+                      ? (transportReselectPicker.chosenDeparture?.name ?? null)
+                      : null
+                  }
+                  // 편 선택 = 그 후보 선택까지 (단일 피커와 같은 이유)
+                  onSelectDeparture={(d) =>
+                    setTransportReselectPicker((prev) =>
+                      prev
+                        ? { ...prev, chosenCandidate: c, chosenDeparture: d }
+                        : prev,
+                    )
+                  }
+                />
+              ))}
+            </div>
+            <div className="tp-actions">
+              <button
+                type="button"
+                className="tp-cancel"
+                onClick={() => setTransportReselectPicker(null)}
+              >
+                취소
+              </button>
+              <button
+                type="button"
+                className="tp-apply"
+                disabled={transportReselectPicker.chosenCandidate?.status !== "OK"}
+                onClick={applyReselectTransport}
+              >
+                저장
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 보이스 위젯 — 화면 맨 아래 가장자리에 붙은 탭(Vue DevTools 의 그 탭처럼).
+          평소엔 윗부분만 빼꼼 보이다가 올리면 다 나오고, 누르면 그 위로 마이크·
+          스피커 아이콘이 펼쳐진다. 입장하면 자동 연결(권한 거부 시 듣기 전용)이고,
+          버튼은 송신(마이크)·수신(스피커)만 끄고 켠다 — 접어 둬도 연결은
+          대시보드를 떠날 때까지 유지된다.
+          모바일에서는 통째로 빠진다 — 읽기 전용 화면이라 함께 편집하며 통화할
+          일이 없고, 좁은 화면에서 하단 공간을 챗봇 버튼과 나눠 쓰기도 빠듯하다. */}
+      {!isMobile && (
+      <div className={`voice-bar ${voiceOpen ? "is-open" : ""}`}>
+        {voiceOpen && (
+          <div className="voice-items" role="group" aria-label="음성 채팅 컨트롤">
+            <button
+              type="button"
+              className={`voice-mic ${voice.micOn && !voice.listenOnly ? "on" : "off"}`}
+              onClick={voice.toggleMic}
+              disabled={voice.listenOnly}
+              title={
+                voice.listenOnly
+                  ? "마이크 권한이 거부되어 듣기만 가능해요"
+                  : voice.micOn
+                    ? "마이크 끄기"
+                    : "마이크 켜기"
+              }
+            >
+              {voice.listenOnly ? "🎧" : voice.micOn ? "🎤" : "🔇"}
+            </button>
+            {/* 전체 음소거 ↔ 전체 듣기 — 상대 소리만 끈다(내 목소리는 계속 나감) */}
+            <button
+              type="button"
+              className={`voice-mic ${voice.speakerOn ? "on" : "off"}`}
+              onClick={voice.toggleSpeaker}
+              title={
+                voice.speakerOn
+                  ? "전체 음소거 — 모두의 소리 끄기"
+                  : "전체 듣기 — 다시 듣기"
+              }
+            >
+              {voice.speakerOn ? "🔊" : "🔈"}
+            </button>
+            <span className="voice-status">
+              {/* 인원은 나를 포함해 센다 — 나+A+B 면 3명 */}
+              {!voice.joined
+                ? "음성 연결 중..."
+                : voice.listenOnly
+                  ? `듣기 전용 · ${voice.connectedCount + 1}명`
+                  : voice.connectedCount > 0
+                    ? `음성 연결됨 · ${voice.connectedCount + 1}명`
+                    : "혼자 있어요"}
+            </span>
+            {/* 참여자 아바타 (QA 배치3) — 나 + 음성 연결이 수립된 멤버들 */}
+            {voice.joined && (
+              <span className="voice-peers">
+                {[currentUser?.id, ...voice.connectedIds]
+                  .filter((id) => id != null)
+                  .map((id) => {
+                    const isMe = id === currentUser?.id;
+                    const member = isMe
+                      ? {
+                          nickname: currentUser?.nickname ?? "나",
+                          profileImg: currentUser?.profileImg,
+                        }
+                      : boardMembers.find((m) => m.memberId === id);
+                    if (!member) return null;
+                    return (
+                      <i
+                        key={id}
+                        className="voice-peer"
+                        title={isMe ? `${member.nickname} (나)` : member.nickname}
+                      >
+                        {member.profileImg?.startsWith("http") ? (
+                          <img src={member.profileImg} alt="" />
+                        ) : (
+                          (member.nickname?.[0] ?? "?")
+                        )}
+                      </i>
+                    );
+                  })}
+              </span>
+            )}
+          </div>
+        )}
+
+        {/* 하단 탭 — 접힘/펼침만 한다. 마이크를 토글하지 않는다(접힌 채로 잘못
+            눌러 목소리가 나가는 사고 방지). 접었을 때는 마이크 상태와 인원수를
+            여기서 읽는다 — 아이콘이 사라져도 상태는 알아야 한다. */}
+        <button
+          type="button"
+          className="voice-tab"
+          onClick={() => setVoiceOpen((open) => !open)}
+          aria-expanded={voiceOpen}
+          title={voiceOpen ? "음성 컨트롤 접기" : "음성 컨트롤 펼치기"}
+          aria-label={voiceOpen ? "음성 컨트롤 접기" : "음성 컨트롤 펼치기"}
+        >
+          <span>{voice.listenOnly ? "🎧" : voice.micOn ? "🎤" : "🔇"}</span>
+          {voice.joined && <span>{voice.connectedCount + 1}</span>}
+          <span className="voice-tab-caret" aria-hidden="true">
+            {voiceOpen ? "▼" : "▲"}
+          </span>
+        </button>
+      </div>
+      )}
 
       {/* 프로젝트 수정 — 그룹 페이지의 ✎ 와 같은 모달을 그대로 쓴다.
           저장 뒤에는 스냅샷을 다시 읽어야 제목·Day 탭·기간이 따라온다

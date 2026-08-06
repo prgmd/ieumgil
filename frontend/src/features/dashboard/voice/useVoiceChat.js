@@ -39,12 +39,15 @@ const AUDIO_CONSTRAINTS = {
  * @param {Set<number>} onlineIds presence 기준 접속 중 멤버 (나 포함)
  * @param {(targetMemberId, type, payload) => void} sendVoiceSignal useProjectOps 의 발행 함수
  * @param {(handler: (msg) => void) => void} registerSignalHandler 수신 콜백 등록(latest-ref 주입)
+ * @param {boolean} [enabled] false 면 아무것도 하지 않는다 — 마이크를 요청하지도,
+ *        피어를 만들지도 않는다. 위젯만 감추면 권한 팝업과 P2P 연결은 그대로 남는다.
  */
 export function useVoiceChat({
   myId,
   onlineIds,
   sendVoiceSignal,
   registerSignalHandler,
+  enabled = true,
 }) {
   const [joined, setJoined] = useState(false); // 마이크 확보(또는 듣기 전용 확정) 완료
   const [listenOnly, setListenOnly] = useState(false);
@@ -210,13 +213,15 @@ export function useVoiceChat({
     speakerOnRef.current = speakerOn;
   });
   useEffect(() => {
+    // 꺼져 있으면 시그널도 받지 않는다 — 받아 봐야 joined 가 false 라 큐에만 쌓인다
+    if (!enabled) return undefined;
     registerSignalHandler((msg) => handleSignalRef.current(msg));
     return () => registerSignalHandler(() => {});
-  }, [registerSignalHandler]);
+  }, [registerSignalHandler, enabled]);
 
   // ── 입장: 마이크 확보(거부 시 듣기 전용) · 퇴장: 전부 정리 ──
   useEffect(() => {
-    if (myId == null) return undefined;
+    if (!enabled || myId == null) return undefined;
     disposedRef.current = false;
     // Map 객체 자체는 교체되지 않으므로(내용만 변한다) 지금 복사해도 cleanup 시점의
     // 최신 피어 목록과 같은 객체다 — lint(exhaustive-deps)의 ref 지적을 이렇게 푼다
@@ -257,7 +262,7 @@ export function useVoiceChat({
       localStreamRef.current?.getTracks().forEach((t) => t.stop());
       localStreamRef.current = null;
     };
-  }, [myId, closePeer]);
+  }, [enabled, myId, closePeer]);
 
   // 권한 응답을 기다리는 동안 보관해 둔 시그널을 순서대로 처리한다
   useEffect(() => {
