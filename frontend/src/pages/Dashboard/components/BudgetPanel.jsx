@@ -22,6 +22,20 @@ export function BudgetPanel({
 }) {
   return (
     <div className="panel">
+      {/* 사이드의 다른 카드(지도·검색)와 같은 자리에 같은 제목 줄을 둔다 —
+          이 카드만 제목이 없으면 본문이 한 카드만 위에서 시작해 눈에 걸린다 */}
+      <h4 className="panel-title">
+        예산
+        <span
+          className="hint-ico"
+          tabIndex={0}
+          aria-label="예산 사용 안내"
+          data-tip="블록마다 입력한 예산을 모두 더한 금액이에요. 희망 총 예산을 정하면 아래 막대가 얼마나 썼는지 보여줘요. 금액을 눌러 직접 입력할 수도 있어요."
+        >
+          ⓘ
+        </span>
+      </h4>
+
       <div className="bud-total">
         <span className="bud-total-label">총 </span>
         <span className="bud-total-value">{won(totalBudget) || "0원"}</span>
