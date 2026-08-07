@@ -29,9 +29,10 @@ class BoardToolTest {
     @Mock
     private BlockRepository blockRepository;
 
-    private static Block block(Integer dayNo, String name) {
+    /** {@code startOffsetMinutes}는 Day 1 00:00 기준 경과 분 — null이면 후보(POOL)다. */
+    private static Block block(Integer startOffsetMinutes, String name) {
         return Block.builder()
-                .dayNo(dayNo)
+                .startOffsetMinutes(startOffsetMinutes)
                 .orderKey("a0")
                 .name(name)
                 .category(BlockCategory.SPOT)
@@ -47,7 +48,7 @@ class BoardToolTest {
     @DisplayName("현재 프로젝트의 보드를 조회해 Day별·후보로 접어 반환한다")
     void returnsBoardForCurrentProject() {
         when(blockRepository.findChain(12L)).thenReturn(List.of(
-                block(1, "성산일출봉"), block(null, "후보 카페")));
+                block(9 * 60, "성산일출봉"), block(null, "후보 카페")));
         BoardTool tool = new BoardTool(new RequestScopedBoard(() -> blockRepository.findChain(12L)));
 
         BoardSummary summary = tool.getCurrentPlan();

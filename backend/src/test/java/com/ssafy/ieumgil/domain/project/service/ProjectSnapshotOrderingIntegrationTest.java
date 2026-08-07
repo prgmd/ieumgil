@@ -150,7 +150,7 @@ class ProjectSnapshotOrderingIntegrationTest extends IntegrationTestSupport {
                     .category(BlockCategory.ETC)
                     .orderKey("zz")
                     .source(BlockSource.MANUAL)
-                    .dayNo(1)
+                    .startOffsetMinutes(0)
                     .project(projectRepository.getReferenceById(projectId))
                     .author(userRepository.getReferenceById(authorId))
                     .build());

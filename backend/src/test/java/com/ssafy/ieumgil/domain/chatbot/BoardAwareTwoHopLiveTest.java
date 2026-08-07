@@ -33,7 +33,6 @@ import java.math.BigDecimal;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.LocalDate;
-import java.time.LocalTime;
 import java.util.List;
 import java.util.Optional;
 
@@ -62,9 +61,9 @@ class BoardAwareTwoHopLiveTest {
 
     private static Block block(int dayNo, String orderKey, String name, double lat, double lng) {
         return Block.builder()
-                .dayNo(dayNo).orderKey(orderKey).name(name)
+                .startOffsetMinutes((dayNo - 1) * 1440 + 9 * 60).orderKey(orderKey).name(name)
                 .category(BlockCategory.SPOT)
-                .startTime(LocalTime.of(9, 0)).durationMin(90).budget(0)
+                .durationMin(90).budget(0)
                 .lat(BigDecimal.valueOf(lat)).lng(BigDecimal.valueOf(lng))
                 .source(BlockSource.KAKAO)
                 .build();

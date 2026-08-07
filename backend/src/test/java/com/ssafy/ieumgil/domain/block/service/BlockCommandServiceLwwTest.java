@@ -14,6 +14,7 @@ import com.ssafy.ieumgil.domain.project.repository.ProjectRepository;
 import com.ssafy.ieumgil.domain.user.repository.UserRepository;
 import com.ssafy.ieumgil.global.exception.CustomException;
 import com.ssafy.ieumgil.global.realtime.OpPublisher;
+import com.ssafy.ieumgil.support.BlockFixtures;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -125,15 +126,19 @@ class BlockCommandServiceLwwTest {
     }
 
     @Test
-    @DisplayName("화이트리스트 밖 필드는 400(UNSUPPORTED_FIELD)")
+    @DisplayName("화이트리스트 밖 필드는 400(UNSUPPORTED_FIELD) — orderKey·시각")
     void unsupportedFieldRejected() {
         assertThatThrownBy(() -> patch("orderKey", "z9"))
+                .isInstanceOf(CustomException.class)
+                .extracting("code").isEqualTo(BlockErrorCode.UNSUPPORTED_FIELD);
+        // 시각은 더 이상 LWW 필드가 아니다 — 값이 형식 위반이어도 "없는 필드"가 먼저 걸린다
+        assertThatThrownBy(() -> patch("startTime", "25:99"))
                 .isInstanceOf(CustomException.class)
                 .extracting("code").isEqualTo(BlockErrorCode.UNSUPPORTED_FIELD);
     }
 
     @Test
-    @DisplayName("값 형식 위반은 400(INVALID_FIELD_VALUE) — 빈 이름/음수 예산/0분/잘못된 시각")
+    @DisplayName("값 형식 위반은 400(INVALID_FIELD_VALUE) — 빈 이름/음수 예산/0분")
     void invalidValuesRejected() {
         assertThatThrownBy(() -> patch("name", "  "))
                 .isInstanceOf(CustomException.class)
@@ -142,9 +147,6 @@ class BlockCommandServiceLwwTest {
                 .isInstanceOf(CustomException.class)
                 .extracting("code").isEqualTo(BlockErrorCode.INVALID_FIELD_VALUE);
         assertThatThrownBy(() -> patch("durationMin", 0))
-                .isInstanceOf(CustomException.class)
-                .extracting("code").isEqualTo(BlockErrorCode.INVALID_FIELD_VALUE);
-        assertThatThrownBy(() -> patch("startTime", "25:99"))
                 .isInstanceOf(CustomException.class)
                 .extracting("code").isEqualTo(BlockErrorCode.INVALID_FIELD_VALUE);
     }
@@ -160,10 +162,7 @@ class BlockCommandServiceLwwTest {
     @Test
     @DisplayName("생성 시 장소성 카테고리는 좌표가 없으면 400(COORDINATE_REQUIRED)")
     void coordinateRequiredForSpot() {
-        BlockReqDTO.Create request = new BlockReqDTO.Create(
-                BlockCategory.SPOT, "성산일출봉", null, null, null, null,
-                null, null, null, null, null, null, null, null, null,
-                BlockSource.MANUAL, null, null);
+        BlockReqDTO.Create request = BlockFixtures.pool(BlockCategory.SPOT, "성산일출봉", null);
 
         assertThatThrownBy(() -> service.createBlock(1L, 1L, null, request))
                 .isInstanceOf(CustomException.class)
@@ -173,11 +172,9 @@ class BlockCommandServiceLwwTest {
     @Test
     @DisplayName("생성 요청의 detail이 저장된다 — 챗봇 축제 후보의 개최 기간처럼 생성 시점에 아는 정보를 담는다")
     void createPersistsDetail() {
-        BlockReqDTO.Create request = new BlockReqDTO.Create(
-                BlockCategory.SPOT, "부산 불꽃축제", null, null,
+        BlockReqDTO.Create request = BlockFixtures.spot("부산 불꽃축제",
                 new java.math.BigDecimal("35.15"), new java.math.BigDecimal("129.11"),
-                null, null, null, null, null, null, null, null, null,
-                BlockSource.BOT, null, "개최 기간: 2026-10-04 ~ 2026-10-14");
+                BlockSource.BOT, "개최 기간: 2026-10-04 ~ 2026-10-14");
 
         Block block = BlockConverter.toBlock(null, null, "a0", request);
 

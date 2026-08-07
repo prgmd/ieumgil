@@ -1,5 +1,6 @@
 package com.ssafy.ieumgil.domain.project.service;
 
+import com.ssafy.ieumgil.domain.block.entity.Block;
 import com.ssafy.ieumgil.domain.block.repository.BlockRepository;
 import com.ssafy.ieumgil.domain.group.entity.TravelGroup;
 import com.ssafy.ieumgil.domain.group.exception.GroupErrorCode;
@@ -161,12 +162,14 @@ public class ProjectCommandServiceImpl implements ProjectCommandService {
             return List.of();   // 기간 미정이면 범위 개념이 없다
         }
         int dayCount = (int) ChronoUnit.DAYS.between(startDate, endDate) + 1;
+        // 여행 전체 길이(분). 오프셋이 이 값이면 이미 마지막 Day의 다음 분이므로 범위 밖이다
+        int tripMinutes = dayCount * Block.MINUTES_PER_DAY;
 
-        List<Long> outOfRange = blockRepository.findIdsOutOfRange(project.getId(), dayCount);
+        List<Long> outOfRange = blockRepository.findIdsOutOfRange(project.getId(), tripMinutes);
         if (outOfRange.isEmpty()) {
             return List.of();
         }
-        blockRepository.moveOutOfRangeToPool(project.getId(), dayCount);
+        blockRepository.moveOutOfRangeToPool(project.getId(), tripMinutes);
         return outOfRange;
     }
 

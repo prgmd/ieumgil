@@ -2,12 +2,12 @@ package com.ssafy.ieumgil.domain.block.service;
 
 import com.ssafy.ieumgil.domain.block.dto.BlockReqDTO;
 import com.ssafy.ieumgil.domain.block.entity.BlockCategory;
-import com.ssafy.ieumgil.domain.block.entity.BlockSource;
 import com.ssafy.ieumgil.domain.block.exception.BlockErrorCode;
 import com.ssafy.ieumgil.domain.block.repository.BlockRepository;
 import com.ssafy.ieumgil.domain.project.entity.Project;
 import com.ssafy.ieumgil.domain.user.entity.User;
 import com.ssafy.ieumgil.global.exception.CustomException;
+import com.ssafy.ieumgil.support.BlockFixtures;
 import com.ssafy.ieumgil.support.IntegrationTestSupport;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -39,9 +39,7 @@ class BlockTombstoneIntegrationTest extends IntegrationTestSupport {
         user = seedUser();
         project = seedProject(user);
         blockId = blockCommandService.createBlock(user.getId(), project.getId(), null,
-                new BlockReqDTO.Create(BlockCategory.ETC, "삭제 대상", null, "a0", null, null,
-                        null, null, null, null, null, null, null, null, null,
-                        BlockSource.MANUAL, null, null))
+                BlockFixtures.pool(BlockCategory.ETC, "삭제 대상", "a0"))
                 .blockId();
     }
 
@@ -66,7 +64,7 @@ class BlockTombstoneIntegrationTest extends IntegrationTestSupport {
                 .extracting("code").isEqualTo(BlockErrorCode.BLOCK_GONE);
 
         assertThatThrownBy(() -> blockCommandService.move(user.getId(), blockId, null,
-                new BlockReqDTO.Move(2, "b0")))
+                new BlockReqDTO.Move(1440, "b0")))
                 .isInstanceOf(CustomException.class)
                 .extracting("code").isEqualTo(BlockErrorCode.BLOCK_GONE);
 

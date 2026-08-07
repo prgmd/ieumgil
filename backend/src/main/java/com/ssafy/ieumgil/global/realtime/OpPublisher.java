@@ -67,7 +67,7 @@ public class OpPublisher {
 
     /**
      * @param clientId 요청 헤더 X-Client-Id — 수신 측이 "자기가 보낸 op"를 스킵하는 기준. 없으면 null
-     * @param payload  op 종류별 본문 (예: BLOCK_MOVED → {blockId, dayNo, orderKey})
+     * @param payload  op 종류별 본문 (예: BLOCK_MOVED → {blockId, startOffsetMinutes, orderKey})
      * @return 채번된 seq — 생성/이동 응답에 실어 클라이언트가 자기 op의 위치를 알게 한다
      * @throws CustomException OP_LOCK_TIMEOUT(503) — 상한 안에 락을 얻지 못했을 때. 무한 대기 대신
      *                         요청 하나를 끊어 데드락이 전체 장애(커넥션 풀 고갈)로 번지는 것을 막는다

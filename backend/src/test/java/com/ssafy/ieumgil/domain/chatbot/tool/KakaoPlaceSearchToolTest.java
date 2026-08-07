@@ -89,7 +89,7 @@ class KakaoPlaceSearchToolTest {
     @DisplayName("기준 장소를 주면 그 좌표 주변을 거리순으로 검색한다 — 보드에 있는 블록이면 카카오 재검색 없이 좌표를 얻는다")
     void searchesNearGivenPlaceUsingBoardCoordinates() {
         Block onBoard = Block.builder()
-                .dayNo(1).orderKey("a0").name("성산일출봉")
+                .startOffsetMinutes(0).orderKey("a0").name("성산일출봉")
                 .category(BlockCategory.SPOT).durationMin(60).budget(0)
                 .lat(java.math.BigDecimal.valueOf(33.4581)).lng(java.math.BigDecimal.valueOf(126.9425))
                 .source(BlockSource.KAKAO)

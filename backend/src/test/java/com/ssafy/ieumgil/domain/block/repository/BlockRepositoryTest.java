@@ -48,6 +48,19 @@ class BlockRepositoryTest extends IntegrationTestSupport {
                 .build();
     }
 
+    /** 정렬 검증용 — projectA에 속하고 오프셋(null이면 후보)과 orderKey만 다른 블록 */
+    private Block blockWithOffset(Integer startOffsetMinutes, String orderKey) {
+        return Block.builder()
+                .name("오프셋 " + startOffsetMinutes)
+                .category(BlockCategory.ETC)
+                .orderKey(orderKey)
+                .source(BlockSource.MANUAL)
+                .startOffsetMinutes(startOffsetMinutes)
+                .project(projectA)
+                .author(author)
+                .build();
+    }
+
     @Test
     @DisplayName("다른 프로젝트의 블록 id는 조회되지 않는다 — 소유권 검증의 근거")
     void doesNotReturnBlocksOfAnotherProject() {
@@ -109,5 +122,31 @@ class BlockRepositoryTest extends IntegrationTestSupport {
         projectRepository.saveAndFlush(projectA);
 
         assertThat(blockRepository.findGroupIdById(block.getId())).isEmpty();
+    }
+
+    @Test
+    @DisplayName("체인은 오프셋 오름차순이고 후보(POOL)는 맨 뒤에 온다")
+    void chainOrdersByOffsetWithPoolLast() {
+        // 일부러 뒤섞어 저장한다 — id 순서와 기대 순서가 다르게
+        Block day2 = blockRepository.save(blockWithOffset(1500, "c"));
+        Block pool = blockRepository.save(blockWithOffset(null, "a"));
+        Block day1 = blockRepository.save(blockWithOffset(600, "b"));
+
+        List<Block> chain = blockRepository.findChain(projectA.getId());
+
+        assertThat(chain).extracting(Block::getId)
+                .containsExactly(day1.getId(), day2.getId(), pool.getId());
+    }
+
+    @Test
+    @DisplayName("오프셋이 같으면 orderKey가 순서를 가른다")
+    void sameOffsetBreaksTieByOrderKey() {
+        Block second = blockRepository.save(blockWithOffset(600, "b"));
+        Block first = blockRepository.save(blockWithOffset(600, "a"));
+
+        List<Block> chain = blockRepository.findChain(projectA.getId());
+
+        assertThat(chain).extracting(Block::getId)
+                .containsExactly(first.getId(), second.getId());
     }
 }

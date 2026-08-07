@@ -49,9 +49,10 @@ VALUES
   (9002, '실측검증-CAR',    9001, 'PLANNING', '2026-08-10', '2026-08-13', '["CAR"]'::jsonb,    '부산·제주', now(), now())
 ON CONFLICT (id) DO NOTHING;
 
-INSERT INTO block (project_id, author_id, day_no, order_key, category, name, lat, lng,
+-- Day 번호는 Day 1 00:00 기준 오프셋으로 환산해 넣는다 — 서버가 읽는 컬럼은 이것뿐이다.
+INSERT INTO block (project_id, author_id, start_offset_minutes, order_key, category, name, lat, lng,
                     duration_min, budget, is_time_fixed, source, field_updated_at, created_at, updated_at)
-SELECT p.id, 1, d.day_no, d.order_key, 'SPOT', d.name, d.lat, d.lng, d.duration_min, 0, false, 'MANUAL', '{}'::jsonb, now(), now()
+SELECT p.id, 1, (d.day_no - 1) * 1440, d.order_key, 'SPOT', d.name, d.lat, d.lng, d.duration_min, 0, false, 'MANUAL', '{}'::jsonb, now(), now()
 FROM (VALUES (9001), (9002)) AS p(id)
 CROSS JOIN (VALUES
   (1, 'a0', '서울시청',     37.5665, 126.9780, 0),

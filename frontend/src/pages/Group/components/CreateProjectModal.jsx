@@ -123,13 +123,11 @@ export default function CreateProjectModal({ open, onClose, onCreate }) {
             address: departure.address,
             dur: 60,
             startMins: 540, // Day 1 09:00
-            endMins: 600,
             cost: 0,
             lat: departure.lat,
             lng: departure.lng,
             placeId: departure.placeId,
             source: 'MANUAL',
-            dayNo: 1,
           });
         } catch {
           showToast('출발지점 블록은 만들지 못했어요 — 대시보드에서 직접 추가해주세요.');

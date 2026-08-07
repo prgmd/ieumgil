@@ -59,7 +59,7 @@ class KakaoPlaceCoordinateResolverTest {
 
     private static Block boardBlock(String name, double lat, double lng) {
         return Block.builder()
-                .dayNo(1).orderKey("a0").name(name)
+                .startOffsetMinutes(0).orderKey("a0").name(name)
                 .category(BlockCategory.SPOT).durationMin(60).budget(0)
                 .lat(java.math.BigDecimal.valueOf(lat)).lng(java.math.BigDecimal.valueOf(lng))
                 .placeId("b1").address("제주 서귀포시")
@@ -115,7 +115,7 @@ class KakaoPlaceCoordinateResolverTest {
     @DisplayName("좌표 없는 보드 블록은 건너뛰고 카카오로 간다")
     void skipsBoardBlockWithoutCoordinates() {
         Block noCoords = Block.builder()
-                .dayNo(1).orderKey("a0").name("좌표없음")
+                .startOffsetMinutes(0).orderKey("a0").name("좌표없음")
                 .category(BlockCategory.ETC).durationMin(60).budget(0)
                 .source(BlockSource.MANUAL)
                 .build();

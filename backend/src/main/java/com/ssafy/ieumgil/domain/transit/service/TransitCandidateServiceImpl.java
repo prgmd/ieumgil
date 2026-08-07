@@ -190,15 +190,15 @@ public class TransitCandidateServiceImpl implements TransitCandidateService {
      * 이 구간을 떠날 수 있는 시각(자정 기준 분). {@code from} 블록의 저장된 종료 시각이다.
      *
      * <p>앞 구간의 결과를 누적하지 않는다 — 블록은 연속적이지 않고 사이 공백이 실재하므로,
-     * 이 구간이 볼 수 있는 진실은 {@code from} 블록 자신에 저장된 시각뿐이다. 시각 없는(느슨한)
-     * 블록은 기준을 만들 수 없어 {@code null}이다.
+     * 이 구간이 볼 수 있는 진실은 {@code from} 블록 자신에 저장된 오프셋뿐이다. 보드에 놓이지
+     * 않은 후보(POOL) 블록은 기준을 만들 수 없어 {@code null}이다.
      */
     private Integer baseMinutesOf(Block from) {
-        LocalTime start = from.getStartTime();
+        Integer start = from.startMinuteOfDay();
         if (start == null) {
             return null;
         }
-        return start.getHour() * 60 + start.getMinute() + from.getDurationMin();
+        return start + from.getDurationMin();
     }
 
     /**
@@ -233,9 +233,9 @@ public class TransitCandidateServiceImpl implements TransitCandidateService {
         return remaining.isNegative() ? Duration.ZERO : remaining;
     }
 
-    /** 블록의 dayNo. 미설정(null)이면 1일차로 본다 — Day 경계 판정과 여행 날짜 계산이 같은 규칙을 쓴다. */
+    /** 블록의 Day 번호(오프셋에서 파생). 후보(POOL)면 1일차로 본다 — 여행 날짜 계산의 기본값이다. */
     private int dayNoOf(Block block) {
-        return block.getDayNo() == null ? 1 : block.getDayNo();
+        return block.isInPool() ? 1 : block.dayNo();
     }
 
     /** 요청 순서대로 연속 쌍을 만든다. 같은 블록이 연달아 오면 이동이 없으므로 구간을 만들지 않는다. */

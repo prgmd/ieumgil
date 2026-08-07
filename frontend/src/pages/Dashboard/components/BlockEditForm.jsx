@@ -17,9 +17,6 @@ export function BlockEditForm({
   timeString,
   categoryLocked = false,
   lockNotice = "",
-  // 소요 시간 상한(분). 보통은 null — 24:00 을 넘기면 넘친 만큼 다음 Day 로
-  // 쪼개지므로 제한이 없다. 마지막 Day 의 체인 블록에만 값이 온다(넘길 곳이 없다).
-  maxDurationMin = null,
   // 지도에서 찍어 온 위치 { lat, lng, address }. 부모가 지정할 때마다 새 객체를
   // 넘기고, 모달을 닫을 때 null 로 되돌린다.
   pinnedLocation = null,
@@ -128,15 +125,6 @@ export function BlockEditForm({
       setError("소요 시간은 1분 이상의 정수로 입력해주세요.");
       return;
     }
-    // 보통은 24:00 을 넘겨도 된다 — 넘친 만큼은 다음 Day 00:00 에 "(이어서)"
-    // 블록으로 쪼개진다. 상한이 넘어온다면 마지막 Day 라 넘길 곳이 없다는 뜻이다.
-    if (maxDurationMin != null && dur > maxDurationMin) {
-      setError(
-        `마지막 날이라 24:00을 넘길 수 없어요. (이 블록은 최대 ${maxDurationMin}분)`,
-      );
-      return;
-    }
-
     setError("");
     setSaving(true);
     try {
@@ -341,16 +329,12 @@ export function BlockEditForm({
           />
         </div>
         <div className="bef-col">
-          <label className="bef-label">
-            소요 (분 · 10분 단위)
-            {maxDurationMin != null && ` · 마지막 날이라 최대 ${maxDurationMin}분`}
-          </label>
+          <label className="bef-label">소요 (분 · 10분 단위)</label>
           <input
             className="bef-input"
             type="number"
             step="10"
             min="10"
-            max={maxDurationMin ?? undefined}
             name="durationMin"
             value={formData.durationMin}
             onChange={handleChange}

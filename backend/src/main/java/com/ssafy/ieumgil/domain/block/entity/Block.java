@@ -14,6 +14,7 @@ import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
+import org.hibernate.annotations.Check;
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.annotations.OnDelete;
 import org.hibernate.annotations.OnDeleteAction;
@@ -27,19 +28,20 @@ import lombok.NoArgsConstructor;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDateTime;
-import java.time.LocalTime;
 import java.util.HashMap;
 import java.util.Map;
 
 /**
  * 일정/후보 블록 — 대시보드 보드의 최소 단위 (ERD: BLOCK).
  *
- * dayNo가 null이면 후보(POOL), 값이 있으면 해당 Day 체인에 속한다.
- * 정렬은 orderKey(fractional index) 오름차순 + 동시 삽입 대비 id tie-break.
+ * startOffsetMinutes가 null이면 후보(POOL), 값이 있으면 그 오프셋이 가리키는 Day 체인에 속한다.
+ * Day 번호·시각·자정 넘김은 전부 이 하나에서 파생한다(dayNo·startTime을 따로 저장하지 않는다).
+ * 정렬은 startOffsetMinutes 오름차순 → orderKey(fractional index) → 동시 삽입 대비 id tie-break.
  * 삭제는 tombstone(deletedAt) — 지연 도착한 op를 404가 아니라 410으로 구분해야 하므로 행을 남긴다.
  *
  * 체인 조회용 partial index는 JPA로 선언할 수 없다 —
- * docker/postgres/migration/002-dashboard-indexes.sql 수동 반영 필요.
+ * docker/postgres/migration/006-block-time-model.sql의
+ * (project_id, start_offset_minutes, order_key, id) 인덱스를 수동 반영해야 한다.
  */
 @Entity
 @Getter
@@ -47,14 +49,22 @@ import java.util.Map;
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 @AllArgsConstructor(access = AccessLevel.PRIVATE)
 @Table(name = "block")
+@Check(constraints = "start_offset_minutes IS NULL OR start_offset_minutes >= 0")
 public class Block extends BaseTimeEntity {
+
+    public static final int MINUTES_PER_DAY = 1440;
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    /** Day 번호. null = 후보 블록(POOL) */
-    private Integer dayNo;
+    /**
+     * Day 1의 00:00을 원점으로 한 경과 분. null = 후보(POOL).
+     * dayNo·시각·자정 넘김이 전부 이 하나에서 파생된다 — 그래서 자정을 넘는 블록도 한 행이다.
+     * startDate는 Day 1을 달력 날짜에 대응시키는 역할만 한다(오프셋의 원점이 아니다).
+     */
+    @Column(name = "start_offset_minutes")
+    private Integer startOffsetMinutes;
 
     /** fractional index 문자열. 클라이언트가 계산해 보내고, 서버는 말단 키 부여만 한다 */
     @Column(nullable = false)
@@ -75,11 +85,6 @@ public class Block extends BaseTimeEntity {
     @Builder.Default
     @Column(nullable = false)
     private Integer durationMin = 60;
-
-    /** 일정 시작 시각. 시각 없는(느슨한) 블록은 null. 날짜가 없어 익일 도착은 미표현(v1 스코프 아웃) */
-    private LocalTime startTime;
-
-    private LocalTime endTime;
 
     /** true면 앵커(예약·교통) — 드래그 재계산에서 제외되고 자기 시각을 고수한다 */
     @Builder.Default
@@ -170,15 +175,38 @@ public class Block extends BaseTimeEntity {
         return deletedAt != null;
     }
 
+    /** 보드에 있다 ⟺ 시각이 있다. 두 상태가 어긋날 수 없는 것이 이 모델의 요점이다 */
+    public boolean isInPool() {
+        return startOffsetMinutes == null;
+    }
+
+    /**
+     * 화면·LLM 계약용 Day 번호(1-base). 저장하지 않는다 — 벌크 UPDATE 한 번에 스테일이 되기 때문이다.
+     * getter 이름을 피한 것은 Lombok·Jackson·Hibernate 가 property 로 오인하지 못하게 하기 위해서다.
+     */
+    public Integer dayNo() {
+        return isInPool() ? null : startOffsetMinutes / MINUTES_PER_DAY + 1;
+    }
+
+    /** 그 Day 안에서의 분(0~1439). "HH:mm" 표시는 이 값에서 만든다 */
+    public Integer startMinuteOfDay() {
+        return isInPool() ? null : startOffsetMinutes % MINUTES_PER_DAY;
+    }
+
+    /** 종료 오프셋. 자정에서 되감기지 않는다 — LocalTime 으로는 표현할 수 없던 값이다 */
+    public Integer endOffsetMinutes() {
+        return isInPool() ? null : startOffsetMinutes + durationMin;
+    }
+
     /** 이동(BLK-07) — 옮긴 블록 1행만 바뀐다. 다른 블록의 시각 재계산은 클라이언트 책임 */
-    public void move(Integer dayNo, String orderKey) {
-        this.dayNo = dayNo;
+    public void move(Integer startOffsetMinutes, String orderKey) {
+        this.startOffsetMinutes = startOffsetMinutes;
         this.orderKey = orderKey;
     }
 
     /**
      * LWW 갱신 대상 필드 하나를 적용한다. 값은 서비스가 타입 검증·변환을 끝낸 상태다.
-     * 여기 나열된 9종이 곧 LWW 대상 필드의 전체 목록이다(dashboard-api.md).
+     * 여기 나열된 7종이 곧 LWW 대상 필드의 전체 목록이다(dashboard-api.md).
      */
     public void applyField(String field, Object value) {
         switch (field) {
@@ -186,8 +214,6 @@ public class Block extends BaseTimeEntity {
             case "budget" -> this.budget = (Integer) value;
             case "durationMin" -> this.durationMin = (Integer) value;
             case "detail" -> this.detail = (String) value;
-            case "startTime" -> this.startTime = (LocalTime) value;
-            case "endTime" -> this.endTime = (LocalTime) value;
             case "isTimeFixed" -> this.isTimeFixed = (Boolean) value;
             case "vehicleFlag" -> this.vehicleFlag = (VehicleFlag) value;
             case "transportMeta" -> this.transportMeta = castTransportMeta(value);

@@ -4,10 +4,10 @@ import com.ssafy.ieumgil.domain.block.dto.BlockReqDTO;
 import com.ssafy.ieumgil.domain.block.dto.BlockResDTO;
 import com.ssafy.ieumgil.domain.block.entity.Block;
 import com.ssafy.ieumgil.domain.block.entity.BlockCategory;
-import com.ssafy.ieumgil.domain.block.entity.BlockSource;
 import com.ssafy.ieumgil.domain.block.repository.BlockRepository;
 import com.ssafy.ieumgil.domain.project.entity.Project;
 import com.ssafy.ieumgil.domain.user.entity.User;
+import com.ssafy.ieumgil.support.BlockFixtures;
 import com.ssafy.ieumgil.support.IntegrationTestSupport;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -43,9 +43,7 @@ class BlockConcurrencyIntegrationTest extends IntegrationTestSupport {
         User user = seedUser();
         Project project = seedProject(user);
         long blockId = blockCommandService.createBlock(user.getId(), project.getId(), null,
-                new BlockReqDTO.Create(BlockCategory.ETC, "동시성 대상", 1, "a0", null, null,
-                        null, null, null, null, null, null, null, null, null,
-                        BlockSource.MANUAL, null, null))
+                BlockFixtures.at(BlockCategory.ETC, "동시성 대상", "a0", 0))
                 .blockId();
 
         Map<String, Object> changes = Map.of(

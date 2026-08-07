@@ -10,6 +10,7 @@ import com.ssafy.ieumgil.domain.block.repository.BlockRepository;
 import com.ssafy.ieumgil.domain.block.service.BlockCommandService;
 import com.ssafy.ieumgil.domain.project.entity.Project;
 import com.ssafy.ieumgil.domain.user.entity.User;
+import com.ssafy.ieumgil.support.BlockFixtures;
 import com.ssafy.ieumgil.support.IntegrationTestSupport;
 import jakarta.persistence.EntityManagerFactory;
 import org.hibernate.SessionFactory;
@@ -45,9 +46,7 @@ class OpPipelineIntegrationTest extends IntegrationTestSupport {
 
     private long createBlock(User user, Project project, String name) {
         return blockCommandService.createBlock(user.getId(), project.getId(), null,
-                new BlockReqDTO.Create(BlockCategory.ETC, name, 1, null, null, null,
-                        null, null, null, null, null, null, null, null, null,
-                        BlockSource.MANUAL, null, null))
+                BlockFixtures.at(BlockCategory.ETC, name, null, 0))
                 .seq();
     }
 
@@ -127,14 +126,13 @@ class OpPipelineIntegrationTest extends IntegrationTestSupport {
     }
 
     @Test
-    @DisplayName("유령 UPDATE 회귀 감시 — 이동 1회는 block UPDATE 1 + activity_log INSERT 1이 전부다")
+    @DisplayName("유령 UPDATE 회귀 감시 — Day와 시각을 함께 바꾸는 이동도 block UPDATE 1 + activity_log INSERT 1이 전부다")
     void moveDoesNotGhostUpdateJournal() {
         User user = seedUser();
         Project project = seedProject(user);
+        // Day 1 10:00
         long blockId = blockCommandService.createBlock(user.getId(), project.getId(), null,
-                new BlockReqDTO.Create(BlockCategory.ETC, "이동 대상", 1, "a0", null, null,
-                        null, null, null, null, null, null, null, null, null,
-                        BlockSource.MANUAL, null, null))
+                BlockFixtures.at(BlockCategory.ETC, "이동 대상", "a0", 600))
                 .blockId();
 
         // 배경: JSONB 스냅샷 딥카피가 Long→Integer로 되살아나 INSERT 직후 매번
@@ -143,10 +141,22 @@ class OpPipelineIntegrationTest extends IntegrationTestSupport {
         Statistics stats = entityManagerFactory.unwrap(SessionFactory.class).getStatistics();
         stats.clear();
 
-        blockCommandService.move(user.getId(), blockId, null, new BlockReqDTO.Move(2, "b0"));
+        // Day 1 10:00 → Day 2 08:30. Day와 하루 안의 시각이 동시에 바뀌는 이동 —
+        // 옛 모델에서는 dayNo 이동과 시각 재계산이 서로 다른 엔드포인트라 요청이 두 번 필요했고,
+        // 그래서 "이동 1회 = op 1건"이라는 이 불변식이 실제 사용자 동작을 덮지 못했다.
+        blockCommandService.move(user.getId(), blockId, null, new BlockReqDTO.Move(1950, "b0"));
 
         assertThat(stats.getEntityStatistics(ActivityLog.class.getName()).getUpdateCount()).isZero();
         assertThat(stats.getEntityStatistics(ActivityLog.class.getName()).getInsertCount()).isEqualTo(1);
         assertThat(stats.getEntityStatistics(Block.class.getName()).getUpdateCount()).isEqualTo(1);
+
+        // 저널에도 op 1건만 남는다 — 위치 전체가 payload 하나에 실린다
+        List<Map<String, Object>> ops = activityLogRepository.findOpsAfter(project.getId(), 0, Pageable.unpaged());
+        assertThat(ops).extracting(op -> op.get("type"))
+                .containsExactly("BLOCK_CREATED", "BLOCK_MOVED");
+
+        Block moved = blockRepository.findById(blockId).orElseThrow();
+        assertThat(moved.dayNo()).isEqualTo(2);
+        assertThat(moved.startMinuteOfDay()).isEqualTo(510);
     }
 }

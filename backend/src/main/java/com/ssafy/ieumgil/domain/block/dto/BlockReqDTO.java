@@ -1,6 +1,5 @@
 package com.ssafy.ieumgil.domain.block.dto;
 
-import com.fasterxml.jackson.annotation.JsonFormat;
 import com.ssafy.ieumgil.domain.block.entity.BlockCategory;
 import com.ssafy.ieumgil.domain.block.entity.BlockSource;
 import com.ssafy.ieumgil.domain.block.entity.VehicleFlag;
@@ -14,7 +13,6 @@ import jakarta.validation.constraints.PositiveOrZero;
 import jakarta.validation.constraints.Size;
 
 import java.math.BigDecimal;
-import java.time.LocalTime;
 import java.util.List;
 import java.util.Map;
 
@@ -35,8 +33,9 @@ public class BlockReqDTO {
             @Size(max = 255, message = "블록 이름은 255자 이하여야 합니다.")
             String name,
 
-            @Schema(description = "Day 번호. null이면 후보(POOL)", example = "1")
-            Integer dayNo,
+            @Schema(description = "Day 1 00:00 기준 경과 분. null 이면 후보(POOL)", example = "1410")
+            @PositiveOrZero(message = "시작 오프셋은 0 이상이어야 합니다.")
+            Integer startOffsetMinutes,
 
             @Schema(description = "정렬 키. 미지정 시 서버가 말단 키 부여", example = "a0")
             @Size(max = 255)
@@ -55,12 +54,6 @@ public class BlockReqDTO {
             @Schema(description = "소요시간(분), 기본 60", example = "90")
             @Positive(message = "소요시간은 1분 이상이어야 합니다.")
             Integer durationMin,
-
-            @Schema(description = "시작 시각", example = "09:00")
-            @JsonFormat(pattern = "HH:mm") LocalTime startTime,
-
-            @Schema(description = "종료 시각", example = "10:30")
-            @JsonFormat(pattern = "HH:mm") LocalTime endTime,
 
             @Schema(description = "시각 고정(앵커) 여부, 기본 false")
             Boolean isTimeFixed,
@@ -100,9 +93,11 @@ public class BlockReqDTO {
     ) {
     }
 
-    /** 블록 이동 (PATCH /api/blocks/{blockId}/position). dayNo null = 후보(POOL)로 이동 */
+    /** 블록 이동 (PATCH /api/blocks/{blockId}/position). startOffsetMinutes null = 후보(POOL)로 이동 */
     public record Move(
-            Integer dayNo,
+            @Schema(description = "Day 1 00:00 기준 경과 분. null 이면 후보(POOL)로 내린다")
+            @PositiveOrZero(message = "시작 오프셋은 0 이상이어야 합니다.")
+            Integer startOffsetMinutes,
 
             @NotBlank(message = "orderKey는 필수입니다.")
             @Size(max = 255)
