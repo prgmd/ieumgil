@@ -2781,7 +2781,7 @@ export function DashboardPage() {
                       >
                         {isGeneratingTransport
                           ? "생성 중..."
-                          : "🚗 이동수단 자동 생성"}
+                          : `🚗 Day ${dayNoOf(activeDay)} 이동수단 생성`}
                       </button>
                     </div>
                   </div>
