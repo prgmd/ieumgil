@@ -2356,8 +2356,12 @@ export function DashboardPage() {
   const dominantDayOf = (scrollTop, viewportH) => {
     const from = (scrollTop - TL_PAD_TOP) / PX + timelineStart;
     const to = (scrollTop + viewportH - TL_PAD_TOP) / PX + timelineStart;
-    let best = dayKeys[0];
-    let bestOverlap = -1;
+    // 겹치는 Day 가 하나도 없을 수 있다 — 마지막 자정 너머로 크게 밀린 블록 때문에
+    // 컨테이너가 축보다 길어지면, 그 꼬리에서는 모든 겹침이 음수다. 그때 Day 1 로
+    // 떨어지면 활성 Day 가 튀면서 창이 좁아져 보고 있던 꼬리가 통째로 언마운트된다.
+    // 뷰포트가 축 뒤쪽에 있으면 마지막 Day 를, 앞쪽이면 첫 Day 를 고른다.
+    let best = from >= timelineEnd ? dayKeys[dayKeys.length - 1] : dayKeys[0];
+    let bestOverlap = -Infinity;
     dayKeys.forEach((day, i) => {
       const dayFrom = i * blockApi.MINUTES_PER_DAY;
       const overlap =
