@@ -12,6 +12,7 @@
 - **인증 헤더**: 모든 REST 엔드포인트 `Authorization: Bearer {accessToken}` 필요. WS는 CONNECT 헤더로 검증.
 - **멤버십 검증**: 프로젝트가 속한 그룹의 멤버만 접근(REST AOP `@GroupMember` + WS `ChannelInterceptor`). 비멤버는 `403`(REST) / 프레임 거부(WS).
 - **X-Client-Id**: 변경 요청 헤더에 브라우저 탭 UUID를 실어 보낸다. 서버는 이 값을 op에 그대로 실어 브로드캐스트하며(수신자 제외 없이 전원 발송), **자기 op를 어떻게 처리할지는 클라이언트가 op 종류별로 판단한다** — 아래 "자기 op 에코 정책" 참조.
+- **`COMMON503` (op 락 타임아웃)**: op를 발행하는 **모든 변경 API**(블록 생성/필드/이동/삭제, 프로젝트 status/budget/budget-headcount, 그룹 가입·탈퇴 등)는 seq 채번~브로드캐스트 구간의 프로젝트 단위 락을 기다리다 타임아웃되면 `COMMON503`/503을 반환할 수 있다. **DB 반영 전에 실패하는 것이므로 재시도해도 안전**하다 — 프론트는 재시도 유효 에러로 처리한다. 각 엔드포인트 에러표에는 반복 기재하지 않는다.
 - **범위 구분**: 프로젝트 카드 목록·생성·이름/기간 수정·삭제는 [my-group-api.md](my-group-api.md) 참조.
 
 ---
@@ -49,8 +50,8 @@
 | GET | `/api/places/address?lat=&lng=` | coord2address 역지오코딩 | Yes |
 | GET | `/api/places/geocode?address=` | 주소→좌표 지오코딩 | Yes |
 | GET | `/api/transit/route?sx=&sy=&ex=&ey=&mode=` | 길찾기 소요 시간·요금 | Yes |
-| GET | `/api/trains?dep=&arr=&after=` | KTX 시간표 출발 후보 | Yes |
-| GET | `/api/stations?type=&query=` | 역/터미널 이름검색 | Yes |
+| GET | `/api/trains?dep=&arr=&after=` | KTX 시간표 출발 후보 **(⚠️ 미구현 — 컨트롤러 없음, 상세 절 참조)** | — |
+| GET | `/api/stations?type=&query=` | 역/터미널 이름검색 **(⚠️ 미구현 — 컨트롤러 없음, 상세 절 참조)** | — |
 
 ### 챗봇
 
@@ -114,7 +115,7 @@
         "authorId": 1,
         "lastEditedById": 3,
         "fieldUpdatedAt": { "budget": "2026-08-01T10:22:31.512Z" },
-        "createdAt": "2026-08-01T10:00:00+09:00"
+        "createdAt": "2026-08-01T10:00:00"
       }
     ],
     "members": [
@@ -147,7 +148,7 @@
 
 | 파라미터 | 필수 | 설명 |
 |---|---|---|
-| `afterSeq` | Y | 이 seq 초과분만 반환 (`WHERE seq > afterSeq ORDER BY seq`) |
+| `afterSeq` | N | 이 seq 초과분만 반환 (`WHERE seq > afterSeq ORDER BY seq`). 생략 시 0(처음부터), 음수는 0으로 하한 처리 |
 
 **Response `200`:**
 ```json
@@ -185,8 +186,8 @@
 {
   "isSuccess": true,
   "code": "COMMON200",
-  "message": "상태가 변경되었습니다.",
-  "result": { "status": "DONE", "doneAt": "2026-08-13T20:00:00+09:00" }
+  "message": "요청에 성공했습니다.",
+  "result": { "status": "DONE", "doneAt": "2026-08-13T20:00:00" }
 }
 ```
 > `PLANNING`으로 되돌리면 `doneAt`은 null.
@@ -218,7 +219,7 @@
 {
   "isSuccess": true,
   "code": "COMMON200",
-  "message": "목표 예산이 변경되었습니다.",
+  "message": "요청에 성공했습니다.",
   "result": { "targetBudget": 100000 }
 }
 ```
@@ -245,7 +246,7 @@
 {
   "isSuccess": true,
   "code": "COMMON200",
-  "message": "정산 인원이 변경되었습니다.",
+  "message": "요청에 성공했습니다.",
   "result": { "budgetHeadcount": 4 }
 }
 ```
@@ -291,7 +292,7 @@
 | `lat` / `lng` | decimal | 조건부 | **장소성 카테고리(SPOT·FOOD·STAY)는 필수** |
 | `placeId` / `address` | string | N | 카카오 장소 참조 |
 | `subCategory` | string | N | 자유 텍스트 |
-| `durationMin` | int | N | 소요시간(분), 기본 60(30분 단위). 종료는 `startOffsetMinutes + durationMin` 파생이라 따로 보내지 않는다 |
+| `durationMin` | int | N | 소요시간(분), 기본 60, 양수(단위 제약 없음 — 서버는 30분 단위를 강제하지 않는다). 종료는 `startOffsetMinutes + durationMin` 파생이라 따로 보내지 않는다 |
 | `isTimeFixed` | bool | N | 시각 고정(드래그 재계산 제외) 여부, 기본 false |
 | `budget` | int | N | 예산(원) — **프로젝트 전체(총액) 기준**, 기본 0 |
 | `vehicleFlag` | enum | N | `START`\|`END` — **ETC 카테고리에서만 허용** |
@@ -304,7 +305,7 @@
 {
   "isSuccess": true,
   "code": "COMMON201",
-  "message": "블록이 생성되었습니다.",
+  "message": "자원이 생성되었습니다.",
   "result": { "blockId": 101, "seq": 1044 }
 }
 ```
@@ -313,11 +314,14 @@
 
 | code | HTTP | 상황 |
 |---|---|---|
+| `COMMON400_1` | 400 | 필수 필드 누락(`category`·`name`·`source`), 길이·범위 위반, 음수 `startOffsetMinutes`/`durationMin` (`@Valid` 실패) |
+| `COMMON400_4` | 400 | `category`·`source`·`vehicleFlag`에 enum 외 문자열 — 역직렬화 실패 |
 | `BLOCK400` | 400 | 장소성 카테고리 lat/lng 누락 |
 | `BLOCK400_1` | 400 | vehicleFlag를 ETC 외 카테고리에 지정 |
 | `GROUP403` | 403 | 그룹 멤버가 아님 |
+| `PROJECT404` | 404 | 프로젝트 없음/삭제됨 |
 
-> 음수 `startOffsetMinutes`는 DB 체크 제약(`block_start_offset_minutes_check`)이 막는다 — 전용 에러 코드 없이 `COMMON500`이다. 클라이언트 버그로만 도달하는 경로라 방어선만 두었다.
+> 음수 `startOffsetMinutes`는 DTO `@PositiveOrZero`가 먼저 걸러 `COMMON400_1`이다. DB 체크 제약(`block_start_offset_minutes_check`)은 DTO를 우회하는 경로에 대비한 2차 방어선일 뿐이다.
 
 ---
 
@@ -352,6 +356,8 @@
 
 | code | HTTP | 상황 |
 |---|---|---|
+| `COMMON400_1` | 400 | `fields` 빈 배열, `field` 공백 (`@Valid` 실패) |
+| `BLOCK400_1` | 400 | `vehicleFlag`를 ETC 외 카테고리 블록에 지정 |
 | `BLOCK400_2` | 400 | LWW 미지원 필드 지정 |
 | `BLOCK400_3` | 400 | 필드 값 형식 오류 |
 | `BLOCK404` | 404 | 블록 없음 |
@@ -381,6 +387,14 @@
 { "isSuccess": true, "code": "COMMON200", "message": "요청에 성공했습니다.", "result": { "blockId": 101, "seq": 1045 } }
 ```
 
+**Errors:**
+
+| code | HTTP | 상황 |
+|---|---|---|
+| `COMMON400_1` | 400 | `orderKey` 공백, 음수 `startOffsetMinutes` (`@Valid` 실패) |
+| `BLOCK404` | 404 | 블록 없음 |
+| `BLOCK410` | 410 | tombstone(이미 삭제된 블록) |
+
 ---
 
 ### DELETE /api/blocks/{blockId}
@@ -389,7 +403,7 @@
 
 **Response `200`:**
 ```json
-{ "isSuccess": true, "code": "COMMON200", "message": "블록이 삭제되었습니다.", "result": null }
+{ "isSuccess": true, "code": "COMMON200", "message": "요청에 성공했습니다." }
 ```
 
 **Errors:**
@@ -786,7 +800,9 @@
 
 카카오 로컬 keyword 검색, 최대 15건(MAP-02).
 
-**Query Params:** `query`(필수), `lat`, `lng`(선택 — 주면 그 지점 기준 거리순으로 정렬하지만 검색 범위 자체를 좁히지는 않는다)
+**Query Params:** `query`(필수, 공백 불가), `lat`, `lng`(선택 — 주면 그 지점 기준 거리순으로 정렬하지만 검색 범위 자체를 좁히지는 않는다. 범위 검증: `lat` ±90, `lng` ±180)
+
+**Errors:** `query` 공백·좌표 범위 위반은 `COMMON400_1`/400. (아래 `/address`·`/geocode`의 좌표·주소 파라미터도 동일)
 
 **Response `200`:**
 ```json
@@ -806,7 +822,7 @@
 
 coord2address 역지오코딩(MAP-04 핀 지정).
 
-**Query Params:** `lat`(필수), `lng`(필수)
+**Query Params:** `lat`(필수, ±90), `lng`(필수, ±180)
 
 **Response `200`:** `result: { address, roadAddress }`. 좌표에 대응하는 주소를 찾지 못하면 `200` + `result: null`.
 
@@ -1091,9 +1107,12 @@ REST로 변경 요청을 보내면, 서버가 seq를 붙여 STOMP로 전파한�
 - `BLOCK_FIELD_UPDATED`: `{blockId, fields}` — **적용된 필드만** 담는다(스테일 필드는 빠진다).
 - `BLOCK_MOVED`: `{blockId, startOffsetMinutes, orderKey}` — 위치 전체가 이 payload 하나다. `startOffsetMinutes: null`이면 후보(POOL)로 내려간 것이고, Day 이동과 시각 변경도 이 값 하나로 표현되므로 한 번의 이동이 op 두 건으로 쪼개지지 않는다.
 - `BLOCK_DELETED`: `{blockId}` — tombstone이라 행은 남는다.
-- `PROJECT_UPDATED`: 기간 축소 시 `movedToPool: [blockId...]` 포함. `payload.transportPrefs`(문자열 배열, 예: `["CAR","PUBLIC"]`)에 변경 후 값을 항상 싣는다.
-- `PROJECT_DELETED`: 대시보드를 보던 멤버를 그룹 페이지로 리다이렉트.
-- `MEMBER_LEFT`: 멤버 탈퇴 시 나머지 멤버는 이 op로 멤버 목록·정산 인원 갱신.
+- `PROJECT_UPDATED`: `{projectId, name, startDate, endDate, destination, movedToPool, transportPrefs}` — 변경 후 전체 값을 싣는다. 기간 축소 시 `movedToPool: [blockId...]`에 후보로 밀려난 블록 목록, `transportPrefs`는 문자열 배열(예: `["CAR","PUBLIC"]`).
+- `PROJECT_STATUS_CHANGED`: `{projectId, status, doneAt}` — `PLANNING`으로 되돌리면 `doneAt: null`.
+- `PROJECT_DELETED`: `{projectId}` — 대시보드를 보던 멤버를 그룹 페이지로 리다이렉트.
+- `TARGET_BUDGET_CHANGED`: `{projectId, targetBudget}` / `BUDGET_HEADCOUNT_CHANGED`: `{projectId, budgetHeadcount}`.
+- `MEMBER_JOINED`: `{memberId, nickname, profileImg}` — 초대 코드로 새 멤버 입장.
+- `MEMBER_LEFT`: `{memberId}` — 그룹 자발 탈퇴 시 나머지 멤버는 이 op로 멤버 목록·정산 인원 갱신. ⚠️ **회원 탈퇴(`DELETE /api/members/me`)의 일괄 그룹 탈퇴는 현재 이 op를 발행하지 않는다** — 열려 있는 대시보드의 멤버 목록은 새로고침 전까지 낡은 채 남는다(알려진 한계).
 
 **순서 보장**: 서버는 프로젝트 단위 락으로 채번~전송을 직렬화하고, 클라이언트는 수신 seq에 갭이 생기면 `GET /api/projects/{id}/ops?afterSeq`로 메꾼다(이중 방어).
 

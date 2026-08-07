@@ -10,7 +10,7 @@
   `result`가 없는 응답은 `"result": null`이 아니라 **키 자체가 빠진다**(`@JsonInclude(NON_NULL)`).
 - **`message`는 상황별 문구가 아니다**: `COMMON200` "요청에 성공했습니다." / `COMMON201` "자원이 생성되었습니다."
   두 고정 문구만 나간다. 사용자에게 보여줄 문구는 프론트가 직접 가진다.
-- **인증 헤더**: 모든 엔드포인트 `Authorization: Bearer {accessToken}` 필요. 누락·만료는 `COMMON401`.
+- **인증 헤더**: 모든 엔드포인트 `Authorization: Bearer {accessToken}` 필요. 누락·만료·위변조는 물론 **탈퇴한 계정의 유효 토큰**도 `COMMON401`이다(`ActiveUserChecker` — [auth-api.md](auth-api.md) 공통 규약 참조).
 - **멤버십 검증**: `{groupId}`·`{projectId}` 경로는 AOP `@GroupMember`로 요청자의 그룹 소속을 검증한다.
   **존재 확인이 먼저다** — 없는 그룹은 `GROUP404`, 있지만 비멤버면 `GROUP403`.
   (순서를 바꾸면 없는 그룹에 403이 나가 프론트가 권한 문제로 오해한다.)
@@ -70,9 +70,9 @@
 
 ### DELETE /api/members/me
 
-회원 탈퇴 — ERD `MEMBER` 탈퇴 정책 수행(`kakao_id` null 처리, `nickname` "탈퇴한 멤버" 교체, `profile_img` null, `deleted_at` 기록). 행은 유지되어 블록 작성자 표기가 보존된다. 소속 그룹에서는 자동 탈퇴 처리되며, 마지막 1인이던 그룹은 하드 삭제된다(§ `DELETE /api/groups/{groupId}/members/me` 참조).
+회원 탈퇴 — ERD `MEMBER` 탈퇴 정책 수행(`kakao_id` null 처리, `nickname` "탈퇴한 멤버" 교체, `profile_image_url` null, `deleted_at` 기록). 행은 유지되어 블록 작성자 표기가 보존된다. 소속 그룹에서는 자동 탈퇴 처리되며, 마지막 1인이던 그룹은 하드 삭제된다(§ `DELETE /api/groups/{groupId}/members/me` 참조). Refresh 토큰 삭제 + **본인 WS 세션 강제 종료**도 함께 수행한다.
 
-**Response `204`:** 본문 없음.
+**Response `204`:** 본문 없음. 응답 헤더에 `Set-Cookie: refreshToken=; Max-Age=0`(쿠키 만료) 포함.
 
 **Errors:**
 
@@ -215,7 +215,7 @@
 
 ### DELETE /api/groups/{groupId}
 
-그룹 소프트 삭제. 모든 멤버 가능(flat) — 오입력 방지를 위해 그룹명 일치 검증(MY-04). 스케줄러가 30일 경과분을 하드 삭제.
+그룹 소프트 삭제. 모든 멤버 가능(flat) — 오입력 방지를 위해 그룹명 일치 검증(MY-04). 스케줄러가 30일 경과분을 하드 삭제. 삭제 시 **그룹 전 멤버의 WS 세션이 강제 종료**된다 — 해당 그룹 프로젝트의 대시보드를 보고 있던 멤버는 연결이 끊긴다.
 
 **Request Body:**
 ```json
@@ -250,13 +250,16 @@
     "inviteCode": "ABCD2345",
     "inviteExpiresAt": "2026-08-04T12:00:00",
     "members": [
-      { "memberId": 1, "nickname": "동혁", "profileImg": "https://...", "online": true },
+      { "memberId": 1, "nickname": "동혁", "profileImg": "https://...", "online": false },
       { "memberId": 2, "nickname": "지수", "profileImg": null, "online": false }
     ]
   }
 }
 ```
-> `online`은 presence(Redis) 스냅샷 값. 실시간 갱신은 대시보드의 presence 토픽에서 처리.
+> ⚠️ **이 응답의 `online`은 항상 `false`다** — 그룹 멤버 목록은 presence와 연동되어 있지 않다
+> (`GroupConverter`가 고정값을 넣는다). presence 실값은 대시보드 스냅샷
+> (`GET /api/projects/{projectId}`, [dashboard-api.md](dashboard-api.md))의 멤버 목록에서만 내려온다.
+> 그룹 페이지에서 접속 상태를 표시하려면 별도 연동이 필요하다.
 
 ---
 
@@ -340,12 +343,12 @@
 
 | 필드 | 타입 | 필수 | 설명 |
 |---|---|---|---|
-| `name` | string | Y | 프로젝트 이름 |
+| `name` | string | Y | 프로젝트 이름, 100자 이하 |
 | `startDate` | date | Y | 시작일 |
 | `endDate` | date | Y | 종료일 (시작일 이후) |
-| `destination` | string | N | 여행지 |
-| `budgetHeadcount` | int | Y | 정산 인원(1인당 표시용, 생성 폼 여행 인원) |
-| `targetBudget` | int | N | 프로젝트 전체 목표 예산 |
+| `destination` | string | N | 여행지, 100자 이하 |
+| `budgetHeadcount` | int | Y | 정산 인원(1인당 표시용, 생성 폼 여행 인원), 양수 |
+| `targetBudget` | int | N | 프로젝트 전체 목표 예산, 0 이상 |
 | `transportPrefs` | array\<enum\> | Y | 이동수단 선호(복수 선택 가능), 값은 `CAR`\|`PUBLIC`, 최소 1개 |
 
 **Response `201`:**
@@ -372,7 +375,9 @@
 
 ### PATCH /api/projects/{projectId}
 
-프로젝트 이름·기간 수정. **기간 축소 시**: 서버가 사라지는 Day의 블록을 `startOffsetMinutes=null`(후보)로 일괄 이동하고(orderKey는 보존), `PROJECT_UPDATED` op의 payload에 `movedToPool: [blockId...]`를 실어 **op 1건으로 원자적 전파**(GRP-03). → 실시간 전파 상세는 [dashboard-api.md](dashboard-api.md) 참조.
+프로젝트 이름·기간·여행지·이동수단 수정. **기간 축소 시**: 서버가 사라지는 Day의 블록을 `startOffsetMinutes=null`(후보)로 일괄 이동하고(orderKey는 보존), `PROJECT_UPDATED` op의 payload에 `movedToPool: [blockId...]`를 실어 **op 1건으로 원자적 전파**(GRP-03). → 실시간 전파 상세는 [dashboard-api.md](dashboard-api.md) 참조.
+
+**Request Header(선택):** `X-Client-Id` — 브로드캐스트 op의 에코 판별용([dashboard-api.md](dashboard-api.md) 공통 규약 참조). `DELETE`도 동일.
 
 **Request Body:** (부분 갱신, 변경 필드만 전송)
 ```json
@@ -381,7 +386,7 @@
 
 | 필드 | 타입 | 필수 | 설명 |
 |---|---|---|---|
-| `name` | string | N | 프로젝트 이름 |
+| `name` | string | N | 프로젝트 이름, 1~100자 |
 | `startDate` | date | N | 시작일 |
 | `endDate` | date | N | 종료일 |
 | `destination` | string | N | 여행지, 100자 이하. `null`이면 미변경 |
@@ -408,7 +413,8 @@
 
 | code | HTTP | 상황 |
 |---|---|---|
-| `COMMON400_1` | 400 | name 범위 위반 (`@Valid` 실패) |
+| `COMMON400_1` | 400 | name·destination 범위 위반 (`@Valid` 실패) |
+| `COMMON400_4` | 400 | `transportPrefs` 원소에 `CAR`·`PUBLIC` 외의 값 — enum 변환 실패 |
 | `PROJECT400` | 400 | endDate < startDate |
 | `GROUP403` | 403 | 프로젝트가 속한 그룹의 멤버가 아님 |
 | `PROJECT404` | 404 | 존재하지 않는 프로젝트 |
@@ -417,7 +423,7 @@
 
 ### DELETE /api/projects/{projectId}
 
-프로젝트 삭제. 모든 멤버 가능(flat 모델). **`PROJECT_DELETED` op 브로드캐스트** — 보고 있던 멤버는 그룹 페이지로 리다이렉트.
+프로젝트 **소프트 삭제**(그룹 소프트 삭제와 동일한 방식 — 행은 유지, `deleted_at` 기록). 모든 멤버 가능(flat 모델). **`PROJECT_DELETED` op 브로드캐스트** — 보고 있던 멤버는 그룹 페이지로 리다이렉트. `X-Client-Id` 헤더는 PATCH와 동일하게 선택.
 
 **Response `200`:**
 ```json

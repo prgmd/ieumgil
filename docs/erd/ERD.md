@@ -6,6 +6,8 @@
 > DB: PostgreSQL(RDS) — JSONB · partial index 활용
 
 > **타임스탬프 타입은 `TIMESTAMP`(timezone 없음)** — 엔티티의 시각 필드가 전부 `LocalDateTime`이라 Hibernate가 `timestamp without time zone`으로 컬럼을 생성한다. tz 보존이 필요해지면 엔티티를 `OffsetDateTime`/`Instant`로 바꿔야 한다.
+>
+> **`created_at`/`updated_at`은 JPA Auditing(`@CreatedDate`/`@LastModifiedDate`)이 채운다** — DB 레벨 `NOT NULL` 제약이나 `DEFAULT NOW` 절은 생성되지 않는다(`BaseTimeEntity` 참조). 아래 표의 `NOT NULL, DEFAULT NOW` 표기는 "앱이 항상 채운다"는 논리 제약이며, 직접 SQL로 INSERT하면 null이 들어갈 수 있다.
 
 ---
 
@@ -29,13 +31,14 @@ erDiagram
     PROJECT ||--o{ BLOCK : "포함"
     PROJECT ||--o{ ACTIVITY_LOG : "기록"
     MEMBER ||--o{ BLOCK : "작성"
+    MEMBER ||--o{ BLOCK : "마지막 편집"
     MEMBER ||--o{ ACTIVITY_LOG : "발생"
 
     MEMBER {
         bigint id PK
         bigint kakao_id "카카오 고유 ID, UK, 탈퇴 시 null"
         varchar nickname "탈퇴 시 '탈퇴한 멤버'로 값 교체"
-        varchar profile_img "nullable, 탈퇴 시 null"
+        varchar profile_image_url "nullable, 탈퇴 시 null"
         timestamp created_at
         timestamp updated_at
         timestamp deleted_at "탈퇴 시각, nullable"
@@ -91,6 +94,7 @@ erDiagram
         jsonb transport_meta "교통 블록 전용"
         varchar source "KAKAO | MANUAL | BOT"
         bigint author_id FK
+        bigint last_edited_by FK "마지막 편집자(PRS-04), nullable"
         jsonb field_updated_at "필드별 서버 수신 시각(LWW)"
         timestamp created_at
         timestamp updated_at
@@ -149,7 +153,7 @@ erDiagram
 | id | BIGINT | PK, IDENTITY | DB 내 회원 식별자 |
 | kakao_id | BIGINT | UNIQUE, NULL | 카카오 고유 ID. 탈퇴 시 null |
 | nickname | VARCHAR(30) | NOT NULL | 표시 이름. 탈퇴 시 `"탈퇴한 멤버"`로 값 교체 |
-| profile_img | VARCHAR(512) | NULL | 프로필 이미지 URL. 탈퇴 시 null |
+| profile_image_url | VARCHAR(512) | NULL | 프로필 이미지 URL. 탈퇴 시 null |
 | created_at | TIMESTAMP | NOT NULL, DEFAULT NOW | 가입 시점 |
 | updated_at | TIMESTAMP | NOT NULL | 마지막 수정 시점(`BaseTimeEntity` 상속) |
 | deleted_at | TIMESTAMP | NULL | 소프트 삭제(탈퇴) 시각 |
@@ -161,7 +165,7 @@ erDiagram
 > **탈퇴 정책(AUTH-05) — "재가입 = 신규 계정".** 계정 통합·부활은 v1 범위 외.
 > - `kakao_id` → **null** (원본 소셜 ID 즉시 파기)
 > - `nickname` → `"탈퇴한 멤버"`로 값 교체 (NOT NULL 충돌 없음, 블록 작성자 표기 자동 해결)
-> - `profile_img` → null, `deleted_at` 기록. 행은 유지(BLOCK.author_id FK 보존)
+> - `profile_image_url` → null, `deleted_at` 기록. 행은 유지(BLOCK.author_id FK 보존)
 > - 같은 카카오 계정으로 재가입하면 기존 행은 `kakao_id`가 null이라 조회되지 않아 새 행이 생성된다 — 충돌·부활 없음
 >
 > **구현 매핑**: 코드상 엔티티는 `User`(테이블 `users`), 필드는 `kakaoId` / `profileImageUrl`. API 경로·응답 필드는 `members` / `memberId` 용어를 쓴다.
@@ -189,9 +193,11 @@ erDiagram
 |---|---|---|---|
 | group_id | BIGINT | PK, FK(TRAVEL_GROUP) | 그룹 식별자 (ON DELETE CASCADE) |
 | member_id | BIGINT | PK, FK(MEMBER) | 회원 식별자 (ON DELETE CASCADE) |
-| joined_at | TIMESTAMP | NOT NULL, DEFAULT NOW | 가입 시점 (멤버 목록 표시 순서용) |
+| joined_at | TIMESTAMP | NOT NULL, DEFAULT NOW† | 가입 시점 (멤버 목록 표시 순서용) |
 
-> **PK: `(group_id, member_id)`** 복합키. 정원(최대 10명) 검증은 서비스 레이어에서 count 후 삽입, 동시 가입 경합은 그룹 행 `SELECT ... FOR UPDATE`로 방지.
+> † 앱 기본값(`@Builder.Default now()`) — DB `DEFAULT` 절이 아니다.
+
+> **PK: `(group_id, member_id)`** 복합키. 정원(최대 10명) 검증은 서비스 레이어에서 count 후 삽입, 동시 가입 경합은 그룹 행 `SELECT ... FOR UPDATE`로 방지. 인덱스 `ix_group_member_member (member_id)` — 회원 기준 소속 그룹 역조회용.
 >
 > **flat 모델 (방장 없음)** — `role` 컬럼이 없다. 모든 멤버가 동등해 그룹명 수정·초대 코드 재발급·그룹/프로젝트 삭제를 누구나 할 수 있고, 방장 승계 로직도 없다. 멤버 강제 방출(kick)은 두지 않고 **본인 탈퇴(self-leave)만** 지원 — 탈퇴 = 행 삭제(블록은 author_id로 유지). **마지막 1인이 나가면 그룹은 하드 삭제**된다(복구할 멤버가 없어 즉시 완전 삭제, 프로젝트·블록 CASCADE). 반면 명시적 그룹 삭제(confirmName)는 소프트 삭제(+30일 후 하드)로 별개.
 
@@ -210,7 +216,7 @@ erDiagram
 | budget_headcount | INT | NULL | 정산 인원(1인당 표시용). null=조회 시점 멤버 수 따름 |
 | target_budget | INT | NULL | 프로젝트 전체 목표 예산 |
 | keywords | JSONB | NULL | 챗봇 키워드 (최대 5개) |
-| status | VARCHAR(10) | NOT NULL | `PLANNING` / `DONE` (양방향 전환) |
+| status | VARCHAR(10) | NOT NULL | `PLANNING` / `DONE` (양방향 전환). 앱 기본값 `PLANNING` |
 | done_at | TIMESTAMP | NULL | 완료 시각 (되돌리면 null) |
 | created_at | TIMESTAMP | NOT NULL, DEFAULT NOW | 생성 시점 |
 | updated_at | TIMESTAMP | NOT NULL | 마지막 수정 시점(`BaseTimeEntity` 상속) |
@@ -218,7 +224,7 @@ erDiagram
 
 > **예산은 프로젝트 전체(총액) 기준.** `target_budget`은 프로젝트 전체 목표 예산이고, 지출 합계도 각 블록 `budget`(총액)의 합으로 계산한다.
 > **`budget_headcount`(1인당 표시용)**: 생성 폼의 "여행 인원" 입력을 초기값으로 사용. **정산 자체는 총액 기준**이며, 이 값은 "1인당 = 총액 ÷ 인원" N빵 표시에만 쓴다. null이면 조회 시점 그룹 멤버 수로 계산, 직접 지정 후에는 멤버 수 변동에 자동 연동하지 않음(BGT-03).
-> **`status`**: 양방향 전환. DONE이어도 쓰기 거부 로직을 두지 않음(NFR-05). 인덱스 `(group_id, status)`.
+> **`status`**: 양방향 전환. DONE이어도 쓰기 거부 로직을 두지 않음(NFR-05). 인덱스 `ix_project_group (group_id, deleted_at)` — 그룹의 살아있는 프로젝트 목록 조회용(`status` 인덱스는 없다).
 >
 > **Day 시작 시각(`day_settings`) 컬럼 제거** — 블록이 각자 절대 오프셋을 저장하므로 별도 Day 기점이 필요 없다. Day의 경계는 항상 00:00이고(Day N = 오프셋 `(N-1)*1440` ~ `N*1440 - 1`), `start_date`는 Day 1을 달력 날짜에 대응시키는 역할만 한다.
 
@@ -234,7 +240,7 @@ erDiagram
 | category | VARCHAR(20) | NOT NULL | `SPOT` / `FOOD` / `STAY` / `ETC` / `TRANSPORT` |
 | sub_category | VARCHAR(50) | NULL | 자유 텍스트 소분류 |
 | name | VARCHAR(255) | NOT NULL | 블록 이름 |
-| duration_min | INT | NOT NULL, DEFAULT 60† | 소요 시간(분, 30분 단위). 종료 오프셋(`start_offset_minutes + duration_min`)의 근거이자 표시값 |
+| duration_min | INT | NOT NULL, DEFAULT 60† | 소요 시간(분, 양수 — 단위 제약 없음). 종료 오프셋(`start_offset_minutes + duration_min`)의 근거이자 표시값 |
 | is_time_fixed | BOOLEAN | NOT NULL, DEFAULT FALSE† | 시각 고정 여부. TRUE면 드래그 재계산에서 제외(앵커) |
 | budget | INT | NOT NULL, DEFAULT 0† | 예산(원) — **프로젝트 전체(총액) 기준** |
 | detail | VARCHAR(500) | NULL | 세부 내용 (최대 500자) |
@@ -245,13 +251,14 @@ erDiagram
 | vehicle_flag | VARCHAR(10) | NULL | `START` / `END` / null — 차량 구간 표식, ETC 전용 |
 | transport_meta | JSONB | NULL | 교통 블록 전용 메타 |
 | source | VARCHAR(10) | NOT NULL | 생성 출처 `KAKAO` / `MANUAL` / `BOT` |
-| author_id | BIGINT | FK(MEMBER) NOT NULL | 작성자 (ON DELETE RESTRICT — 탈퇴는 소프트) |
-| field_updated_at | JSONB | NOT NULL, DEFAULT '{}' | 필드별 서버 수신 시각 (LWW) |
+| author_id | BIGINT | FK(MEMBER) NOT NULL | 작성자 (ON DELETE 없음 = NO ACTION — 탈퇴는 소프트라 FK가 깨지지 않음) |
+| last_edited_by | BIGINT | FK(MEMBER) NULL | 마지막 편집자(PRS-04). 생성 시 작성자로 시작, 필드 수정·이동이 실제 적용될 때마다 갱신. 005 마이그레이션 이전 행은 null — 표시가 작성자로 폴백 |
+| field_updated_at | JSONB | NOT NULL, DEFAULT '{}'† | 필드별 서버 수신 시각 (LWW) |
 | created_at | TIMESTAMP | NOT NULL, DEFAULT NOW | 생성 시점 |
 | updated_at | TIMESTAMP | NOT NULL | 마지막 수정 시점(`BaseTimeEntity` 상속) |
 | deleted_at | TIMESTAMP | NULL | tombstone (소프트 삭제) |
 
-> † `DEFAULT 60`/`DEFAULT FALSE`/`DEFAULT 0`은 애플리케이션 기본값(`@Builder.Default`)이며 DB `DEFAULT` 절이 아니다 — 직접 INSERT 시 값 지정이 필수다.
+> † `DEFAULT 60`/`DEFAULT FALSE`/`DEFAULT 0`/`DEFAULT '{}'`은 애플리케이션 기본값(`@Builder.Default`)이며 DB `DEFAULT` 절이 아니다 — 직접 INSERT 시 값 지정이 필수다.
 
 > **체인 조회는 partial index** (tombstone 필터가 항상 붙으므로):
 > ```sql
@@ -301,7 +308,7 @@ erDiagram
 
 > **UNIQUE KEY: `(project_id, seq)`**.
 > **payload에는 브로드캐스트한 op 전문을 그대로 저장** — "재전송 = 저장된 걸 그대로 쏜다"가 구조적으로 보장. 재연결 시 `WHERE project_id=? AND seq > :lastSeq ORDER BY seq`로 유실분 재전송(NFR-01).
-> **seq 채번**: Redis `INCR project:{id}:seq` + 채번~브로드캐스트 구간을 프로젝트 단위 락으로 직렬화 + 앱 기동 시 `max(seq)` 리시드.
+> **seq 채번**: Redis `INCR project:{id}:seq` + 채번~브로드캐스트 구간을 프로젝트 단위 락으로 직렬화. 카운터 유실 대비 리시드는 기동 시가 아니라 **지연 보정** — `INCR` 결과가 1이면(키가 새로 만들어졌으면) 그때 `max(seq)`로 끌어올린다(`SeqGenerator`).
 
 ---
 
@@ -328,7 +335,7 @@ erDiagram
 >
 > **지역 필터는 `l_dong_regn_cd` 기준, `area_code` 아님** — TourAPI 실제 응답에서 레거시 `areacode` 필드가 대부분 빈 값으로 와서 필터링에 못 씀(라이브 테스트로 확인). 법정동 코드(`lDongRegnCd`/`lDongSignguCd`)가 신뢰 가능한 값으로 채워져 있어 이걸 조회 조건으로 쓴다.
 > **레포츠(`contentTypeId=28`)는 수집 대상 아님** — 상시 영업 시설이라 카카오맵과 장소가 겹칠 가능성이 높아 제외.
-> **PROJECT/BLOCK과 아직 연동 안 됨** — 나중에 챗봇(BOT-03)이 `l_dong_regn_cd`+여행 기간으로 조회한 결과를 후보 BLOCK으로 만들 때는 `BLOCK.place_id`(현재 "카카오 장소 ID 참조용"으로만 문서화됨)에 `FESTIVAL.content_id`를 loosely 재사용할 계획 — 이때 `place_id` 컬럼 설명 문구도 "카카오/TourAPI 등 외부 장소 참조용"으로 정정 필요.
+> **PROJECT/BLOCK과 FK 연동 없음** — 챗봇(BOT-03)이 `l_dong_regn_cd`+여행 기간으로 조회한 결과를 후보 BLOCK으로 만들 때 `BLOCK.place_id`에 `FESTIVAL.content_id`를 loosely 재사용한다(BLOCK 절의 `place_id` 설명 참조 — `source=BOT`이고 TourAPI 출처인 경우).
 
 ---
 
@@ -338,13 +345,13 @@ erDiagram
 MEMBER ──< GROUP_MEMBER >── TRAVEL_GROUP
 TRAVEL_GROUP ──< PROJECT ──< BLOCK
 PROJECT ──< ACTIVITY_LOG
-MEMBER ──< BLOCK (author_id)
+MEMBER ──< BLOCK (author_id, last_edited_by)
 MEMBER ──< ACTIVITY_LOG (member_id)
 ```
 
 - `MEMBER` ↔ `TRAVEL_GROUP`은 `GROUP_MEMBER`로 다대다. 멤버 간 권한 차이 없음(flat).
 - `TRAVEL_GROUP` 1 : N `PROJECT`, `PROJECT` 1 : N `BLOCK`.
-- `BLOCK.author_id`, `ACTIVITY_LOG.member_id`는 `MEMBER` 참조 (탈퇴는 소프트 삭제라 FK 유지).
+- `BLOCK.author_id`, `BLOCK.last_edited_by`, `ACTIVITY_LOG.member_id`는 `MEMBER` 참조 (탈퇴는 소프트 삭제라 FK 유지).
 
 ---
 
@@ -357,7 +364,7 @@ MEMBER ──< ACTIVITY_LOG (member_id)
 | Refresh 토큰 / 로그아웃 블랙리스트 | Redis | `refresh:{memberId}`, TTL 기반 |
 | 접속 · 커서 · 편집 중 배지 (presence) | Redis · 메모리 | TTL 기반(PRS) |
 | 세부 내용 텍스트 편집 락 | Redis `SET NX` | TTL 30초(OI-04) |
-| seq 채번 카운터 | Redis `INCR` | 기동 시 `max(seq)` 리시드 |
+| seq 채번 카운터 | Redis `INCR` | 카운터 유실 시 `INCR` 결과 1을 감지해 `max(seq)`로 지연 리시드 |
 | 예산 합계 · Day 종료 시각 | 클라이언트 파생 계산 | 각 블록 `budget`(총액) 합산, Day 종료 = 마지막 블록 `start_offset_minutes + duration_min` |
 | 교통(ODsay)·장소(카카오 로컬) 조회 결과 | 외부 API (실시간 조회) | `domain.transit`/`domain.place`, DB에 영속하지 않음 |
 | 챗봇 대화 히스토리 | Redis `ChatTurn` | TTL 기반, 최근 N턴만 저장 |
