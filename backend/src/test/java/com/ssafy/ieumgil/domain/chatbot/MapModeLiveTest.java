@@ -17,6 +17,7 @@ import org.springframework.ai.anthropic.AnthropicChatModel;
 import org.springframework.ai.anthropic.AnthropicChatOptions;
 import org.springframework.ai.anthropic.api.AnthropicApi;
 import org.springframework.ai.chat.client.ChatClient;
+import org.springframework.ai.chat.messages.AssistantMessage;
 import org.springframework.ai.chat.messages.SystemMessage;
 import org.springframework.ai.chat.messages.UserMessage;
 import org.springframework.ai.chat.prompt.Prompt;
@@ -95,6 +96,53 @@ class MapModeLiveTest {
         // 4) 답변에 그 장소가 등장하고 한국어를 유지한다
         assertThat(reply).contains("블랙업커피");
         assertThat(reply).matches("(?s).*[가-힣].*");
+    }
+
+    @Test
+    @DisplayName("직전에 찾던 대상이 있으면 '여기는 어때?'에 위치를 되묻지 않고 그 검색어로 다시 호출한다")
+    void modelReusesPreviousKeyword_forHereRequest() throws IOException {
+        String apiKey = readGmsApiKey();
+        Assumptions.assumeTrue(apiKey != null && !apiKey.isBlank(), "GMS_API_KEY 없음 — .env 확인 필요");
+
+        PlaceQueryService placeQueryService = mock(PlaceQueryService.class);
+        when(placeQueryService.searchPlacesInRect(anyString(), anyDouble(), anyDouble(), anyDouble(), anyDouble()))
+                .thenReturn(List.of(PlaceResDTO.Place.builder()
+                        .placeId("1").name("블랙업커피 해운대점").address("부산 해운대구 중동2로 16")
+                        .lat(35.1633).lng(129.1643).category("카페")
+                        .build()));
+
+        Project project = Project.builder()
+                .destination("부산")
+                .startDate(LocalDate.of(2026, 10, 1))
+                .endDate(LocalDate.of(2026, 10, 4))
+                .budgetHeadcount(4)
+                .build();
+        String systemPrompt = ChatbotPrompt.SYSTEM
+                + ChatbotPrompt.modeTail(ChatbotMode.MAP)
+                + TripContextBuilder.build(project, 4);
+
+        // 트레이스 재현: 앞 turn 에서 "조용한 카페"를 물었고 이음이가 지역을 되물은 흐름 뒤에
+        // 사용자가 지도를 옮기고 "여기는 어때?"라고 한다. 되묻기를 반복하지 말고 직전 검색어
+        // (조용한 카페)로 현재 뷰포트를 다시 검색해야 한다.
+        CandidateCollector collector = new CandidateCollector();
+        String reply = ChatClient.builder(buildGmsChatModel(apiKey)).build()
+                .prompt(new Prompt(List.of(
+                        new SystemMessage(systemPrompt),
+                        new UserMessage("조용한 카페 추천해줘"),
+                        new AssistantMessage("어느 지역에서 찾을까요? 해운대, 남포동, 광안리 같은 위치를 알려주시면 찾아드릴게요!"),
+                        new UserMessage("여기는 어때?"))))
+                .tools(new ViewportPlaceSearchTool(HAEUNDAE_VIEWPORT, placeQueryService, collector))
+                .call()
+                .content();
+
+        System.out.println("=== MAP 모드 '여기는 어때?' 응답 ===\n" + reply + "\n==========================");
+
+        // 핵심 회귀 가드: 위치를 다시 되묻지 않고 직전 검색어로 뷰포트 tool 을 호출한다
+        verify(placeQueryService).searchPlacesInRect(
+                anyString(), eq(35.155), eq(129.155), eq(35.165), eq(129.170));
+        verify(placeQueryService, never()).searchPlaces(anyString(), anyDouble(), anyDouble());
+        assertThat(collector.candidates()).hasSize(1);
+        assertThat(reply).contains("블랙업커피");
     }
 
     private AnthropicChatModel buildGmsChatModel(String apiKey) {
