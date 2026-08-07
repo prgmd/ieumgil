@@ -63,7 +63,8 @@ services:
       retries: 10
 
   backend:
-    image: ${BACKEND_IMAGE}
+    # 레포 이름은 여기 고정, .env 에서는 태그 숫자만 바꾼다
+    image: ${BACKEND_IMAGE_REPO:-sezerolee/ieumgil-docker}:${BACKEND_TAG:-latest}
     container_name: ieumgil-backend
     restart: unless-stopped
     # 제한이 없으면 JVM(-XX:MaxRAMPercentage=75)이 "호스트 전체"의 75% 를 힙 상한으로 잡는다
@@ -102,7 +103,7 @@ services:
   frontend:
     # ⚠️ VITE_* 는 여기 없다. 런타임 환경변수가 아니라 **이미지를 만들 때 번들에
     #    구워지는 값**이라, 도메인·카카오 Redirect URI 를 바꾸려면 이미지를 다시 굽는다.
-    image: ${FRONTEND_IMAGE}
+    image: ${FRONTEND_IMAGE_REPO:-sezerolee/ieumgil-frontend}:${FRONTEND_TAG:-latest}
     container_name: ieumgil-frontend
     restart: unless-stopped
     mem_limit: 128m
