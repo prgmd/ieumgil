@@ -2188,6 +2188,30 @@ export function DashboardPage() {
           timelineStart,
           Math.min(dropMins, timelineEnd - SNAP),
         );
+
+        // 자석 스냅 — 이웃 블록 가장자리에 아주 가까우면 딱 붙인다(빈틈 0). 손으로
+        // 정확히 맞추기 어려운 걸 돕는다. 임계값 밖이면 원래 위치 그대로.
+        const SNAP_MAGNET = 10; // 분 (이 안이면 스냅)
+        let bestSnap = null;
+        blocksOfDay(board, items, activeDay).forEach((id) => {
+          if (id === activeIdLocal) return;
+          const b = items[id];
+          if (b?.startMins == null) return;
+          const bEnd = b.startMins + (b.dur || 0);
+          // 내 위를 이웃 끝에(그 밑에 붙기), 내 아래를 이웃 시작에(그 위에 붙기)
+          [bEnd, b.startMins - dur].forEach((cand) => {
+            const dist = Math.abs(dropMins - cand);
+            if (dist <= SNAP_MAGNET && (!bestSnap || dist < bestSnap.dist)) {
+              bestSnap = { mins: cand, dist };
+            }
+          });
+        });
+        if (bestSnap) {
+          dropMins = Math.max(
+            timelineStart,
+            Math.min(bestSnap.mins, timelineEnd - SNAP),
+          );
+        }
         return { region: "timeline", dropMins, dur };
       }
 
@@ -2197,7 +2221,7 @@ export function DashboardPage() {
       if (active.data?.current?.from === "search") return { region: null };
       return { region: "discard" };
     },
-    [pool, items, timelineStart, timelineEnd],
+    [pool, items, timelineStart, timelineEnd, board, activeDay],
   );
 
   // 렌더에서 쓰는 드래그 출처 정보({ from, place })는 state 로 둔다 —
