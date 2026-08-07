@@ -493,6 +493,7 @@ export function DashboardPage() {
   // 축은 여행 전체다 — 첫 Day 의 00:00 부터 마지막 Day 의 24:00 까지 한 줄로 잇는다.
   // 렌더 식은 전부 (값 - timelineStart) * PX 꼴 그대로 두고 기준선만 0 으로 내렸다.
   // dayKeysOf 는 항상 Day 를 하나 이상 주므로 activeDay 는 언제나 "dN" 이다.
+  const activeDayIndex = Math.max(0, dayKeys.indexOf(activeDay));
   const timelineStart = 0;
   const timelineEnd = dayKeys.length * blockApi.MINUTES_PER_DAY;
 
@@ -2765,11 +2766,15 @@ export function DashboardPage() {
               <div className="main">
                 <div className="board plan-board">
                   <div className="bd-head">
-                    {/* Day 번호·날짜는 축 위의 sticky 헤더(.tl-day-head)가 쥔다 —
-                        축이 여행 전체 한 줄이라 여기 고정된 Day 표시를 같이 두면
-                        스크롤을 따라 움직이는 표시와 어느 쪽이 진짜인지 어긋난다.
-                        (날짜는 표시 전용이다. 여행 기간은 상단바 제목 옆 ✎ 에서
-                        바꾼다 — 안내 문구가 그 자리를 알려 준다.) */}
+                    {/* Day 표시는 여기 하나뿐이다. 축 안에 라벨을 같이 두면 스크롤
+                        내내 카드 위를 가로질러 오히려 축을 토막 내 보이게 했다.
+                        활성 Day 가 스크롤에서 파생되므로 이 제목도 스크롤을 따라
+                        바뀐다 — 고정 표시가 아니라 "지금 보고 있는 Day" 다.
+                        (날짜는 표시 전용. 여행 기간은 상단바 제목 옆 ✎ 에서 바꾼다) */}
+                    <h2>Day {activeDayIndex + 1}</h2>
+                    <span className="date">
+                      {dayDate(project, activeDayIndex) || "날짜 미정"}
+                    </span>
                     <span
                       // tip-down: 헤더 바로 아래라 위로 열면 상단바에 가린다
                       className="hint-ico tip-down"
@@ -3000,42 +3005,7 @@ export function DashboardPage() {
                       )}
                     </div>
 
-                    {/* Day 구분 헤더 — 하루가 시작하는 자리(dayIndex × 24시간)마다
-                        하나씩, 그 Day 의 구간 안에서 sticky 로 따라온다.
-                        Day 를 카드의 컨테이너로 만들지 않는다 — 만들면 자정을 넘는
-                        블록을 두 칸에 걸쳐 쪼개야 하고, 그게 이번에 없앤 두-행
-                        모델이다. 카드는 .tl-slots 한 곳에 그대로 있고 여기 있는
-                        것은 라벨뿐이다.
-                        반투명이라 카드가 헤더 밑을 지나가는 게 그대로 보인다 —
-                        여행이 챕터로 끊기는 게 아니라 이어진다는 표시다.
-                        pointer-events 는 CSS 에서 끈다(카드 위에 뜨므로). */}
-                    <div
-                      className="tl-days"
-                      style={{
-                        "--tl-pad-top": `${TL_PAD_TOP}px`,
-                        "--tl-pad-left": `${TL_PAD_LEFT}px`,
-                      }}
-                    >
-                      {dayKeys.map((day, i) => (
-                        <div
-                          key={day}
-                          className="tl-day"
-                          style={{
-                            top: `${(i * blockApi.MINUTES_PER_DAY - timelineStart) * PX}px`,
-                            height: `${blockApi.MINUTES_PER_DAY * PX}px`,
-                          }}
-                        >
-                          <div className="tl-day-head">
-                            <b className="tl-day-no">Day {i + 1}</b>
-                            <span className="tl-day-date">
-                              {dayDate(project, i) || "날짜 미정"}
-                            </span>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-
-                    {/* 다른 멤버들의 라이브 커서(타임라인 정밀 좌표) — 카드 위에 뜨되
+{/* 다른 멤버들의 라이브 커서(타임라인 정밀 좌표) — 카드 위에 뜨되
                         클릭은 통과시킨다(pointer-events: none). 상태는 레이어가 자체 보유 */}
                     <RemoteCursorLayer
                       mode="tl"

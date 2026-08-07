@@ -515,7 +515,8 @@
   position: relative;
   /* 머리글 아래 간격은 .bd-head 의 margin-bottom 이 쥔다 — 여기서 또 주면
      다른 카드보다 본문이 한 단 아래에서 시작한다 */
-  border: 1px solid var(--border1, #e3dfd8);
+  /* 외곽 테두리는 두지 않는다 — 여행 전체가 이어진 하나의 축인데 상자로 감싸면
+     스크롤이 창 안에 갇힌 것처럼 읽힌다. 배경만으로 영역을 구분한다. */
   border-radius: 12px;
   background: var(--bg1, #fffdf8);
   padding: 10px;
@@ -529,9 +530,8 @@
   background: rgba(156, 74, 47, 0.02);
 }
 
-/* 눈금판·Day 헤더판·블록판 — 여백(--tl-pad-*)만 JSX 가 넘기고 나머지는 여기서 */
+/* 눈금판·블록판 — 여백(--tl-pad-*)만 JSX 가 넘기고 나머지는 여기서 */
 .tl-bg,
-.tl-days,
 .tl-slots {
   position: absolute;
   top: var(--tl-pad-top);
@@ -571,42 +571,6 @@
   border-top: 1px dashed rgba(61, 43, 34, 0.15);
 }
 
-/* ── Day 구분 헤더 ───────────────────────────────────────────
-   축이 여행 전체 한 줄이라 하루가 바뀌는 자리를 여기서 알려 준다.
-   .tl-day 는 그 Day 의 구간(24시간)만큼 자리를 잡을 뿐 카드를 담지 않는다 —
-   담으면 자정을 넘는 블록을 두 칸에 걸쳐 쪼개야 한다. 헤더가 그 구간 안에서만
-   sticky 로 따라붙는 것도 이 자리 덕이다.
-   카드(.tl-slots, z5) 위에 뜨되 반투명이라 밑을 지나가는 카드가 그대로 비친다 —
-   자정을 관통하는 블록이 끊기지 않는 게 보여야 한다. 위에 뜨는 만큼 클릭은
-   전부 통과시킨다. */
-.tl-days {
-  bottom: 0;
-  z-index: 10;
-  pointer-events: none;
-}
-.tl-day {
-  position: absolute;
-  left: 0;
-  right: 0;
-}
-.tl-day-head {
-  position: sticky;
-  top: 0;
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
-  /* 시간 눈금(.tl-mark-time)이 있는 왼쪽 여백까지 덮어 경계를 한 줄로 긋는다 */
-  margin-left: -64px;
-  padding: 3px 10px;
-  border-top: 2px solid rgba(156, 74, 47, 0.3);
-  background: rgba(255, 253, 248, 0.72);
-  font-size: 12px;
-  color: var(--ink3, #786d63);
-}
-.tl-day-no {
-  font-size: 13px;
-  color: var(--acc, #9c4a2f);
-}
 
 /* 드래그 중 "여기에 놓기" 미리보기 — 색은 끌고 있는 블록의 카테고리(--dc/--cb) */
 /* 블록 좌상단의 "가장 최근 수정자" 아바타 — 테두리는 그 멤버의 커서 색.
