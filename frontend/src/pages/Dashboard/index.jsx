@@ -2391,12 +2391,25 @@ export function DashboardPage() {
     // 15분(=30px)만 앞에서 멈춘다 — 목표가 sticky Day 머리글에 가리지 않게
     const top = Math.max(0, (target - timelineStart - 15) * PX);
     setScrolledDay(dayKey);
-    // 이미 그 자리면 스크롤 이벤트가 안 난다 — 잠그면 풀어 줄 계기가 없어 그냥 둔다
-    if (Math.abs(el.scrollTop - top) < 1) return;
+    // 이미 그 자리면 스크롤 이벤트가 안 난다 — 잠그지 않고, 앞선 점프의 락이
+    // 남아 있으면 여기서 푼다(위치가 이미 목표라 방금 넣은 값이 곧 정답이다)
+    if (Math.abs(el.scrollTop - top) < 1) {
+      releaseJumpLock();
+      return;
+    }
     clearTimeout(jumpTimerRef.current);
     jumpLockRef.current = dayKey;
+    // 시한이 다하면 락을 풀고 **그 자리에서 다시 잰다.** 풀기만 하면 안 된다 —
+    // 락이 걸린 동안의 스크롤 이벤트는 syncDominantDay 의 조기 반환에 전부
+    // 삼켜지므로, 사용자가 휠로 점프를 가로채고 멈춰 서면(스무스 스크롤은
+    // 취소된다) 락이 풀린 뒤에도 이벤트가 더는 오지 않는다. 그러면 하이라이트가
+    // 목표 Day 에 얼어붙고 presence·커서 dayNo·지도까지 그 Day 를 계속 방송해
+    // 팀원에게 내가 있지도 않은 Day 를 보고 있다고 거짓말한다. 최대 스크롤
+    // 위치라 scrollTo 가 조용한 no-op 이 되는 경우도 같은 길로 구제된다.
     jumpTimerRef.current = setTimeout(() => {
-      if (jumpLockRef.current === dayKey) jumpLockRef.current = null;
+      if (jumpLockRef.current !== dayKey) return;
+      jumpLockRef.current = null;
+      syncDominantDay();
     }, 1200);
     el.scrollTo({ top, behavior });
   };
