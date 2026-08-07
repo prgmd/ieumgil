@@ -11,8 +11,9 @@ import { useState, useRef, useEffect, useCallback } from "react";
 import { ensureKakaoMaps } from "../../../features/dashboard/map/addressLookup";
 import * as placeApi from "../../../features/place/api/placeApi";
 import { planPinImage, searchPinImage, ROUTE_LINE_COLOR } from "../mapPins";
+import { blocksOfDay } from "../dashboardHelpers";
 
-export function useKakaoMap({ chains, items, activeDay, showToast }) {
+export function useKakaoMap({ board, items, activeDay, showToast }) {
   const [map, setMap] = useState(null);
   const [searchKeyword, setSearchKeyword] = useState("");
   const [searchResults, setSearchResults] = useState([]);
@@ -68,7 +69,7 @@ export function useKakaoMap({ chains, items, activeDay, showToast }) {
   }, [map]);
 
   // ── 계획표 블록 → 지도 핀 (QA 배치3) ──
-  // 활성 Day 체인의 좌표 있는 블록을 핀으로 찍는다. 핀은 편집을 따라 실시간으로
+  // 활성 Day 의 좌표 있는 블록을 핀으로 찍는다. 핀은 편집을 따라 실시간으로
   // 갱신하되, 카메라 이동(범위 맞춤)은 "지도 준비·Day 전환 때 한 번"만 한다 —
   // 블록을 만질 때마다 지도가 움직이면 검색하려고 옮겨 둔 화면을 뺏는다.
   const chainMarkersRef = useRef([]);
@@ -82,7 +83,11 @@ export function useKakaoMap({ chains, items, activeDay, showToast }) {
     routeLinesRef.current.forEach((l) => l.setMap(null));
     routeLinesRef.current = [];
 
-    const chainPoints = (chains[activeDay] || [])
+    // 지도는 "지금 보는 하루의 동선"을 보여주는 화면이라 축이 여행 전체로 넓어진
+    // 뒤에도 Day 로 좁힌다 — 보드 목록에서 그 Day 만 골라 온다(오프셋 순 그대로).
+    const dayIds = blocksOfDay(board, items, activeDay);
+
+    const chainPoints = dayIds
       .map((id) => items[id])
       .filter((it) => it?.lat != null && it?.lng != null);
 
@@ -123,9 +128,7 @@ export function useKakaoMap({ chains, items, activeDay, showToast }) {
     // "이동 수단을 정해 둔 구간"만 그려야 계획한 동선과 아직 빈 구간이 구분된다.
     // 교통 블록 자체에는 좌표가 없으므로(경로 조회 결과에 legs 의 정거장 '이름'만
     // 오고 좌표는 없다) 앞뒤 장소를 직선으로 잇는다 — 실제 도로·선로 모양이 아니다.
-    const chainItems = (chains[activeDay] || [])
-      .map((id) => items[id])
-      .filter(Boolean);
+    const chainItems = dayIds.map((id) => items[id]).filter(Boolean);
     const hasCoords = (it) => it?.lat != null && it?.lng != null;
 
     chainItems.forEach((it, i) => {
@@ -169,8 +172,7 @@ export function useKakaoMap({ chains, items, activeDay, showToast }) {
 
     let fitPoints = chainPoints;
     if (fitPoints.length === 0) {
-      const firstPlaced = Object.values(chains)
-        .flat()
+      const firstPlaced = board
         .map((id) => items[id])
         .find((it) => it?.lat != null && it?.lng != null);
       fitPoints = firstPlaced ? [firstPlaced] : [];
@@ -192,7 +194,7 @@ export function useKakaoMap({ chains, items, activeDay, showToast }) {
       );
       map.setBounds(bounds);
     }
-  }, [map, chains, activeDay, items]);
+  }, [map, board, activeDay, items]);
 
   /**
    * 그 장소로 카메라를 옮기고 말풍선을 띄운다. 좌표가 없는 블록(교통·기타)은

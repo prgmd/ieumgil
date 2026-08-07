@@ -153,97 +153,40 @@ export function dayDate(project, index, style = "full") {
 export const catKeyOf = (item) => (CAT_COLORS[item?.cat] ? item.cat : "etc");
 
 /**
- * 이 Day 의 00:00(dayBase, 절대 분)을 가로질러 이어지는 블록들.
+ * 보드 위 블록 id 를 오프셋 순으로 세운 하나의 목록.
  *
- * 자정을 넘긴 블록은 한 행이고 시작한 Day 의 체인에만 있다 — 그래서 다음 Day 쪽에서는
- * chains 를 봐서는 보이지 않고, 보드 전체(items)를 훑어야만 찾을 수 있다.
- * excludeId 는 지금 옮기는 중인 블록 — 제 꼬리에 제가 막히면 안 된다.
+ * 소속의 근거는 오프셋 하나다 — startMins 가 있으면 시간축 위에 있고, 없으면
+ * 후보(POOL)다. Day 별 체인 맵을 따로 두지 않는 이유가 여기 있다: 맵을 두면
+ * "오프셋이 가리키는 Day"와 "실제로 들어 있는 체인"이 갈라질 수 있고, 자정을
+ * 넘겨 밀린 블록마다 그 둘을 다시 맞춰야 했다.
  *
- * 돌려주는 항목은 화면에만 쓰는 파생값이다: 체인에 넣지 않고, 블록 수·예산·교통
- * 짝짓기 어디에도 세지 않는다.
+ * 순서는 서버의 보드 정렬(BlockRepository.findChain: startOffsetMinutes,
+ * order_key, id)과 같다 — orderKey 는 같은 시각에 놓인 블록들의 동점 처리다.
+ * 키가 없는 로컬 전용 블록(auto- 등)은 동점 비교를 건너뛰고 id 로 끊는다.
  */
-export const spilloversInto = (itemsMap, dayBase, excludeId = null) =>
-  Object.entries(itemsMap ?? {})
-    .filter(([id, it]) => {
-      if (excludeId != null && id === String(excludeId)) return false;
-      if (it?.startMins == null) return false; // 후보(POOL)는 시간축 위에 없다
-      return it.startMins < dayBase && it.startMins + it.dur > dayBase;
+export const boardOf = (itemsMap) =>
+  Object.values(itemsMap ?? {})
+    .filter((b) => b?.startMins != null)
+    .sort((a, b) => {
+      if (a.startMins !== b.startMins) return a.startMins - b.startMins;
+      if (a.orderKey != null && b.orderKey != null && a.orderKey !== b.orderKey)
+        return a.orderKey < b.orderKey ? -1 : 1;
+      if (a.id === b.id) return 0;
+      return String(a.id) < String(b.id) ? -1 : 1;
     })
-    .map(([id, it]) => ({ id, item: it, endMins: it.startMins + it.dur }));
+    .map((b) => b.id);
 
 /**
- * 이 Day 에서 블록이 시작할 수 있는 가장 이른 시각.
- * 자정을 넘어온 블록이 없으면 그 Day 의 00:00(dayBase)이고, 있으면 그중 가장
- * 늦게 끝나는 블록의 끝이다 — 화면의 띠(.tl-spill)가 덮고 있는 구간 그대로다.
- * 겹침 해소와 드롭 클램프가 같은 값을 봐야 "띠 위에 놓았는데 왜 내려가지" 가
- * 없다.
+ * 그 Day 에 앉은 블록들 — 보드 목록의 부분집합이라 오프셋 순서를 그대로 물려받는다.
+ * Day 는 저장하는 값이 아니라 시작 오프셋에서 유도한다(서버 Block.dayNo() 와 같은
+ * 규칙). 자정을 넘긴 블록은 시작한 Day 의 것이다.
+ *
+ * 여행 기간 밖(마지막 Day 의 자정 너머)으로 밀린 블록은 어느 Day 에도 안 잡힌다 —
+ * 그런 Day 가 없기 때문이다. 보드에는 그대로 남아 그려지고 저장된다.
  */
-export const spilloverFloorOf = (itemsMap, dayBase, excludeId = null) =>
-  spilloversInto(itemsMap, dayBase, excludeId).reduce(
-    (floor, spill) => Math.max(floor, spill.endMins),
-    dayBase,
+export const blocksOfDay = (board, itemsMap, dayKey) => {
+  const dayNo = dayNoOf(dayKey);
+  return (board ?? []).filter(
+    (id) => dayNoOfOffset(itemsMap?.[id]?.startMins) === dayNo,
   );
-
-/**
- * 오프셋 순으로 체인에 끼워 넣을 자리. 동점이면 orderKey, 그것도 같으면 id —
- * 서버의 보드 정렬(BlockRepository.findChain: startOffsetMinutes, order_key, id)과
- * 같은 순서다. 키가 없는 로컬 전용 블록(auto- 등)은 동점 비교에서 자리를 양보한다.
- */
-const insertByOffset = (list, itemsMap, id) => {
-  const mine = itemsMap[id];
-  const at = list.findIndex((otherId) => {
-    const other = itemsMap[otherId];
-    if (other?.startMins == null) return false;
-    if (other.startMins !== mine.startMins)
-      return other.startMins > mine.startMins;
-    if (other.orderKey == null || mine.orderKey == null) return false;
-    if (other.orderKey !== mine.orderKey) return other.orderKey > mine.orderKey;
-    return Number(otherId) > Number(id);
-  });
-  const next = [...list];
-  next.splice(at === -1 ? next.length : at, 0, id);
-  return next;
-};
-
-/**
- * 체인 소속을 오프셋에 다시 맞춘다.
- *
- * 이 브랜치의 규칙은 "Day 는 저장하는 값이 아니라 오프셋에서 유도한다"이고,
- * 스냅샷 시드(useDashboard)와 원격 op 배치(placeRemoteBlock)는 그 규칙을 지킨다.
- * 유일하게 어기는 곳이 겹침 해소다 — 밀린 이웃이 자정을 넘어가도 시작한 Day 의
- * 체인에 그대로 남는다. 그러면 그 블록은 앞 Day 의 자정 아래에 그려지고 다음 Day
- * 탭에서는 사라지며, 시작이 자정 뒤라 "넘어온 블록"(spilloversInto)에도 안 걸려
- * 띠조차 못 만든다 — 다음 Day 의 블록들이 그 위에 겹치게 된다.
- *
- * 그래서 해소 결과를 chains 에 쓸 때마다 이 함수를 통과시킨다. 순수 클라이언트
- * 그룹핑이라 서버로 나가는 것은 없다 — 서버에는 Day 컬럼이 없고 순서도
- * startOffsetMinutes 에서 유도한다(findChain). 이미 나가는 position PATCH 가
- * 필요한 전부다.
- *
- * 안 옮기는 경우: ① 같은 Day 안 ② 후보(POOL, 오프셋 null) ③ 목적지 Day 가 아직
- * 없는 경우(여행 기간 밖으로 밀린 블록) — 없는 체인에 넣으면 탭이 없어 화면에서
- * 사라진다. 그대로 두면 앞 Day 의 자정 아래에 남아 최소한 보이기는 한다.
- */
-export const regroupChainsByOffset = (chainsMap, itemsMap) => {
-  const moves = [];
-  for (const [dayKey, chain] of Object.entries(chainsMap ?? {})) {
-    for (const id of chain) {
-      const startMins = itemsMap?.[id]?.startMins;
-      if (startMins == null) continue; // 후보(POOL)는 체인으로 끌어오지 않는다
-      const dayNo = dayNoOfOffset(startMins);
-      const target = `d${dayNo}`;
-      if (target === dayKey) continue;
-      if (!(target in chainsMap)) continue;
-      moves.push({ id, from: dayKey, to: target });
-    }
-  }
-  if (moves.length === 0) return chainsMap; // 참조를 유지해 불필요한 리렌더를 막는다
-
-  const next = {};
-  for (const [dayKey, chain] of Object.entries(chainsMap)) next[dayKey] = chain;
-  for (const { id, from, to } of moves) {
-    next[from] = next[from].filter((other) => other !== id);
-    next[to] = insertByOffset(next[to], itemsMap, id);
-  }
-  return next;
 };

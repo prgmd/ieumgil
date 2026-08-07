@@ -1,6 +1,6 @@
 // pages/Dashboard/hooks/useBudget.js
 //
-// 목표 예산과 지출 집계. 총액은 체인에 배치된 블록에서 파생하고(후보 블록은 세지
+// 목표 예산과 지출 집계. 총액은 보드에 배치된 블록에서 파생하고(후보 블록은 세지
 // 않는다), 1인 요금 수단은 인원만큼 곱한다(effectiveCostOf).
 //
 // setTargetBudget 을 밖으로 노출하는 이유: 원격 op TARGET_BUDGET_CHANGED 가
@@ -15,17 +15,17 @@ import * as blockApi from "../../../features/dashboard/api/dashboardApi";
 export function useBudget({
   projectId,
   project,
-  chains,
+  board,
   items,
   rollbackToServer,
 }) {
   // 정산·1인 요금 환산의 기준 인원. 프로젝트에 값이 없으면 최소 1명으로 본다.
   const headcount = Math.max(1, project?.budgetHeadcount || 1);
 
-  // 예산은 체인에 배치된 블록만 센다(명세) — 후보(POOL)는 아직 계획이 아니라
+  // 예산은 보드에 배치된 블록만 센다(명세) — 후보(POOL)는 아직 계획이 아니라
   // 검토 중인 카드라서, 합산에 넣으면 "쓸지 말지 모르는 돈"이 예산을 잠식한다.
-  const placedIds = Object.values(chains).flat();
-  const totalBudget = placedIds.reduce(
+  // board 가 이미 "배치된 블록 전부"라 Day 별로 모을 것이 없다.
+  const totalBudget = board.reduce(
     (sum, id) => sum + effectiveCostOf(items[id], headcount),
     0,
   );
@@ -95,18 +95,16 @@ export function useBudget({
         ? totalBudget || 1
         : targetBudget;
 
-    // 총액(totalBudget)과 같은 기준 — 체인에 배치된 블록만 (후보는 계획이 아니다).
+    // 총액(totalBudget)과 같은 기준 — 보드에 배치된 블록만 (후보는 계획이 아니다).
     // 1인 요금 곱하기도 같은 함수를 써야 칸의 합이 총액과 맞는다.
     const sumByCat = {};
-    Object.values(chains)
-      .flat()
-      .forEach((id) => {
-        const item = items[id];
-        const cost = effectiveCostOf(item, headcount);
-        if (cost <= 0) return;
-        const cat = catKeyOf(item);
-        sumByCat[cat] = (sumByCat[cat] ?? 0) + cost;
-      });
+    board.forEach((id) => {
+      const item = items[id];
+      const cost = effectiveCostOf(item, headcount);
+      if (cost <= 0) return;
+      const cat = catKeyOf(item);
+      sumByCat[cat] = (sumByCat[cat] ?? 0) + cost;
+    });
 
     return Object.keys(CAT_COLORS)
       .filter((cat) => sumByCat[cat] > 0)
@@ -119,7 +117,7 @@ export function useBudget({
         shareOfTotal:
           totalBudget > 0 ? (sumByCat[cat] / totalBudget) * 100 : 0,
       }));
-  }, [items, chains, headcount, targetBudget, totalBudget, remainingBudget]);
+  }, [items, board, headcount, targetBudget, totalBudget, remainingBudget]);
 
   return {
     headcount,

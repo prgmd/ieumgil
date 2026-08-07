@@ -26,18 +26,16 @@ const EXPIRE_MS = 5000;
  * @param {(handler: (msg) => void) => void} register 수신 콜백 등록(latest-ref 주입)
  * @param {number|undefined} myId 자기 커서 스킵 기준(actorId 비교 — 계약상 clientId 아님)
  * @param {"tl"|"page"} mode 이 레이어가 그리는 좌표 공간
- * @param {number} activeDayNo 지금 보는 Day — 다른 Day 를 보는 멤버의 커서는 어느
- *   레이어에서도 그리지 않는다. 서로 다른 화면 위에 커서만 겹치면 "저 사람이 내
- *   화면을 가리키고 있다"는 착시가 생긴다(QA: 시작시간 부근에서 day 무관 노출)
  * @param {(memberId: number) => string} nicknameOf 커서에 붙일 이름표
- * @param {number} timelineStart mode="tl" 의 기준선 — 활성 Day 00:00 의 절대 분 오프셋.
- *   커서 y 도 같은 절대 공간이라 (y - timelineStart) 가 창 안 상대 분이 된다.
+ * @param {number} timelineStart mode="tl" 의 기준선 — 축의 원점(여행 첫 Day 00:00)의
+ *   절대 분 오프셋. 커서 y 도 같은 절대 공간이라 (y - timelineStart) 가 축 위
+ *   상대 분이 된다. 축이 여행 전체라 위치만으로 커서가 놓일 자리가 정해진다 —
+ *   보고 있는 Day 로 거르지 않는 이유다(payload 의 dayNo 는 Day 탭 아바타 몫).
  */
 export function RemoteCursorLayer({
   register,
   myId,
   mode,
-  activeDayNo,
   timelineStart,
   px,
   padTop,
@@ -88,9 +86,7 @@ export function RemoteCursorLayer({
     return () => clearInterval(timer);
   }, []);
 
-  const visible = Object.entries(cursors).filter(
-    ([, c]) => c.dayNo === activeDayNo,
-  );
+  const visible = Object.entries(cursors);
 
   return (
     <div

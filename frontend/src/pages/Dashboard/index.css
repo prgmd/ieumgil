@@ -494,21 +494,13 @@
   align-items: center;
   gap: 16px;
 }
+/* 지금 보고 있는 Day — 스크롤에서 파생되므로 고정 제목이 아니라 위치 표시다 */
 .bd-head h2 {
   margin: 0;
   font-size: 24px;
 }
 .bd-head .date {
   color: var(--ink3, #786d63);
-}
-
-/* 날짜 + 안내 토글. 둘을 한 덩어리로 붙여 놓는다 — .bd-head 의 gap(16px)이
-   그대로 걸리면 안내 아이콘이 날짜가 아니라 옆 컨트롤에 딸린 것처럼 보인다.
-   (날짜는 표시 전용이다. 기간 변경은 상단바 제목 옆 ✎ 에서 한다.) */
-.date-wrap {
-  display: inline-flex;
-  align-items: center;
-  gap: 2px;
 }
 .bd-head .right {
   margin-left: auto;
@@ -570,7 +562,8 @@
   position: relative;
   /* 머리글 아래 간격은 .bd-head 의 margin-bottom 이 쥔다 — 여기서 또 주면
      다른 카드보다 본문이 한 단 아래에서 시작한다 */
-  border: 1px solid var(--border1, #e3dfd8);
+  /* 외곽 테두리는 두지 않는다 — 여행 전체가 이어진 하나의 축인데 상자로 감싸면
+     스크롤이 창 안에 갇힌 것처럼 읽힌다. 배경만으로 영역을 구분한다. */
   border-radius: 12px;
   background: var(--bg1, #fffdf8);
   padding: 10px;
@@ -586,7 +579,7 @@
   background: rgba(156, 74, 47, 0.02);
 }
 
-/* 눈금판과 블록판 — 여백(--tl-pad-*)만 JSX 가 넘기고 나머지는 여기서 */
+/* 눈금판·블록판 — 여백(--tl-pad-*)만 JSX 가 넘기고 나머지는 여기서 */
 .tl-bg,
 .tl-slots {
   position: absolute;
@@ -626,6 +619,7 @@
   top: 0;
   border-top: 1px dashed rgba(61, 43, 34, 0.15);
 }
+
 
 /* 드래그 중 "여기에 놓기" 미리보기 — 색은 끌고 있는 블록의 카테고리(--dc/--cb) */
 /* 블록 좌상단의 "가장 최근 수정자" 아바타 — 테두리는 그 멤버의 커서 색.
@@ -739,49 +733,6 @@
   border-radius: 9px;
   white-space: nowrap;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.15);
-}
-
-/* 앞 Day 에서 자정을 넘어온 블록의 자리 표시 — 카드가 아니라 빗금 띠다.
-   .tl-bg 안에 있어 z-index 0 · pointer-events: none 을 그대로 물려받는다:
-   진짜 카드(.slot, z5)보다 뒤에 깔리고 드래그·클릭을 가로채지 않는다. */
-.tl-spill {
-  position: absolute;
-  top: 0;
-  left: -6px;
-  right: 10px;
-  border-radius: 12px;
-  border: 1px dashed var(--dc);
-  /* 빗금 — 카드의 채운 배경과 한눈에 구분되는 "여기 실물은 없다"는 표시 */
-  background: repeating-linear-gradient(
-    -45deg,
-    rgba(61, 43, 34, 0.05) 0,
-    rgba(61, 43, 34, 0.05) 6px,
-    transparent 6px,
-    transparent 12px
-  );
-  opacity: 0.9;
-  overflow: hidden;
-}
-.tl-spill-label {
-  position: absolute;
-  bottom: 6px;
-  left: 10px;
-  right: 10px;
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
-  font-size: 12px;
-  color: var(--ink3, #8a776a);
-}
-.tl-spill-name {
-  font-weight: 700;
-  color: var(--dc);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.tl-spill-time {
-  font-size: 11px;
 }
 
 .tl-ghost {

@@ -1,25 +1,27 @@
 import { TransitCandidateCard } from "./TransitCandidateCard";
+import * as blockApi from "../../../features/dashboard/api/dashboardApi";
 import {
   won,
   catOf,
   dayDate,
   fmtTime,
   effectiveCostOf,
+  blocksOfDay,
 } from "../dashboardHelpers";
 import {
   openBlockLink,
   hasExternalLink,
 } from "../../../features/dashboard/api/externalLink";
 
-export function ReadModeView({ chains, items, dayKeys, project }) {
+export function ReadModeView({ board, items, dayKeys, project }) {
   // 배경·좌우 여백은 편집 모드와 같은 껍데기(.dash-shell/.dash-body)가 쥔다 —
   // 여기서 배경을 따로 칠하면 모드를 바꿀 때 화면이 갈라져 보인다.
 
-  // Day별 비용 합계 (QA 배치2) — 편집 모드 예산과 같은 기준(체인 배치 블록만 +
+  // Day별 비용 합계 (QA 배치2) — 편집 모드 예산과 같은 기준(보드 배치 블록만 +
   // 1인 요금 이동수단은 인원만큼 곱한다). 두 화면의 총액이 달라지면 안 된다.
   const headcount = Math.max(1, project?.budgetHeadcount || 1);
   const dayCostOf = (day) =>
-    (chains[day] || []).reduce(
+    blocksOfDay(board, items, day).reduce(
       (sum, id) => sum + effectiveCostOf(items[id], headcount),
       0,
     );
@@ -33,12 +35,9 @@ export function ReadModeView({ chains, items, dayKeys, project }) {
         여행 총 비용 <b>{won(totalCost) || "0원"}</b>
       </div>
       {dayKeys.map((day, index) => {
-        // 표시는 시각 순으로 (QA ⓒ) — 체인은 orderKey 순서라 드래그·수정 이력에
-        // 따라 시각 순서와 어긋날 수 있는데, 읽기 모드는 "하루의 흐름"이라
-        // 시간이 곧 순서여야 한다. 정렬은 표시 전용이라 데이터를 건드리지 않는다.
-        const chain = [...(chains[day] || [])].sort(
-          (a, b) => (items[a]?.startMins ?? 0) - (items[b]?.startMins ?? 0),
-        );
+        // 보드 목록이 이미 오프셋 순이라 그 Day 만 걸러 내면 시각 순이다 —
+        // 읽기 모드는 "하루의 흐름"이라 시간이 곧 순서여야 한다.
+        const chain = blocksOfDay(board, items, day);
         const dayCost = dayCostOf(day);
         return (
           <div key={day} className="rv-day">
@@ -123,8 +122,17 @@ export function ReadModeView({ chains, items, dayKeys, project }) {
                           </div>
                         </div>
                         <div className="rv-card-side">
+                          {/* 자정을 넘으면 (+N일)을 붙인다 — fmtTime 은 하루 안 시각으로
+                              접어 보여주므로, 표기가 없으면 23:30 - 05:00 이 하루 안에서
+                              거꾸로 간 것처럼 읽힌다. 편집 모달과 같은 규칙이다. */}
                           <div className="rv-range">
                             {fmtTime(startMins)} - {fmtTime(endMins)}
+                            {(() => {
+                              const over =
+                                blockApi.dayNoOfOffset(endMins) -
+                                blockApi.dayNoOfOffset(startMins);
+                              return over > 0 ? ` (+${over}일)` : "";
+                            })()}
                           </div>
                           {item.cost > 0 && (
                             <div className="rv-cost">{won(item.cost)}</div>
