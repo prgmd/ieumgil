@@ -34,6 +34,9 @@ public class BlockCommandServiceImpl implements BlockCommandService {
             "name", "budget", "durationMin", "detail",
             "isTimeFixed", "vehicleFlag", "transportMeta");
 
+    /** 소요시간 상한(분). BlockReqDTO.Create의 @Max와 같은 값을 유지해야 한다 */
+    private static final int MAX_DURATION_MIN = 1440;
+
     private final BlockRepository blockRepository;
     private final ProjectRepository projectRepository;
     private final UserRepository userRepository;
@@ -200,7 +203,8 @@ public class BlockCommandServiceImpl implements BlockCommandService {
                 }
                 case "budget", "durationMin" -> {
                     int number = ((Number) raw).intValue();
-                    if (number < 0 || (field.equals("durationMin") && number == 0)) {
+                    if (number < 0 || (field.equals("durationMin")
+                            && (number == 0 || number > MAX_DURATION_MIN))) {
                         throw new CustomException(BlockErrorCode.INVALID_FIELD_VALUE);
                     }
                     yield number;

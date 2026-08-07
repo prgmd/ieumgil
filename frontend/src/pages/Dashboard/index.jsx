@@ -80,6 +80,8 @@ const TRANS_GAP_MIN_PX = 16;
 // 드래그 스냅 1분 (QA ⓑ) — 10분 스냅이던 시절엔 분 단위 교통블록(실제 API 소요시간)
 // 과 완벽하게 맞물리지 않았다. 리사이즈는 원래 분 단위라 이제 둘이 같은 정밀도다.
 const SNAP = 1;
+// 소요시간 상한(분) — 서버 검증(@Max(1440)·MAX_DURATION_MIN)과 같은 값을 유지해야 한다
+const MAX_DUR = 1440;
 const TL_PAD_TOP = 20;
 const TL_PAD_LEFT = 70;
 
@@ -1972,6 +1974,8 @@ export function DashboardPage() {
           resizingState.originalStartMins + resizingState.startDur + deltaMins;
         if (tentativeEnd - resizingState.originalStartMins < 10)
           tentativeEnd = resizingState.originalStartMins + 10;
+        if (tentativeEnd - resizingState.originalStartMins > MAX_DUR)
+          tentativeEnd = resizingState.originalStartMins + MAX_DUR;
         newDur = tentativeEnd - resizingState.originalStartMins;
       } else {
         let tentativeStart = resizingState.originalStartMins + deltaMins;
@@ -1988,6 +1992,11 @@ export function DashboardPage() {
         newStart = tentativeStart;
         newDur =
           resizingState.originalStartMins + resizingState.startDur - newStart;
+        if (newDur > MAX_DUR) {
+          newStart =
+            resizingState.originalStartMins + resizingState.startDur - MAX_DUR;
+          newDur = MAX_DUR;
+        }
       }
 
       setItems(() => {
