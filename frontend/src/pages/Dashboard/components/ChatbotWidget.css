@@ -24,6 +24,13 @@
 .cbw-fab:hover {
   transform: scale(1.05);
 }
+/* 닫힌 상태에서 보이는 캐릭터 아이콘 — 버튼(60px) 안에 여백 두고 꽉 차게 */
+.cbw-fab-icon {
+  width: 44px;
+  height: 44px;
+  object-fit: contain;
+  pointer-events: none; /* 드래그·클릭 판정은 버튼(.cbw-fab)이 그대로 받는다 */
+}
 /* 열림 상태 — 같은 자리에서 ✕ 로 바뀐다(로고 버튼이 사라지지 않는다, QA 배치2) */
 .cbw-fab.is-open {
   background: #8c7b70;
@@ -74,6 +81,15 @@
 .cbw-head-title {
   font-weight: bold;
   font-size: 15px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.cbw-head-icon {
+  width: 20px;
+  height: 20px;
+  object-fit: contain;
+  vertical-align: middle;
 }
 .cbw-close {
   border: none;
@@ -387,6 +403,10 @@
     width: 50px;
     height: 50px;
     font-size: 24px;
+  }
+  .cbw-fab-icon {
+    width: 36px;
+    height: 36px;
   }
   .cbw {
     right: 12px;

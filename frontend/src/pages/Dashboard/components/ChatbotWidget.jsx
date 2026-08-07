@@ -3,6 +3,7 @@ import { useDraggable } from "@dnd-kit/core";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm"; // 표·취소선 등 GFM 확장 — 표는 기본 문법에 없다
 import { sendChatbotMessage, fetchChatbotHistory } from "../../../features/dashboard/api/dashboardApi";
+import chatbotIcon from "../../../assets/img/chatbot.png";
 import "./ChatbotWidget.css";
 
 const CAT_LABEL = {
@@ -252,13 +253,15 @@ export function ChatbotWidget({ projectId, getMapBounds }) {
         onClick={handleFabClick}
         title={isOpen ? "이음이 닫기" : "이음이 열기 · 끌어서 이동"}
       >
-        {isOpen ? "✕" : "✈️"}
+        {isOpen ? "✕" : <img src={chatbotIcon} alt="챗봇 이음이" className="cbw-fab-icon" />}
       </button>
 
       {isOpen && (
         <div className="cbw" style={panelStyle}>
           <div className="cbw-head">
-            <span className="cbw-head-title">✈️ 챗봇 이음이</span>
+            <span className="cbw-head-title">
+              <img src={chatbotIcon} alt="" className="cbw-head-icon" /> 챗봇 이음이
+            </span>
             <button className="cbw-close" onClick={() => setIsOpen(false)}>
               ✕
             </button>
