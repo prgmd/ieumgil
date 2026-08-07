@@ -2454,16 +2454,23 @@ export function DashboardPage() {
   // 즉시). 그 뒤로 스크롤 위치를 건드리는 것은 탭 점프뿐이다 — board/items 가
   // 바뀔 때마다 스크롤을 뺏으면 편집 중에 화면이 튄다.
   const didInitialScrollRef = useRef(false);
+  // 열람 모드는 이 컨테이너를 통째로 내린다. 돌아오면 새 엘리먼트라 scrollTop 이 0 인데
+  // 활성 Day 는 떠나기 전 값 그대로다 — 맞춰주지 않으면 창이 그 Day 앞뒤에 머물러
+  // 화면 맨 위엔 눈금도 카드도 없고, presence 는 팀원에게 있지도 않은 Day 를 방송한다.
+  useEffect(() => {
+    if (viewMode !== "edit") didInitialScrollRef.current = false;
+  }, [viewMode]);
   useEffect(() => {
     if (status !== "loaded" || didInitialScrollRef.current) return;
     const el = timelineDOMRef.current;
     if (!el) return;
     didInitialScrollRef.current = true;
-    const firstDay = dayKeys[0];
-    const base = (dayNoOf(firstDay) - 1) * blockApi.MINUTES_PER_DAY;
-    const target = firstStartOf(board, items, firstDay) ?? base;
+    // 활성 Day 로 맞춘다 — 처음 열 때는 첫 Day 라 예전과 같고, 열람 모드에서
+    // 돌아올 때는 떠난 자리로 되돌아와 활성 Day 와 화면이 일치한다.
+    const base = (dayNoOf(activeDay) - 1) * blockApi.MINUTES_PER_DAY;
+    const target = firstStartOf(board, items, activeDay) ?? base;
     el.scrollTop = Math.max(0, (target - timelineStart - 15) * PX);
-  }, [status, dayKeys, board, items, timelineStart]);
+  }, [status, viewMode, activeDay, board, items, timelineStart]);
 
   // ── 라이브 커서 송신 (7단계) — 명세의 50ms 스로틀, 대시보드 전역 ──
   // 타임라인 위에서는 "가로 비율 + 절대 분 오프셋"(area:"tl") — 상대와 내 스크롤·시작
