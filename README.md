@@ -8,6 +8,7 @@
 | --- | --- |
 | **문서** | 프로젝트 개요 |
 | **작성일** | 2026. 07. 15 |
+| **최종 수정일** | 2026. 08. 07 |
 | **개발 기간** | 4주 (1주 단위 스프린트) |
 
 ## 1. 서비스 소개
@@ -108,15 +109,53 @@
 
 | **영역** | **사용 기술 및 환경** |
 | --- | --- |
-| **백엔드** | Spring Boot, PostgreSQL, Redis |
-| **프론트엔드** | React, JavaScript |
-| **실시간 통신** | WebSocket, STOMP |
+| **백엔드** | Java 21, Spring Boot 3.4 (Web / Data JPA / Security / Validation / AOP), Spring AI 1.1, PostgreSQL 16, Redis 7 |
+| **프론트엔드** | React 19, Vite 8, Zustand, dnd-kit(드래그 앤 드롭), fractional-indexing(블록 순서), React Router 7, Axios |
+| **실시간 통신** | WebSocket + STOMP (@stomp/stompjs), Redis Pub/Sub 기반 오퍼레이션 브로드캐스트 |
 | **음성 통신** | WebRTC (P2P mesh, 6인 권장 — 상한 미적용) |
-| **인프라 환경** | Amazon EC2, Docker |
-| **인증 및 보안** | Social OAuth 2.0 (Kakao), JWT |
-| **외부 연동 API** | Kakao Maps SDK, Kakao Local API, Kakao Mobility(도보·차량 길찾기), ODsay(대중교통 길찾기 + 기차·버스·항공 시간표), TourAPI(지역 축제), 오피넷(유가), LLM API |
+| **AI 챗봇** | Spring AI + Anthropic Claude (claude-haiku-4-5), Tool Calling 기반 축제/장소 추천 |
+| **인프라 환경** | Amazon EC2, Docker Compose (이미지 pull 배포), Nginx 1.27 (SPA 정적 서빙) |
+| **인증 및 보안** | Social OAuth 2.0 (Kakao), JWT (jjwt 0.12) |
+| **API 문서 / 테스트** | springdoc-openapi (Swagger UI), JUnit 5, Testcontainers (PostgreSQL) |
+| **외부 연동 API** | Kakao Maps SDK, Kakao Local API, Kakao Mobility(도보/차량 길찾기), ODsay(대중교통 길찾기 + 기차/버스/항공 시간표), TourAPI(지역 축제), 오피넷(유가), Anthropic API(LLM) |
 
-## 9. 팀 구성
+## 9. 프로젝트 구조
+
+```
+S15P11A107/
+├── backend/                  Spring Boot 애플리케이션
+│   ├── src/main/java/com/ssafy/ieumgil/
+│   │   ├── domain/
+│   │   │   ├── auth/         카카오 OAuth 로그인, JWT 발급
+│   │   │   ├── user/         사용자 정보
+│   │   │   ├── group/        그룹 관리, 멤버 초대/방출
+│   │   │   ├── project/      프로젝트(여행), 예산 관리
+│   │   │   ├── block/        일정 조각(블록) CRUD, 체인 정렬
+│   │   │   ├── place/        카카오 장소 검색, 길찾기(Kakao Mobility)
+│   │   │   ├── transit/      대중교통 경로/시간표(ODsay), 유가(오피넷)
+│   │   │   ├── festival/     지역 축제 데이터(TourAPI) 배치 수집
+│   │   │   ├── chatbot/      Spring AI 기반 일정 추천 챗봇
+│   │   │   └── activitylog/  프로젝트 활동 로그
+│   │   └── global/
+│   │       ├── websocket/    STOMP 설정, 접속자(Presence) 관리
+│   │       ├── realtime/     오퍼레이션 시퀀싱, Redis Pub/Sub 브로드캐스트
+│   │       └── security/     JWT 인증 필터, 시큐리티 설정
+│   └── docker/               PostgreSQL/Redis 커스텀 이미지, 마이그레이션 SQL
+├── frontend/                 React SPA (Vite)
+│   └── src/
+│       ├── pages/            Landing, Auth, My, Group, Dashboard
+│       ├── features/
+│       │   ├── auth/ my/ group/ place/
+│       │   └── dashboard/    핵심 작업 공간
+│       │       ├── realtime/ 실시간 공동 편집 (오퍼레이션 시퀀서)
+│       │       ├── voice/    WebRTC 보이스 채팅
+│       │       └── map/      카카오맵 연동
+│       └── global/           공용 API 클라이언트, 스토어, 컴포넌트
+├── docker-compose.prod.yml   EC2 운영 스택 (frontend + backend + postgres + redis)
+└── docs/                     API 명세, ERD, 배포 가이드, 실시간 동기화 정책
+```
+
+## 10. 팀 구성
 
 총 **6명**으로 구성됨
 
@@ -127,4 +166,4 @@
 | **Frontend** | 이세영, 김광민, 이연호 |
 | **Backend** | 서동혁, 장준환 |
 | **Infra** | 이세영, 장준환 |
-| **AI · FullStack** | 천기오 |
+| **AI / FullStack** | 천기오 |
