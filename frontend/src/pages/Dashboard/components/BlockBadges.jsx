@@ -50,6 +50,29 @@ function BlockLinkBadge({ item }) {
   );
 }
 
+/**
+ * 블록 복사 — 같은 내용의 블록을 후보 목록에 하나 더 만든다(숙소 여러 박 등
+ * 반복 생성 편의). 연필과 같은 규칙(hover 노출·드래그 전파 차단).
+ */
+function BlockCopyBadge({ onCopy }) {
+  if (!onCopy) return null;
+  return (
+    <button
+      type="button"
+      className="blk-op blk-copy"
+      title="블록 복사 (후보로)"
+      aria-label="블록 복사"
+      onPointerDown={(e) => e.stopPropagation()}
+      onClick={(e) => {
+        e.stopPropagation();
+        onCopy();
+      }}
+    >
+      ⧉
+    </button>
+  );
+}
+
 /** 블록 좌상단의 "가장 최근 수정자" 아바타 — 테두리는 그 멤버의 커서 색 */
 function BlockEditorBadge({ editor }) {
   if (!editor) return null;
@@ -68,4 +91,4 @@ function BlockEditorBadge({ editor }) {
   );
 }
 
-export { BlockEditBadge, BlockLinkBadge, BlockEditorBadge };
+export { BlockEditBadge, BlockLinkBadge, BlockCopyBadge, BlockEditorBadge };

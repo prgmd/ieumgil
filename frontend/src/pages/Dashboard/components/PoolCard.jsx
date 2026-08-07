@@ -1,10 +1,15 @@
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { BlockEditBadge, BlockLinkBadge, BlockEditorBadge } from "./BlockBadges";
+import {
+  BlockEditBadge,
+  BlockLinkBadge,
+  BlockCopyBadge,
+  BlockEditorBadge,
+} from "./BlockBadges";
 import { CardBody } from "./CardBody";
 import { catOf } from "../dashboardHelpers";
 
-export function PoolCard({ id, item, onEditBlock, lockedBy, editor }) {
+export function PoolCard({ id, item, onEditBlock, onCopy, lockedBy, editor }) {
   const {
     attributes,
     listeners,
@@ -42,6 +47,7 @@ export function PoolCard({ id, item, onEditBlock, lockedBy, editor }) {
         lockedBy={lockedBy}
       />
       <BlockEditBadge onEdit={onEditBlock && (() => onEditBlock(id))} />
+      <BlockCopyBadge onCopy={onCopy && (() => onCopy(id))} />
       <BlockLinkBadge item={item} />
     </div>
   );
