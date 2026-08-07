@@ -55,4 +55,8 @@ FROM nginx:1.27-alpine
 COPY nginx.conf /etc/nginx/conf.d/default.conf
 COPY --from=build /app/dist /usr/share/nginx/html
 
+# 설정 오류를 빌드에서 잡는다. 이게 없으면 잘못된 conf 가 그대로 이미지에 실려
+# EC2 에서 재시작 무한 루프(Restarting)로만 드러난다 — 원인이 로그 안에 숨는다.
+RUN nginx -t
+
 EXPOSE 80
