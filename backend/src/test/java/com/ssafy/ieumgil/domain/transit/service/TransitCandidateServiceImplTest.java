@@ -875,6 +875,41 @@ class TransitCandidateServiceImplTest {
     }
 
     @Test
+    @DisplayName("버스 편 이름은 출발 시각을 붙여 편마다 유니크하다 — 프론트 선택·복원 식별자")
+    void 버스_편_이름은_편마다_유니크하다() {
+        // 버스는 편명·편번호가 없어 예전엔 전 편 name 이 "고속버스"로 같았다. 프론트가 name
+        // 하나로 선택·저장·복원을 하므로 이름이 겹치면 전 행이 동시에 선택되고 복원이 첫 편에
+        // 뭉갠다. 근원(name)에 출발 시각을 붙여 유니크하게 만든 것을 못 박는다.
+        given(blockRepository.findAllByIdInAndProject_IdAndDeletedAtIsNull(List.of(1L, 2L), PROJECT_ID))
+                .willReturn(List.of(seoulBlock(), busanBlock()));
+        given(projectRepository.findByIdAndDeletedAtIsNull(PROJECT_ID)).willReturn(Optional.of(publicProject()));
+        given(publicTransitQueryService.getCombinedRoutes(anyDouble(), anyDouble(), anyDouble(), anyDouble()))
+                .willReturn(List.of(interCityBusPath()));
+        givenZeroAccessEgress(LAT_SEOUL, LNG_SEOUL, LAT_BUSAN, LNG_BUSAN);
+        given(transitScheduleQueryService.getIntercityBusSchedule(anyInt(), anyInt(), any(LocalDate.class)))
+                .willReturn(List.of(
+                        bus(2, "16:00", 140, 20900),
+                        bus(2, "17:30", 140, 20900),
+                        bus(1, "19:00", 150, 15200)));
+
+        TransitCandidateResDTO.Result result =
+                service.calculate(PROJECT_ID, List.of(1L, 2L));
+
+        Candidate expressBus = candidateOf(result, TransitMode.EXPRESS_BUS);
+        assertThat(expressBus.departures()).extracting(TransitCandidateResDTO.Departure::name)
+                .containsExactly("고속버스 16:00", "고속버스 17:30", "고속버스 19:00");
+        // 핵심 회귀 가드: 편마다 이름이 달라야 식별자로 작동한다
+        assertThat(expressBus.departures()).extracting(TransitCandidateResDTO.Departure::name)
+                .doesNotHaveDuplicates();
+        // 이름의 시각과 departureAt 이 일치해 저장한 name 으로 그 편을 다시 찾을 수 있다
+        assertThat(expressBus.departures()).allSatisfy(d ->
+                assertThat(d.name()).isEqualTo("고속버스 " + d.departureAt()));
+        // grade(등급)는 기존대로 별도 필드에 남는다 — name 변경이 등급 표시를 건드리지 않는다
+        assertThat(expressBus.departures().get(0).grade()).isEqualTo("우등");
+        assertThat(expressBus.departures().get(2).grade()).isEqualTo("일반");
+    }
+
+    @Test
     @DisplayName("[실측 19/19] 항공 leg의 startID·endID가 이름 검색 없이 airServiceTime에 그대로 전달된다")
     void 항공_leg_역_ID가_그대로_시간표_API에_전달된다() {
         // 기준 시각(부산 블록 종료 08:00+60분=09:00 + 항공 여유)보다 늦은 편이어야 남는다
