@@ -1,3 +1,4 @@
+import { Fragment } from "react";
 import { TransitCandidateCard } from "./TransitCandidateCard";
 import * as blockApi from "../../../features/dashboard/api/dashboardApi";
 import {
@@ -12,6 +13,19 @@ import {
   openBlockLink,
   hasExternalLink,
 } from "../../../features/dashboard/api/externalLink";
+
+// 앞뒤 일정 사이 시간 문제를 알린다 — 시간이 겹치거나(역전), 장소끼리 이동 블록
+// 없이 빈 시간이 있으면 경고 문구를 돌려준다(문제 없으면 null).
+function gapWarn(prev, cur) {
+  if (!prev || !cur) return null;
+  const prevEnd = (prev.startMins ?? 0) + (prev.dur ?? 0);
+  const curStart = cur.startMins ?? 0;
+  if (prevEnd > curStart) return "앞 일정과 시간이 겹쳐요";
+  const gap = curStart - prevEnd;
+  const bothPlace = prev.cat !== "trans" && cur.cat !== "trans";
+  if (bothPlace && gap > 0) return `이동 정보가 없어요 · 빈 시간 ${gap}분`;
+  return null;
+}
 
 export function ReadModeView({ board, items, dayKeys, project }) {
   // 배경·좌우 여백은 편집 모드와 같은 껍데기(.dash-shell/.dash-body)가 쥔다 —
@@ -58,20 +72,22 @@ export function ReadModeView({ board, items, dayKeys, project }) {
             ) : (
             <div className="rv-list">
               <div className="rv-line" />
-              {chain.map((id) => {
+              {chain.map((id, i) => {
                 const item = items[id];
                 if (!item) return null;
                 const startMins = item.startMins;
                 const endMins = startMins + item.dur;
                 const catStyle = catOf(item);
                 const isTransport = item.cat === "trans" && item.transportMeta?.chosen;
+                const warn = i > 0 ? gapWarn(items[chain[i - 1]], item) : null;
                 return (
-                  // 카테고리 색만 CSS 변수로 넘기고, 그 색을 어디에 쓸지는 CSS 가 정한다
-                  <div
-                    key={id}
-                    className="rv-row"
-                    style={{ "--dc": catStyle.hex, "--cb": catStyle.bg }}
-                  >
+                  <Fragment key={id}>
+                    {warn && <div className="rv-warn">⚠ {warn}</div>}
+                    {/* 카테고리 색만 CSS 변수로 넘기고, 그 색을 어디에 쓸지는 CSS 가 정한다 */}
+                    <div
+                      className="rv-row"
+                      style={{ "--dc": catStyle.hex, "--cb": catStyle.bg }}
+                    >
                     <div className="rv-time">{fmtTime(startMins)}</div>
                     <div className="rv-dot" />
                     {isTransport ? (
@@ -119,6 +135,9 @@ export function ReadModeView({ board, items, dayKeys, project }) {
                             <div className="rv-addr">
                               📍 {item.address || "위치 정보 없음"}
                             </div>
+                            {item.detail && (
+                              <div className="rv-memo">📝 {item.detail}</div>
+                            )}
                           </div>
                         </div>
                         <div className="rv-card-side">
@@ -140,7 +159,8 @@ export function ReadModeView({ board, items, dayKeys, project }) {
                         </div>
                       </div>
                     )}
-                  </div>
+                    </div>
+                  </Fragment>
                 );
               })}
             </div>

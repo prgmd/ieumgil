@@ -17,6 +17,7 @@ import { CardBody } from "./components/CardBody";
 import {
   BlockEditBadge,
   BlockLinkBadge,
+  BlockCopyBadge,
   BlockEditorBadge,
 } from "./components/BlockBadges";
 import { PoolCard } from "./components/PoolCard";
@@ -26,6 +27,7 @@ import { SearchPanel } from "./components/SearchPanel";
 import { ReadModeView } from "./components/ReadModeView";
 import {
   fmtTime,
+  fmtTimeLong,
   catOf,
   isTempId,
   isServerBlock,
@@ -82,7 +84,7 @@ const SNAP = 1;
 // 소요시간 상한(분) — 서버 검증(@Max(1440)·MAX_DURATION_MIN)과 같은 값을 유지해야 한다
 const MAX_DUR = 1440;
 const TL_PAD_TOP = 20;
-const TL_PAD_LEFT = 70;
+const TL_PAD_LEFT = 92;
 
 // 고른 편 기준 door-to-door 소요 — 접근 + 대기 + 시외(+ 환승 + 연결편) + 이탈.
 // 후보의 durationMin 도 door-to-door 지만 대표 편(첫 편) 기준이라 다른 편을 고르면
@@ -330,6 +332,7 @@ function TimelineCard({
   timelineStart,
   boundTop,
   onEditBlock,
+  onCopy,
   lockedBy,
   editor,
 }) {
@@ -404,6 +407,9 @@ function TimelineCard({
         {!isThisResizing && (
           <>
             <BlockEditBadge onEdit={onEditBlock && (() => onEditBlock(id))} />
+            <BlockCopyBadge
+              onCopy={onCopy && item?.cat !== "trans" && (() => onCopy(id))}
+            />
             <BlockLinkBadge item={item} />
           </>
         )}
@@ -1640,6 +1646,47 @@ export function DashboardPage() {
     setEditingBlockId(newId);
   };
 
+  // 블록 복사 — 같은 내용의 블록을 후보 목록 맨 위에 하나 더 만든다(숙소 여러 박 등
+  // 반복 생성 편의). 시각·순서는 비우고(후보) 서버에 바로 생성한다. 모달은 열지 않아
+  // 곧바로 여러 번 복사할 수 있다. 교통 블록은 구간에 묶여 있어 복사 대상에서 뺀다.
+  const handleCopyBlock = (id) => {
+    const src = items[id];
+    if (!src || src.cat === "trans") return;
+    const newId = `custom-${Date.now()}`;
+    const copy = {
+      ...src,
+      id: newId,
+      startMins: null, // 후보(POOL)
+      orderKey: undefined,
+      auto: false,
+    };
+    const nextPool = [newId, ...pool];
+    setItems((prev) => ({ ...prev, [newId]: copy }));
+    setPool(nextPool);
+
+    (async () => {
+      try {
+        const [before, after] = neighborKeysAround(nextPool, 0, items);
+        const orderKey = safeKeyBetween(before, after);
+        const created = await blockApi.createBlock(projectId, {
+          ...copy,
+          startMins: null,
+          orderKey,
+        });
+        // 메모(detail)는 생성 바디에 없어(명세) 생성 직후 따로 저장한다.
+        if (copy.detail) {
+          await blockApi.updateBlockFields(created.blockId, {
+            detail: copy.detail,
+          });
+        }
+        adoptServerId(newId, created.blockId, { orderKey });
+        showToast("블록을 후보로 복사했어요 ⧉");
+      } catch (e) {
+        rollbackToServer(e);
+      }
+    })();
+  };
+
   // 휴지통 드롭 — 서버 블록은 소프트 삭제(tombstone, DELETE /blocks) 후 로컬에서
   // 제거한다(4단계). 서버 확인 전에는 지우지 않는다 — 실패 시 원래 위치로 복원하는
   // 롤백을 관리하는 것보다, 확인까지의 짧은 지연을 감수하는 쪽이 단순하다.
@@ -1867,6 +1914,9 @@ export function DashboardPage() {
         startDur,
         originalStartMins,
         boundTop,
+        // 리사이즈 중 타임라인이 자동 스크롤되면, 그 스크롤량만큼 delta 를 보정해야
+        // 블록이 포인터를 따라온다 — 시작 시점의 scrollTop 을 기준으로 잡는다.
+        startScrollTop: timelineDOMRef.current?.scrollTop ?? 0,
         originalItems: items,
       });
     },
@@ -1925,8 +1975,19 @@ export function DashboardPage() {
 
   useEffect(() => {
     if (!resizingState) return;
-    const handleMouseMove = (e) => {
-      const deltaY = e.clientY - resizingState.startY;
+    const el = timelineDOMRef.current;
+    const EDGE = 36; // 위/아래 이 픽셀 안에 포인터가 오면 자동 스크롤
+    const SPEED = 9; // 프레임당 스크롤 px
+    let lastClientY = resizingState.startY;
+    let raf = null;
+
+    // 현재 포인터 위치 + 그새 스크롤된 양을 합쳐 블록 크기를 다시 계산·반영한다.
+    const apply = (clientY) => {
+      const scrollTop = el ? el.scrollTop : 0;
+      const deltaY =
+        clientY -
+        resizingState.startY +
+        (scrollTop - resizingState.startScrollTop);
       const deltaMins = Math.round(deltaY / PX);
       let newDur = resizingState.startDur;
       let newStart = resizingState.originalStartMins;
@@ -1984,6 +2045,34 @@ export function DashboardPage() {
       });
     };
 
+    // 포인터가 가장자리 영역에 있으면 스크롤 방향(1=아래, -1=위), 아니면 0
+    const edgeDir = () => {
+      if (!el) return 0;
+      const r = el.getBoundingClientRect();
+      if (lastClientY > r.bottom - EDGE) return 1;
+      if (lastClientY < r.top + EDGE) return -1;
+      return 0;
+    };
+
+    // 마우스가 멈춰 있어도 가장자리에선 계속 스크롤하며 크기를 갱신한다.
+    const tick = () => {
+      const dir = edgeDir();
+      if (dir === 0) {
+        raf = null;
+        return;
+      }
+      const before = el.scrollTop;
+      el.scrollTop += dir * SPEED;
+      if (el.scrollTop !== before) apply(lastClientY);
+      raf = requestAnimationFrame(tick);
+    };
+
+    const handleMouseMove = (e) => {
+      lastClientY = e.clientY;
+      apply(e.clientY);
+      if (raf == null && edgeDir() !== 0) raf = requestAnimationFrame(tick);
+    };
+
     const handleGlobalClick = () => {
       persistResize(resizingState); // fire-and-forget — 실패는 내부에서 reload 롤백
       setResizingState(null);
@@ -1995,6 +2084,7 @@ export function DashboardPage() {
     );
     return () => {
       clearTimeout(timer);
+      if (raf != null) cancelAnimationFrame(raf);
       window.removeEventListener("mousemove", handleMouseMove);
       window.removeEventListener("click", handleGlobalClick);
     };
@@ -2885,8 +2975,8 @@ export function DashboardPage() {
                               경계가 있는 건 눈금뿐이라 fmtTime 이 아니라 여기서 다룬다. */}
                           <span className="tl-mark-time">
                             {t > 0 && t % blockApi.MINUTES_PER_DAY === 0
-                              ? "24:00"
-                              : fmtTime(t)}
+                              ? "밤 12시"
+                              : fmtTimeLong(t)}
                           </span>
                           <div className="tl-mark-line" />
                         </div>
@@ -3001,6 +3091,7 @@ export function DashboardPage() {
                                 timelineStart={timelineStart}
                                 boundTop={boundTop}
                                 onEditBlock={openBlockDetail}
+                                onCopy={handleCopyBlock}
                                 lockedBy={lockBadgeOf(data.id)}
                                 editor={editorBadgeOf(data.id)}
                               />
@@ -3142,6 +3233,7 @@ export function DashboardPage() {
                           id={id}
                           item={items[id]}
                           onEditBlock={setEditingBlockId}
+                          onCopy={handleCopyBlock}
                           lockedBy={lockBadgeOf(id)}
                           editor={editorBadgeOf(id)}
                         />

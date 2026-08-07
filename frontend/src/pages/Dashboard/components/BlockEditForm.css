@@ -187,3 +187,38 @@
 .bef-btn-save:hover {
   background: #6a4536;
 }
+
+/* 모달 본문 스크롤 — 앱 공통 크림 커스텀 스크롤바 */
+.bef::-webkit-scrollbar{width:6px}
+.bef::-webkit-scrollbar-thumb{background:rgba(61,43,34,.22);border-radius:3px}
+.bef::-webkit-scrollbar-track{background:transparent;margin:16px 0}
+
+/* 비용 입력 + 환산 힌트 — 입력칸 '안' 오른쪽에 겹쳐 보여준다(옆에 두면 값 바뀔 때
+   폭이 흔들린다). 오른쪽에 자리를 비워 두고 그 위에 얹는다. */
+.bef-cost-wrap {
+  position: relative;
+}
+.bef-cost-wrap .bef-input {
+  width: 100%;
+  padding-right: 84px;
+}
+.bef-cost-man {
+  position: absolute;
+  right: 13px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 12.5px;
+  color: #8c7b70;
+  white-space: nowrap;
+  pointer-events: none;
+}
+/* number 입력의 위아래 스피너 제거 — 금액·소요를 스피너로 바꿀 일이 없다. */
+.bef input[type="number"] {
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+.bef input[type="number"]::-webkit-outer-spin-button,
+.bef input[type="number"]::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
