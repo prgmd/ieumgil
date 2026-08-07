@@ -1,12 +1,18 @@
 import { useState } from 'react';
 import Modal from '../../My/shared/ui/Modal';
 import TransportPicker from '../../My/shared/ui/TransportPicker';
+import { DatePicker } from '../../../global/components/DatePicker';
 import { useToastStore } from '../../../global/stores/toastStore';
 import { searchPlaces } from '../../../features/place/api/placeApi';
 import { createBlock } from '../../../features/dashboard/api/dashboardApi';
 
 function todayISO() {
   return new Date().toISOString().slice(0, 10);
+}
+
+// 'YYYY-MM-DD' → 'YYMMDD' (예: '2026-08-04' → '260804')
+function yymmdd(iso) {
+  return iso ? iso.slice(2).replace(/-/g, '') : '';
 }
 
 const initialForm = {
@@ -79,10 +85,8 @@ export default function CreateProjectModal({ open, onClose, onCreate }) {
   }
 
   async function handleSubmit() {
-    if (!form.name.trim()) {
-      setError('프로젝트 이름을 입력해주세요.');
-      return;
-    }
+    // 이름은 선택 — 비우면 날짜로 자동 생성한다(예: '260804~260809 여행').
+    // 어차피 생성 후 프로젝트 수정에서 바꿀 수 있어 초기 입력 부담을 던다.
     if (!form.destination.trim()) {
       setError('목적지를 입력해주세요.');
       return;
@@ -109,7 +113,10 @@ export default function CreateProjectModal({ open, onClose, onCreate }) {
     setError('');
     setSubmitting(true);
     try {
-      const project = await onCreate(form);
+      const name =
+        form.name.trim() ||
+        `${yymmdd(form.startDate)}~${yymmdd(form.endDate)} 여행`;
+      const project = await onCreate({ ...form, name });
 
       // 출발지점을 골랐으면 Day 1 09:00 에 시작 블록을 함께 만든다(선택 사항).
       // 프로젝트는 이미 생겼으므로 이 단계가 실패해도 생성 자체는 성공으로 두고,
@@ -142,14 +149,21 @@ export default function CreateProjectModal({ open, onClose, onCreate }) {
     }
   }
 
+  // 금액 입력을 만원 단위로 환산해 옆에 보여준다(예: 600000 → ≈ 60만원).
+  const budgetNum = Number(form.targetBudget);
+  const budgetManwon =
+    form.targetBudget !== '' && !Number.isNaN(budgetNum) && budgetNum > 0
+      ? `≈ ${(budgetNum / 10000).toLocaleString()}만원`
+      : '';
+
   return (
     <Modal open={open} onClose={handleClose}>
       <h3>새 여행 프로젝트</h3>
       <p className="s">기본 정보를 입력하면 챗봇 이음이가 이를 참고해 후보 블록을 준비해요.</p>
 
-      <label>프로젝트 이름 *</label>
+      <label>프로젝트 이름</label>
       <input
-        placeholder="예: 가을 전주 미식 여행"
+        placeholder="비우면 날짜로 자동 생성돼요 (예: 260804~260809 여행)"
         maxLength={30}
         value={form.name}
         onChange={(e) => update('name', e.target.value)}
@@ -241,19 +255,17 @@ export default function CreateProjectModal({ open, onClose, onCreate }) {
       <div className="r2">
         <div>
           <label>여행 시작일 *</label>
-          <input
-            type="date"
+          <DatePicker
             value={form.startDate}
-            onChange={(e) => update('startDate', e.target.value)}
+            onChange={(v) => update('startDate', v)}
           />
         </div>
         <div>
           <label>여행 종료일 *</label>
-          <input
-            type="date"
+          <DatePicker
             value={form.endDate}
             min={form.startDate}
-            onChange={(e) => update('endDate', e.target.value)}
+            onChange={(v) => update('endDate', v)}
           />
         </div>
       </div>
@@ -264,14 +276,18 @@ export default function CreateProjectModal({ open, onClose, onCreate }) {
       />
 
       <label>목표 예산 (총액, 원)</label>
-      <input
-        type="number"
-        min={0}
-        step={10000}
-        placeholder="예: 600000"
-        value={form.targetBudget}
-        onChange={(e) => update('targetBudget', e.target.value)}
-      />
+      <div className="bud-row">
+        <input
+          className="bud-amount"
+          type="number"
+          min={0}
+          step={10000}
+          placeholder="예: 600000"
+          value={form.targetBudget}
+          onChange={(e) => update('targetBudget', e.target.value)}
+        />
+        {budgetManwon && <span className="bud-manwon">{budgetManwon}</span>}
+      </div>
 
       {error && <div className="code-err">{error}</div>}
 

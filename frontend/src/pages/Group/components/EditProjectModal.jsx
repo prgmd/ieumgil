@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import Modal from '../../My/shared/ui/Modal';
 import TransportPicker from '../../My/shared/ui/TransportPicker';
+import { DatePicker } from '../../../global/components/DatePicker';
 import { useToastStore } from '../../../global/stores/toastStore';
 
 /**
@@ -97,19 +98,17 @@ export default function EditProjectModal({
       <div className="r2">
         <div>
           <label>여행 시작일 *</label>
-          <input
-            type="date"
+          <DatePicker
             value={form.startDate}
-            onChange={(e) => update('startDate', e.target.value)}
+            onChange={(v) => update('startDate', v)}
           />
         </div>
         <div>
           <label>여행 종료일 *</label>
-          <input
-            type="date"
+          <DatePicker
             value={form.endDate}
             min={form.startDate}
-            onChange={(e) => update('endDate', e.target.value)}
+            onChange={(v) => update('endDate', v)}
           />
         </div>
       </div>
