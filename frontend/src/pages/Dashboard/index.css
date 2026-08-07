@@ -358,20 +358,23 @@
 .day-list::-webkit-scrollbar,
 .tl::-webkit-scrollbar,
 .pool::-webkit-scrollbar,
-.search-results::-webkit-scrollbar {
+.search-results::-webkit-scrollbar,
+.blk-modal-ov::-webkit-scrollbar {
   width: 6px;
 }
 .day-list::-webkit-scrollbar-thumb,
 .tl::-webkit-scrollbar-thumb,
 .pool::-webkit-scrollbar-thumb,
-.search-results::-webkit-scrollbar-thumb {
+.search-results::-webkit-scrollbar-thumb,
+.blk-modal-ov::-webkit-scrollbar-thumb {
   background: rgba(61, 43, 34, 0.22);
   border-radius: 3px;
 }
 .day-list::-webkit-scrollbar-track,
 .tl::-webkit-scrollbar-track,
 .pool::-webkit-scrollbar-track,
-.search-results::-webkit-scrollbar-track {
+.search-results::-webkit-scrollbar-track,
+.blk-modal-ov::-webkit-scrollbar-track {
   background: transparent;
 }
 .day-tab {
@@ -604,13 +607,15 @@
 }
 .tl-mark-time {
   position: absolute;
-  left: -64px;
+  /* 오전/오후 "시 30분" 표기라 길어 폭·왼쪽 여백을 넉넉히(오른쪽 끝이 눈금 옆). */
+  left: -96px;
   top: -10px;
-  width: 52px;
+  width: 88px;
   text-align: right;
   font-size: 12px;
   font-weight: 700;
   color: #c9b8a5;
+  white-space: nowrap;
 }
 .tl-mark-line {
   position: absolute;
@@ -1276,17 +1281,25 @@
   top: 6px;
   right: 6px;
 }
-.pcard .blk-link {
+.pcard .blk-copy {
   top: 6px;
   right: 36px; /* 연필(.blk-op) 왼쪽 */
+}
+.pcard .blk-link {
+  top: 6px;
+  right: 66px; /* 복사(.blk-copy) 왼쪽 */
 }
 .card .blk-op {
   bottom: 6px;
   right: 8px;
 }
-.card .blk-link {
+.card .blk-copy {
   bottom: 6px;
   right: 38px; /* 연필(.blk-op) 왼쪽 */
+}
+.card .blk-link {
+  bottom: 6px;
+  right: 68px; /* 복사(.blk-copy) 왼쪽 */
 }
 .pcard:hover .blk-op,
 .card:hover .blk-op,
@@ -1389,7 +1402,7 @@
 }
 .card .time {
   margin-left: auto;
-  font-family: monospace;
+  font-family: inherit;
   font-size: 14px;
   color: var(--dc);
   font-weight: bold;
@@ -1529,6 +1542,88 @@
   height: 100%;
   background: #e9e5dc;
   border-radius: 12px;
+}
+/* 지도 핀 말풍선(CustomOverlay) — 분류·이름·메모·이동 링크. 핀 위로 띄우고
+   아래로 꼬리를 내려 말풍선처럼 보이게 한다. */
+.map-ov-card {
+  position: relative;
+  min-width: 190px;
+  max-width: 250px;
+  /* 핀과 겹치지 않게 위로 띄운다(오버레이 yAnchor:1 기준 카드 하단이 이만큼 위로) */
+  margin-bottom: 46px;
+  padding: 12px 14px;
+  background: #fffdf8;
+  border: 1px solid var(--border1, #e3dfd8);
+  border-radius: 14px;
+  box-shadow: 0 10px 28px rgba(61, 43, 34, 0.28);
+  font-family: inherit;
+  color: var(--ink1, #3d2b22);
+  text-align: left;
+}
+.map-ov-x {
+  position: absolute;
+  top: 6px;
+  right: 8px;
+  padding: 2px;
+  border: none;
+  background: none;
+  color: var(--ink3, #8a776a);
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+}
+.map-ov-x:hover {
+  color: var(--acc, #9c4a2f);
+}
+.map-ov-head {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin: 0 18px 6px 0;
+}
+.map-ov-cat {
+  flex-shrink: 0;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+}
+.map-ov-name {
+  font-size: 14px;
+  font-weight: 700;
+  color: #3d2b22;
+}
+.map-ov-desc {
+  margin: 0 0 8px;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--ink2, #6b5a4e);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.map-ov-link {
+  display: inline-block;
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--acc, #9c4a2f);
+  text-decoration: none;
+}
+.map-ov-link:hover {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+/* 아래를 향하는 말풍선 꼬리 — 카드 하단 중앙에서 핀 쪽으로 */
+.map-ov-tail {
+  position: absolute;
+  left: 50%;
+  bottom: -9px;
+  transform: translateX(-50%);
+  width: 0;
+  height: 0;
+  border-left: 9px solid transparent;
+  border-right: 9px solid transparent;
+  border-top: 10px solid #fffdf8;
+  filter: drop-shadow(0 3px 2px rgba(61, 43, 34, 0.12));
 }
 
 /* ── 지도 핀 직접 지정 (MAP-04) ───────────────────────────── */
@@ -2242,6 +2337,25 @@
 .rv-addr {
   font-size: 13px;
   color: #666;
+}
+/* 읽기 모드 — 블록 메모(detail) */
+.rv-memo {
+  margin-top: 4px;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--ink2, #6b5a4e);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+/* 읽기 모드 — 앞뒤 일정 사이 시간 겹침·빈 이동 경고 */
+.rv-warn {
+  margin: 2px 0 2px 92px;
+  padding: 5px 10px;
+  border-radius: 8px;
+  background: #fdf3e6;
+  border-left: 3px solid #e3b26a;
+  font-size: 12px;
+  color: #8a5a1e;
 }
 .rv-card-side {
   text-align: right;

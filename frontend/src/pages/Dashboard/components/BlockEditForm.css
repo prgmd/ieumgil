@@ -187,3 +187,8 @@
 .bef-btn-save:hover {
   background: #6a4536;
 }
+
+/* 모달 본문 스크롤 — 앱 공통 크림 커스텀 스크롤바 */
+.bef::-webkit-scrollbar{width:6px}
+.bef::-webkit-scrollbar-thumb{background:rgba(61,43,34,.22);border-radius:3px}
+.bef::-webkit-scrollbar-track{background:transparent;margin:16px 0}
