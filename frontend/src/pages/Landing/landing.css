@@ -5,6 +5,12 @@
 
 /* ---- scroll reveal (shared primitive, lives here since landing is its
    first consumer) ---- */
+
+.landing {
+  background: var(--color-bg-gradient) fixed;
+  min-height: 100vh;
+}
+
 .reveal {
   opacity: 0;
   transform: translateY(28px);
@@ -33,9 +39,9 @@
 }
 
 .landing-nav__inner {
-  max-width: var(--content-width);
+  max-width: var(--content-width, 1120px);
   margin: 0 auto;
-  padding: var(--space-4) var(--space-5);
+  padding: var(--space-3) var(--space-5);
   display: flex;
   align-items: center;
   gap: var(--space-6);
@@ -49,12 +55,12 @@
   font-weight: 500;
   letter-spacing: -0.01em;
   margin-right: auto;
-  height: 30px; /* 바 높이를 이 값으로 고정 — 로고가 커져도 바는 안 늘어남 */
+  height: 40px;
 }
 
 .landing-nav__logo-img {
   display: block;
-  height: 80px;
+  height: 60px;
   width: auto;
 }
 
@@ -90,7 +96,9 @@
 .landing-nav__signup {
   background: var(--color-brand);
   color: var(--color-text-on-dark);
-  padding: var(--space-2) var(--space-5);
+  padding: var(--space-1) var(--space-4);
+  font-size: 0.85rem;
+  line-height: 1.6;
   border-radius: var(--radius-pill);
   transition: transform 0.2s var(--ease-out), background 0.2s var(--ease-out);
 }
@@ -108,7 +116,7 @@
 .hero {
   position: relative;
   overflow: hidden;
-  max-width: var(--content-width);
+  max-width: var(--content-width, 1120px);
   margin: 0 auto;
   padding: var(--space-9) var(--space-5) var(--space-8);
   display: flex;
@@ -134,7 +142,27 @@
   opacity: 0.7;
 }
 
-.hero__icons {
+.hero__preview-bg {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+.hero__preview-bg img {
+  width: min(1400px, 130%);
+  height: auto;
+  opacity: 0.24;
+  filter: saturate(0.9);
+  -webkit-mask-image: radial-gradient(ellipse 60% 55% at 50% 48%, black 0%, black 20%, transparent 90%);
+  mask-image: radial-gradient(ellipse 60% 55% at 50% 48%, black 0%, black 20%, transparent 90%);
+}
+
+/* .hero__icons {
   position: relative;
   z-index: 1;
   display: flex;
@@ -155,6 +183,10 @@
   align-items: center;
   justify-content: center;
   font-size: 1.5rem;
+} */
+
+.hero {
+  padding-top: calc(var(--space-9) + var(--space-6));
 }
 
 .hero__title {
@@ -182,7 +214,7 @@
   left: 50%;
   bottom: -14px;
   transform: translateX(-50%);
-  width: 62%;
+  width: 95%;
   height: auto;
 }
 
@@ -196,6 +228,7 @@
 }
 
 .hero__cta {
+  display: inline-block;
   position: relative;
   z-index: 1;
   margin-top: var(--space-7);
@@ -216,7 +249,6 @@
 
 /* ---- showcase ---- */
 .showcase {
-  border-top: 1px solid var(--color-border);
   padding: var(--space-9) var(--space-5);
 }
 
@@ -240,10 +272,6 @@
   line-height: 1.75;
 }
 
-.showcase__preview {
-  max-width: var(--content-width);
-  margin: var(--space-8) auto 0;
-}
 
 /* ---- dashboard preview card ---- */
 .dashboard-preview {
@@ -337,7 +365,6 @@
 
 /* ---- closing band ---- */
 .closing-band {
-  border-top: 1px solid var(--color-border);
   background: var(--color-bg-accent);
   padding: var(--space-6) var(--space-5);
   text-align: center;
@@ -376,6 +403,7 @@
   }
 
   .showcase__preview {
+    max-width: var(--content-width, 1120px);
     margin-top: var(--space-6);
   }
 }

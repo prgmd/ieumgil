@@ -1,12 +1,14 @@
 import { useScrollReveal } from '../hooks/useScrollReveal';
 
-/**
- * Wraps children in a div that fades/slides into place the first time it
- * enters the viewport. `as` lets callers render a semantic element
- * (section, li, ...) instead of a plain div.
- */
-export function Reveal({ children, as: Tag = 'div', delay = 0, className = '', ...rest }) {
-  const [ref, isVisible] = useScrollReveal();
+export function Reveal({
+  children,
+  as: Tag = 'div',
+  delay = 0,
+  className = '',
+  revealOptions,
+  ...rest
+}) {
+  const [ref, isVisible] = useScrollReveal(revealOptions);
 
   return (
     <Tag

@@ -12,7 +12,7 @@
      (cream → tan → sage → dusty blue) instead of a flat fill. Sections sit
      on top of it as translucent "glass" cards, they don't paint their own
      opaque background. */
-  --color-bg-gradient: linear-gradient(150deg, #fdf6ea 0%, #f4ecd9 30%, #e2e8d8 65%, #cfe0da 100%);
+  --color-bg-gradient: linear-gradient(150deg, #fdf6ea 0%, #f4ecd9 45%, #efe7d2 100%);
   --color-bg-solid: #fdf6ea; /* fallback for contexts that can't use a gradient */
   --color-bg-accent: #f8f4e8; /* flat cream used on nav / closing band */
 

@@ -1,5 +1,10 @@
 import "./Login.css"; // 동일 폴더에 생성할 CSS 파일 임포트
 import logo from "../../assets/img/logo.png";
+import planeIcon from '../../assets/img/plane.png';
+import packageIcon from '../../assets/img/package.png';
+import pinIcon from '../../assets/img/pin.png';
+import compassIcon from '../../assets/img/compass.png';
+import calendarIcon from '../../assets/img/calendar.png';
 
 export function LoginPage() {
   const handleKakaoLogin = () => {
@@ -24,11 +29,21 @@ export function LoginPage() {
         {/* ===== 좌측: 브랜드 히어로 ===== */}
         <aside className="login-hero">
           <ul className="login-hero__icons" aria-hidden="true">
-            <li className="login-hero__icon login-hero__icon--plane">✈</li>
-            <li className="login-hero__icon login-hero__icon--pin">📍</li>
-            <li className="login-hero__icon login-hero__icon--compass">🧭</li>
-            <li className="login-hero__icon login-hero__icon--calendar">📋</li>
-            <li className="login-hero__icon login-hero__icon--package">💼</li>
+            <li className="login-hero__icon login-hero__icon--plane">
+              <img src={planeIcon} alt="비행기" />
+            </li>
+            <li className="login-hero__icon login-hero__icon--pin">
+              <img src={pinIcon} alt="핀" />
+            </li>
+            <li className="login-hero__icon login-hero__icon--compass">
+              <img src={compassIcon} alt="나침반" />
+            </li>
+            <li className="login-hero__icon login-hero__icon--calendar">
+              <img src={calendarIcon} alt="캘린더" />
+            </li>
+            <li className="login-hero__icon login-hero__icon--package">
+              <img src={packageIcon} alt="패키지" />
+            </li>
           </ul>
 
           <div className="login-hero__content">
