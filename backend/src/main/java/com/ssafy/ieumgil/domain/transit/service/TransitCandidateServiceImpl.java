@@ -1085,8 +1085,11 @@ public class TransitCandidateServiceImpl implements TransitCandidateService {
      */
     private TransitCandidateResDTO.Departure toBusDeparture(TransitScheduleResDTO.BusSchedule b) {
         Integer durationMin = b.wasteTimeMin();
+        // 버스 시간표엔 편명·편번호가 없어, name 에 출발 시각을 붙여 편마다 유니크하게 만든다.
+        // 프론트가 이 name 문자열 하나로 어느 편을 골랐는지 식별·저장·복원하므로(기차 "KTX 708",
+        // 항공 "대한항공 1234"처럼), 전 편이 "고속버스"로 같으면 선택·복원이 첫 편에 뭉갠다.
         return TransitCandidateResDTO.Departure.builder()
-                .name("고속버스")
+                .name("고속버스 " + b.departureTime())
                 .grade(busGradeOf(b.busClass()))
                 .departureAt(b.departureTime())
                 .arrivalAt(durationMin == null
