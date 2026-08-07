@@ -1,4 +1,5 @@
 import { TransitCandidateCard } from "./TransitCandidateCard";
+import * as blockApi from "../../../features/dashboard/api/dashboardApi";
 import {
   won,
   catOf,
@@ -121,8 +122,17 @@ export function ReadModeView({ board, items, dayKeys, project }) {
                           </div>
                         </div>
                         <div className="rv-card-side">
+                          {/* 자정을 넘으면 (+N일)을 붙인다 — fmtTime 은 하루 안 시각으로
+                              접어 보여주므로, 표기가 없으면 23:30 - 05:00 이 하루 안에서
+                              거꾸로 간 것처럼 읽힌다. 편집 모달과 같은 규칙이다. */}
                           <div className="rv-range">
                             {fmtTime(startMins)} - {fmtTime(endMins)}
+                            {(() => {
+                              const over =
+                                blockApi.dayNoOfOffset(endMins) -
+                                blockApi.dayNoOfOffset(startMins);
+                              return over > 0 ? ` (+${over}일)` : "";
+                            })()}
                           </div>
                           {item.cost > 0 && (
                             <div className="rv-cost">{won(item.cost)}</div>
