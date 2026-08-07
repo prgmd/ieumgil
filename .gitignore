@@ -10,3 +10,6 @@ node_modules/
 # 로컬 환경·로그
 *.local
 npm-debug.log*
+
+# 운영 환경변수(EC2 에 두는 값) — 템플릿(.env.prod.example)만 커밋한다
+.env.prod
