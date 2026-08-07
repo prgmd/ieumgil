@@ -1561,14 +1561,19 @@ export function DashboardPage() {
 
     // 소요시간이 늘면 뒤 이웃이 밀린다 — PATCH 전에 밀린 결과를 미리 계산해 둔다.
     // 24:00 을 넘겨도 그대로 둔다 — 절대 오프셋에선 그 자리가 곧 다음 Day 다.
-    const onChain = chains[activeDay]?.includes(targetId);
+    // Day 는 활성 탭이 아니라 이 블록 자신의 오프셋에서 뽑는다 — 축이 보드 전체라
+    // 모달은 어느 Day 의 카드에서든 열린다. 활성 탭으로 판정하면 다른 Day 의 블록이
+    // 후보(POOL) 취급을 받아 이웃 해소도 위치 저장도 통째로 건너뛰어지고,
+    // 소요를 늘리면 서버에 겹침이 그대로 남는다.
+    const targetDayNo = blockApi.dayNoOfOffset(base.startMins);
+    const targetDayKey = targetDayNo != null ? `d${targetDayNo}` : null;
     let resolved = null;
-    if (onChain) {
+    if (targetDayKey && chains[targetDayKey]?.includes(targetId)) {
       resolved = resolveOverlaps(
         { ...items, [targetId]: patched },
-        chains[activeDay],
+        chains[targetDayKey],
         targetId,
-        dayBase,
+        (targetDayNo - 1) * blockApi.MINUTES_PER_DAY,
       );
     }
 
@@ -1596,7 +1601,7 @@ export function DashboardPage() {
         setItems(resolved.newItems);
         setChains((prev) =>
           regroupChainsByOffset(
-            { ...prev, [activeDay]: resolved.newChain },
+            { ...prev, [targetDayKey]: resolved.newChain },
             resolved.newItems,
           ),
         );
@@ -1869,6 +1874,14 @@ export function DashboardPage() {
 
   const handleResizeStart = useCallback(
     (id, direction, startY, startDur, originalStartMins, boundTop) => {
+      // 축이 보드 전체 한 줄이라 화면에 보이는 아무 카드나 리사이즈할 수 있다 —
+      // 활성 탭과 무관하다. 겹침 해소와 저장은 **그 블록이 실제로 앉은 Day** 의
+      // 창에서 돌아야 하므로 여기서 한 번 뽑아 리사이즈 상태에 실어 둔다.
+      // (활성 Day 를 쓰면 다른 Day 의 카드는 이웃이 밀리지 않고, 저장 대상 목록도
+      // 비어 PATCH 가 한 건도 안 나간다.)
+      // 소속 판정은 리사이즈 시작 시점의 시각으로 한다 — chains 의 소속 재배치는
+      // 끌기가 끝난 뒤에야 일어나므로 chains 도 아직 그 시점의 것이다.
+      const dayNo = blockApi.dayNoOfOffset(originalStartMins);
       setResizingState({
         id,
         direction,
@@ -1877,6 +1890,8 @@ export function DashboardPage() {
         originalStartMins,
         boundTop,
         originalItems: items,
+        dayKey: dayNo != null ? `d${dayNo}` : null,
+        dayBase: dayNo != null ? (dayNo - 1) * blockApi.MINUTES_PER_DAY : 0,
       });
     },
     [items],
@@ -1889,7 +1904,10 @@ export function DashboardPage() {
     async (rs) => {
       const current = itemsRef.current;
       const original = rs.originalItems;
-      const dirty = (chains[activeDay] ?? []).filter(
+      // 저장 대상은 리사이즈한 블록이 앉은 Day 의 체인이다 — 활성 탭이 아니다.
+      // 활성 Day 를 쓰면 다른 Day 의 카드를 리사이즈했을 때 dirty 가 비어
+      // PATCH 가 한 건도 안 나가고, 화면만 늘어난 채 새로고침에 되돌아간다.
+      const dirty = (chains[rs.dayKey] ?? []).filter(
         (id) =>
           isServerBlock(id) &&
           current[id] &&
@@ -1927,7 +1945,7 @@ export function DashboardPage() {
         reload();
       }
     },
-    [chains, activeDay, reload, showToast],
+    [chains, reload, showToast],
   );
 
   useEffect(() => {
@@ -1972,11 +1990,13 @@ export function DashboardPage() {
               : {}),
           },
         };
+        // 해소하는 창은 리사이즈 대상이 앉은 Day 다(활성 탭이 아니다) — 아니면
+        // 다른 Day 의 카드를 늘렸을 때 자기 이웃이 밀리지 않아 카드끼리 겹쳐 보인다.
         const { newItems } = resolveOverlaps(
           updatedSnapshot,
-          chains[activeDay],
+          chains[resizingState.dayKey] ?? [],
           resizingState.id,
-          dayBase,
+          resizingState.dayBase,
         );
         return newItems;
       });
@@ -1986,7 +2006,7 @@ export function DashboardPage() {
       persistResize(resizingState); // fire-and-forget — 실패는 내부에서 reload 롤백
       // 리사이즈도 이웃을 자정 너머로 민다. 소속 재배치는 끌기가 끝난 뒤에 한 번만
       // 한다 — mousemove 마다 옮기면 끌던 중에 카드가 다른 Day 로 사라지고,
-      // persistResize 가 chains[activeDay] 로 저장 대상을 고르므로 밀린 블록의
+      // persistResize 가 chains[rs.dayKey] 로 저장 대상을 고르므로 밀린 블록의
       // 위치가 저장되지 않는다. persistResize 는 위에서 이미 옛 소속을 읽었다.
       setChains((prev) => regroupChainsByOffset(prev, itemsRef.current));
       setResizingState(null);
@@ -2001,7 +2021,7 @@ export function DashboardPage() {
       window.removeEventListener("mousemove", handleMouseMove);
       window.removeEventListener("click", handleGlobalClick);
     };
-  }, [resizingState, activeDay, dayBase, chains, persistResize]);
+  }, [resizingState, chains, persistResize]);
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
