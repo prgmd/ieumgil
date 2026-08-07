@@ -494,6 +494,14 @@
   align-items: center;
   gap: 16px;
 }
+/* 지금 보고 있는 Day — 스크롤에서 파생되므로 고정 제목이 아니라 위치 표시다 */
+.bd-head h2 {
+  margin: 0;
+  font-size: 24px;
+}
+.bd-head .date {
+  color: var(--ink3, #786d63);
+}
 .bd-head .right {
   margin-left: auto;
   display: flex;
