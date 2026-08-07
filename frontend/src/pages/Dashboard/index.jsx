@@ -35,7 +35,8 @@ import {
   dayDate,
   spilloversInto,
   spilloverFloorOf,
-  regroupChainsByOffset,
+  boardOf,
+  blocksOfDay,
 } from "./dashboardHelpers";
 import { useKakaoMap } from "./hooks/useKakaoMap";
 import { useBudget } from "./hooks/useBudget";
@@ -208,29 +209,31 @@ const persistMovedOffsets = (chainIds, prevItems, nextItems, excludeId) => {
 };
 
 /**
- * 체인 위 블록들의 겹침을 해소한다. 시각은 모두 절대 오프셋(Day 1 00:00 기준 분)이라
+ * 보드 위 블록들의 겹침을 해소한다. 시각은 모두 절대 오프셋(Day 1 00:00 기준 분)이라
  * 겹치지 않는 블록은 제자리에 두고(공백 보존), 겹치는 블록만 앞 블록 끝까지 뒤로 민다.
  * fixedId 가 있으면 그 블록만 고정하고 나머지가 비켜난다.
  *
- * dayBase 는 지금 해소하는 Day 의 00:00(절대 분)이다. 이 값이 필요한 이유는
- * 자정을 넘겨 이어지는 블록 때문이다 — Day 1 23:30 에 시작해 Day 2 05:00 에
- * 끝나는 블록은 한 행이고 chains["d1"] 에만 있으므로, Day 2 를 해소할 때
- * dayChain 만 봐서는 그 꼬리가 보이지 않는다. 예전 두-행 모델에는 Day 2 쪽에
- * "(이어서)" 행이 실재해 자연히 보였다.
+ * boardChain 은 보드 전체다 — Day 별로 나눠 돌리지 않는다. 축이 여행 한 줄이고
+ * 오프셋 하나가 Day 와 그 안의 시각을 함께 가리키므로, Day 경계는 해소가 알아야
+ * 할 것이 아니다. 자정을 넘겨 이어지는 블록도 그냥 목록 안의 앞 블록이다.
+ *
+ * 밀림은 Math.max(lastEnd, startMins) 하나로 끝난다 — 겹치지 않는 블록을 만나면
+ * 그 블록은 제자리에 남고 lastEnd 가 그 자리로 갱신되므로, 전파가 첫 공백에서
+ * 저절로 멈춘다. 밤마다 여덟 시간짜리 공백이 있으니 Day 를 넘는 밀림은 그 Day 가
+ * 자정까지 꽉 찼을 때뿐이다.
  */
-const resolveOverlaps = (currentItems, dayChain, fixedId, dayBase) => {
+const resolveOverlaps = (currentItems, boardChain, fixedId) => {
   let newItems = { ...currentItems };
-  const others = dayChain.filter((id) => id !== fixedId);
+  const others = boardChain.filter((id) => id !== fixedId);
   others.sort((a, b) => newItems[a].startMins - newItems[b].startMins);
 
   const fixedStart = fixedId ? newItems[fixedId].startMins : -1;
   const fixedEnd = fixedId ? fixedStart + newItems[fixedId].dur : -1;
 
-  // 이 Day 의 바닥은 00:00 이거나, 자정을 넘어온 블록이 있으면 그 블록의 끝이다.
-  // 그 블록은 다른 Day 의 체인에 있으므로 dayChain 이 아니라 보드 전체를 훑는다
-  // (spilloverFloorOf). 드롭 클램프도 같은 함수를 쓴다 — 두 벌로 계산하면
-  // 미리보기와 확정이 갈라진다.
-  let lastEnd = spilloverFloorOf(currentItems, dayBase, fixedId);
+  // 보드의 바닥은 여행 첫 Day 의 00:00 = 0 이다. Day 별 바닥(자정을 넘어온 블록의
+  // 끝)이라는 개념은 없어졌다 — 그 블록이 이미 이 목록 안의 앞 블록이라 lastEnd 가
+  // 같은 일을 Day 경계 없이 한다.
+  let lastEnd = 0;
 
   others.forEach((id) => {
     let start = Math.max(lastEnd, newItems[id].startMins);
@@ -243,24 +246,21 @@ const resolveOverlaps = (currentItems, dayChain, fixedId, dayBase) => {
     lastEnd = start + newItems[id].dur;
   });
 
-  const newChain = [...dayChain].sort(
+  const newChain = [...boardChain].sort(
     (a, b) => newItems[a].startMins - newItems[b].startMins,
   );
   return { newItems, newChain };
 };
 
 /**
- * 그 Day 의 체인에서 가장 이른 시작 오프셋(절대 분). 배치된 블록이 없으면 null.
+ * 그 Day 의 가장 이른 시작 오프셋(절대 분). 배치된 블록이 없으면 null.
  * "그 Day 로 스크롤한다"가 어디로 가야 하는지를 정하는 값이다 — Day 00:00 은
  * 텅 빈 새벽이라 첫 블록이 있으면 그쪽이 먼저다.
+ * 보드 목록이 오프셋 순이므로 그 Day 의 첫 항목이 곧 가장 이른 블록이다.
  */
-const firstStartOf = (chains, items, dayKey) => {
-  let first = null;
-  for (const id of chains[dayKey] || []) {
-    const s = items[id]?.startMins;
-    if (s != null && (first == null || s < first)) first = s;
-  }
-  return first;
+const firstStartOf = (board, items, dayKey) => {
+  const first = blocksOfDay(board, items, dayKey)[0];
+  return first == null ? null : items[first].startMins;
 };
 
 /**
@@ -409,7 +409,7 @@ export function DashboardPage() {
   const navigate = useNavigate();
   const showToast = useToastStore((s) => s.show);
 
-  // 스냅샷은 훅이 소유한다(1단계 — 읽기 연동). 아래 items/chains/pool 편집 상태는
+  // 스냅샷은 훅이 소유한다(1단계 — 읽기 연동). 아래 items/pool 편집 상태는
   // 아직 로컬이다: 드래그·수정 결과의 서버 저장은 2~5단계 mutation 에서 붙는다.
   // 그래서 지금 구조는 "로딩 완료 시 서버 보드를 로컬 상태로 시드"이며,
   // 새로고침하면 서버 상태로 되돌아간다(로컬 편집은 아직 휘발).
@@ -417,7 +417,6 @@ export function DashboardPage() {
     project,
     members: serverMembers,
     items: serverItems,
-    chains: serverChains,
     pool: serverPool,
     status,
     error,
@@ -505,8 +504,14 @@ export function DashboardPage() {
 
   // 보드 편집 상태 — 초기값은 비워 두고, 스냅샷이 도착하면 아래 시드 effect 가 채운다.
   const [items, setItems] = useState({});
-  const [chains, setChains] = useState({});
   const [pool, setPool] = useState([]);
+
+  // 보드(시간축에 올라간 블록들, 오프셋 순) — 상태가 아니라 items 에서 파생한다.
+  // 소속의 근거는 오프셋 하나뿐이다: startMins 가 있으면 보드, 없으면 후보(POOL).
+  // 따로 목록을 들고 있으면 "오프셋이 가리키는 Day"와 "들어 있는 목록"이 갈라져,
+  // 자정 너머로 밀린 블록이 조용히 사라지거나 저장되지 않는 상태가 생긴다.
+  // Day 별로 필요한 곳은 blocksOfDay 선택자로 얻는다.
+  const board = useMemo(() => boardOf(items), [items]);
 
   // ── 함께 있는 느낌 (6단계) ───────────────────────────
   // members: 스냅샷이 시드하고 MEMBER_JOINED/LEFT op 가 갱신한다 (상단바 아바타).
@@ -646,35 +651,11 @@ export function DashboardPage() {
     return () => clearInterval(timer);
   }, [activeDay, sendCursor]);
 
-  // 기간이 줄어 사라진 Day 에 남아 있던 블록은 버리지 않고 후보 목록으로 되돌린다 —
-  // 서버가 PATCH 응답의 movedToPool 로 알려주는 것과 같은 규칙이다.
-  // (늘어난 Day 는 상태를 만들 필요가 없다. 조회하는 쪽이 전부 `chains[day] || []`
-  //  로 비어 있는 경우를 받아낸다.)
-  // 시드와 같은 "렌더 중 조건부 setState" 패턴 — effect 로 하면 set-state-in-effect 에
-  // 걸리고, 스냅샷 재시드와 같은 렌더에 겹칠 때도 아래 시드 블록이 나중에 실행되므로
-  // 서버 진실이 이긴다.
-  const goneDays = Object.keys(chains).filter((key) => !dayKeys.includes(key));
-  if (goneDays.length > 0) {
-    const dropped = goneDays.flatMap((key) => chains[key]);
-    if (dropped.length > 0) {
-      setPool((p) => [...dropped.filter((id) => !p.includes(id)), ...p]);
-      // 후보의 자리는 "오프셋 없음"이다 — 체인에서만 빼고 오프셋을 남기면
-      // Day 를 오프셋에서 유도하는 곳들이 이 블록을 사라진 Day 소속으로 계속 읽는다
-      setItems((prev) => {
-        const next = { ...prev };
-        for (const id of dropped) {
-          if (!next[id]) continue;
-          next[id] = { ...next[id], startMins: null };
-        }
-        return next;
-      });
-    }
-    const next = {};
-    dayKeys.forEach((key) => {
-      next[key] = chains[key] ?? [];
-    });
-    setChains(next);
-  }
+  // (기간이 줄어 범위를 벗어난 블록을 후보 목록으로 되돌리는 일은 서버가 한다 —
+  //  PATCH /projects 가 그 블록들을 POOL 로 옮기고 movedToPool 로 알려준다. 기간이
+  //  바뀌는 경로는 전부 reload() 로 스냅샷을 다시 읽으므로 로컬에서 한 벌 더 감사할
+  //  것이 없다. 예전의 로컬 감사는 "여행 기간 밖 오프셋"을 전부 잡아내서, 겹침
+  //  해소로 마지막 자정 너머까지 밀린 블록까지 후보로 끌어내리고 있었다.)
 
   const [editingBlockId, setEditingBlockId] = useState(null);
   const [activeId, setActiveId] = useState(null);
@@ -696,7 +677,7 @@ export function DashboardPage() {
     pinPickMode,
     startPinPick,
     cancelPinPick,
-  } = useKakaoMap({ chains, items, activeDay, showToast });
+  } = useKakaoMap({ board, items, activeDay, showToast });
 
   // 지도에서 찍어 온 위치 — 폼이 prop 으로 읽어 좌표·주소만 갈아끼운다.
   // 지정할 때마다 새 객체가 되므로 폼이 "새로 찍었다"를 객체 정체성으로 안다.
@@ -760,7 +741,7 @@ export function DashboardPage() {
     budgetPct,
     remainingBudget,
     budgetSegments,
-  } = useBudget({ projectId, project, chains, items, rollbackToServer });
+  } = useBudget({ projectId, project, board, items, rollbackToServer });
 
   // ── 스냅샷 → 로컬 보드 시드 ──────────────────────────
   // effect 가 아니라 "렌더 중 조건부 setState"(React 공식 파생 상태 리셋 패턴)를 쓴다.
@@ -773,7 +754,6 @@ export function DashboardPage() {
     setSeededFrom(serverItems);
 
     setItems(serverItems);
-    setChains(serverChains);
     setPool(serverPool);
 
     // 수정자 오버레이는 시드마다 버린다 — 스냅샷의 lastEditedById 가 서버 확정값이라
@@ -791,7 +771,7 @@ export function DashboardPage() {
 
 
     // 다른 프로젝트에서 넘어온 경우 이전 프로젝트의 Day 탭이 남지 않게 한다
-    if (!serverChains[activeDay]) setScrolledDay("d1");
+    if (!dayKeys.includes(scrolledDay)) setScrolledDay("d1");
 
     // 목표 예산은 스냅샷의 project 에 실려 오고, 수정은 PATCH /projects 로 저장된다
     // (백엔드 합의로 targetBudget 필드 추가 — useBudget 참조).
@@ -805,7 +785,8 @@ export function DashboardPage() {
     navigate(`/groups/${groupId}`, { replace: true });
   }, [status, error, groupId, navigate, showToast]);
 
-  // 임시 id 로 만든 로컬 블록을 서버 blockId 로 교체한다 (items + pool + chains).
+  // 임시 id 로 만든 로컬 블록을 서버 blockId 로 교체한다 (items + pool).
+  // 보드 목록은 items 에서 파생하므로 따로 갈아끼울 것이 없다.
   // 생성 요청이 도는 사이 사용자가 블록을 지웠으면(items 에 없음) 조용히 무시한다.
   const adoptServerId = useCallback((tempId, blockId, extra) => {
     setItems((prev) => {
@@ -816,13 +797,6 @@ export function DashboardPage() {
       return next;
     });
     setPool((prev) => prev.map((id) => (id === tempId ? blockId : id)));
-    setChains((prev) => {
-      const next = { ...prev };
-      for (const day of Object.keys(next)) {
-        next[day] = next[day].map((id) => (id === tempId ? blockId : id));
-      }
-      return next;
-    });
   }, []);
 
   // ── Day 전체 자동 생성 = 두 단계: ① 전 구간 후보 조회 → 통합 모달,
@@ -833,9 +807,9 @@ export function DashboardPage() {
   const regenerateAutoTransport = useCallback(
     async (dayKey) => {
       if (isGeneratingTransport || bulkTransitPicker) return;
-      const chain = chains[dayKey] || [];
-      // 서버 계산 대상 = 체인의 실블록(서버 id 보유)만. 저장 중(임시 id)·자동 생성분 제외
-      const realIds = chain.filter(
+      const dayIds = blocksOfDay(board, items, dayKey);
+      // 서버 계산 대상 = 그 Day 의 실블록(서버 id 보유)만. 저장 중(임시 id)·자동 생성분 제외
+      const realIds = dayIds.filter(
         (id) => !items[id]?.auto && isServerBlock(id),
       );
       if (realIds.length < 2) return;
@@ -884,7 +858,7 @@ export function DashboardPage() {
     [
       isGeneratingTransport,
       bulkTransitPicker,
-      chains,
+      board,
       items,
       projectId,
       showToast,
@@ -909,13 +883,13 @@ export function DashboardPage() {
       const segmentOf = (fromId, toId) =>
         segments.find((s) => s.fromBlockId === fromId && s.toBlockId === toId);
 
-      // 모달이 열린 사이 체인이 바뀌었을 수 있다(협업) — 지금 체인을 기준으로
+      // 모달이 열린 사이 보드가 바뀌었을 수 있다(협업) — 지금 보드를 기준으로
       // 다시 훑고, 더 이상 인접하지 않은 구간의 선택은 자연히 버려진다(pair 키 불일치)
-      const chain = chains[dayKey] || [];
-      const realIds = chain.filter(
+      const dayIds = blocksOfDay(board, items, dayKey);
+      const realIds = dayIds.filter(
         (id) => !items[id]?.auto && isServerBlock(id),
       );
-      const oldAutoIds = chain.filter((id) => items[id]?.auto);
+      const oldAutoIds = dayIds.filter((id) => items[id]?.auto);
       if (realIds.length < 2) {
         setBulkTransitPicker(null);
         return;
@@ -926,10 +900,13 @@ export function DashboardPage() {
         let newItems = { ...items };
         oldAutoIds.forEach((id) => delete newItems[id]);
 
-        const rebuilt = [];
+        // 해소는 보드 전체를 훑는다 — 이 Day 의 교통 블록이 뒤를 밀면 다음 Day 의
+        // 블록까지 밀릴 수 있으므로 목록도 보드 전체여야 한다. 지운 자동 생성분을
+        // 빼고, 새 교통 블록은 앞 블록 바로 뒤에 끼운다 — 같은 시각(앞 블록의 끝)에
+        // 놓이는 다음 실블록보다 먼저 와야 그 실블록이 밀린다.
+        const rebuilt = board.filter((id) => !oldAutoIds.includes(id));
         const createdLocalIds = [];
         realIds.forEach((id, i) => {
-          rebuilt.push(id);
           if (i < realIds.length - 1) {
             const chosen = choices[`${id}-${realIds[i + 1]}`];
             if (chosen?.candidate?.status !== "OK") return; // 제외했거나 모르는 구간 — 만들지 않는다
@@ -956,7 +933,7 @@ export function DashboardPage() {
                 chosen.departure,
               ),
             };
-            rebuilt.push(newId);
+            rebuilt.splice(rebuilt.indexOf(id) + 1, 0, newId);
             createdLocalIds.push(newId);
           }
         });
@@ -970,7 +947,6 @@ export function DashboardPage() {
           newItems,
           rebuilt,
           null,
-          (dayNoOf(dayKey) - 1) * blockApi.MINUTES_PER_DAY,
         );
 
         setBulkTransitPicker(null);
@@ -978,12 +954,6 @@ export function DashboardPage() {
         // 낙관 적용 — 교통 블록이 뒤를 밀어 24:00 을 넘겨도 그대로 둔다.
         // 절대 오프셋에선 1440 을 넘긴 자리가 곧 다음 Day 다(쪼갤 게 없다).
         setItems(resolvedItems);
-        setChains(
-          regroupChainsByOffset(
-            { ...chains, [dayKey]: newChain },
-            resolvedItems,
-          ),
-        );
 
         // ── 서버 반영 (5.5단계): 기존 생성분 삭제 → 밀린 실블록 시각 저장 →
         //    새 교통 블록 생성 → 로컬 임시 id 를 서버 blockId 로 교체 ──
@@ -1031,7 +1001,7 @@ export function DashboardPage() {
     },
     [
       bulkTransitPicker,
-      chains,
+      board,
       items,
       projectId,
       adoptServerId,
@@ -1047,7 +1017,8 @@ export function DashboardPage() {
     async (dayKey, currentId, nextId) => {
       if (isGeneratingTransport || transitPicker) return;
 
-      if (!(chains[dayKey] || []).includes(currentId)) return; // 체인에 없는 블록
+      // 보드 소속 판정은 오프셋 하나다 — 시각이 없으면 후보(POOL)라 이을 구간이 없다
+      if (items[currentId]?.startMins == null) return;
       // 서버 계산은 서버 블록 id 로만 가능하다 — 저장 중(임시 id)이면 잠시 뒤에
       if (!isServerBlock(currentId) || !isServerBlock(nextId)) {
         showToast("블록 저장이 끝난 뒤 다시 시도해주세요.");
@@ -1097,7 +1068,7 @@ export function DashboardPage() {
         setIsGeneratingTransport(false);
       }
     },
-    [isGeneratingTransport, transitPicker, chains, projectId, showToast],
+    [isGeneratingTransport, transitPicker, items, projectId, showToast],
   );
 
   // 피커에서 다른 후보/편을 고른다 (아직 생성하지 않는다 — confirmTransitChoice 가 한다)
@@ -1118,9 +1089,11 @@ export function DashboardPage() {
       if (!picker || chosen?.status !== "OK") return;
 
       const { dayKey, currentId } = picker;
-      const currentChain = [...(chains[dayKey] || [])];
+      // 해소는 보드 전체를 훑으므로 목록도 보드 전체다 — 새 교통 블록은 앞 블록
+      // 바로 뒤에 끼운다(같은 시각에 놓이는 다음 블록보다 먼저 와야 그쪽이 밀린다).
+      const currentChain = [...board];
       const insertIdx = currentChain.indexOf(currentId);
-      // 모달이 열린 사이 체인이 바뀌었을 수 있다(협업) — 자리가 사라졌으면 중단
+      // 모달이 열린 사이 보드가 바뀌었을 수 있다(협업) — 자리가 사라졌으면 중단
       if (insertIdx === -1 || items[currentId]?.startMins == null) {
         showToast("구간이 바뀌어 추가하지 못했어요. 다시 시도해주세요.");
         return;
@@ -1160,18 +1133,11 @@ export function DashboardPage() {
           newItems,
           currentChain,
           null,
-          (dayNoOf(dayKey) - 1) * blockApi.MINUTES_PER_DAY,
         );
 
         // 낙관 적용 — 교통 블록이 뒤를 밀어 24:00 을 넘겨도 그대로 둔다.
         // 절대 오프셋에선 1440 을 넘긴 자리가 곧 다음 Day 다(쪼갤 게 없다).
         setItems(resolvedItems);
-        setChains(
-          regroupChainsByOffset(
-            { ...chains, [dayKey]: newChain },
-            resolvedItems,
-          ),
-        );
 
         // ── 서버 반영 (5.5단계): 밀린 이웃 위치 저장 → 생성 → id 교체 ──
         try {
@@ -1208,7 +1174,7 @@ export function DashboardPage() {
     [
       transitPicker,
       items,
-      chains,
+      board,
       projectId,
       adoptServerId,
       rollbackToServer,
@@ -1231,36 +1197,16 @@ export function DashboardPage() {
   });
 
   // ── 원격 op 적용 ─────────────────────────────────────
-  // 원격 블록을 startMins(절대 오프셋)·orderKey 가 가리키는 자리로 배치한다
-  // (생성·이동 공용). Day 는 오프셋에서 유도한다 — 위치와 시각이 한 정수라
-  // 블록이 이미 두 값을 다 들고 온다. null 오프셋은 후보(POOL) 자리다.
+  // 원격 블록을 startMins(절대 오프셋)가 가리키는 자리로 놓는다(생성·이동 공용).
+  // 시간축 위 자리는 items 갱신만으로 끝난다 — 보드 목록이 오프셋에서 파생하기
+  // 때문이다. 여기서 챙길 것은 후보(POOL) 목록뿐이고, 후보의 순서는 시각이 없어
+  // 손 정렬(orderKey)만이 근거다.
   const placeRemoteBlock = (block) => {
-    const dayNo = blockApi.dayNoOfOffset(block.startMins);
-    const targetDay = dayNo == null ? null : `d${dayNo}`;
-
     setPool((prev) => {
       const without = prev.filter((id) => id !== block.id);
-      return targetDay === null
+      return block.startMins == null
         ? insertByOrderKey(without, itemsRef.current, block)
         : without;
-    });
-    setChains((prev) => {
-      const next = {};
-      let placed = false;
-      for (const [day, chain] of Object.entries(prev)) {
-        const without = chain.filter((id) => id !== block.id);
-        if (day === targetDay) {
-          next[day] = insertByOrderKey(without, itemsRef.current, block);
-          placed = true;
-        } else {
-          next[day] = without;
-        }
-      }
-      if (targetDay !== null && !placed) {
-        // 아직 로컬에 없는 Day(기간 변경 경합) — 칸을 만들어 데이터를 잃지 않는다
-        next[targetDay] = [block.id];
-      }
-      return next;
     });
   };
 
@@ -1354,13 +1300,6 @@ export function DashboardPage() {
           return n;
         });
         setPool((prev) => prev.filter((x) => x !== id));
-        setChains((prev) => {
-          const n = { ...prev };
-          Object.keys(n).forEach((day) => {
-            n[day] = n[day].filter((x) => x !== id);
-          });
-          return n;
-        });
         if (editingBlockId === id) {
           setEditingBlockId(null);
           showToast("편집 중이던 블록을 다른 멤버가 삭제했어요");
@@ -1580,19 +1519,14 @@ export function DashboardPage() {
 
     // 소요시간이 늘면 뒤 이웃이 밀린다 — PATCH 전에 밀린 결과를 미리 계산해 둔다.
     // 24:00 을 넘겨도 그대로 둔다 — 절대 오프셋에선 그 자리가 곧 다음 Day 다.
-    // Day 는 활성 탭이 아니라 이 블록 자신의 오프셋에서 뽑는다 — 축이 보드 전체라
-    // 모달은 어느 Day 의 카드에서든 열린다. 활성 탭으로 판정하면 다른 Day 의 블록이
-    // 후보(POOL) 취급을 받아 이웃 해소도 위치 저장도 통째로 건너뛰어지고,
-    // 소요를 늘리면 서버에 겹침이 그대로 남는다.
-    const targetDayNo = blockApi.dayNoOfOffset(base.startMins);
-    const targetDayKey = targetDayNo != null ? `d${targetDayNo}` : null;
+    // 해소는 보드 전체를 훑는다: 어느 Day 의 카드에서 열었든, 밀림은 Day 경계가
+    // 아니라 다음 공백에서 멈춘다. 시각이 없는 후보(POOL)만 해소를 건너뛴다.
     let resolved = null;
-    if (targetDayKey && chains[targetDayKey]?.includes(targetId)) {
+    if (base.startMins != null) {
       resolved = resolveOverlaps(
         { ...items, [targetId]: patched },
-        chains[targetDayKey],
+        board,
         targetId,
-        (targetDayNo - 1) * blockApi.MINUTES_PER_DAY,
       );
     }
 
@@ -1618,12 +1552,6 @@ export function DashboardPage() {
         );
 
         setItems(resolved.newItems);
-        setChains((prev) =>
-          regroupChainsByOffset(
-            { ...prev, [targetDayKey]: resolved.newChain },
-            resolved.newItems,
-          ),
-        );
       } else {
         setItems({ ...items, [targetId]: patched });
       }
@@ -1676,13 +1604,6 @@ export function DashboardPage() {
       }
     }
 
-    setChains((prev) => {
-      const next = { ...prev };
-      Object.keys(next).forEach((day) => {
-        next[day] = next[day].filter((x) => x !== id);
-      });
-      return next;
-    });
     setPool((prev) => prev.filter((x) => x !== id));
     setItems((prev) => {
       const next = { ...prev };
@@ -1766,17 +1687,14 @@ export function DashboardPage() {
     const newCost = transitCostOf(chosen, picker.chosenDeparture);
     const merged = { ...block, dur: newDur, cost: newCost, transportMeta: newMeta };
 
-    // 체인 위 블록이면 소요 변경이 이웃을 민다 — 저장 전에 밀린 결과를 계산해 둔다.
+    // 보드 위 블록이면 소요 변경이 이웃을 민다 — 저장 전에 밀린 결과를 계산해 둔다.
     // 24:00 을 넘겨도 그대로 둔다 — 절대 오프셋에선 그 자리가 곧 다음 Day 다.
-    const blockDayNo = blockApi.dayNoOfOffset(block.startMins);
-    const dayKey = blockDayNo != null ? `d${blockDayNo}` : null;
     let resolved = null;
-    if (dayKey && chains[dayKey]?.includes(block.id)) {
+    if (block.startMins != null) {
       resolved = resolveOverlaps(
         { ...items, [block.id]: merged },
-        chains[dayKey],
+        board,
         block.id,
-        (blockDayNo - 1) * blockApi.MINUTES_PER_DAY,
       );
     }
 
@@ -1800,12 +1718,6 @@ export function DashboardPage() {
           block.id,
         );
         setItems(resolved.newItems);
-        setChains((prev) =>
-          regroupChainsByOffset(
-            { ...prev, [dayKey]: resolved.newChain },
-            resolved.newItems,
-          ),
-        );
       } else {
         setItems((prev) =>
           prev[block.id] ? { ...prev, [block.id]: merged } : prev,
@@ -1815,7 +1727,7 @@ export function DashboardPage() {
     } catch (e) {
       showToast(e?.message ?? "저장하지 못했어요. 잠시 후 다시 시도해주세요.");
     }
-  }, [transportReselectPicker, items, chains, showToast]);
+  }, [transportReselectPicker, items, board, showToast]);
 
   // ── 편집 락 수명 = 편집 모달 수명 (6단계, advisory) ──
   // 모달을 열면 획득 → 10초 주기 하트비트(TTL 30초) → 닫으면 해제.
@@ -1894,13 +1806,8 @@ export function DashboardPage() {
   const handleResizeStart = useCallback(
     (id, direction, startY, startDur, originalStartMins, boundTop) => {
       // 축이 보드 전체 한 줄이라 화면에 보이는 아무 카드나 리사이즈할 수 있다 —
-      // 활성 탭과 무관하다. 겹침 해소와 저장은 **그 블록이 실제로 앉은 Day** 의
-      // 창에서 돌아야 하므로 여기서 한 번 뽑아 리사이즈 상태에 실어 둔다.
-      // (활성 Day 를 쓰면 다른 Day 의 카드는 이웃이 밀리지 않고, 저장 대상 목록도
-      // 비어 PATCH 가 한 건도 안 나간다.)
-      // 소속 판정은 리사이즈 시작 시점의 시각으로 한다 — chains 의 소속 재배치는
-      // 끌기가 끝난 뒤에야 일어나므로 chains 도 아직 그 시점의 것이다.
-      const dayNo = blockApi.dayNoOfOffset(originalStartMins);
+      // 활성 탭과 무관하고, 겹침 해소도 보드 전체를 훑으므로 여기서 Day 를 뽑아
+      // 실어 둘 것이 없다.
       setResizingState({
         id,
         direction,
@@ -1909,8 +1816,6 @@ export function DashboardPage() {
         originalStartMins,
         boundTop,
         originalItems: items,
-        dayKey: dayNo != null ? `d${dayNo}` : null,
-        dayBase: dayNo != null ? (dayNo - 1) * blockApi.MINUTES_PER_DAY : 0,
       });
     },
     [items],
@@ -1923,13 +1828,12 @@ export function DashboardPage() {
     async (rs) => {
       const current = itemsRef.current;
       const original = rs.originalItems;
-      // 저장 대상은 리사이즈한 블록이 앉은 Day 의 체인이다 — 활성 탭이 아니다.
-      // 활성 Day 를 쓰면 다른 Day 의 카드를 리사이즈했을 때 dirty 가 비어
-      // PATCH 가 한 건도 안 나가고, 화면만 늘어난 채 새로고침에 되돌아간다.
-      const dirty = (chains[rs.dayKey] ?? []).filter(
+      // 저장 대상은 보드 전체다 — 밀림이 Day 경계에서 멈추지 않으므로 Day 로
+      // 좁히면 자정 너머로 밀린 이웃의 위치가 저장되지 않는다. 실제로 값이
+      // 바뀐 블록만 걸러 내므로 넓혀도 나가는 요청 수는 그대로다.
+      const dirty = boardOf(current).filter(
         (id) =>
           isServerBlock(id) &&
-          current[id] &&
           original[id] &&
           (current[id].startMins !== original[id].startMins ||
             current[id].dur !== original[id].dur),
@@ -1964,7 +1868,7 @@ export function DashboardPage() {
         reload();
       }
     },
-    [chains, reload, showToast],
+    [reload, showToast],
   );
 
   useEffect(() => {
@@ -2009,13 +1913,13 @@ export function DashboardPage() {
               : {}),
           },
         };
-        // 해소하는 창은 리사이즈 대상이 앉은 Day 다(활성 탭이 아니다) — 아니면
-        // 다른 Day 의 카드를 늘렸을 때 자기 이웃이 밀리지 않아 카드끼리 겹쳐 보인다.
+        // 해소 목록은 이 스냅샷에서 바로 뽑는다 — 렌더의 board 를 쓰면 매 프레임
+        // 새 배열이라 이 effect 가 통째로 다시 걸리고, 리사이즈를 끝내는 click
+        // 리스너의 50ms 지연이 움직일 때마다 초기화된다.
         const { newItems } = resolveOverlaps(
           updatedSnapshot,
-          chains[resizingState.dayKey] ?? [],
+          boardOf(updatedSnapshot),
           resizingState.id,
-          resizingState.dayBase,
         );
         return newItems;
       });
@@ -2023,11 +1927,6 @@ export function DashboardPage() {
 
     const handleGlobalClick = () => {
       persistResize(resizingState); // fire-and-forget — 실패는 내부에서 reload 롤백
-      // 리사이즈도 이웃을 자정 너머로 민다. 소속 재배치는 끌기가 끝난 뒤에 한 번만
-      // 한다 — mousemove 마다 옮기면 끌던 중에 카드가 다른 Day 로 사라지고,
-      // persistResize 가 chains[rs.dayKey] 로 저장 대상을 고르므로 밀린 블록의
-      // 위치가 저장되지 않는다. persistResize 는 위에서 이미 옛 소속을 읽었다.
-      setChains((prev) => regroupChainsByOffset(prev, itemsRef.current));
       setResizingState(null);
     };
     window.addEventListener("mousemove", handleMouseMove);
@@ -2040,7 +1939,7 @@ export function DashboardPage() {
       window.removeEventListener("mousemove", handleMouseMove);
       window.removeEventListener("click", handleGlobalClick);
     };
-  }, [resizingState, chains, persistResize]);
+  }, [resizingState, persistResize]);
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
@@ -2132,14 +2031,11 @@ export function DashboardPage() {
         // 마지막 Day 의 24:00 만이 상한이다. 끝은 그 너머로 넘쳐도 막지 않는다 —
         // 절대 오프셋에선 넘친 꼬리가 그대로 다음 Day 위에 놓인다.
         //
-        // 바닥은 00:00 이 아니라 "자정을 넘어온 블록의 끝"이다(화면의 .tl-spill
-        // 띠가 덮은 구간). 겹침 해소가 어차피 그 아래로 밀어낼 자리라, 여기서
-        // 같은 값으로 잡아 두어야 미리보기(고스트)와 확정 위치가 일치한다.
-        // 옮기는 블록 자신은 제외한다 — 제 꼬리에 제가 막히면 안 된다.
-        // 한 Day 를 통째로 덮는 블록(24시간 초과)이면 바닥이 24:00 을 넘어서고,
-        // 놓인 블록은 그 끝(=다음 Day)으로 내려간다 — 이 Day 에는 빈 시간이 없다.
-        // 그러면 regroupChainsByOffset 이 그 블록을 다음 Day 체인으로 옮기므로,
-        // 놓은 탭에서는 사라지고 다음 Day 탭에 나타난다.
+        // 바닥은 "보고 있는 Day 의 자정을 넘어온 블록의 끝"이다(화면의 .tl-spill
+        // 띠가 덮은 구간) — 그 위에 놓지 못하게 막아, 띠를 겹쳐 놓는 조작을
+        // 미리 끊는다. 옮기는 블록 자신은 제외한다(제 꼬리에 제가 막히면 안 된다).
+        // 이 하한은 띠와 한 몸이라 띠를 걷어낼 때 함께 없어진다 — 겹침 해소는
+        // 이미 Day 경계를 모르고, 앞 블록의 끝(lastEnd)이 같은 일을 한다.
         const floorMins = spilloverFloorOf(items, dayBase, activeIdLocal);
         dropMins = Math.max(floorMins, Math.min(dropMins, timelineEnd - SNAP));
         return { region: "timeline", dropMins, dur };
@@ -2313,14 +2209,17 @@ export function DashboardPage() {
         nextPool.every((id, i) => id === pool[i]);
       if (unchanged) return;
 
-      // 낙관 적용 — 체인 제거는 pool→pool 이동에서는 자연히 no-op 이다
-      setChains((prev) => {
-        const next = { ...prev };
-        Object.keys(next).forEach((day) => {
-          next[day] = next[day].filter((id) => id !== activeIdLocal);
-        });
-        return next;
-      });
+      // 낙관 적용 — 후보의 자리는 "오프셋 없음"이다. 보드에서 내리는 일이 곧
+      // 오프셋을 지우는 일이라, 시각을 남겨 두면 그 블록이 후보 목록과 시간축에
+      // 동시에 있게 된다(pool→pool 이동이면 이미 null 이라 no-op).
+      setItems((prev) =>
+        prev[activeIdLocal]?.startMins == null
+          ? prev
+          : {
+              ...prev,
+              [activeIdLocal]: { ...prev[activeIdLocal], startMins: null },
+            },
+      );
       setPool(nextPool);
 
       // 서버 저장: 후보로 이동/재정렬 = startOffsetMinutes null + 이웃 사이 orderKey.
@@ -2334,16 +2233,12 @@ export function DashboardPage() {
               startOffsetMinutes: null,
               orderKey,
             });
-            // 다음 이동의 이웃 계산이 정확하도록 로컬에도 새 위치 값을 반영
+            // 다음 이동의 이웃 계산이 정확하도록 로컬에도 새 키를 반영
             setItems((prev) =>
               prev[activeIdLocal]
                 ? {
                     ...prev,
-                    [activeIdLocal]: {
-                      ...prev[activeIdLocal],
-                      startMins: null,
-                      orderKey,
-                    },
+                    [activeIdLocal]: { ...prev[activeIdLocal], orderKey },
                   }
                 : prev,
             );
@@ -2364,27 +2259,18 @@ export function DashboardPage() {
         ...items,
         [activeIdLocal]: { ...items[activeIdLocal], startMins: dropMins },
       };
-      const currentDayList = [...(chains[activeDay] || [])];
-      if (!currentDayList.includes(activeIdLocal))
-        currentDayList.push(activeIdLocal);
+      // 해소 목록은 놓은 뒤의 보드다 — 옮긴 블록은 오프셋을 얻는 순간 저절로
+      // 들어온다(후보에서 올라온 경우 포함). 활성 탭이 아니라 놓인 자리가 기준이라,
+      // 다른 Day 의 카드 위에 놓아도 그 Day 의 이웃이 제대로 밀린다.
       const { newItems, newChain } = resolveOverlaps(
         updatedItems,
-        currentDayList,
+        boardOf(updatedItems),
         activeIdLocal,
-        dayBase,
       );
 
       // 낙관 적용 — 밀린 이웃이 24:00 을 넘겨도 그대로 둔다.
       // 절대 오프셋에선 1440 을 넘긴 자리가 곧 다음 Day 다.
-      const nextChains = {};
-      for (const [day, chain] of Object.entries(chains)) {
-        nextChains[day] =
-          day === activeDay
-            ? newChain
-            : chain.filter((id) => id !== activeIdLocal);
-      }
       setItems(newItems);
-      setChains(regroupChainsByOffset(nextChains, newItems));
       if (isFromPool)
         setPool((prev) => prev.filter((id) => id !== activeIdLocal));
 
@@ -2501,7 +2387,7 @@ export function DashboardPage() {
     const el = timelineDOMRef.current;
     if (!el) return;
     const base = (dayNoOf(dayKey) - 1) * blockApi.MINUTES_PER_DAY;
-    const target = firstStartOf(chains, items, dayKey) ?? base;
+    const target = firstStartOf(board, items, dayKey) ?? base;
     // 15분(=30px)만 앞에서 멈춘다 — 목표가 sticky Day 머리글에 가리지 않게
     const top = Math.max(0, (target - timelineStart - 15) * PX);
     setScrolledDay(dayKey);
@@ -2516,7 +2402,7 @@ export function DashboardPage() {
   };
 
   // 보드를 열면 첫 Day 의 첫 블록이 보이게 한 번만 맞춘다(부드럽게 갈 이유가 없어
-  // 즉시). 그 뒤로 스크롤 위치를 건드리는 것은 탭 점프뿐이다 — chains/items 가
+  // 즉시). 그 뒤로 스크롤 위치를 건드리는 것은 탭 점프뿐이다 — board/items 가
   // 바뀔 때마다 스크롤을 뺏으면 편집 중에 화면이 튄다.
   const didInitialScrollRef = useRef(false);
   useEffect(() => {
@@ -2526,9 +2412,9 @@ export function DashboardPage() {
     didInitialScrollRef.current = true;
     const firstDay = dayKeys[0];
     const base = (dayNoOf(firstDay) - 1) * blockApi.MINUTES_PER_DAY;
-    const target = firstStartOf(chains, items, firstDay) ?? base;
+    const target = firstStartOf(board, items, firstDay) ?? base;
     el.scrollTop = Math.max(0, (target - timelineStart - 15) * PX);
-  }, [status, dayKeys, chains, items, timelineStart]);
+  }, [status, dayKeys, board, items, timelineStart]);
 
   // ── 라이브 커서 송신 (7단계) — 명세의 50ms 스로틀, 대시보드 전역 ──
   // 타임라인 위에서는 "가로 비율 + 절대 분 오프셋"(area:"tl") — 상대와 내 스크롤·시작
@@ -2619,27 +2505,25 @@ export function DashboardPage() {
         dur: draggedDur,
       },
     };
-    const tempChain = [...(chains[activeDay] || [])];
-    if (!tempChain.includes(activeId)) tempChain.push(activeId);
-    // 겹침 해소가 돌려주는 새 체인 순서는 더 쓰지 않는다 — 화면 순서는 이제
-    // 오프셋 정렬이고, 밀려난 블록의 새 시각은 newItems 에 들어 있다.
+    // 미리보기도 확정(handleDragEnd)과 같은 계산이어야 고스트가 실제로 놓일 자리를
+    // 가리킨다 — 목록은 놓았다고 가정한 보드 전체다.
+    // 겹침 해소가 돌려주는 새 순서는 더 쓰지 않는다 — 화면 순서는 이제 오프셋
+    // 정렬이고, 밀려난 블록의 새 시각은 newItems 에 들어 있다.
     const { newItems } = resolveOverlaps(
       tempItems,
-      tempChain,
+      boardOf(tempItems),
       activeId,
-      dayBase,
     );
     displayItems = newItems;
   }
 
-  // 축이 여행 전체 한 줄이라 그릴 것도 활성 Day 가 아니라 **보드 전체**다 —
-  // 배치된 블록(체인에 든 것) 전부를 오프셋 순으로 세운다. 후보(POOL)는 체인에
-  // 없으니 저절로 빠진다. 체인은 아직 멤버십의 원본이라 여기서 읽기만 한다.
-  // 겹침 해소로 밀려난 블록의 새 시각은 displayItems 에 들어 있어 map 이 집는다.
+  // 축이 여행 전체 한 줄이라 그릴 것도 활성 Day 가 아니라 **보드 전체**다.
+  // 목록은 드래그 미리보기까지 반영된 displayItems 에서 뽑는다 — 밀려난 블록의
+  // 새 시각이 거기 들어 있고, 소속 판정(오프셋 유무)도 같은 스냅샷을 봐야
+  // 미리보기와 확정이 갈라지지 않는다.
   // 정렬이 곧 이 목록의 순서다 — "다음 항목"이 이동 버튼(🚗) 위치·간격과
   // boundTop 의 기준이라 시간이 곧 순서여야 한다.
-  const boardItems = Object.values(chains)
-    .flat()
+  const boardItems = boardOf(displayItems)
     .filter((id) => id !== activeId)
     .map((id) => {
       const item = displayItems[id];
@@ -2820,7 +2704,7 @@ export function DashboardPage() {
                     key={day}
                     label={`Day ${i + 1}`}
                     date={dayDate(project, i, "short")}
-                    count={(chains[day] || []).length}
+                    count={blocksOfDay(board, items, day).length}
                     // 탭은 이제 화면을 갈아끼우지 않는다 — 그 Day 로 스크롤할 뿐이고,
                     // 하이라이트도 스크롤이 정한 Day(activeDay)를 따라간다.
                     isActive={activeDay === day}
@@ -2853,7 +2737,7 @@ export function DashboardPage() {
                         onClick={() => regenerateAutoTransport(activeDay)}
                         disabled={
                           isGeneratingTransport ||
-                          (chains[activeDay] || []).filter(
+                          blocksOfDay(board, items, activeDay).filter(
                             (id) => !items[id]?.auto,
                           ).length < 2
                         }
@@ -3284,7 +3168,7 @@ export function DashboardPage() {
           </DndContext>
         ) : (
           <ReadModeView
-            chains={chains}
+            board={board}
             items={items}
             dayKeys={dayKeys}
             project={project}

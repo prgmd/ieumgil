@@ -2,7 +2,6 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import * as api from "../api/dashboardApi";
 
 const EMPTY_ITEMS = {};
-const EMPTY_CHAINS = {};
 const EMPTY_ARRAY = [];
 
 /**
@@ -55,16 +54,14 @@ export function useDashboard(projectId) {
   const isStale = result.projectId !== projectId;
   const snapshot = isValidId && !isStale ? result.snapshot : null;
 
-  // ── 보드 파생: 블록 배열 → items(사전) / chains(Day별) / pool(후보) ──
-  // 체인 순서의 원천은 시각(startMins — Day 1 00:00 기준 절대 분)이다. 위치와 시각이
-  // 한 정수가 되면서 예전의 "시각은 orderKey 에서 파생되는 표시값" 관계가 뒤집혔다.
-  // 타임라인은 시각 순으로 그리므로 체인도 같은 순서여야 이웃 기준(간격·이동 버튼
-  // 위치·리사이즈 경계)이 어긋나지 않는다.
-  // orderKey 는 이제 동점 처리 담당이다 — 같은 시각에 놓인 블록들의 순서, 그리고
-  // 시각이 없는 후보(POOL)의 손 정렬. 그래도 같으면 id 로 끊는다.
+  // ── 보드 파생: 블록 배열 → items(사전) / pool(후보) ──
+  // 보드 소속은 시각(startMins — Day 1 00:00 기준 절대 분) 하나가 정한다. 값이
+  // 있으면 시간축 위, 없으면 후보(POOL)다. Day 별 묶음은 저장하지 않는다 —
+  // 화면에서 필요할 때 오프셋에서 유도한다(dashboardHelpers 의 blocksOfDay).
+  // 후보의 순서만 여기서 정한다: 시각이 없어 손 정렬(orderKey)이 유일한 근거다.
   const board = useMemo(() => {
     if (!snapshot) {
-      return { items: EMPTY_ITEMS, chains: EMPTY_CHAINS, pool: EMPTY_ARRAY };
+      return { items: EMPTY_ITEMS, pool: EMPTY_ARRAY };
     }
 
     const sorted = [...snapshot.blocks].sort((a, b) => {
@@ -77,36 +74,15 @@ export function useDashboard(projectId) {
       return a.id - b.id;
     });
 
-    // Day 탭 수는 프로젝트 기간에서 파생한다. 기간이 없거나(둘 다 nullable)
-    // 기간 밖에 앉은 블록이 있어도 칸을 만들어 데이터를 잃지 않는다.
-    const { startDate, endDate } = snapshot.project ?? {};
-    const daysFromDates =
-      startDate && endDate
-        ? Math.floor(
-            (new Date(endDate) - new Date(startDate)) / (24 * 60 * 60 * 1000),
-          ) + 1
-        : 0;
-    // Day 는 블록이 들고 오는 값이 아니라 절대 오프셋에서 유도한다 — 서버 모델에
-    // dayNo 가 없어졌고, 오프셋 하나가 Day 와 그 Day 안의 시각을 함께 가리킨다.
-    const maxDayNo = sorted.reduce(
-      (max, b) => Math.max(max, api.dayNoOfOffset(b.startMins) ?? 0),
-      0,
-    );
-    const dayCount = Math.max(daysFromDates, maxDayNo, 1);
-
     const items = {};
     const pool = [];
-    const chains = {};
-    for (let d = 1; d <= dayCount; d += 1) chains[`d${d}`] = [];
 
     for (const block of sorted) {
       items[block.id] = block;
-      const dayNo = api.dayNoOfOffset(block.startMins);
-      if (dayNo == null) pool.push(block.id);
-      else chains[`d${dayNo}`].push(block.id);
+      if (block.startMins == null) pool.push(block.id);
     }
 
-    return { items, chains, pool };
+    return { items, pool };
   }, [snapshot]);
 
   return {
@@ -116,7 +92,6 @@ export function useDashboard(projectId) {
     // 수 있는 값이라 여기서 보관한다.
     lastSeq: snapshot?.lastSeq ?? 0,
     items: board.items,
-    chains: board.chains,
     pool: board.pool,
     status: !isValidId ? "error" : isStale ? "loading" : result.status,
     error: !isValidId ? { code: "INVALID_PROJECT_ID" } : isStale ? null : result.error,
