@@ -126,6 +126,10 @@ export function BlockEditForm({
       setError("소요 시간은 1분 이상의 정수로 입력해주세요.");
       return;
     }
+    if (dur > 1440) {
+      setError("소요 시간은 1440분(24시간) 이하로 입력해주세요.");
+      return;
+    }
     setError("");
     setSaving(true);
     try {
