@@ -6,6 +6,7 @@ import {
 } from "../../../features/dashboard/map/addressLookup";
 import { geocodeAddress } from "../../../features/place/api/placeApi";
 import { TransitCandidateCard } from "./TransitCandidateCard";
+import { Select } from "../../../global/components/Select";
 import "./BlockEditForm.css";
 
 // 서버가 lat/lng 를 필수로 보는 장소성 카테고리 — 좌표 없이 보내면 BLOCK400 이다.
@@ -186,19 +187,20 @@ export function BlockEditForm({
       <div className="bef-row">
         <div className="bef-col">
           <label className="bef-label">대분류</label>
-          <select
-            className="bef-input"
-            name="category"
+          <Select
             value={formData.category}
-            onChange={handleChange}
+            onChange={(v) =>
+              handleChange({ target: { name: "category", value: v } })
+            }
             disabled={categoryLocked}
-          >
-            <option value="SPOT">명소/활동</option>
-            <option value="FOOD">식당</option>
-            <option value="STAY">숙소</option>
-            <option value="TRANSPORT">교통</option>
-            <option value="ETC">기타</option>
-          </select>
+            options={[
+              { value: "SPOT", label: "명소/활동" },
+              { value: "FOOD", label: "식당" },
+              { value: "STAY", label: "숙소" },
+              { value: "TRANSPORT", label: "교통" },
+              { value: "ETC", label: "기타" },
+            ]}
+          />
           {categoryLocked && (
             <p style={{ fontSize: "11px", color: "#8c7b70", margin: "4px 0 0" }}>
               카테고리·소분류·주소는 만들 때만 정할 수 있어요
@@ -287,18 +289,18 @@ export function BlockEditForm({
             >
               {addrBusy ? "불러오는 중..." : "주소 검색"}
             </button>
-            {/* 검색으로 안 나오는 곳(신규 가게·이름 없는 지점)을 위한 탈출구.
-                주소 검색과 같은 조건으로 잠근다 — 기존 블록은 서버가 주소·좌표
-                갱신을 받지 않아(BLOCK400_2) 찍어 봐야 저장되지 않는다 */}
-            <button
-              type="button"
-              className="bef-addr-btn"
-              onClick={onRequestPinPick}
-              disabled={categoryLocked || addrBusy}
-            >
-              지도에서 위치 지정
-            </button>
           </div>
+          {/* 검색으로 안 나오는 곳(신규 가게·이름 없는 지점)을 위한 탈출구 —
+              작은 링크로 아래에 둔다. 주소 검색과 같은 조건으로 잠근다(기존 블록은
+              서버가 주소·좌표 갱신을 받지 않아(BLOCK400_2) 찍어 봐야 저장 안 됨). */}
+          <button
+            type="button"
+            className="bef-pin-link"
+            onClick={onRequestPinPick}
+            disabled={categoryLocked || addrBusy}
+          >
+            <span aria-hidden="true">📍</span> 지도에서 위치 지정
+          </button>
 
           {/* 좌표가 잡혔는지를 눈에 보이게 한다 — 저장 버튼을 눌러서야
               "좌표가 없다"는 걸 알게 되면 늦다 */}
@@ -329,12 +331,12 @@ export function BlockEditForm({
           />
         </div>
         <div className="bef-col">
-          <label className="bef-label">소요 (분 · 10분 단위)</label>
+          <label className="bef-label">소요 (분)</label>
           <input
             className="bef-input"
             type="number"
-            step="10"
-            min="10"
+            step="1"
+            min="1"
             name="durationMin"
             value={formData.durationMin}
             onChange={handleChange}
