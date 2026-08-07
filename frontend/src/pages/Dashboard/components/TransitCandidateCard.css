@@ -105,6 +105,29 @@
   gap: 4px;
   margin-top: 2px;
 }
+/* 전부 펼쳤을 때 아주 긴 시간표는 카드 안에서만 스크롤 */
+.tcc-departures.is-scroll {
+  max-height: 260px;
+  overflow-y: auto;
+}
+/* 편 목록 펼치기/접기 토글 */
+.tcc-dep-more {
+  align-self: flex-start;
+  margin-top: 4px;
+  padding: 3px 9px;
+  border: none;
+  border-radius: 7px;
+  background: none;
+  color: var(--acc, #9c4a2f);
+  font-family: inherit;
+  font-size: 11.5px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 0.12s ease;
+}
+.tcc-dep-more:hover {
+  background: rgba(156, 74, 47, 0.08);
+}
 .tcc-departure {
   display: flex;
   align-items: center;
