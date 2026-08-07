@@ -33,8 +33,6 @@ import {
   dayNoOf,
   dayKeysOf,
   dayDate,
-  spilloversInto,
-  spilloverFloorOf,
   boardOf,
   blocksOfDay,
 } from "./dashboardHelpers";
@@ -495,10 +493,6 @@ export function DashboardPage() {
   // 축은 여행 전체다 — 첫 Day 의 00:00 부터 마지막 Day 의 24:00 까지 한 줄로 잇는다.
   // 렌더 식은 전부 (값 - timelineStart) * PX 꼴 그대로 두고 기준선만 0 으로 내렸다.
   // dayKeysOf 는 항상 Day 를 하나 이상 주므로 activeDay 는 언제나 "dN" 이다.
-  // dayBase/dayEnd 는 좌표가 아니라 "활성 Day 의 창"이다 — 겹침 해소(resolveOverlaps)와
-  // 자정을 넘어온 블록의 띠(.tl-spill)처럼 아직 Day 단위인 것들만 쓴다.
-  const dayBase = (dayNoOf(activeDay) - 1) * blockApi.MINUTES_PER_DAY;
-  const dayEnd = dayBase + blockApi.MINUTES_PER_DAY;
   const timelineStart = 0;
   const timelineEnd = dayKeys.length * blockApi.MINUTES_PER_DAY;
 
@@ -2045,13 +2039,14 @@ export function DashboardPage() {
         // 마지막 Day 의 24:00 만이 상한이다. 끝은 그 너머로 넘쳐도 막지 않는다 —
         // 절대 오프셋에선 넘친 꼬리가 그대로 다음 Day 위에 놓인다.
         //
-        // 바닥은 "보고 있는 Day 의 자정을 넘어온 블록의 끝"이다(화면의 .tl-spill
-        // 띠가 덮은 구간) — 그 위에 놓지 못하게 막아, 띠를 겹쳐 놓는 조작을
-        // 미리 끊는다. 옮기는 블록 자신은 제외한다(제 꼬리에 제가 막히면 안 된다).
-        // 이 하한은 띠와 한 몸이라 띠를 걷어낼 때 함께 없어진다 — 겹침 해소는
-        // 이미 Day 경계를 모르고, 앞 블록의 끝(lastEnd)이 같은 일을 한다.
-        const floorMins = spilloverFloorOf(items, dayBase, activeIdLocal);
-        dropMins = Math.max(floorMins, Math.min(dropMins, timelineEnd - SNAP));
+        // 아래쪽 하한은 축의 시작(timelineStart)뿐이다 — 이미 놓인 블록 위에
+        // 겹쳐 놓는 것은 드롭이 아니라 겹침 해소(resolveOverlaps)가 막는다.
+        // 그쪽은 보드 전체를 오프셋 순으로 훑으며 앞 블록의 끝(lastEnd)까지
+        // 밀어내므로 Day 경계를 알 필요가 없다.
+        dropMins = Math.max(
+          timelineStart,
+          Math.min(dropMins, timelineEnd - SNAP),
+        );
         return { region: "timeline", dropMins, dur };
       }
 
@@ -2061,7 +2056,7 @@ export function DashboardPage() {
       if (active.data?.current?.from === "search") return { region: null };
       return { region: "discard" };
     },
-    [pool, items, timelineStart, timelineEnd, dayBase],
+    [pool, items, timelineStart, timelineEnd],
   );
 
   // 렌더에서 쓰는 드래그 출처 정보({ from, place })는 state 로 둔다 —
@@ -2575,14 +2570,6 @@ export function DashboardPage() {
     .filter(Boolean)
     .sort((a, b) => a.startMins - b.startMins);
 
-  // 자정을 넘어 이 Day 로 이어지는 블록들의 읽기 전용 띠. Day 하나만 그리던
-  // 시절, 앞 Day 의 체인에 있는 그 한 행이 카드 목록 밖이라 Day 2 의 새벽이
-  // 텅 빈 것처럼 보이는 것을 메우던 장치다.
-  // 보드 전체를 그리는 지금은 그 블록이 boardItems 안에 카드로도 들어 있어
-  // 활성 Day 에서 카드와 띠가 겹쳐 그려진다 — 띠를 걷어내는 것은 뒤 태스크 몫이라
-  // 여기서는 그대로 둔다.
-  const spilloverBands = spilloversInto(displayItems, dayBase, activeId);
-
   // 편집 배지에 쓸 이름 — 락 소유자가 멤버 목록에 없으면(탈퇴 직후 등) 뭉뚱그린다
   const nicknameOf = (memberId) =>
     boardMembers.find((m) => m.memberId === memberId)?.nickname ?? "다른 멤버";
@@ -2827,36 +2814,6 @@ export function DashboardPage() {
                           <div className="tl-mark-line" />
                         </div>
                       ))}
-                      {/* 앞 Day 에서 자정을 넘어온 블록 — 카드가 아니라 띠다.
-                          이 Day 의 00:00 에서 그 블록이 끝나는 시각까지 덮는다.
-                          클릭·드래그·리사이즈 모두 없다(.tl-bg 가 pointer-events:none) —
-                          실물은 앞 Day 에 있고 여기 있는 건 그 그림자일 뿐이다.
-                          하루를 통째로 덮는 블록(24시간 초과)이면 자정에서 잘라
-                          이 Day 를 가득 채우고, 라벨이 "온종일 이어짐"으로 바뀐다.
-                          띠는 Day 창의 물건이라 축(여행 전체)이 아니라 dayBase~dayEnd
-                          로 잡는다 — 그래서 top 을 CSS 의 0 대신 여기서 직접 준다. */}
-                      {spilloverBands.map((band) => (
-                        <div
-                          key={`spill-${band.id}`}
-                          className="tl-spill"
-                          style={{
-                            "--dc": catOf(band.item).hex,
-                            top: `${(dayBase - timelineStart) * PX}px`,
-                            height: `${(Math.min(band.endMins, dayEnd) - dayBase) * PX}px`,
-                          }}
-                        >
-                          <span className="tl-spill-label">
-                            <span className="tl-spill-name">
-                              {band.item.name}
-                            </span>
-                            <span className="tl-spill-time">
-                              {band.endMins >= dayEnd
-                                ? `Day ${blockApi.dayNoOfOffset(band.item.startMins)} 에서 이어짐 · 온종일`
-                                : `Day ${blockApi.dayNoOfOffset(band.item.startMins)} 에서 이어짐 · ${fmtTime(band.endMins)} 까지`}
-                            </span>
-                          </span>
-                        </div>
-                      ))}
                       {dragPreview?.region === "timeline" && draggedItem && (
                         <div
                           className="tl-ghost"
@@ -2907,9 +2864,8 @@ export function DashboardPage() {
 
                         // 위 모서리를 끌어올릴 수 있는 한계 — 앞 카드의 끝이다.
                         // 목록이 보드 전체라 자정을 넘어온 블록도 그냥 앞 카드로
-                        // 여기 들어 있다(예전엔 Day 로 걸러 목록 밖이라 띠의
-                        // 바닥값을 따로 구해야 했다). 맨 앞 카드는 여행 전체에서
-                        // 가장 이른 블록이라 축의 시작 말고는 막을 것이 없다.
+                        // 여기 들어 있다. 맨 앞 카드는 여행 전체에서 가장 이른
+                        // 블록이라 축의 시작 말고는 막을 것이 없다.
                         // 이 값이 리사이즈 핸들러의 유일한 하한이라(resizingState.
                         // boundTop) 여기만 올리면 미리보기와 확정이 갈라지지 않는다.
                         const boundTop =
@@ -3060,7 +3016,6 @@ export function DashboardPage() {
                       mode="tl"
                       register={registerTlCursorHandler}
                       myId={currentUser?.id}
-                      activeDayNo={dayNoOf(activeDay)}
                       timelineStart={timelineStart}
                       px={PX}
                       padTop={TL_PAD_TOP}
@@ -3219,12 +3174,12 @@ export function DashboardPage() {
               </DragOverlay>
 
               {/* 타임라인 밖(후보·사이드 등)의 라이브 커서 — 페이지 비율 좌표.
-                  같은 Day 를 보는 멤버의 것만 그린다(다른 화면 위 커서는 착시) */}
+                  후보 목록·사이드는 Day 와 무관하게 모두가 같은 것을 보는 영역이라
+                  보고 있는 Day 로 거르지 않는다 */}
               <RemoteCursorLayer
                 mode="page"
                 register={registerPageCursorHandler}
                 myId={currentUser?.id}
-                activeDayNo={dayNoOf(activeDay)}
                 nicknameOf={nicknameOf}
               />
 

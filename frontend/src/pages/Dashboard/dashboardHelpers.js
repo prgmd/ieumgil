@@ -153,38 +153,6 @@ export function dayDate(project, index, style = "full") {
 export const catKeyOf = (item) => (CAT_COLORS[item?.cat] ? item.cat : "etc");
 
 /**
- * 이 Day 의 00:00(dayBase, 절대 분)을 가로질러 이어지는 블록들.
- *
- * 자정을 넘긴 블록은 한 행이고 시작한 Day 의 것이다 — 그래서 다음 Day 쪽에서는
- * 보드 전체(items)를 훑어야만 찾을 수 있다.
- * excludeId 는 지금 옮기는 중인 블록 — 제 꼬리에 제가 막히면 안 된다.
- *
- * 돌려주는 항목은 화면에만 쓰는 파생값이다: 체인에 넣지 않고, 블록 수·예산·교통
- * 짝짓기 어디에도 세지 않는다.
- */
-export const spilloversInto = (itemsMap, dayBase, excludeId = null) =>
-  Object.entries(itemsMap ?? {})
-    .filter(([id, it]) => {
-      if (excludeId != null && id === String(excludeId)) return false;
-      if (it?.startMins == null) return false; // 후보(POOL)는 시간축 위에 없다
-      return it.startMins < dayBase && it.startMins + it.dur > dayBase;
-    })
-    .map(([id, it]) => ({ id, item: it, endMins: it.startMins + it.dur }));
-
-/**
- * 이 Day 에서 블록이 시작할 수 있는 가장 이른 시각.
- * 자정을 넘어온 블록이 없으면 그 Day 의 00:00(dayBase)이고, 있으면 그중 가장
- * 늦게 끝나는 블록의 끝이다 — 화면의 띠(.tl-spill)가 덮고 있는 구간 그대로다.
- * 겹침 해소와 드롭 클램프가 같은 값을 봐야 "띠 위에 놓았는데 왜 내려가지" 가
- * 없다.
- */
-export const spilloverFloorOf = (itemsMap, dayBase, excludeId = null) =>
-  spilloversInto(itemsMap, dayBase, excludeId).reduce(
-    (floor, spill) => Math.max(floor, spill.endMins),
-    dayBase,
-  );
-
-/**
  * 보드 위 블록 id 를 오프셋 순으로 세운 하나의 목록.
  *
  * 소속의 근거는 오프셋 하나다 — startMins 가 있으면 시간축 위에 있고, 없으면
