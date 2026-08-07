@@ -5,6 +5,7 @@
 // 시내(TRANSIT)는 legs/labels/transferCount/walkMeters, 시외(TRAIN/EXPRESS_BUS/AIR)는
 // departures[] 인라인 확장을 그린다. 모든 신규 필드는 null이면 그 조각을 생략한다.
 
+import { useState } from "react";
 import "./TransitCandidateCard.css";
 import { TRANSIT_MODE_META } from "../transitMeta";
 import { isPerPersonMode } from "../dashboardHelpers";
@@ -127,6 +128,8 @@ export function TransitCandidateCard({
 }) {
   const meta = TRANSIT_MODE_META[c.mode] ?? { ico: "🚏", nm: c.mode };
   const selectable = mode === "select";
+  // 편 목록이 길면 카드가 제각각 커진다 — 기본은 몇 편만 보이고 나머지는 펼쳐 본다.
+  const [depExpanded, setDepExpanded] = useState(false);
   const isIntercity = INTERCITY_MODES.has(c.mode);
   const isOk = c.status === "OK";
   const clickable = selectable && isOk;
@@ -214,20 +217,50 @@ export function TransitCandidateCard({
           !selectable && selectedDepartureName
             ? (c.departures ?? []).filter((d) => d.name === selectedDepartureName)
             : c.departures;
-        return departuresToShow && departuresToShow.length > 0 ? (
-          <div className="tcc-departures">
-            {departuresToShow.map((d) => (
-              <DepartureRow
-                key={d.name + d.departureAt}
-                departure={d}
-                selected={selectedDepartureName === d.name}
-                selectable={selectable}
-                onSelect={onSelectDeparture}
-              />
-            ))}
-          </div>
-        ) : (
-          <p className="tcc-no-departure">기준 시각 이후 편이 없어요</p>
+        if (!departuresToShow || departuresToShow.length === 0)
+          return <p className="tcc-no-departure">기준 시각 이후 편이 없어요</p>;
+
+        // 접기: 기본 몇 편만. 고른 편이 접힌 뒤쪽에 있으면 안 보이므로 그땐 편다.
+        const COLLAPSED = 4;
+        const collapsible =
+          selectable && departuresToShow.length > COLLAPSED;
+        const selectedIdx = selectedDepartureName
+          ? departuresToShow.findIndex((d) => d.name === selectedDepartureName)
+          : -1;
+        const mustExpand = selectedIdx >= COLLAPSED;
+        const showAll = !collapsible || depExpanded || mustExpand;
+        const shown = showAll
+          ? departuresToShow
+          : departuresToShow.slice(0, COLLAPSED);
+
+        return (
+          <>
+            <div className={`tcc-departures ${showAll && collapsible ? "is-scroll" : ""}`}>
+              {shown.map((d) => (
+                <DepartureRow
+                  key={d.name + d.departureAt}
+                  departure={d}
+                  selected={selectedDepartureName === d.name}
+                  selectable={selectable}
+                  onSelect={onSelectDeparture}
+                />
+              ))}
+            </div>
+            {collapsible && !mustExpand && (
+              <button
+                type="button"
+                className="tcc-dep-more"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setDepExpanded((v) => !v);
+                }}
+              >
+                {depExpanded
+                  ? "접기 ▴"
+                  : `펼치기 ▾ · +${departuresToShow.length - COLLAPSED}편`}
+              </button>
+            )}
+          </>
         );
       })()}
     </div>

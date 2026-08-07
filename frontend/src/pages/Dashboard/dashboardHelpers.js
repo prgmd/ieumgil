@@ -133,7 +133,7 @@ export function dayKeysOf(project) {
   const end = parseDate(project?.endDate);
   const count =
     start && end
-      ? Math.min(30, Math.max(1, Math.round((end - start) / DAY_MS) + 1))
+      ? Math.min(365, Math.max(1, Math.round((end - start) / DAY_MS) + 1))
       : FALLBACK_DAY_COUNT;
   return Array.from({ length: count }, (_, i) => `d${i + 1}`);
 }

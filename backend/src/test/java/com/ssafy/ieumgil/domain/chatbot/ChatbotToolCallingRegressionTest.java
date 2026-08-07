@@ -76,6 +76,9 @@ class ChatbotToolCallingRegressionTest {
 	private static final LocalDate TRIP_START = LocalDate.of(2026, 10, 1);
 	private static final LocalDate TRIP_END = LocalDate.of(2026, 10, 4);
 
+	/** runAllTools 가 마지막으로 받은 모델 응답 본문. 거부 문구 검증용. */
+	private String lastContent;
+
 	/** 전체 tool 세트가 공유하는 다운스트림 mock 묶음. tool별 고유 메서드로 검증한다. */
 	private static final class ToolMocks {
 		final PlaceQueryService placeQueryService = mock(PlaceQueryService.class);
@@ -193,6 +196,54 @@ class ChatbotToolCallingRegressionTest {
 		verify(mocks.flightScheduleProvider, never()).findSchedule(any(), any());
 	}
 
+	@Test
+	void modelSearchesAndDoesNotRefuse_forBusinessLinkRequest() throws IOException {
+		// 회귀 가드: "부산 렌트카 업체 링크 찾아줘"에 haiku 가 어떤 tool 도 부르지 않고
+		// "그 기능이 없다"며 거부했다. 무언가를 찾아 달라는 요청에는 장소 검색(카카오 로컬,
+		// 렌터카 업체도 커버하고 결과에 링크 포함) 또는 web_search 로 실제로 찾아야 한다.
+		ToolMocks mocks = runAllTools("부산에서 렌트카 빌릴 수 있는 업체 몇 곳 링크랑 같이 찾아줘.");
+
+		// 렌터카 업체는 카카오 로컬 장소 검색이 커버한다 — 정상 경로. web_search 서버tool 로
+		// 갈 수도 있으나 그 경로는 이 mock 으로 관측 불가하다. 어느 쪽이든 핵심은:
+		// 역량 없다는 거부 대신 실제로 검색해 답해야 한다는 것.
+		verify(mocks.placeQueryService, atLeastOnce()).searchPlaces(any(), any(), any());
+		org.assertj.core.api.Assertions.assertThat(lastContent)
+				.doesNotContain("기능이 없", "검색하는 기능", "찾아드릴 수 없");
+	}
+
+	@Test
+	void modelSearchesAndDoesNotRefuse_forLuggageStorageRequest() throws IOException {
+		// 짐 보관소/코인락커도 식당·카페·숙소·관광지 열거에 없던 서비스 업체다 — 카카오 로컬이
+		// 커버하므로 장소 검색으로 찾아야지 "그런 건 못 찾는다"고 거부하면 안 된다.
+		ToolMocks mocks = runAllTools("부산역 근처에 짐 맡길 수 있는 코인락커나 짐 보관소 있으면 찾아줘.");
+
+		verify(mocks.placeQueryService, atLeastOnce()).searchPlaces(any(), any(), any());
+		org.assertj.core.api.Assertions.assertThat(lastContent)
+				.doesNotContain("기능이 없", "검색하는 기능", "찾아드릴 수 없");
+	}
+
+	@Test
+	void modelSearchesAndDoesNotRefuse_forPharmacyRequest() throws IOException {
+		// 약국 역시 기존 열거 밖 업종. 여행 중 흔한 실사용 요청인데 거부되면 안 된다.
+		ToolMocks mocks = runAllTools("부산 서면에서 늦게까지 문 여는 약국 좀 찾아줘.");
+
+		verify(mocks.placeQueryService, atLeastOnce()).searchPlaces(any(), any(), any());
+		org.assertj.core.api.Assertions.assertThat(lastContent)
+				.doesNotContain("기능이 없", "검색하는 기능", "찾아드릴 수 없");
+	}
+
+	@Test
+	void modelDoesNotRefuse_forGeneralWebInfoRequest() throws IOException {
+		// 장소가 아닌 일반 웹 정보(블로그 후기 링크) — 장소·경로·시간표·축제 tool 어디에도
+		// 안 맞으므로 web_search 로 가야 한다. web_search 는 서버tool 이라 이 mock 으로
+		// 호출을 관측할 수 없다. 따라서 여기서 검증하는 것은 오직 하나: 역량 없다는 거부를
+		// 하지 않는다는 것(리포트된 버그의 본질). tool 선택 자체는 단언하지 않는다.
+		runAllTools("부산 여행 관련해서 사람들이 쓴 블로그 후기 글 링크 몇 개만 찾아줘.");
+
+		org.assertj.core.api.Assertions.assertThat(lastContent)
+				.doesNotContain("기능이 없", "검색하는 기능", "찾아드릴 수 없", "링크를 직접 검색");
+	}
+
 	// === 공용 헬퍼: 전체 tool 세트를 mock 다운스트림으로 구성해 실모델에 프롬프트를 던진다 ===
 
 	/**
@@ -218,7 +269,7 @@ class ChatbotToolCallingRegressionTest {
 				+ ChatbotPrompt.modeTail(ChatbotMode.GENERAL)
 				+ TripContextBuilder.build(regressionProject(promptDestination), 4);
 		Prompt prompt = new Prompt(List.of(new SystemMessage(systemPrompt), new UserMessage(userText)));
-		ChatClient.builder(buildGmsChatModel(apiKey)).build()
+		lastContent = ChatClient.builder(buildGmsChatModel(apiKey)).build()
 				.prompt(prompt)
 				.tools(tools)
 				.call()

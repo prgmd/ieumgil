@@ -27,7 +27,7 @@ public class KakaoPlaceSearchTool {
     }
 
     @Tool(description = """
-            Call this when the user asks for specific places to recommend, such as restaurants, cafes, lodging, or tourist attractions.
+            Call this when the user asks you to find or recommend specific places, businesses, or venues — restaurants, cafes, lodging, tourist attractions, and also service businesses like car-rental agencies, pharmacies, or shops. Each result already includes a link, so use this tool when the user asks for a place or business "with a link" too.
             For festival, event, or things-to-do recommendations, use the regional festival recommendation tool instead of this one; this tool only covers places that operate year-round.
             keyword: only what kind of place to look for (for example "bibimbap restaurant", "quiet cafe"). Do not include the region or city name — the current project's destination is prepended automatically, so adding it yourself duplicates it and degrades the search.
             nearPlaceName: optional. Pass a place name to search around that spot instead of the destination as a whole, and results come back nearest-first. Use it when the user anchors the request to somewhere — "near the 2nd stop on day 2", "somewhere close to the hotel". Pass the block's name as it appears in the itinerary; leave this out when the user just asks about the destination in general.

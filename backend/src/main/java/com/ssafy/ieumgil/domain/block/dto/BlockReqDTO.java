@@ -5,6 +5,7 @@ import com.ssafy.ieumgil.domain.block.entity.BlockSource;
 import com.ssafy.ieumgil.domain.block.entity.VehicleFlag;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.NotNull;
@@ -53,6 +54,7 @@ public class BlockReqDTO {
 
             @Schema(description = "소요시간(분), 기본 60", example = "90")
             @Positive(message = "소요시간은 1분 이상이어야 합니다.")
+            @Max(value = 1440, message = "소요시간은 1440분(24시간) 이하여야 합니다.")
             Integer durationMin,
 
             @Schema(description = "시각 고정(앵커) 여부, 기본 false")

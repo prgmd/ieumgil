@@ -1,0 +1,86 @@
+/* 크림 테마 커스텀 셀렉트 — 트리거는 폼 입력칸과 같은 테두리·라운드, 팝업은
+   포털로 body 에 뜬다. */
+.sel-wrap {
+  position: relative;
+  width: 100%;
+}
+.sel-trigger {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 9px 12px;
+  border: 1px solid var(--line, #e6dec8);
+  border-radius: 10px;
+  background: #fff;
+  font-family: inherit;
+  font-size: 13.5px;
+  color: #333;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.15s ease;
+}
+.sel-trigger:hover:not(:disabled),
+.sel-trigger.is-open {
+  border-color: #b99a7e;
+}
+.sel-trigger:disabled {
+  cursor: not-allowed;
+  opacity: 0.65;
+}
+.sel-placeholder {
+  color: #8c7b70;
+}
+/* 셰브론 — 열리면 위로 뒤집힌다 */
+.sel-chevron {
+  flex-shrink: 0;
+  width: 8px;
+  height: 8px;
+  margin-top: -3px;
+  border-right: 2px solid #7c5443;
+  border-bottom: 2px solid #7c5443;
+  transform: rotate(45deg);
+  transition: transform 0.18s ease;
+}
+.sel-trigger.is-open .sel-chevron {
+  margin-top: 3px;
+  transform: rotate(-135deg);
+}
+
+/* 팝업 옵션 목록 */
+.sel-pop {
+  margin: 0;
+  padding: 5px;
+  list-style: none;
+  box-sizing: border-box;
+  max-height: 280px;
+  overflow-y: auto;
+  background: #fbf8f1;
+  border: 1px solid #e6dec8;
+  border-radius: 12px;
+  box-shadow: 0 16px 40px rgba(61, 43, 34, 0.24);
+}
+.sel-option {
+  display: block;
+  width: 100%;
+  padding: 9px 12px;
+  border: none;
+  border-radius: 8px;
+  background: none;
+  font-family: inherit;
+  font-size: 13.5px;
+  color: #4a3a31;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.12s ease;
+}
+.sel-option:hover {
+  background: #f4e7de;
+}
+.sel-option.is-sel {
+  background: #7c5443;
+  color: #fff;
+  font-weight: 700;
+}

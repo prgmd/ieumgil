@@ -325,21 +325,64 @@
   display: flex;
   flex-direction: column;
   gap: 10px;
-  width: 140px;
+  width: 126px;
   flex-shrink: 0;
-  padding-top: 34px;
+  /* 첫 Day 탭 위 라인을 옆 계획표(.board) 카드 top 에 대략 맞추되, 딱 붙으면
+     어색해 살짝 여백을 준다. 예전 mode-switch 시절의 34px 오프셋을 걷어낸 값. */
+  padding-top: 8px;
   margin-right: -22px; /* 이만큼이 보드 아래로 들어간다 */
   position: relative; /* z-index 가 먹으려면 필요 */
   z-index: 1;
+}
+/* Day 탭 목록만 담는 스크롤 영역. 높이를 뷰포트로 상한을 둬, 여행이 길어도
+   컬럼이 페이지를 늘리지 않고(전체 스크롤 방지) 이 안에서만 스크롤되게 한다.
+   짧은 여행은 콘텐츠가 상한보다 작아 스크롤이 아예 안 생긴다.
+   상한값(210px)은 상단바 + daycol padding-top + mode-switch 높이 + 하단 여백 기준. */
+.day-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-height: calc(100vh - 210px);
+  overflow-y: auto;
+  overflow-x: hidden;
+  /* 리본 탭이 활성/호버 시 왼쪽으로 튀어나오고(translateX) 왼쪽·아래 드롭섀도가
+     있어, 스크롤 컨테이너가 이를 자르지 않도록 좌/하 여백을 확보하고 margin 으로
+     시각 위치를 원복한다. */
+  padding-left: 16px;
+  margin-left: -16px;
+  padding-bottom: 12px;
+}
+/* 크림 테마에 맞춘 얇은 스크롤바 */
+/* 앱 공통 커스텀 스크롤바 — 얇은 크림/갈색. 스크롤되는 영역들에 함께 적용한다
+   (Day 네비·일정 타임라인·후보목록·장소검색). */
+.day-list::-webkit-scrollbar,
+.tl::-webkit-scrollbar,
+.pool::-webkit-scrollbar,
+.search-results::-webkit-scrollbar {
+  width: 6px;
+}
+.day-list::-webkit-scrollbar-thumb,
+.tl::-webkit-scrollbar-thumb,
+.pool::-webkit-scrollbar-thumb,
+.search-results::-webkit-scrollbar-thumb {
+  background: rgba(61, 43, 34, 0.22);
+  border-radius: 3px;
+}
+.day-list::-webkit-scrollbar-track,
+.tl::-webkit-scrollbar-track,
+.pool::-webkit-scrollbar-track,
+.search-results::-webkit-scrollbar-track {
+  background: transparent;
 }
 .day-tab {
   position: relative;
   display: flex;
   flex-direction: column;
+  align-items: center;
   gap: 3px;
-  text-align: left;
+  text-align: center;
   border: none;
-  padding: 11px 30px 11px 22px;
+  padding: 11px 24px 11px 15px;
   color: var(--ink3, #8a776a);
   background: linear-gradient(90deg, #efe6d4 0%, #f7efe0 100%);
   clip-path: polygon(0 0, 100% 0, 100% 100%, 0 100%, 11px 50%);
@@ -354,15 +397,6 @@
 .day-tab .dt-label,
 .day-tab .dt-date {
   transition: font-size 0.18s ease;
-}
-/* 다이어리 느낌의 바느질선 */
-.day-tab::after {
-  content: "";
-  position: absolute;
-  left: 15px;
-  top: 7px;
-  bottom: 7px;
-  border-left: 1px dashed rgba(61, 43, 34, 0.22);
 }
 /* 고른 책갈피는 "커진다".
    오른쪽 끝이 보드 밑에 물려 있으므로 오른쪽으로 밀면 보이는 길이가 오히려 줄어든다 —
@@ -383,11 +417,14 @@
 .day-tab .dt-top {
   display: flex;
   align-items: center;
+  justify-content: center;
   gap: 6px;
+  flex-wrap: nowrap;
 }
 .day-tab .dt-label {
   font-size: 15.5px;
   font-weight: 600;
+  white-space: nowrap;
 }
 .day-tab.on .dt-label {
   font-size: 17px;
@@ -419,7 +456,7 @@
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 20px;
+  gap: 14px;
   position: relative;
   z-index: 2;
 }
@@ -435,7 +472,7 @@
   background: var(--bg2, #fdfbf7);
   border: 1px solid var(--border1, #e3dfd8);
   border-radius: 20px;
-  padding: 24px;
+  padding: 16px 24px 24px;
   box-shadow: 0 4px 12px rgba(61, 43, 34, 0.05);
 }
 
@@ -504,7 +541,9 @@
 .board.plan-board {
   display: flex;
   flex-direction: column;
-  max-height: min(78vh, 900px);
+  /* 오른쪽 예산+지도 묶음(.side-top)과 같은 높이로 고정 — 타임라인이 안을 채운다.
+     예전엔 max-height 라 .tl 상한(62vh)까지만 자라 오른쪽보다 짧았다. */
+  height: min(78vh, 900px);
 }
 .board.plan-board .bd-head {
   flex-shrink: 0;
@@ -520,8 +559,10 @@
   border-radius: 12px;
   background: var(--bg1, #fffdf8);
   padding: 10px;
-  min-height: 320px;
-  max-height: min(62vh, 740px);
+  /* 계획표 카드가 고정 높이라, 타임라인이 헤더 아래 남는 공간을 다 채우고
+     넘치면 이 안에서만 스크롤한다. */
+  flex: 1;
+  min-height: 0;
   overflow-x: hidden;
   overflow-y: auto;
   transition: background 0.2s;
@@ -580,8 +621,8 @@
   top: -6px;
   left: -6px;
   z-index: 16; /* 타임라인 점(.slot .dot, z15)보다 위 — 점이 프로필을 가리지 않게 */
-  width: 18px;
-  height: 18px;
+  width: 22px;
+  height: 22px;
   border-radius: 50%;
   border: 2px solid #fff; /* 멤버 색 테두리 대신 흰 테두리 — 배경과의 분리용 */
   box-sizing: border-box;
@@ -590,7 +631,7 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  font-size: 9px;
+  font-size: 11px;
   font-weight: bold;
   color: hsl(var(--vh) 65% 38%);
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
@@ -759,18 +800,22 @@
   box-shadow: 0 0 0 2px var(--dc);
 }
 /* 시각 라벨과 점 */
+/* 블록 시작시각 라벨 — 축의 눈금 시각(.tl-mark-time)과 같은 칸을 쓰므로, 예전엔
+   52px 불투명 크림 패치로 그 뒤 눈금을 뭉개 덮어 어색했다. 텍스트만큼만 차지하는
+   작은 크림 알약으로 바꿔, 카드 왼쪽 시작 점 옆에 붙는 마커로 읽히게 한다. */
 .slot .tlab {
   position: absolute;
-  left: -64px;
-  top: -10px;
-  z-index: 15;
-  width: 52px;
-  padding: 2px 0;
-  text-align: right;
-  font-size: 12.5px;
+  top: -11px;
+  right: calc(100% + 12px);
+  z-index: 17;
+  padding: 1px 7px;
+  border-radius: 999px;
+  white-space: nowrap;
+  font-size: 12px;
   font-weight: 700;
   color: var(--dc);
-  background: rgba(255, 253, 248, 0.95);
+  background: #fffdf8;
+  box-shadow: 0 1px 3px rgba(61, 43, 34, 0.15);
 }
 .slot .dot {
   position: absolute;
@@ -788,49 +833,65 @@
   opacity: 0;
 }
 
-/* 두 블록 사이의 "이동 추가" 칩 */
-.trans-slot {
+/* 두 블록 사이 빈 시간 = "이동 추가" 존.
+   갭 전체를 채우는 버튼이라 높이가 gap 크기와 같다 — 좁아져도 오른쪽으로 밀리지
+   않고, 좁으면 JS 가 최소 높이를 줘 경계선에 걸친다. idle 엔 은은한 빗금만,
+   hover 하면 빗금이 진해지고 가운데 라벨이 뜬다. */
+.trans-gap {
   position: absolute;
   left: 10px;
-  right: 15px;
+  right: 10px;
   z-index: 30;
   display: flex;
   align-items: center;
-  justify-content: flex-end;
-  transform: translateY(-50%);
-  pointer-events: none;
-}
-.trans-slot.has-gap {
-  right: 10px;
   justify-content: center;
+  border: none;
+  border-radius: 8px;
+  padding: 0;
+  cursor: pointer;
+  background-color: transparent;
+  background-image: repeating-linear-gradient(
+    45deg,
+    rgba(61, 43, 34, 0.06) 0,
+    rgba(61, 43, 34, 0.06) 2px,
+    transparent 2px,
+    transparent 7px
+  );
+  transition: background-color 0.15s ease;
 }
-.trans-chip {
-  display: flex;
+.trans-gap:hover {
+  background-color: rgba(217, 126, 60, 0.1);
+  background-image: repeating-linear-gradient(
+    45deg,
+    rgba(217, 126, 60, 0.28) 0,
+    rgba(217, 126, 60, 0.28) 3px,
+    transparent 3px,
+    transparent 8px
+  );
+}
+/* 라벨은 자체 배경을 가진 알약이라 얇은 빗금 위에서도 읽힌다. idle 엔 숨고
+   hover 에서 뜬다. pointer-events 를 꺼 버튼 hover 판정을 방해하지 않는다. */
+.trans-gap-label {
+  display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 6px 14px;
-  border: 1px solid var(--food, #d97e3c);
-  border-radius: 20px;
-  background: #fff;
-  color: var(--food, #d97e3c);
-  font-family: inherit;
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: var(--bg2, #fdfbf7);
+  color: var(--acc, #9c4a2f);
   font-size: 12px;
-  cursor: pointer;
-  pointer-events: auto;
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.12);
-  transition:
-    background 0.15s,
-    color 0.15s;
+  font-weight: 600;
+  white-space: nowrap;
+  box-shadow: 0 1px 4px rgba(61, 43, 34, 0.15);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.15s ease;
 }
-.trans-chip:hover {
-  background: var(--food, #d97e3c);
-  color: #fff;
+.trans-gap:hover .trans-gap-label {
+  opacity: 1;
 }
-.trans-chip-ico {
-  font-size: 14px;
-}
-.trans-chip-label {
-  font-weight: bold;
+.trans-gap-ico {
+  font-size: 13px;
 }
 
 /* 아무 블록도 없는 Day 안내 */
@@ -851,9 +912,27 @@
 }
 .pool-head {
   display: flex;
-  justify-content: space-between;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.pool-head-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+/* 제목·카운트·ⓘ 를 flex 로 세로 중앙 정렬한다 — inline baseline 정렬이라
+   카운트 알약·ⓘ 가 굵은 글씨와 세로로 어긋나 보였다. */
+.pool-head-title .hint-ico {
+  margin-left: 0;
+}
+/* 필터·검색을 헤더 오른쪽(추가 버튼 앞)에 붙인다 */
+.pool-tools {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
 }
 /* 사용 안내 ⓘ 아이콘 + 커스텀 툴팁 (QA 배치2) — 브라우저 title 과 달리
    호버 즉시 뜨고 앱 톤의 말풍선으로 그린다. 문구는 data-tip 속성에서 읽는다. */
@@ -1027,10 +1106,66 @@
   position: relative;
   display: grid;
   grid-template-columns: repeat(5, minmax(0, 1fr));
+  /* 카드는 제 내용만큼만 — 기본 stretch 면 같은 행에서 제일 큰 카드 높이로 늘어나
+     빈 카드가 쓸데없이 길쭉해진다. */
+  align-items: start;
   gap: 12px;
   /* 카드가 적어도 이만큼은 놓을 자리로 남는다(드롭 영역) — 예전엔 여기에
      padding-bottom 까지 더해 카드 아래 여백만 44px 로 벌어져 있었다 */
-  min-height: 150px;
+  /* 후보목록 카드(.pool-sec)가 고정 높이라, 그리드는 남는 공간을 채우고 넘치면
+     이 안에서만 스크롤한다. */
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  /* 편집자 배지(.blk-editor)가 카드 좌상단 밖으로 -6px 삐져나오므로, 스크롤
+     컨테이너가 그걸 자르지 않게 위·왼쪽에 여백을 둔다. */
+  padding: 8px 4px 4px 8px;
+}
+.pool-noresult {
+  grid-column: 1 / -1;
+  padding: 28px 0;
+  text-align: center;
+  color: var(--ink3, #8a776a);
+  font-size: 13px;
+}
+/* 후보 목록 필터 — 대분류 Select + 제목 검색 + 초기화. 헤더에 컴팩트하게 둔다. */
+.pool-filter-cat {
+  width: 116px;
+  flex-shrink: 0;
+}
+.pool-search {
+  width: 150px;
+  flex: none;
+  box-sizing: border-box;
+  padding: 8px 11px;
+  border: 1px solid var(--border1, #e3dfd8);
+  border-radius: 9px;
+  background: #fff;
+  font-family: inherit;
+  font-size: 13px;
+  color: #333;
+  outline: none;
+  transition: border-color 0.15s ease;
+}
+.pool-search:focus {
+  border-color: #b99a7e;
+}
+.pool-filter-clear {
+  flex-shrink: 0;
+  width: 32px;
+  height: 32px;
+  border: 1px solid var(--border1, #e3dfd8);
+  border-radius: 9px;
+  background: #fff;
+  color: #8a776a;
+  cursor: pointer;
+  transition:
+    color 0.15s ease,
+    border-color 0.15s ease;
+}
+.pool-filter-clear:hover {
+  color: var(--acc, #9c4a2f);
+  border-color: #b99a7e;
 }
 /* ── 보드 밖 삭제 경고 ──────────────────────────────────────
    전용 휴지통 영역을 없앤 대신, 후보 목록·타임라인 밖으로 블록을 끌고 가면
@@ -1173,9 +1308,12 @@
   color: #333;
   font-size: 14px;
   margin-bottom: 4px;
-  white-space: nowrap;
+  /* 이름은 최대 두 줄까지 — 넘치면 …. 예전엔 한 줄에서 바로 잘렸다. */
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  -webkit-box-orient: vertical;
   overflow: hidden;
-  text-overflow: ellipsis;
 }
 .pcard .sub {
   color: var(--ink2);
@@ -1334,7 +1472,45 @@
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
-  gap: 20px;
+  gap: 14px;
+}
+/* 예산+지도 묶음 — 높이를 계획표(.board.plan-board)와 같게 고정하고, 지도가 남는
+   공간을 채운다. 그래서 두 카드 아랫줄이 계획표 아랫줄과 딱 맞는다. */
+.side-top {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  height: min(78vh, 900px);
+}
+.side-top > .panel:last-child {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.side-top > .panel:last-child .map-wrap {
+  flex: 1;
+  min-height: 0;
+}
+/* 후보목록·검색을 같은 고정 높이로 — 위쪽 라인이 맞고 크기도 같아진다. */
+.pool-sec {
+  height: 320px;
+  display: flex;
+  flex-direction: column;
+}
+.side > .panel {
+  height: 320px;
+  display: flex;
+  flex-direction: column;
+}
+.side > .panel .search-box {
+  flex: 1;
+  min-height: 0;
+}
+.side > .panel .search-results {
+  flex: 1;
+  min-height: 0;
+  max-height: none;
 }
 
 /* 지도 — 사이드 폭과 화면 높이에 맞춰 커지되, 아래 장소 검색을 화면 밖으로
@@ -1342,7 +1518,7 @@
    검색 패널이 첫 화면에 아예 걸리지 않았다. 지도는 핀 위치만 확인하면 되고
    자세히 볼 땐 확대·이동이 되므로, 높이를 양보하는 쪽이 맞다. */
 .map-box {
-  height: clamp(200px, 24vh, 320px);
+  height: 100%;
   background: #e9e5dc;
   border-radius: 12px;
 }
@@ -1397,7 +1573,8 @@
    제목 크기는 후보 목록 머리글과 같은 18px — 같은 층위의 카드끼리 제목이
    따로 놀지 않게. (h4 기본 여백을 지워야 하므로 margin 은 여기서 다시 준다) */
 .panel h4.panel-title {
-  margin: 0 0 16px;
+  margin: 0 0 8px;
+  padding-bottom: 8px;
   font-size: 18px;
   color: #3d2b22;
 }
@@ -1411,7 +1588,7 @@
 /* 아래 여백들은 한 칸씩 좁혔다 — 이 카드가 사이드 맨 위라 여기서 줄인 만큼
    지도·장소 검색이 통째로 위로 올라온다. 정보는 그대로 두고 간격만 줄인다. */
 .bud-total {
-  margin-bottom: 12px;
+  margin-bottom: 8px;
 }
 .bud-total-label {
   font-size: 15px;
@@ -1419,7 +1596,7 @@
   color: #666;
 }
 .bud-total-value {
-  font-size: 24px;
+  font-size: 20px;
   font-weight: 800;
   color: #3d2b22;
 }
@@ -1447,7 +1624,7 @@
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 10px;
+  margin-bottom: 6px;
   font-size: 13px;
   color: var(--ink3, #8a776a);
 }
@@ -1633,7 +1810,10 @@
   z-index: 9999;
   display: flex;
   justify-content: center;
-  background: rgba(0, 0, 0, 0.5);
+  /* dim 은 공유 Modal(.ov)과 같은 값으로 맞춘다 — 크림 테마의 갈색 반투명 + blur.
+     레이아웃·z-index·오버레이 스크롤 전략은 tall 모달용이라 그대로 둔다. */
+  background: rgba(61, 43, 34, 0.4);
+  backdrop-filter: blur(3px);
   /* 창이 화면보다 커지는 예외(아주 낮은 창·확대 배율)를 위한 마지막 안전망 */
   overflow-y: auto;
   padding: 20px 16px;
@@ -1799,10 +1979,12 @@
 .tp-banner-warn {
   color: #9c3b3b;
 }
+/* 일괄 생성 모달의 후보 카드 — flex-wrap 이면 내용따라 폭이 제각각이라, 균등
+   폭 그리드로 깔아 카드 크기를 맞춘다(같은 행은 높이도 함께 stretch). */
 .tp-chips {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 8px;
 }
 .tp-chip {
   display: inline-flex;
@@ -2007,19 +2189,47 @@
   min-width: 0;
 }
 .rv-badge {
+  flex-shrink: 0;
+  width: 96px;
+  box-sizing: border-box;
   padding: 4px 8px;
   border-radius: 6px;
   background: var(--dc);
   color: #fff;
   font-size: 12px;
   font-weight: bold;
+  text-align: center;
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .rv-name {
   margin-bottom: 4px;
   font-size: 17px;
   font-weight: bold;
   color: #333;
+}
+/* 읽기 모드 제목 링크 — 출처(카카오맵·축제 홈페이지)가 있으면 제목을 눌러 연다.
+   버튼 기본 스타일을 지우고 제목처럼 보이되, 색·아이콘·hover 밑줄로 링크임을 알린다. */
+.rv-name-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 0;
+  border: none;
+  background: none;
+  font-family: inherit;
+  text-align: left;
+  color: var(--acc, #9c4a2f);
+  cursor: pointer;
+}
+.rv-name-link:hover {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.rv-name-ico {
+  font-size: 12px;
+  opacity: 0.8;
 }
 .rv-addr {
   font-size: 13px;

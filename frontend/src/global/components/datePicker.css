@@ -1,0 +1,94 @@
+/* 크림 테마 날짜 선택 필드 — 네이티브 date 입력 대체.
+   트리거는 모달의 다른 입력칸(.md input)과 같은 테두리·라운드·크기를 쓴다. */
+.dp-wrap {
+  position: relative;
+  width: 100%;
+}
+.dp-trigger {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  min-height: 42px;
+  box-sizing: border-box;
+  border: 1.5px solid var(--line, #e3dfd8);
+  border-radius: 11px;
+  padding: 10px 13px;
+  background: #fff;
+  font-family: inherit;
+  font-size: 13.5px;
+  color: var(--ink, #211c19);
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.15s;
+}
+.dp-trigger:hover,
+.dp-trigger.is-open {
+  border-color: var(--acc, #9c4a2f);
+}
+.dp-trigger:disabled {
+  background: #f6f1e8;
+  color: var(--ink2, #8a776a);
+  cursor: not-allowed;
+}
+.dp-placeholder {
+  color: var(--ink2, #8a776a);
+  opacity: 0.8;
+}
+.dp-ico {
+  flex-shrink: 0;
+  font-size: 14px;
+  line-height: 1;
+}
+
+/* 팝오버(포털로 body 에 뜬다) */
+.dp-pop {
+  box-sizing: border-box;
+  min-width: 260px;
+  background: var(--cream, #fdfbf7);
+  border: 1px solid var(--line, #e3dfd8);
+  border-radius: 14px;
+  box-shadow: 0 16px 40px rgba(61, 43, 34, 0.24);
+  padding: 8px 10px;
+}
+
+/* react-day-picker(v10) 테마 — 크림/갈색 accent, 좁은 칸에 맞춰 셀 축소 */
+.dp-pop .rdp-root {
+  --rdp-accent-color: var(--acc, #9c4a2f);
+  --rdp-accent-background-color: var(--foodB, #f4e7de);
+  --rdp-day-width: 34px;
+  --rdp-day-height: 34px;
+  --rdp-day_button-width: 32px;
+  --rdp-day_button-height: 32px;
+  --rdp-day_button-border-radius: 9px;
+  --rdp-font-family: inherit;
+  --rdp-today-color: var(--acc, #9c4a2f);
+  margin: 0;
+  font-size: 13px;
+  color: var(--ink, #211c19);
+}
+.dp-pop .rdp-month_caption {
+  font-weight: 700;
+  color: var(--ink, #211c19);
+}
+.dp-pop .rdp-weekday {
+  color: var(--ink2, #8a776a);
+  font-weight: 600;
+}
+/* 선택된 날 — 갈색 채움 */
+.dp-pop .rdp-selected .rdp-day_button {
+  background: var(--acc, #9c4a2f);
+  color: #fff;
+  border: none;
+  font-weight: 700;
+}
+.dp-pop .rdp-today:not(.rdp-selected) .rdp-day_button {
+  font-weight: 700;
+}
+.dp-pop .rdp-day_button:hover {
+  background: var(--foodB, #f4e7de);
+}
+.dp-pop .rdp-disabled {
+  opacity: 0.35;
+}

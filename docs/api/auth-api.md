@@ -19,6 +19,7 @@
 - **토큰 정책(AUTH-04)**: Access 30분 — 응답 바디로만 전달, 프론트는 메모리 보관.
   Refresh 14일 — `HttpOnly; Secure; SameSite=Lax; Path=/api/auth` 쿠키. 프론트는 JS로 다루지 않으며 `withCredentials: true`로 자동 전송.
   (`Secure`는 기본값 `false`(dev), prod에서만 `true` — `auth.refresh-cookie.secure`)
+- **보호 API의 인증 실패는 전부 `COMMON401`**: 토큰 누락·만료·위변조는 물론, **탈퇴한 계정의 유효한 access 토큰**도 인증이 거부된다(`ActiveUserChecker` — 서명이 멀쩡해도 `deleted_at`이 있으면 스킵). 필터가 세부 사유를 구분해 주지 않으므로 `AUTH401_1`~`AUTH401_3` 세분 코드는 `/api/auth/refresh` 응답에서만 볼 수 있다.
 
 ---
 
@@ -127,17 +128,21 @@ Access 토큰 재발급(30분 만료 시). **RTR** — refreshToken도 함께 �
 
 | code | HTTP | 상황 |
 |---|---|---|
-| `AUTH401_3` | 401 | 쿠키 없음 · 만료 · 저장값 불일치 |
+| `AUTH401_1` | 401 | refreshToken 위변조·형식 오류·타입 불일치 (JWT 파싱 실패) |
+| `AUTH401_2` | 401 | refreshToken 자체 만료 (`exp` 경과 — **가장 흔한 재로그인 경로**) |
+| `AUTH401_3` | 401 | 쿠키 없음 · Redis 저장값 없음/불일치 |
 
-> 쿠키 없음과 저장값 불일치를 **코드로 구분하지 않는다** — 어느 쪽인지 알려주는 것은
-> 공격자에게 정보를 주는 쪽이고, 프론트도 두 경우 모두 재로그인으로 처리한다.
+> JWT 파싱이 Redis 조회보다 먼저 일어나므로 **만료는 `AUTH401_3`이 아니라 `AUTH401_2`로 나간다**.
+> 쿠키 없음과 저장값 불일치는 `AUTH401_3` 하나로 묶는다 — 어느 쪽인지 알려주는 것은
+> 공격자에게 정보를 주는 쪽이고, 프론트도 재로그인으로 처리하면 된다. **재로그인 트리거는
+> 세 코드 모두 잡아야 한다**(401_3만 잡으면 만료를 놓친다).
 > 저장값 불일치일 때는 탈취로 간주해 해당 사용자의 refresh를 삭제한다.
 
 ---
 
 ### POST /api/auth/logout
 
-Refresh 무효화(Redis 삭제) + refreshToken 쿠키 만료.
+Refresh 무효화(Redis 삭제) + refreshToken 쿠키 만료 + **열려 있는 WebSocket 세션 강제 종료**.
 
 **Request:** 바디 없음.
 
@@ -146,6 +151,14 @@ Refresh 무효화(Redis 삭제) + refreshToken 쿠키 만료.
 { "isSuccess": true, "code": "COMMON200", "message": "요청에 성공했습니다." }
 ```
 > 응답 헤더에 `Set-Cookie: refreshToken=; Max-Age=0` 포함.
+> 대시보드를 열어 둔 채 로그아웃하면 실시간 연결도 즉시 끊긴다 — 프론트는 로그아웃 직후의
+> WS 끊김을 오류로 간주해 자동 재연결하지 않도록 해야 한다.
+
+**Errors:**
+
+| code | HTTP | 상황 |
+|---|---|---|
+| `COMMON401` | 401 | 토큰 누락·만료·위변조 (인증 필수 엔드포인트) |
 
 ---
 

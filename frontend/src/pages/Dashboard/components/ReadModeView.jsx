@@ -7,6 +7,10 @@ import {
   effectiveCostOf,
   blocksOfDay,
 } from "../dashboardHelpers";
+import {
+  openBlockLink,
+  hasExternalLink,
+} from "../../../features/dashboard/api/externalLink";
 
 export function ReadModeView({ board, items, dayKeys, project }) {
   // 배경·좌우 여백은 편집 모드와 같은 껍데기(.dash-shell/.dash-body)가 쥔다 —
@@ -89,11 +93,28 @@ export function ReadModeView({ board, items, dayKeys, project }) {
                     ) : (
                       <div className="rv-card">
                         <div className="rv-card-main">
-                          <span className="rv-badge">
+                          <span
+                            className="rv-badge"
+                            title={`${catStyle.nm}${item.sub ? ` · ${item.sub}` : ""}`}
+                          >
                             {catStyle.nm} {item.sub ? `· ${item.sub}` : ""}
                           </span>
                           <div>
-                            <div className="rv-name">{item.name}</div>
+                            {hasExternalLink(item) ? (
+                              <button
+                                type="button"
+                                className="rv-name rv-name-link"
+                                title="출처 링크 열기"
+                                onClick={() => openBlockLink(item)}
+                              >
+                                {item.name}
+                                <span className="rv-name-ico" aria-hidden="true">
+                                  🔗
+                                </span>
+                              </button>
+                            ) : (
+                              <div className="rv-name">{item.name}</div>
+                            )}
                             <div className="rv-addr">
                               📍 {item.address || "위치 정보 없음"}
                             </div>
