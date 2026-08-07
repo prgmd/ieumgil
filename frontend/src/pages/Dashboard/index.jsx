@@ -472,7 +472,6 @@ export function DashboardPage() {
   // 기간이 줄어 보고 있던 Day 가 사라지면 첫째 날을 본다 — 상태를 되돌리지 않고
   // 렌더 시점에 정하므로 "없는 Day 를 가리키는 한 프레임"이 생기지 않는다.
   const activeDay = dayKeys.includes(selectedDay) ? selectedDay : dayKeys[0];
-  const activeDayIndex = Math.max(0, dayKeys.indexOf(activeDay));
 
   // 타임라인 좌표계 = 블록의 startOffsetMinutes 와 같은 공간(Day 1 00:00 기준 절대 분).
   // 축은 여행 전체다 — 첫 Day 의 00:00 부터 마지막 Day 의 24:00 까지 한 줄로 잇는다.
@@ -2494,7 +2493,6 @@ export function DashboardPage() {
     activeDragMeta?.from === "search" || activeDragMeta?.from === "chatbot";
 
   let displayItems = items;
-  let displayChain = chains[activeDay] || [];
 
   if (dragPreview?.region === "timeline" && activeId && draggedItem) {
     const draggedDur = dragPreview.dur || draggedItem.dur || 60;
@@ -2506,20 +2504,28 @@ export function DashboardPage() {
         dur: draggedDur,
       },
     };
-    const tempChain = [...displayChain];
+    const tempChain = [...(chains[activeDay] || [])];
     if (!tempChain.includes(activeId)) tempChain.push(activeId);
-    const { newItems, newChain } = resolveOverlaps(
+    // 겹침 해소가 돌려주는 새 체인 순서는 더 쓰지 않는다 — 화면 순서는 이제
+    // 오프셋 정렬이고, 밀려난 블록의 새 시각은 newItems 에 들어 있다.
+    const { newItems } = resolveOverlaps(
       tempItems,
       tempChain,
       activeId,
       dayBase,
     );
     displayItems = newItems;
-    displayChain = newChain;
   }
 
-  const activeDayItems = displayChain
-    .filter((id) => !(isDraggingFromPool && id === activeId) && id !== activeId)
+  // 축이 여행 전체 한 줄이라 그릴 것도 활성 Day 가 아니라 **보드 전체**다 —
+  // 배치된 블록(체인에 든 것) 전부를 오프셋 순으로 세운다. 후보(POOL)는 체인에
+  // 없으니 저절로 빠진다. 체인은 아직 멤버십의 원본이라 여기서 읽기만 한다.
+  // 겹침 해소로 밀려난 블록의 새 시각은 displayItems 에 들어 있어 map 이 집는다.
+  // 정렬이 곧 이 목록의 순서다 — "다음 항목"이 이동 버튼(🚗) 위치·간격과
+  // boundTop 의 기준이라 시간이 곧 순서여야 한다.
+  const boardItems = Object.values(chains)
+    .flat()
+    .filter((id) => id !== activeId)
     .map((id) => {
       const item = displayItems[id];
       if (!item) return null;
@@ -2531,16 +2537,14 @@ export function DashboardPage() {
       };
     })
     .filter(Boolean)
-    // 시각 순 정렬 — 체인은 orderKey 순서라 이동 이력에 따라 시각 순서와 어긋날
-    // 수 있는데, 이 배열의 "다음 항목"이 이동 버튼(🚗) 위치·간격과 boundTop 의
-    // 기준이라 시간이 곧 순서여야 한다 (버튼이 엉뚱한 높이에 그려지던 버그)
     .sort((a, b) => a.startMins - b.startMins);
 
-  // 자정을 넘어 이 Day 로 이어지는 블록들 — 앞 Day 의 체인에 있는 한 행이라
-  // 이 Day 의 카드 목록(activeDayItems)에는 없다. 그대로 두면 Day 2 의 새벽이
-  // 텅 빈 것처럼 보여서(예전 두-행 모델엔 "(이어서)" 행이 있었다) 읽기 전용
-  // 띠로만 그린다. 상호작용하는 목록과 섞지 않는 이유가 이것이다 —
-  // 이 목록은 오직 렌더 재료이고, 체인·블록 수·예산·교통 짝짓기에는 끼지 않는다.
+  // 자정을 넘어 이 Day 로 이어지는 블록들의 읽기 전용 띠. Day 하나만 그리던
+  // 시절, 앞 Day 의 체인에 있는 그 한 행이 카드 목록 밖이라 Day 2 의 새벽이
+  // 텅 빈 것처럼 보이는 것을 메우던 장치다.
+  // 보드 전체를 그리는 지금은 그 블록이 boardItems 안에 카드로도 들어 있어
+  // 활성 Day 에서 카드와 띠가 겹쳐 그려진다 — 띠를 걷어내는 것은 뒤 태스크 몫이라
+  // 여기서는 그대로 둔다.
   const spilloverBands = spilloversInto(displayItems, dayBase, activeId);
 
   // 편집 배지에 쓸 이름 — 락 소유자가 멤버 목록에 없으면(탈퇴 직후 등) 뭉뚱그린다
@@ -2597,18 +2601,18 @@ export function DashboardPage() {
 
   // 💡 타임라인 드래그 미리보기 합치기
   if (dragPreview?.region === "timeline" && activeId && draggedItem) {
-    activeDayItems.push({
+    boardItems.push({
       id: activeId,
       item: displayItems[activeId],
       startMins: displayItems[activeId].startMins,
       endMins: displayItems[activeId].startMins + displayItems[activeId].dur,
     });
-    activeDayItems.sort((a, b) => a.startMins - b.startMins);
+    boardItems.sort((a, b) => a.startMins - b.startMins);
   }
 
   // 자정을 넘긴 블록이 마지막 눈금 밖으로도 그려져야 한다 — 컨테이너를 그만큼 늘린다.
   // endMins 가 유한하지 않은 항목(startMins 가 없는 후보 등)은 높이를 NaN 으로 만들므로 건너뛴다.
-  const contentEnd = activeDayItems.reduce(
+  const contentEnd = boardItems.reduce(
     (acc, it) => (Number.isFinite(it.endMins) ? Math.max(acc, it.endMins) : acc),
     timelineEnd,
   );
@@ -2712,24 +2716,20 @@ export function DashboardPage() {
               <div className="main">
                 <div className="board plan-board">
                   <div className="bd-head">
-                    <h2>Day {activeDayIndex + 1}</h2>
-                    {/* 날짜는 표시 전용이다 — 여행 기간은 상단바 제목 옆 ✎(프로젝트
-                        수정)에서 바꾼다. 안내 토글을 날짜 바로 옆에 붙여, 예전에
-                        날짜를 누르던 사람이 어디로 가야 하는지 여기서 알게 한다. */}
-                    <div className="date-wrap">
-                      <span className="date">
-                        {dayDate(project, activeDayIndex) || "날짜 미정"}
-                      </span>
-                      <span
-                        // tip-down: 헤더 바로 아래라 위로 열면 상단바에 가린다
-                        className="hint-ico tip-down"
-                        tabIndex={0}
-                        aria-label="계획표 사용 안내"
-                        data-tip="후보 블록을 원하는 시간에 끌어다 놓아 일정을 만들어요. 블록의 위·아래 가장자리를 누르면 10분 단위로 길이를 조절하고, 블록 사이 🚗 버튼으로 이동수단을 추가할 수 있어요. 여행 날짜는 위 제목 옆 ✎ 에서 바꿀 수 있어요."
-                      >
-                        ⓘ
-                      </span>
-                    </div>
+                    {/* Day 번호·날짜는 축 위의 sticky 헤더(.tl-day-head)가 쥔다 —
+                        축이 여행 전체 한 줄이라 여기 고정된 Day 표시를 같이 두면
+                        스크롤을 따라 움직이는 표시와 어느 쪽이 진짜인지 어긋난다.
+                        (날짜는 표시 전용이다. 여행 기간은 상단바 제목 옆 ✎ 에서
+                        바꾼다 — 안내 문구가 그 자리를 알려 준다.) */}
+                    <span
+                      // tip-down: 헤더 바로 아래라 위로 열면 상단바에 가린다
+                      className="hint-ico tip-down"
+                      tabIndex={0}
+                      aria-label="계획표 사용 안내"
+                      data-tip="후보 블록을 원하는 시간에 끌어다 놓아 일정을 만들어요. 블록의 위·아래 가장자리를 누르면 10분 단위로 길이를 조절하고, 블록 사이 🚗 버튼으로 이동수단을 추가할 수 있어요. 여행 날짜는 위 제목 옆 ✎ 에서 바꿀 수 있어요."
+                    >
+                      ⓘ
+                    </span>
                     <div className="right">
                       <button
                         className="auto-transport-btn"
@@ -2841,23 +2841,20 @@ export function DashboardPage() {
                         "--tl-pad-left": `${TL_PAD_LEFT}px`,
                       }}
                     >
-                      {activeDayItems.map((data, index) => {
-                        // 위 모서리를 끌어올릴 수 있는 한계. 앞 카드가 있으면 그
-                        // 끝이고, 첫 카드면 이 Day 의 바닥이다 — 00:00 이 아니라
-                        // 자정을 넘어온 블록의 끝(화면의 .tl-spill 띠가 덮은 구간).
-                        // 드롭 클램프와 같은 헬퍼를 써서 "이어지는 블록보다 먼저
-                        // 시작하는 것은 없다"가 드롭·리사이즈 양쪽에 똑같이 선다.
+                      {boardItems.map((data, index) => {
+                        // 위 모서리를 끌어올릴 수 있는 한계 — 앞 카드의 끝이다.
+                        // 목록이 보드 전체라 자정을 넘어온 블록도 그냥 앞 카드로
+                        // 여기 들어 있다(예전엔 Day 로 걸러 목록 밖이라 띠의
+                        // 바닥값을 따로 구해야 했다). 맨 앞 카드는 여행 전체에서
+                        // 가장 이른 블록이라 축의 시작 말고는 막을 것이 없다.
                         // 이 값이 리사이즈 핸들러의 유일한 하한이라(resizingState.
                         // boundTop) 여기만 올리면 미리보기와 확정이 갈라지지 않는다.
                         const boundTop =
                           index > 0
-                            ? activeDayItems[index - 1].endMins
-                            : Math.max(
-                                timelineStart,
-                                spilloverFloorOf(displayItems, dayBase, data.id),
-                              );
+                            ? boardItems[index - 1].endMins
+                            : timelineStart;
 
-                        const nextData = activeDayItems[index + 1];
+                        const nextData = boardItems[index + 1];
                         const showGapBtn =
                           nextData &&
                           data.item.cat !== "trans" &&
@@ -2920,8 +2917,12 @@ export function DashboardPage() {
                                   className="trans-chip"
                                   onClick={(e) => {
                                     e.stopPropagation();
+                                    // 버튼이 보드 전체에 깔리므로 Day 는 활성 탭이
+                                    // 아니라 앞 블록이 실제로 앉은 Day 다 —
+                                    // 활성 Day 를 넘기면 다른 Day 의 버튼이
+                                    // "체인에 없는 블록"으로 조용히 튕긴다.
                                     handleAddSingleTransport(
-                                      activeDay,
+                                      `d${blockApi.dayNoOfOffset(data.startMins)}`,
                                       data.id,
                                       nextData.id,
                                     );
@@ -2940,12 +2941,47 @@ export function DashboardPage() {
                         );
                       })}
 
-                      {activeDayItems.length === 0 && (
+                      {boardItems.length === 0 && (
                         <div className="endzone">
                           ＋ 비어있는 타임라인의 원하는 시간 위치로 드래그하여
                           일정을 추가하세요
                         </div>
                       )}
+                    </div>
+
+                    {/* Day 구분 헤더 — 하루가 시작하는 자리(dayIndex × 24시간)마다
+                        하나씩, 그 Day 의 구간 안에서 sticky 로 따라온다.
+                        Day 를 카드의 컨테이너로 만들지 않는다 — 만들면 자정을 넘는
+                        블록을 두 칸에 걸쳐 쪼개야 하고, 그게 이번에 없앤 두-행
+                        모델이다. 카드는 .tl-slots 한 곳에 그대로 있고 여기 있는
+                        것은 라벨뿐이다.
+                        반투명이라 카드가 헤더 밑을 지나가는 게 그대로 보인다 —
+                        여행이 챕터로 끊기는 게 아니라 이어진다는 표시다.
+                        pointer-events 는 CSS 에서 끈다(카드 위에 뜨므로). */}
+                    <div
+                      className="tl-days"
+                      style={{
+                        "--tl-pad-top": `${TL_PAD_TOP}px`,
+                        "--tl-pad-left": `${TL_PAD_LEFT}px`,
+                      }}
+                    >
+                      {dayKeys.map((day, i) => (
+                        <div
+                          key={day}
+                          className="tl-day"
+                          style={{
+                            top: `${(i * blockApi.MINUTES_PER_DAY - timelineStart) * PX}px`,
+                            height: `${blockApi.MINUTES_PER_DAY * PX}px`,
+                          }}
+                        >
+                          <div className="tl-day-head">
+                            <b className="tl-day-no">Day {i + 1}</b>
+                            <span className="tl-day-date">
+                              {dayDate(project, i) || "날짜 미정"}
+                            </span>
+                          </div>
+                        </div>
+                      ))}
                     </div>
 
                     {/* 다른 멤버들의 라이브 커서(타임라인 정밀 좌표) — 카드 위에 뜨되
