@@ -505,10 +505,20 @@ export function DashboardPage() {
   // 맞추면 스크롤바도 그 변환도 거짓말이 된다. 줄이는 것은 내용뿐이다.
   // 앞뒤로 한 Day 씩 더 얹는 이유는 둘이다: 화면이 Day 경계에 걸쳐 있을 때,
   // 그리고 활성 Day 가 rAF 한 프레임 늦게 따라올 때 빈 칸이 보이지 않게.
+  // 위 경계는 창이 **마지막 Day 를 품는 순간 사라진다**(Infinity). 마지막 자정
+  // 너머로 밀린 블록에는 뒤따르는 Day 가 없어 여기 말고 들어갈 창이 없기 때문이다.
+  // 유한하게 두면 startMins < windowEnd 가 그 블록에 대해 영영 거짓이라 어떤
+  // 스크롤 위치에서도 마운트되지 않는다 — 컨테이너만 contentEnd 까지 늘어난 빈
+  // 꼬리가 되고, 그 블록은 보이지도 지우지도 못하는 채로 보드 시간을 점유해
+  // (lastEnd) 근처의 드롭을 이유 없이 막는다. resolveOverlaps 에 상한 클램프가
+  // 없어 마지막 Day 늦은 시각에 놓기만 해도 이웃이 그리로 밀린다 — 흔한 길이다.
+  // 눈금은 여기까지 따라가지 않는다(그릴 Day 가 없다) — 아래 tickEnd 가 자른다.
   const windowStart =
     Math.max(0, dayNoOf(activeDay) - 2) * blockApi.MINUTES_PER_DAY;
   const windowEnd =
-    Math.min(dayKeys.length, dayNoOf(activeDay) + 1) * blockApi.MINUTES_PER_DAY;
+    dayNoOf(activeDay) + 1 >= dayKeys.length
+      ? Infinity
+      : (dayNoOf(activeDay) + 1) * blockApi.MINUTES_PER_DAY;
 
   // 보드 편집 상태 — 초기값은 비워 두고, 스냅샷이 도착하면 아래 시드 effect 가 채운다.
   const [items, setItems] = useState({});
@@ -2330,8 +2340,11 @@ export function DashboardPage() {
   // 1441개가 Day±1 의 145개로 준다. 좌표계는 여전히 여행 전체이고(top 식이 그대로
   // (t - timelineStart) * PX 다), 창 밖 눈금은 스크롤이 그 Day 로 가면 생긴다.
   // 새벽 빈 공간은 아래 최초 스크롤·탭 점프가 첫 블록 위치로 건너뛴다.
+  // 마지막 창의 위 경계는 Infinity 라(마지막 자정 너머로 밀린 카드를 담기 위함)
+  // 눈금만 축의 끝에서 자른다 — 마지막 자정 너머엔 그릴 Day 가 없다.
+  const tickEnd = Math.min(windowEnd, timelineEnd);
   const timeSlots = [];
-  for (let t = windowStart; t <= windowEnd; t += 30) timeSlots.push(t);
+  for (let t = windowStart; t <= tickEnd; t += 30) timeSlots.push(t);
 
   // ── 활성 Day 파생 = 뷰포트를 가장 많이 차지하는 Day ─────────
   /**
@@ -2892,6 +2905,7 @@ export function DashboardPage() {
                           nextData &&
                           data.item.cat !== "trans" &&
                           nextData.item.cat !== "trans" &&
+                          gapChipMins >= windowStart &&
                           gapChipMins <= windowEnd;
 
                         const isThisActiveTimelineCard =
