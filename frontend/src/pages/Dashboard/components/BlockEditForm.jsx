@@ -34,6 +34,8 @@ export function BlockEditForm({
   lockNotice = "",
   // 다른 멤버가 상세락을 잡고 있으면 true — 비고(detail) 입력을 잠근다.
   detailLocked = false,
+  // 락이 풀려 내가 이어받을 때 맞출 서버 최신 비고(부모가 items 에서 라이브로 준다)
+  serverDetail = "",
   // 지도에서 찍어 온 위치 { lat, lng, address }. 부모가 지정할 때마다 새 객체를
   // 넘기고, 모달을 닫을 때 null 로 되돌린다.
   pinnedLocation = null,
@@ -102,6 +104,19 @@ export function BlockEditForm({
       // 역지오코딩이 빈손이면 주소는 그대로 두고 사용자가 직접 쓰게 한다 —
       // 좌표는 이미 잡혔으니 저장에는 문제가 없다
       ...(pinnedLocation.address ? { address: pinnedLocation.address } : null),
+    }));
+  }
+
+  // 락 상태 전이 동기화 — appliedPin 과 같은 "렌더 중 state 보정" 패턴이다.
+  //  · 잠김(→true): 배지 도착 전 창에 친 비고를 오픈 시점 값으로 되돌려 전송을 막는다.
+  //  · 풀림(→false): 내가 이어받는다 — 그새 다른 멤버가 저장한 최신 비고를 보여
+  //    준다(stale 화면 방지). 안 만진 비고의 재전송은 부모 저장 게이트가 막는다.
+  const [lockSynced, setLockSynced] = useState(detailLocked);
+  if (lockSynced !== detailLocked) {
+    setLockSynced(detailLocked);
+    setFormData((prev) => ({
+      ...prev,
+      detail: detailLocked ? baselineRef.current.detail : serverDetail,
     }));
   }
 

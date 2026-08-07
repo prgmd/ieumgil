@@ -1466,6 +1466,12 @@ export function DashboardPage() {
     const base = items[targetId];
     if (!base) return;
 
+    // 남이 상세락을 쥔 사이엔 비고(detail)를 저장에서 제외한다 — 배지 도착 전
+    // 창에 친 값이나 인계 직전 스냅샷이 남의 최신 비고를 덮어쓰지 않게 한다.
+    // 로컬에도 form.detail 을 반영하지 않아(patched 에서도 뺀다) 서버 진실을 유지한다.
+    const detailLockedByOther =
+      detailLocks[targetId] != null && detailLocks[targetId] !== currentUser?.id;
+
     // baseline 이 없으면(구 호출부) 지금 값 기준으로 되돌아간다 — 없는 편이 낫지만
     // 최소한 저장이 통째로 막히지는 않게 한다
     const openedWith = baseline ?? {
@@ -1555,13 +1561,13 @@ export function DashboardPage() {
     // 전송에서도, 로컬 상태에서도 살아남는다.
     const patched = { ...base };
     if (touched.name) patched.name = form.name;
-    if (touched.detail) patched.detail = form.detail;
+    if (touched.detail && !detailLockedByOther) patched.detail = form.detail;
     if (touched.dur) patched.dur = numOf(form.durationMin) ?? base.dur;
     if (touched.cost) patched.cost = numOf(form.budget) ?? base.cost;
 
     const changed = {};
     if (touched.name) changed.name = patched.name;
-    if (touched.detail) changed.detail = patched.detail;
+    if (touched.detail && !detailLockedByOther) changed.detail = patched.detail;
     if (touched.dur) changed.durationMin = patched.dur;
     if (touched.cost) changed.budget = patched.cost;
     // category·subCategory·address 는 보내지 않는다 — 서버 LWW 화이트리스트
@@ -1869,6 +1875,9 @@ export function DashboardPage() {
             if (r?.acquired) blockApi.releaseDetailLock(blockId).catch(() => {});
             return;
           }
+          // 이미 락을 쥐었다 — 겹치거나 역순으로 도착한 재시도 응답이 promote 를
+          // 두 번 태워 heartbeat 를 누수하거나, stale holder 로 배지를 되세우지 않게 한다
+          if (acquired) return;
           if (r?.acquired) {
             promote();
           } else if (r?.holder != null) {
@@ -2219,7 +2228,9 @@ export function DashboardPage() {
         // 정확히 맞추기 어려운 걸 돕는다. 임계값 밖이면 원래 위치 그대로.
         const SNAP_MAGNET = 10; // 분 (이 안이면 스냅)
         let bestSnap = null;
-        blocksOfDay(board, items, activeDay).forEach((id) => {
+        // 축이 전 기간 연속이라 스냅도 배치된 모든 블록을 본다 — Day 로 한정하면
+        // 경계 근처(23:58 드롭인데 이웃이 다음 날 00:05)에 스냅이 안 걸린다.
+        board.forEach((id) => {
           if (id === activeIdLocal) return;
           const b = items[id];
           if (b?.startMins == null) return;
@@ -2247,7 +2258,7 @@ export function DashboardPage() {
       if (active.data?.current?.from === "search") return { region: null };
       return { region: "discard" };
     },
-    [pool, items, timelineStart, timelineEnd, board, activeDay],
+    [pool, items, timelineStart, timelineEnd, board],
   );
 
   // 렌더에서 쓰는 드래그 출처 정보({ from, place })는 state 로 둔다 —
@@ -3494,6 +3505,8 @@ export function DashboardPage() {
                     : ""
                 }
                 detailLocked={Boolean(lockedByName)}
+                // 락이 풀려 내가 이어받을 때 맞출 서버 최신 비고(라이브)
+                serverDetail={items[editingBlockId]?.detail ?? ""}
                 pinnedLocation={pinnedLocation}
                 onRequestPinPick={handleRequestPinPick}
                 onSave={handleSaveBlock}
