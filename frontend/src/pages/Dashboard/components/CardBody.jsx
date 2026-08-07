@@ -34,7 +34,9 @@ function CardBody({
           <span className="grip">⠿</span>
         </div>
         {/* 💡 연필 아이콘 삭제, 글씨 두께만 강조 */}
-        <div className="nm">{item?.name}</div>
+        <div className="nm" title={item?.name}>
+          {item?.name}
+        </div>
         {/* 타임라인 카드와 같은 규칙 — 교통이면 경로, 아니면 메모·주소 */}
         <div className="sub">
           {route ? route.text : item?.detail || item?.address}
