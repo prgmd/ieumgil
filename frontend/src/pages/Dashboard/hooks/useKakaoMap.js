@@ -11,14 +11,56 @@ import { useState, useRef, useEffect, useCallback } from "react";
 import { ensureKakaoMaps } from "../../../features/dashboard/map/addressLookup";
 import * as placeApi from "../../../features/place/api/placeApi";
 import { planPinImage, searchPinImage, ROUTE_LINE_COLOR } from "../mapPins";
-import { blocksOfDay } from "../dashboardHelpers";
+import { blocksOfDay, catOf } from "../dashboardHelpers";
+import {
+  buildKakaoPlaceUrl,
+  buildKakaoSearchUrl,
+} from "../../../features/dashboard/api/externalLink";
+
+// 말풍선은 HTML 문자열이라 사용자 입력(이름·메모)을 그대로 넣으면 깨지거나 위험하다.
+function escapeHtml(s) {
+  return String(s ?? "").replace(
+    /[&<>"']/g,
+    (c) =>
+      ({
+        "&": "&amp;",
+        "<": "&lt;",
+        ">": "&gt;",
+        '"': "&quot;",
+        "'": "&#39;",
+      })[c],
+  );
+}
+
+// 지도 핀 말풍선 — 주소 대신 실질 정보를 보여준다: 분류 배지 · 이름 · 사용자 메모(detail)
+// · 카카오맵으로 이동하는 링크. 링크 URL 은 동기로 만든다(KAKAO 는 장소 딥링크,
+// 그 외는 이름으로 카카오맵 검색 폴백).
+function blockOverlayInner(item) {
+  const c = catOf(item);
+  const url =
+    item.source === "KAKAO" && item.placeId
+      ? buildKakaoPlaceUrl(item.placeId)
+      : item.placeId
+        ? buildKakaoSearchUrl(item.name)
+        : null;
+  return `
+    <button class="map-ov-x" type="button" aria-label="닫기">✕</button>
+    <div class="map-ov-head">
+      <span class="map-ov-cat" style="background:${c.bg};color:${c.hex};">${escapeHtml(c.nm)}</span>
+      <b class="map-ov-name">${escapeHtml(item.name)}</b>
+    </div>
+    ${item.detail ? `<p class="map-ov-desc">${escapeHtml(item.detail)}</p>` : ""}
+    ${url ? `<a class="map-ov-link" href="${url}" target="_blank" rel="noreferrer noopener">카카오맵에서 보기 ↗</a>` : ""}
+    <span class="map-ov-tail" aria-hidden="true"></span>`;
+}
 
 export function useKakaoMap({ board, items, activeDay, showToast }) {
   const [map, setMap] = useState(null);
   const [searchKeyword, setSearchKeyword] = useState("");
   const [searchResults, setSearchResults] = useState([]);
   const searchListRef = useRef(null);
-  const infoWindowRef = useRef(null);
+  const infoWindowRef = useRef(null); // 검색 결과용 카카오 기본 말풍선
+  const overlayRef = useRef(null); // 블록 핀용 커스텀 오버레이(디자인 직접 그림)
   // 검색 결과 핀 — 추적해 둬야 재검색·초기화 때 지도에서 걷을 수 있다
   const searchMarkersRef = useRef([]);
   // 검색 요청 세대 — SDK 콜백과 달리 HTTP 는 순서가 뒤집힐 수 있어, 늦게 도착한
@@ -68,6 +110,34 @@ export function useKakaoMap({ board, items, activeDay, showToast }) {
     return () => window.removeEventListener("resize", onResize);
   }, [map]);
 
+  // 블록 핀 말풍선 — 카카오 기본 InfoWindow(흰 박스·핀과 겹침) 대신 CustomOverlay 로
+  // 직접 그린다. 핀 위로 띄우고(yAnchor:1 + 카드 하단 여백) 크림 카드·닫기 버튼·꼬리를
+  // 우리가 스타일한다.
+  const openBlockOverlay = useCallback(
+    (position, item) => {
+      if (!map || !window.kakao?.maps) return;
+      infoWindowRef.current?.close(); // 검색 말풍선이 떠 있으면 닫는다
+      if (!overlayRef.current) {
+        overlayRef.current = new window.kakao.maps.CustomOverlay({
+          xAnchor: 0.5,
+          yAnchor: 1,
+          zIndex: 1000, // 마커·핀 위로 확실히 (마커 zIndex 5)
+          clickable: true,
+        });
+      }
+      const el = document.createElement("div");
+      el.className = "map-ov-card";
+      el.innerHTML = blockOverlayInner(item);
+      el.querySelector(".map-ov-x")?.addEventListener("click", () => {
+        overlayRef.current?.setMap(null);
+      });
+      overlayRef.current.setContent(el);
+      overlayRef.current.setPosition(position);
+      overlayRef.current.setMap(map);
+    },
+    [map],
+  );
+
   // ── 계획표 블록 → 지도 핀 (QA 배치3) ──
   // 활성 Day 의 좌표 있는 블록을 핀으로 찍는다. 핀은 편집을 따라 실시간으로
   // 갱신하되, 카메라 이동(범위 맞춤)은 "지도 준비·Day 전환 때 한 번"만 한다 —
@@ -103,22 +173,9 @@ export function useKakaoMap({ board, items, activeDay, showToast }) {
         image: planPinImage(idx + 1),
         zIndex: 5,
       });
-      // 핀 클릭 = 검색 결과 클릭과 같은 상세 말풍선
+      // 핀 클릭 = 커스텀 오버레이 말풍선
       window.kakao.maps.event.addListener(marker, "click", () => {
-        if (!infoWindowRef.current) {
-          infoWindowRef.current = new window.kakao.maps.InfoWindow({
-            zIndex: 1,
-            removable: true,
-          });
-        }
-        infoWindowRef.current.setContent(
-          `<div style="padding:12px;font-size:13px;color:#333;min-width:180px;">
-             <b style="display:block;margin-bottom:4px;color:#d97e3c;">${it.name}</b>
-             ${it.address ? `<span>${it.address}</span>` : ""}
-           </div>`,
-        );
-        infoWindowRef.current.setPosition(position);
-        infoWindowRef.current.open(map);
+        openBlockOverlay(position, it);
       });
       chainMarkersRef.current.push(marker);
     });
@@ -194,7 +251,7 @@ export function useKakaoMap({ board, items, activeDay, showToast }) {
       );
       map.setBounds(bounds);
     }
-  }, [map, board, activeDay, items]);
+  }, [map, board, activeDay, items, openBlockOverlay]);
 
   /**
    * 그 장소로 카메라를 옮기고 말풍선을 띄운다. 좌표가 없는 블록(교통·기타)은
@@ -213,22 +270,9 @@ export function useKakaoMap({ board, items, activeDay, showToast }) {
       if (map.getLevel() > 5) map.setLevel(5);
       map.panTo(position);
 
-      if (!infoWindowRef.current) {
-        infoWindowRef.current = new window.kakao.maps.InfoWindow({
-          zIndex: 1,
-          removable: true,
-        });
-      }
-      infoWindowRef.current.setContent(
-        `<div style="padding:12px;font-size:13px;color:#333;min-width:180px;">
-           <b style="display:block;margin-bottom:4px;color:#d97e3c;">${item.name ?? ""}</b>
-           ${item.address ? `<span>${item.address}</span>` : ""}
-         </div>`,
-      );
-      infoWindowRef.current.setPosition(position);
-      infoWindowRef.current.open(map);
+      openBlockOverlay(position, item);
     },
-    [map],
+    [map, openBlockOverlay],
   );
 
   // 장소 검색은 서버를 거친다 — 브라우저에서 카카오를 직접 부르지 않는다.
@@ -259,6 +303,7 @@ export function useKakaoMap({ board, items, activeDay, showToast }) {
     // 새 검색을 하면 결과 목록 스크롤을 맨 위로 올리고, 열려 있던 말풍선을 닫는다
     if (searchListRef.current) searchListRef.current.scrollTop = 0;
     infoWindowRef.current?.close();
+    overlayRef.current?.setMap(null);
 
     // 결과가 없으면 목록의 빈 상태(SearchPanel 의 search-empty)가 알려준다 —
     // 검색 결과 없음은 에러가 아니므로 토스트를 띄우지 않는다
@@ -297,6 +342,7 @@ export function useKakaoMap({ board, items, activeDay, showToast }) {
     searchMarkersRef.current.forEach((m) => m.setMap(null));
     searchMarkersRef.current = [];
     infoWindowRef.current?.close();
+    overlayRef.current?.setMap(null);
   };
 
   const handlePlaceClick = (place) => {
