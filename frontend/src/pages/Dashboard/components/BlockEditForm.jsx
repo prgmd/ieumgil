@@ -178,6 +178,13 @@ export function BlockEditForm({
     }));
   };
 
+  // 비용을 만원 단위로 환산해 입력칸 옆에 병렬 표기(예: 15000 → ≈ 1.5만원).
+  const budgetNum = Number(formData.budget);
+  const costManwon =
+    formData.budget !== "" && !Number.isNaN(budgetNum) && budgetNum > 0
+      ? `≈ ${(budgetNum / 10000).toLocaleString()}만원`
+      : "";
+
   return (
     <div className="bef">
       <div className="bef-head">
@@ -351,13 +358,16 @@ export function BlockEditForm({
       <div className="bef-row">
         <div className="bef-col">
           <label className="bef-label">비용 (직접 입력 · 원)</label>
-          <input
-            className="bef-input"
-            type="number"
-            name="budget"
-            value={formData.budget}
-            onChange={handleChange}
-          />
+          <div className="bef-cost-row">
+            <input
+              className="bef-input"
+              type="number"
+              name="budget"
+              value={formData.budget}
+              onChange={handleChange}
+            />
+            {costManwon && <span className="bef-cost-man">{costManwon}</span>}
+          </div>
         </div>
       </div>
 
