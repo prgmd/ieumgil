@@ -27,18 +27,39 @@ const STATUS_TEXT = {
   LOOKUP_FAILED: "조회에 실패했어요",
 };
 
+// 상세 경로(구간) — 한 줄에 다 이어붙이면 길어 읽기 힘들다. 기본은 접어 두고
+// 펼치면 구간마다 한 줄로(수단 · 출발→도착 · 소요) 보여준다.
 function LegsInline({ legs }) {
+  const [open, setOpen] = useState(false);
   if (!legs || legs.length === 0) return null;
   return (
     <div className="tcc-legs">
-      {legs.map((leg, i) => (
-        <span key={i} className="tcc-leg">
-          {leg.type === "WALK"
-            ? `도보 ${leg.durationMin}분`
-            : `${leg.lineName ? leg.lineName + " " : ""}${leg.from ?? "?"}→${leg.to ?? "?"} ${leg.durationMin}분`}
-          {i < legs.length - 1 && <span className="tcc-leg-sep">·</span>}
-        </span>
-      ))}
+      <button
+        type="button"
+        className="tcc-legs-toggle"
+        onClick={(e) => {
+          e.stopPropagation();
+          setOpen((v) => !v);
+        }}
+      >
+        상세 경로 {legs.length}단계 {open ? "▴" : "▾"}
+      </button>
+      {open && (
+        <ol className="tcc-legs-list">
+          {legs.map((leg, i) => (
+            <li key={i} className="tcc-leg-row">
+              <span className="tcc-leg-mode">
+                {leg.type === "WALK" ? "도보" : (leg.lineName ?? "이동")}
+              </span>
+              <span className="tcc-leg-path">
+                {leg.type === "WALK"
+                  ? `${leg.durationMin}분`
+                  : `${leg.from ?? "?"} → ${leg.to ?? "?"} · ${leg.durationMin}분`}
+              </span>
+            </li>
+          ))}
+        </ol>
+      )}
     </div>
   );
 }
@@ -56,7 +77,9 @@ function DepartureRow({ departure, selected, selectable, onSelect }) {
   return (
     <Tag
       type={selectable ? "button" : undefined}
-      className={`tcc-departure ${selected ? "on" : ""}`}
+      // 선택 강조는 고르는 중(select)일 때만. 읽기 모드는 확정된 편 하나만 보이므로
+      // 강조 없이 카드에 자연스럽게 녹아들게 한다.
+      className={`tcc-departure ${selected && selectable ? "on" : ""}`}
       // 카드 루트 전체가 후보 선택 클릭을 받으므로(아래 참조), 편 클릭이
       // 루트로 번져 "편 선택 → 후보 재선택으로 편 초기화" 되지 않게 끊는다
       onClick={

@@ -358,20 +358,23 @@
 .day-list::-webkit-scrollbar,
 .tl::-webkit-scrollbar,
 .pool::-webkit-scrollbar,
-.search-results::-webkit-scrollbar {
+.search-results::-webkit-scrollbar,
+.blk-modal-ov::-webkit-scrollbar {
   width: 6px;
 }
 .day-list::-webkit-scrollbar-thumb,
 .tl::-webkit-scrollbar-thumb,
 .pool::-webkit-scrollbar-thumb,
-.search-results::-webkit-scrollbar-thumb {
+.search-results::-webkit-scrollbar-thumb,
+.blk-modal-ov::-webkit-scrollbar-thumb {
   background: rgba(61, 43, 34, 0.22);
   border-radius: 3px;
 }
 .day-list::-webkit-scrollbar-track,
 .tl::-webkit-scrollbar-track,
 .pool::-webkit-scrollbar-track,
-.search-results::-webkit-scrollbar-track {
+.search-results::-webkit-scrollbar-track,
+.blk-modal-ov::-webkit-scrollbar-track {
   background: transparent;
 }
 .day-tab {
@@ -494,21 +497,13 @@
   align-items: center;
   gap: 16px;
 }
+/* 지금 보고 있는 Day — 스크롤에서 파생되므로 고정 제목이 아니라 위치 표시다 */
 .bd-head h2 {
   margin: 0;
   font-size: 24px;
 }
 .bd-head .date {
   color: var(--ink3, #786d63);
-}
-
-/* 날짜 + 안내 토글. 둘을 한 덩어리로 붙여 놓는다 — .bd-head 의 gap(16px)이
-   그대로 걸리면 안내 아이콘이 날짜가 아니라 옆 컨트롤에 딸린 것처럼 보인다.
-   (날짜는 표시 전용이다. 기간 변경은 상단바 제목 옆 ✎ 에서 한다.) */
-.date-wrap {
-  display: inline-flex;
-  align-items: center;
-  gap: 2px;
 }
 .bd-head .right {
   margin-left: auto;
@@ -570,7 +565,8 @@
   position: relative;
   /* 머리글 아래 간격은 .bd-head 의 margin-bottom 이 쥔다 — 여기서 또 주면
      다른 카드보다 본문이 한 단 아래에서 시작한다 */
-  border: 1px solid var(--border1, #e3dfd8);
+  /* 외곽 테두리는 두지 않는다 — 여행 전체가 이어진 하나의 축인데 상자로 감싸면
+     스크롤이 창 안에 갇힌 것처럼 읽힌다. 배경만으로 영역을 구분한다. */
   border-radius: 12px;
   background: var(--bg1, #fffdf8);
   padding: 10px;
@@ -586,7 +582,7 @@
   background: rgba(156, 74, 47, 0.02);
 }
 
-/* 눈금판과 블록판 — 여백(--tl-pad-*)만 JSX 가 넘기고 나머지는 여기서 */
+/* 눈금판·블록판 — 여백(--tl-pad-*)만 JSX 가 넘기고 나머지는 여기서 */
 .tl-bg,
 .tl-slots {
   position: absolute;
@@ -611,13 +607,15 @@
 }
 .tl-mark-time {
   position: absolute;
-  left: -64px;
+  /* 오전/오후 "시 30분" 표기라 길어 폭·왼쪽 여백을 넉넉히(오른쪽 끝이 눈금 옆). */
+  left: -96px;
   top: -10px;
-  width: 52px;
+  width: 88px;
   text-align: right;
   font-size: 12px;
   font-weight: 700;
   color: #c9b8a5;
+  white-space: nowrap;
 }
 .tl-mark-line {
   position: absolute;
@@ -626,6 +624,7 @@
   top: 0;
   border-top: 1px dashed rgba(61, 43, 34, 0.15);
 }
+
 
 /* 드래그 중 "여기에 놓기" 미리보기 — 색은 끌고 있는 블록의 카테고리(--dc/--cb) */
 /* 블록 좌상단의 "가장 최근 수정자" 아바타 — 테두리는 그 멤버의 커서 색.
@@ -739,49 +738,6 @@
   border-radius: 9px;
   white-space: nowrap;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.15);
-}
-
-/* 앞 Day 에서 자정을 넘어온 블록의 자리 표시 — 카드가 아니라 빗금 띠다.
-   .tl-bg 안에 있어 z-index 0 · pointer-events: none 을 그대로 물려받는다:
-   진짜 카드(.slot, z5)보다 뒤에 깔리고 드래그·클릭을 가로채지 않는다. */
-.tl-spill {
-  position: absolute;
-  top: 0;
-  left: -6px;
-  right: 10px;
-  border-radius: 12px;
-  border: 1px dashed var(--dc);
-  /* 빗금 — 카드의 채운 배경과 한눈에 구분되는 "여기 실물은 없다"는 표시 */
-  background: repeating-linear-gradient(
-    -45deg,
-    rgba(61, 43, 34, 0.05) 0,
-    rgba(61, 43, 34, 0.05) 6px,
-    transparent 6px,
-    transparent 12px
-  );
-  opacity: 0.9;
-  overflow: hidden;
-}
-.tl-spill-label {
-  position: absolute;
-  bottom: 6px;
-  left: 10px;
-  right: 10px;
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
-  font-size: 12px;
-  color: var(--ink3, #8a776a);
-}
-.tl-spill-name {
-  font-weight: 700;
-  color: var(--dc);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.tl-spill-time {
-  font-size: 11px;
 }
 
 .tl-ghost {
@@ -1325,17 +1281,25 @@
   top: 6px;
   right: 6px;
 }
-.pcard .blk-link {
+.pcard .blk-copy {
   top: 6px;
   right: 36px; /* 연필(.blk-op) 왼쪽 */
+}
+.pcard .blk-link {
+  top: 6px;
+  right: 66px; /* 복사(.blk-copy) 왼쪽 */
 }
 .card .blk-op {
   bottom: 6px;
   right: 8px;
 }
-.card .blk-link {
+.card .blk-copy {
   bottom: 6px;
   right: 38px; /* 연필(.blk-op) 왼쪽 */
+}
+.card .blk-link {
+  bottom: 6px;
+  right: 68px; /* 복사(.blk-copy) 왼쪽 */
 }
 .pcard:hover .blk-op,
 .card:hover .blk-op,
@@ -1365,12 +1329,11 @@
   color: #333;
   font-size: 14px;
   margin-bottom: 4px;
-  /* 이름은 최대 두 줄까지 — 넘치면 …. 예전엔 한 줄에서 바로 잘렸다. */
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  line-clamp: 2;
-  -webkit-box-orient: vertical;
+  /* 한 줄 고정 + …로 잘라 카드 높이를 통일한다(예전 2줄 클램프는 이름 길이에 따라
+     카드 크기가 달라졌다). 전체 이름은 hover title 로 본다. */
+  white-space: nowrap;
   overflow: hidden;
+  text-overflow: ellipsis;
 }
 .pcard .sub {
   color: var(--ink2);
@@ -1438,7 +1401,7 @@
 }
 .card .time {
   margin-left: auto;
-  font-family: monospace;
+  font-family: inherit;
   font-size: 14px;
   color: var(--dc);
   font-weight: bold;
@@ -1539,6 +1502,11 @@
   gap: 14px;
   height: min(78vh, 900px);
 }
+/* 예산 패널(첫 자식)은 컴팩트하게 — 위아래 패딩을 줄여 아낀 공간을 지도가 채운다. */
+.side-top > .panel:first-child {
+  padding-top: 12px;
+  padding-bottom: 12px;
+}
 .side-top > .panel:last-child {
   flex: 1;
   min-height: 0;
@@ -1578,6 +1546,88 @@
   height: 100%;
   background: #e9e5dc;
   border-radius: 12px;
+}
+/* 지도 핀 말풍선(CustomOverlay) — 분류·이름·메모·이동 링크. 핀 위로 띄우고
+   아래로 꼬리를 내려 말풍선처럼 보이게 한다. */
+.map-ov-card {
+  position: relative;
+  min-width: 190px;
+  max-width: 250px;
+  /* 핀과 겹치지 않게 위로 띄운다(오버레이 yAnchor:1 기준 카드 하단이 이만큼 위로) */
+  margin-bottom: 46px;
+  padding: 12px 14px;
+  background: #fffdf8;
+  border: 1px solid var(--border1, #e3dfd8);
+  border-radius: 14px;
+  box-shadow: 0 10px 28px rgba(61, 43, 34, 0.28);
+  font-family: inherit;
+  color: var(--ink1, #3d2b22);
+  text-align: left;
+}
+.map-ov-x {
+  position: absolute;
+  top: 6px;
+  right: 8px;
+  padding: 2px;
+  border: none;
+  background: none;
+  color: var(--ink3, #8a776a);
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+}
+.map-ov-x:hover {
+  color: var(--acc, #9c4a2f);
+}
+.map-ov-head {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin: 0 18px 6px 0;
+}
+.map-ov-cat {
+  flex-shrink: 0;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+}
+.map-ov-name {
+  font-size: 14px;
+  font-weight: 700;
+  color: #3d2b22;
+}
+.map-ov-desc {
+  margin: 0 0 8px;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--ink2, #6b5a4e);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.map-ov-link {
+  display: inline-block;
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--acc, #9c4a2f);
+  text-decoration: none;
+}
+.map-ov-link:hover {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+/* 아래를 향하는 말풍선 꼬리 — 카드 하단 중앙에서 핀 쪽으로 */
+.map-ov-tail {
+  position: absolute;
+  left: 50%;
+  bottom: -9px;
+  transform: translateX(-50%);
+  width: 0;
+  height: 0;
+  border-left: 9px solid transparent;
+  border-right: 9px solid transparent;
+  border-top: 10px solid #fffdf8;
+  filter: drop-shadow(0 3px 2px rgba(61, 43, 34, 0.12));
 }
 
 /* ── 지도 핀 직접 지정 (MAP-04) ───────────────────────────── */
@@ -1645,15 +1695,15 @@
 /* 아래 여백들은 한 칸씩 좁혔다 — 이 카드가 사이드 맨 위라 여기서 줄인 만큼
    지도·장소 검색이 통째로 위로 올라온다. 정보는 그대로 두고 간격만 줄인다. */
 .bud-total {
-  margin-bottom: 8px;
+  margin-bottom: 5px;
 }
 .bud-total-label {
-  font-size: 15px;
+  font-size: 14px;
   font-weight: bold;
   color: #666;
 }
 .bud-total-value {
-  font-size: 20px;
+  font-size: 18px;
   font-weight: 800;
   color: #3d2b22;
 }
@@ -1681,7 +1731,7 @@
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 6px;
+  margin-bottom: 4px;
   font-size: 13px;
   color: var(--ink3, #8a776a);
 }
@@ -2101,11 +2151,11 @@
 .bud-track {
   display: flex;
   width: 100%;
-  height: 14px;
+  height: 12px;
   background: #e6dec8;
   border-radius: 99px;
   overflow: hidden;
-  margin-bottom: 8px;
+  margin-bottom: 6px;
 }
 .bud-seg {
   height: 100%;
@@ -2134,9 +2184,9 @@
   display: flex;
   flex-wrap: wrap;
   gap: 4px 10px;
-  max-height: 40px;
+  max-height: 26px;
   overflow-y: auto;
-  margin-bottom: 8px;
+  margin-bottom: 6px;
 }
 .bud-legend-item {
   display: inline-flex;
@@ -2291,6 +2341,25 @@
 .rv-addr {
   font-size: 13px;
   color: #666;
+}
+/* 읽기 모드 — 블록 메모(detail) */
+.rv-memo {
+  margin-top: 4px;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--ink2, #6b5a4e);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+/* 읽기 모드 — 앞뒤 일정 사이 시간 겹침·빈 이동 경고 */
+.rv-warn {
+  margin: 2px 0 2px 92px;
+  padding: 5px 10px;
+  border-radius: 8px;
+  background: #fdf3e6;
+  border-left: 3px solid #e3b26a;
+  font-size: 12px;
+  color: #8a5a1e;
 }
 .rv-card-side {
   text-align: right;

@@ -24,7 +24,7 @@ export function VoiceBar({ voice, voiceOpen, setVoiceOpen, currentUser, boardMem
                   : "마이크 켜기"
             }
           >
-            {voice.listenOnly ? "🎧" : voice.micOn ? "🎤" : "🔇"}
+            {voice.listenOnly ? "🎧" : "🎤"}
           </button>
           {/* 전체 음소거 ↔ 전체 듣기 — 상대 소리만 끈다(내 목소리는 계속 나감) */}
           <button
@@ -102,7 +102,7 @@ export function VoiceBar({ voice, voiceOpen, setVoiceOpen, currentUser, boardMem
         title={voiceOpen ? "음성 컨트롤 접기" : "음성 컨트롤 펼치기"}
         aria-label={voiceOpen ? "음성 컨트롤 접기" : "음성 컨트롤 펼치기"}
       >
-        <span>{voice.listenOnly ? "🎧" : voice.micOn ? "🎤" : "🔇"}</span>
+        <span>{voice.listenOnly ? "🎧" : "🎤"}</span>
         {voice.joined && <span>{voice.connectedCount + 1}</span>}
         <span className="voice-tab-caret" aria-hidden="true">
           {voiceOpen ? "▼" : "▲"}

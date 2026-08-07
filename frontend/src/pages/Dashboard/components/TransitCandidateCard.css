@@ -91,12 +91,47 @@
 
 .tcc-legs {
   display: flex;
-  flex-wrap: wrap;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 3px;
   font-size: 11.5px;
   color: var(--ink1, #3d2b22);
 }
-.tcc-leg-sep {
-  margin: 0 4px;
+/* 상세 경로 펼치기/접기 토글 */
+.tcc-legs-toggle {
+  padding: 0;
+  border: none;
+  background: none;
+  font-family: inherit;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--acc, #9c4a2f);
+  cursor: pointer;
+}
+.tcc-legs-toggle:hover {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.tcc-legs-list {
+  margin: 2px 0 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.tcc-leg-row {
+  display: flex;
+  gap: 6px;
+  align-items: baseline;
+}
+.tcc-leg-mode {
+  flex-shrink: 0;
+  font-weight: 600;
+  color: var(--ink2, #6b5a4e);
+}
+.tcc-leg-path {
+  min-width: 0;
 }
 
 .tcc-departures {
@@ -141,6 +176,17 @@
   color: var(--ink1, #3d2b22);
   text-align: left;
   cursor: pointer;
+}
+/* 읽기 모드 — 확정된 편은 꽉 찬 선택 상자 대신 내용만큼 하는 알약 태그로.
+   어느 편인지 또렷하되 카드에 무겁지 않게 얹힌다. */
+.rv-transit .tcc-departure {
+  align-self: flex-start;
+  width: auto;
+  padding: 4px 12px;
+  border: none;
+  border-radius: 999px;
+  background: rgba(61, 43, 34, 0.06);
+  cursor: default;
 }
 .tcc-departure.on {
   border-color: var(--acc, #9c4a2f);

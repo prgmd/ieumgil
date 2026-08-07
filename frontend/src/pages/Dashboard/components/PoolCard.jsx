@@ -1,10 +1,15 @@
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { BlockEditBadge, BlockLinkBadge, BlockEditorBadge } from "./BlockBadges";
+import {
+  BlockEditBadge,
+  BlockLinkBadge,
+  BlockCopyBadge,
+  BlockEditorBadge,
+} from "./BlockBadges";
 import { CardBody } from "./CardBody";
 import { catOf } from "../dashboardHelpers";
 
-export function PoolCard({ id, item, onEditBlock, lockedBy, editor }) {
+export function PoolCard({ id, item, onEditBlock, onCopy, lockedBy, editor }) {
   const {
     attributes,
     listeners,
@@ -42,6 +47,10 @@ export function PoolCard({ id, item, onEditBlock, lockedBy, editor }) {
         lockedBy={lockedBy}
       />
       <BlockEditBadge onEdit={onEditBlock && (() => onEditBlock(id))} />
+      {/* 교통 블록은 구간에 묶여 복사 대상이 아니라 버튼을 숨긴다 */}
+      <BlockCopyBadge
+        onCopy={onCopy && item?.cat !== "trans" && (() => onCopy(id))}
+      />
       <BlockLinkBadge item={item} />
     </div>
   );

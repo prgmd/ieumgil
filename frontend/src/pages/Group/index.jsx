@@ -81,40 +81,42 @@ export function GroupPage() {
     <>
       <AppBar crumbs={[{ label: '개인 페이지', to: '/my' }, { label: group.name }]} />
       <div className="page">
+      {/* 머리글은 grid 밖으로 — 그래야 좌측 프로젝트 리스트와 우측 친구 패널이
+          같은 라인에서 시작한다(My 페이지와 동일 구조) */}
+      <div className="sec-head">
+        {/* 그룹명도 이 화면에서 바로 수정한다 — 상단바·대시보드 경로에 함께 반영된다 */}
+        {renaming ? (
+          <input
+            className="rename-input sec-rename"
+            value={nameDraft}
+            autoFocus
+            maxLength={20}
+            onChange={(e) => setNameDraft(e.target.value)}
+            onBlur={commitRename}
+            onKeyDown={onEnter((e) => e.currentTarget.blur())}
+          />
+        ) : (
+          <h2 className="sec-title">
+            {group.name}
+            <button
+              type="button"
+              className="sec-op"
+              title="그룹명 수정"
+              onClick={startRename}
+            >
+              ✎
+            </button>
+          </h2>
+        )}
+        <span>프로젝트를 눌러 대시보드로</span>
+        <span className="right">
+          <button className="btn btn-acc" onClick={() => setCreateProjectOpen(true)}>
+            ＋ 새 프로젝트
+          </button>
+        </span>
+      </div>
       <div className="group-grid">
         <div>
-          <div className="sec-head">
-            {/* 그룹명도 이 화면에서 바로 수정한다 — 상단바·대시보드 경로에 함께 반영된다 */}
-            {renaming ? (
-              <input
-                className="rename-input sec-rename"
-                value={nameDraft}
-                autoFocus
-                maxLength={20}
-                onChange={(e) => setNameDraft(e.target.value)}
-                onBlur={commitRename}
-                onKeyDown={onEnter((e) => e.currentTarget.blur())}
-              />
-            ) : (
-              <h2 className="sec-title">
-                {group.name}
-                <button
-                  type="button"
-                  className="sec-op"
-                  title="그룹명 수정"
-                  onClick={startRename}
-                >
-                  ✎
-                </button>
-              </h2>
-            )}
-            <span>프로젝트를 눌러 대시보드로</span>
-            <span className="right">
-              <button className="btn btn-acc" onClick={() => setCreateProjectOpen(true)}>
-                ＋ 새 프로젝트
-              </button>
-            </span>
-          </div>
           <div>
             {/* 노데이터 (QA 배치2) */}
             {projects.length === 0 && (

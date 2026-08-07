@@ -9,6 +9,20 @@ import { TransitCandidateCard } from "./TransitCandidateCard";
 import { Select } from "../../../global/components/Select";
 import "./BlockEditForm.css";
 
+// 금액 읽기용 — 1만원 이상은 만원 단위 소수 첫째자리까지("1.5만원"), 미만은 원 콤마.
+function moneyHint(n) {
+  if (!n || n <= 0) return "";
+  if (n >= 10000) {
+    const man = n / 10000;
+    const text =
+      man >= 100
+        ? Math.round(man).toLocaleString("ko-KR")
+        : man.toFixed(1).replace(/\.0$/, "");
+    return `${text}만원`;
+  }
+  return `${n.toLocaleString("ko-KR")}원`;
+}
+
 // 서버가 lat/lng 를 필수로 보는 장소성 카테고리 — 좌표 없이 보내면 BLOCK400 이다.
 // 교통·기타는 지도에 찍을 지점이 없을 수 있어 좌표를 요구하지 않는다.
 const PLACE_CATEGORIES = new Set(["SPOT", "FOOD", "STAY"]);
@@ -18,6 +32,10 @@ export function BlockEditForm({
   timeString,
   categoryLocked = false,
   lockNotice = "",
+  // 다른 멤버가 상세락을 잡고 있으면 true — 비고(detail) 입력을 잠근다.
+  detailLocked = false,
+  // 락이 풀려 내가 이어받을 때 맞출 서버 최신 비고(부모가 items 에서 라이브로 준다)
+  serverDetail = "",
   // 지도에서 찍어 온 위치 { lat, lng, address }. 부모가 지정할 때마다 새 객체를
   // 넘기고, 모달을 닫을 때 null 로 되돌린다.
   pinnedLocation = null,
@@ -86,6 +104,19 @@ export function BlockEditForm({
       // 역지오코딩이 빈손이면 주소는 그대로 두고 사용자가 직접 쓰게 한다 —
       // 좌표는 이미 잡혔으니 저장에는 문제가 없다
       ...(pinnedLocation.address ? { address: pinnedLocation.address } : null),
+    }));
+  }
+
+  // 락 상태 전이 동기화 — appliedPin 과 같은 "렌더 중 state 보정" 패턴이다.
+  //  · 잠김(→true): 배지 도착 전 창에 친 비고를 오픈 시점 값으로 되돌려 전송을 막는다.
+  //  · 풀림(→false): 내가 이어받는다 — 그새 다른 멤버가 저장한 최신 비고를 보여
+  //    준다(stale 화면 방지). 안 만진 비고의 재전송은 부모 저장 게이트가 막는다.
+  const [lockSynced, setLockSynced] = useState(detailLocked);
+  if (lockSynced !== detailLocked) {
+    setLockSynced(detailLocked);
+    setFormData((prev) => ({
+      ...prev,
+      detail: detailLocked ? baselineRef.current.detail : serverDetail,
     }));
   }
 
@@ -177,6 +208,14 @@ export function BlockEditForm({
       ...(name === "address" ? { lat: null, lng: null } : null),
     }));
   };
+
+  // 비용을 읽기 좋게 환산해 입력칸 '안'에 겹쳐 보여준다(예: 15000 → ≈ 1.5만원).
+  // 만원 밑은 의미가 작아 소수 첫째자리까지만.
+  const budgetNum = Number(formData.budget);
+  const costManwon =
+    formData.budget !== "" && !Number.isNaN(budgetNum) && budgetNum > 0
+      ? `≈ ${moneyHint(budgetNum)}`
+      : "";
 
   return (
     <div className="bef">
@@ -351,13 +390,16 @@ export function BlockEditForm({
       <div className="bef-row">
         <div className="bef-col">
           <label className="bef-label">비용 (직접 입력 · 원)</label>
-          <input
-            className="bef-input"
-            type="number"
-            name="budget"
-            value={formData.budget}
-            onChange={handleChange}
-          />
+          <div className="bef-cost-wrap">
+            <input
+              className="bef-input"
+              type="number"
+              name="budget"
+              value={formData.budget}
+              onChange={handleChange}
+            />
+            {costManwon && <span className="bef-cost-man">{costManwon}</span>}
+          </div>
         </div>
       </div>
 
@@ -365,13 +407,19 @@ export function BlockEditForm({
         <div className="bef-col">
           <label className="bef-label">비고 — 메모·세부사항</label>
           <textarea
-            className="bef-textarea"
+            className={`bef-textarea ${detailLocked ? "is-locked" : ""}`}
             name="detail"
             value={formData.detail}
             onChange={handleChange}
             maxLength={500}
             placeholder="상세 내용을 입력하세요"
+            readOnly={detailLocked}
           />
+          {detailLocked && (
+            <p className="bef-lock-hint">
+              🔒 다른 멤버가 편집 중이라 지금은 수정할 수 없어요
+            </p>
+          )}
         </div>
       </div>
 
