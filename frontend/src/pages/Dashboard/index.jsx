@@ -502,6 +502,20 @@ export function DashboardPage() {
   const timelineStart = 0;
   const timelineEnd = dayKeys.length * blockApi.MINUTES_PER_DAY;
 
+  // ── 렌더 창 = 보고 있는 Day 의 앞뒤 한 Day 씩 ────────────────
+  // 축은 여행 전체지만 DOM 에 올리는 것은 이 구간뿐이다. 30일 여행이면 눈금만
+  // 1441개인데 한 화면에 들어오는 건 Day 의 1/3 남짓이라, 나머지는 스크롤이
+  // 그리로 갈 때 만들면 된다.
+  // **컨테이너 높이는 줄이지 않는다**(아래 contentEnd) — scrollTop ↔ 절대 분
+  // 변환이 computeDropTarget 의 역산과 같은 식이어야 드롭이 산다. 높이를 창에
+  // 맞추면 스크롤바도 그 변환도 거짓말이 된다. 줄이는 것은 내용뿐이다.
+  // 앞뒤로 한 Day 씩 더 얹는 이유는 둘이다: 화면이 Day 경계에 걸쳐 있을 때,
+  // 그리고 활성 Day 가 rAF 한 프레임 늦게 따라올 때 빈 칸이 보이지 않게.
+  const windowStart =
+    Math.max(0, dayNoOf(activeDay) - 2) * blockApi.MINUTES_PER_DAY;
+  const windowEnd =
+    Math.min(dayKeys.length, dayNoOf(activeDay) + 1) * blockApi.MINUTES_PER_DAY;
+
   // 보드 편집 상태 — 초기값은 비워 두고, 스냅샷이 도착하면 아래 시드 effect 가 채운다.
   const [items, setItems] = useState({});
   const [pool, setPool] = useState([]);
@@ -2317,11 +2331,12 @@ export function DashboardPage() {
     }
   };
 
-  // 눈금은 여행 전체를 30분 간격으로 덮는다 — 하루가 49개, 3일이면 145개다.
-  // (긴 여행에서 보이는 범위만 그리는 것은 아직 하지 않았다.)
+  // 눈금은 30분 간격이되 여행 전체가 아니라 **렌더 창**만 덮는다 — 30일 여행의
+  // 1441개가 Day±1 의 145개로 준다. 좌표계는 여전히 여행 전체이고(top 식이 그대로
+  // (t - timelineStart) * PX 다), 창 밖 눈금은 스크롤이 그 Day 로 가면 생긴다.
   // 새벽 빈 공간은 아래 최초 스크롤·탭 점프가 첫 블록 위치로 건너뛴다.
   const timeSlots = [];
-  for (let t = timelineStart; t <= timelineEnd; t += 30) timeSlots.push(t);
+  for (let t = windowStart; t <= windowEnd; t += 30) timeSlots.push(t);
 
   // ── 활성 Day 파생 = 뷰포트를 가장 많이 차지하는 Day ─────────
   /**
@@ -2858,6 +2873,20 @@ export function DashboardPage() {
                       }}
                     >
                       {boardItems.map((data, index) => {
+                        // 창 밖 카드는 DOM 에 올리지 않는다. 목록(boardItems) 자체는
+                        // 자르지 않는다 — 아래 boundTop 과 "다음 항목", 그리고
+                        // 컨테이너 높이(contentEnd)가 모두 보드 전체에서의 앞뒤를
+                        // 봐야 맞는다. 목록을 자르면 창 첫 카드의 boundTop 이 축
+                        // 시작으로 풀려 창 밖 이웃을 뚫고 리사이즈된다. 자르는 것은
+                        // 렌더뿐이고 상태·저장·겹침 해소가 보는 것은 그대로다.
+                        // 걸치기만 해도 그린다(자정을 넘어 창으로 들어오는 블록).
+                        // 끌고 있는 카드만은 창 밖이어도 남긴다 — 먼 Day 로 끌어가는
+                        // 동안 언마운트되면 안 된다.
+                        const inWindow =
+                          data.endMins > windowStart &&
+                          data.startMins < windowEnd;
+                        if (!inWindow && data.id !== activeId) return null;
+
                         // 위 모서리를 끌어올릴 수 있는 한계 — 앞 카드의 끝이다.
                         // 목록이 보드 전체라 자정을 넘어온 블록도 그냥 앞 카드로
                         // 여기 들어 있다(예전엔 Day 로 걸러 목록 밖이라 띠의
@@ -2871,16 +2900,25 @@ export function DashboardPage() {
                             : timelineStart;
 
                         const nextData = boardItems[index + 1];
-                        const showGapBtn =
-                          nextData &&
-                          data.item.cat !== "trans" &&
-                          nextData.item.cat !== "trans";
 
                         // 💡 추가된 부분: 두 일정 사이의 빈 시간(gap) 계산
                         const gapMins = nextData
                           ? nextData.startMins - data.endMins
                           : 0;
                         const hasEnoughGap = gapMins >= 15; // 빈 시간이 15분 이상인지 확인
+                        // 버튼이 앉는 시각 — 시간이 비어 있으면 갭의 정중앙, 딱
+                        // 붙어 있으면 경계선이다. 다음 카드가 하루 넘게 떨어져
+                        // 있으면 이 자리가 창 밖(눈금도 없는 빈 구간)일 수 있어
+                        // 그때는 내지 않는다 — 스크롤이 그리로 가면 창이 따라가며
+                        // 다시 나온다.
+                        const gapChipMins = hasEnoughGap
+                          ? data.endMins + gapMins / 2
+                          : data.endMins;
+                        const showGapBtn =
+                          nextData &&
+                          data.item.cat !== "trans" &&
+                          nextData.item.cat !== "trans" &&
+                          gapChipMins <= windowEnd;
 
                         const isThisActiveTimelineCard =
                           activeId === data.id &&
@@ -2923,9 +2961,7 @@ export function DashboardPage() {
                                 className={`trans-slot ${hasEnoughGap ? "has-gap" : ""}`}
                                 style={{
                                   // 시간이 비어있으면 갭의 정중앙에, 딱 붙어있으면 경계선에
-                                  top: hasEnoughGap
-                                    ? `${(data.endMins + gapMins / 2 - timelineStart) * PX}px`
-                                    : `${(data.endMins - timelineStart) * PX}px`,
+                                  top: `${(gapChipMins - timelineStart) * PX}px`,
                                 }}
                               >
                                 <button
