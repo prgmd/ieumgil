@@ -250,6 +250,20 @@ const resolveOverlaps = (currentItems, dayChain, fixedId, dayBase) => {
 };
 
 /**
+ * 그 Day 의 체인에서 가장 이른 시작 오프셋(절대 분). 배치된 블록이 없으면 null.
+ * "그 Day 로 스크롤한다"가 어디로 가야 하는지를 정하는 값이다 — Day 00:00 은
+ * 텅 빈 새벽이라 첫 블록이 있으면 그쪽이 먼저다.
+ */
+const firstStartOf = (chains, items, dayKey) => {
+  let first = null;
+  for (const id of chains[dayKey] || []) {
+    const s = items[id]?.startMins;
+    if (s != null && (first == null || s < first)) first = s;
+  }
+  return first;
+};
+
+/**
  * 다이어리 책갈피 모양의 Day 탭.
  * 모양(리본 노치·보드 아래로 끼워지는 느낌)은 CSS(.day-tab)에서 만들고 여기서는
  * 책갈피에 적히는 세 줄 — Day 번호 / 날짜 / 블록 수 — 만 담는다.
@@ -468,10 +482,15 @@ export function DashboardPage() {
   // 누를 때만 마이크·스피커 아이콘이 나온다(보드를 가리지 않게).
   const [voiceOpen, setVoiceOpen] = useState(false);
   const [editProjectOpen, setEditProjectOpen] = useState(false); // 프로젝트 수정 모달
-  const [selectedDay, setActiveDay] = useState("d1");
+  // 활성 Day 는 이제 탭 클릭이 아니라 **스크롤 위치**가 정한다 — 축이 여행 전체
+  // 한 줄이고 모든 Day 의 카드가 동시에 살아 있으므로, "보고 있는 Day"는 뷰포트를
+  // 가장 많이 차지하는 Day 다(아래 dominantDayOf). 이름은 activeDay 그대로 둔다:
+  // 값의 출처만 바뀌었고 소비처(탭 하이라이트·presence·커서 dayNo·지도)는 그대로
+  // 이 값을 읽는다. 탭 클릭은 값을 바꾸는 대신 그 Day 로 스크롤한다(jumpToDay).
+  const [scrolledDay, setScrolledDay] = useState("d1");
   // 기간이 줄어 보고 있던 Day 가 사라지면 첫째 날을 본다 — 상태를 되돌리지 않고
   // 렌더 시점에 정하므로 "없는 Day 를 가리키는 한 프레임"이 생기지 않는다.
-  const activeDay = dayKeys.includes(selectedDay) ? selectedDay : dayKeys[0];
+  const activeDay = dayKeys.includes(scrolledDay) ? scrolledDay : dayKeys[0];
 
   // 타임라인 좌표계 = 블록의 startOffsetMinutes 와 같은 공간(Day 1 00:00 기준 절대 분).
   // 축은 여행 전체다 — 첫 Day 의 00:00 부터 마지막 Day 의 24:00 까지 한 줄로 잇는다.
@@ -772,7 +791,7 @@ export function DashboardPage() {
 
 
     // 다른 프로젝트에서 넘어온 경우 이전 프로젝트의 Day 탭이 남지 않게 한다
-    if (!serverChains[activeDay]) setActiveDay("d1");
+    if (!serverChains[activeDay]) setScrolledDay("d1");
 
     // 목표 예산은 스냅샷의 project 에 실려 오고, 수정은 PATCH /projects 로 저장된다
     // (백엔드 합의로 targetBudget 필드 추가 — useBudget 참조).
@@ -2414,26 +2433,102 @@ export function DashboardPage() {
 
   // 눈금은 여행 전체를 30분 간격으로 덮는다 — 하루가 49개, 3일이면 145개다.
   // (긴 여행에서 보이는 범위만 그리는 것은 아직 하지 않았다.)
-  // 새벽 빈 공간은 아래 자동 스크롤이 첫 블록(없으면 09:00) 위치로 건너뛴다.
+  // 새벽 빈 공간은 아래 최초 스크롤·탭 점프가 첫 블록 위치로 건너뛴다.
   const timeSlots = [];
   for (let t = timelineStart; t <= timelineEnd; t += 30) timeSlots.push(t);
 
-  // Day 를 열면 첫 블록(없으면 09:00)이 보이게 스크롤 — Day 당 한 번만.
-  // (chains/items 는 스크롤 계산 재료일 뿐, 바뀔 때마다 스크롤을 뺏으면 안 된다)
-  const lastScrollDayRef = useRef(null);
-  useEffect(() => {
-    if (status !== "loaded") return;
+  // ── 활성 Day 파생 = 뷰포트를 가장 많이 차지하는 Day ─────────
+  /**
+   * 뷰포트가 덮는 분 구간을 각 Day 의 [i*1440, (i+1)*1440) 과 교차시켜, 겹침이
+   * 가장 넓은 Day 키를 준다. 경계에 걸쳐 있으면 화면을 더 많이 차지한 쪽이 이긴다.
+   * 분 → px 환산은 보드 어디서나 (분 - timelineStart) * PX + TL_PAD_TOP 이다
+   * (computeDropTarget 의 역산과 같은 식이라 여백 항까지 맞춰 둔다).
+   */
+  const dominantDayOf = (scrollTop, viewportH) => {
+    const from = (scrollTop - TL_PAD_TOP) / PX + timelineStart;
+    const to = (scrollTop + viewportH - TL_PAD_TOP) / PX + timelineStart;
+    let best = dayKeys[0];
+    let bestOverlap = -1;
+    dayKeys.forEach((day, i) => {
+      const dayFrom = i * blockApi.MINUTES_PER_DAY;
+      const overlap =
+        Math.min(to, dayFrom + blockApi.MINUTES_PER_DAY) -
+        Math.max(from, dayFrom);
+      if (overlap > bestOverlap) {
+        bestOverlap = overlap;
+        best = day;
+      }
+    });
+    return best;
+  };
+
+  // 탭 점프가 도는 동안엔 클릭이 이긴다 — 부드러운 스크롤이 지나가는 중간 Day 들이
+  // 하이라이트를 흔들고 presence 를 헛되이 쏘는 것을 막는다. 목표 Day 에 닿으면
+  // (=스크롤이 거기 도착했다) 그 자리에서 풀고, 사용자가 도중에 직접 스크롤을
+  // 가로채 목표에 영영 안 닿는 경우는 타이머가 풀어 준다.
+  const jumpLockRef = useRef(null); // 점프 목표 dayKey
+  const jumpTimerRef = useRef(0);
+  const dominantRafRef = useRef(0);
+  const releaseJumpLock = () => {
+    jumpLockRef.current = null;
+    clearTimeout(jumpTimerRef.current);
+  };
+  const syncDominantDay = () => {
     const el = timelineDOMRef.current;
-    if (!el || lastScrollDayRef.current === activeDay) return;
-    lastScrollDayRef.current = activeDay;
-    // first 도 절대 오프셋 — 기본값은 이 Day 의 09:00(축이 여행 전체라 Day 베이스를 얹는다).
-    let first = dayBase + 540;
-    for (const id of chains[activeDay] || []) {
-      const s = items[id]?.startMins;
-      if (s != null && s < first) first = s;
+    if (!el) return;
+    const next = dominantDayOf(el.scrollTop, el.clientHeight);
+    if (jumpLockRef.current) {
+      if (next !== jumpLockRef.current) return;
+      releaseJumpLock();
     }
-    el.scrollTop = Math.max(0, (first - timelineStart - 15) * PX);
-  }, [status, activeDay, chains, items, dayBase, timelineStart]);
+    setScrolledDay((prev) => (prev === next ? prev : next));
+  };
+  // 스크롤 이벤트마다 재지 않는다 — 같은 핸들러가 드래그 중 computeDropTarget 까지
+  // 부르므로, Day 계산은 프레임당 한 번으로 묶는다.
+  const scheduleDominantDay = () => {
+    if (dominantRafRef.current) return;
+    dominantRafRef.current = requestAnimationFrame(() => {
+      dominantRafRef.current = 0;
+      syncDominantDay();
+    });
+  };
+
+  /**
+   * 그 Day 의 첫 블록으로 스크롤한다. 배치된 블록이 없으면 그 Day 의 00:00 으로.
+   * Day 별 스크롤 위치 기억은 없앴다 — 스크롤 컨테이너가 하나라 위치도 하나다.
+   */
+  const jumpToDay = (dayKey, behavior = "smooth") => {
+    const el = timelineDOMRef.current;
+    if (!el) return;
+    const base = (dayNoOf(dayKey) - 1) * blockApi.MINUTES_PER_DAY;
+    const target = firstStartOf(chains, items, dayKey) ?? base;
+    // 15분(=30px)만 앞에서 멈춘다 — 목표가 sticky Day 머리글에 가리지 않게
+    const top = Math.max(0, (target - timelineStart - 15) * PX);
+    setScrolledDay(dayKey);
+    // 이미 그 자리면 스크롤 이벤트가 안 난다 — 잠그면 풀어 줄 계기가 없어 그냥 둔다
+    if (Math.abs(el.scrollTop - top) < 1) return;
+    clearTimeout(jumpTimerRef.current);
+    jumpLockRef.current = dayKey;
+    jumpTimerRef.current = setTimeout(() => {
+      if (jumpLockRef.current === dayKey) jumpLockRef.current = null;
+    }, 1200);
+    el.scrollTo({ top, behavior });
+  };
+
+  // 보드를 열면 첫 Day 의 첫 블록이 보이게 한 번만 맞춘다(부드럽게 갈 이유가 없어
+  // 즉시). 그 뒤로 스크롤 위치를 건드리는 것은 탭 점프뿐이다 — chains/items 가
+  // 바뀔 때마다 스크롤을 뺏으면 편집 중에 화면이 튄다.
+  const didInitialScrollRef = useRef(false);
+  useEffect(() => {
+    if (status !== "loaded" || didInitialScrollRef.current) return;
+    const el = timelineDOMRef.current;
+    if (!el) return;
+    didInitialScrollRef.current = true;
+    const firstDay = dayKeys[0];
+    const base = (dayNoOf(firstDay) - 1) * blockApi.MINUTES_PER_DAY;
+    const target = firstStartOf(chains, items, firstDay) ?? base;
+    el.scrollTop = Math.max(0, (target - timelineStart - 15) * PX);
+  }, [status, dayKeys, chains, items, timelineStart]);
 
   // ── 라이브 커서 송신 (7단계) — 명세의 50ms 스로틀, 대시보드 전역 ──
   // 타임라인 위에서는 "가로 비율 + 절대 분 오프셋"(area:"tl") — 상대와 내 스크롤·시작
@@ -2726,8 +2821,10 @@ export function DashboardPage() {
                     label={`Day ${i + 1}`}
                     date={dayDate(project, i, "short")}
                     count={(chains[day] || []).length}
+                    // 탭은 이제 화면을 갈아끼우지 않는다 — 그 Day 로 스크롤할 뿐이고,
+                    // 하이라이트도 스크롤이 정한 Day(activeDay)를 따라간다.
                     isActive={activeDay === day}
-                    onClick={() => setActiveDay(day)}
+                    onClick={() => jumpToDay(day)}
                     viewers={dayViewersOf(day)}
                   />
                 ))}
@@ -2774,6 +2871,8 @@ export function DashboardPage() {
                     onScroll={() => {
                       if (activeDragRef.current)
                         setDragPreview(computeDropTarget(activeDragRef.current));
+                      // 활성 Day 는 여기서 나온다(프레임당 1회로 묶여 있다)
+                      scheduleDominantDay();
                     }}
                     // 그릴 길이(분 × PX)만 인라인으로 넘긴다 — 나머지 모양은 CSS(.tl)
                     style={{
@@ -3201,12 +3300,21 @@ export function DashboardPage() {
             const item = items[editingBlockId];
             const sMins = item.startMins;
             const eMins = sMins + item.dur;
-            const dayNum = activeDay.replace("d", "");
+            // Day 는 블록 자신의 오프셋에서 뽑는다 — 보고 있는 탭이 아니다.
+            // 소속 규칙은 어디서나 시작 시각 기준(floor(offset/1440)+1)이다:
+            // 서버 Block.dayNo(), 체인 소속, 챗봇 요약이 전부 그렇다.
+            const dayNum = blockApi.dayNoOfOffset(sMins);
+            // 자정을 넘는 블록은 "23:30 - 05:00" 이 하루 안에서 거꾸로 간 것처럼
+            // 읽힌다 — 끝이 며칠 뒤인지 붙여 준다.
+            const overDays =
+              sMins == null ? 0 : blockApi.dayNoOfOffset(eMins) - dayNum;
             // 후보(POOL) 블록은 시각이 없다(느슨한 블록) — 폼이 "시간 정보 없음"을 띄운다
             const timeStr =
               sMins == null
                 ? ""
-                : `Day ${dayNum} · ${fmtTime(sMins)} - ${fmtTime(eMins)}`;
+                : `Day ${dayNum} · ${fmtTime(sMins)} - ${fmtTime(eMins)}${
+                    overDays > 0 ? ` (+${overDays}일)` : ""
+                  }`;
 
             const lockedByName = lockBadgeOf(editingBlockId);
             return (
