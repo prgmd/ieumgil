@@ -1503,6 +1503,11 @@
   gap: 14px;
   height: min(78vh, 900px);
 }
+/* 예산 패널(첫 자식)은 컴팩트하게 — 위아래 패딩을 줄여 아낀 공간을 지도가 채운다. */
+.side-top > .panel:first-child {
+  padding-top: 12px;
+  padding-bottom: 12px;
+}
 .side-top > .panel:last-child {
   flex: 1;
   min-height: 0;
@@ -1691,15 +1696,15 @@
 /* 아래 여백들은 한 칸씩 좁혔다 — 이 카드가 사이드 맨 위라 여기서 줄인 만큼
    지도·장소 검색이 통째로 위로 올라온다. 정보는 그대로 두고 간격만 줄인다. */
 .bud-total {
-  margin-bottom: 8px;
+  margin-bottom: 5px;
 }
 .bud-total-label {
-  font-size: 15px;
+  font-size: 14px;
   font-weight: bold;
   color: #666;
 }
 .bud-total-value {
-  font-size: 20px;
+  font-size: 18px;
   font-weight: 800;
   color: #3d2b22;
 }
@@ -1727,7 +1732,7 @@
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 6px;
+  margin-bottom: 4px;
   font-size: 13px;
   color: var(--ink3, #8a776a);
 }
@@ -2147,11 +2152,11 @@
 .bud-track {
   display: flex;
   width: 100%;
-  height: 14px;
+  height: 12px;
   background: #e6dec8;
   border-radius: 99px;
   overflow: hidden;
-  margin-bottom: 8px;
+  margin-bottom: 6px;
 }
 .bud-seg {
   height: 100%;
@@ -2180,9 +2185,9 @@
   display: flex;
   flex-wrap: wrap;
   gap: 4px 10px;
-  max-height: 40px;
+  max-height: 26px;
   overflow-y: auto;
-  margin-bottom: 8px;
+  margin-bottom: 6px;
 }
 .bud-legend-item {
   display: inline-flex;
