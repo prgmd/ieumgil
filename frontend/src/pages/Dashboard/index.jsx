@@ -1828,41 +1828,67 @@ export function DashboardPage() {
     }
   }, [transportReselectPicker, items, board, showToast]);
 
-  // ── 편집 락 수명 = 편집 모달 수명 (6단계, advisory) ──
+  // ── 편집 락 수명 = 편집 모달 수명 (6단계) ──
   // 모달을 열면 획득 → 10초 주기 하트비트(TTL 30초) → 닫으면 해제.
-  // 락은 편집을 막지 않는다(서버도 안 막는다) — 다른 멤버 화면에 "편집 중" 배지를
-  // 띄우는 신호일 뿐이다. 획득 실패·요청 실패 모두 편집을 계속하게 둔다.
+  // 남이 잡고 있으면 비고(detail) 입력이 잠긴다(BlockEditForm 의 detailLocked).
+  // 이때 4초 주기로 재획득을 시도한다 — 소유자가 놓으면(모달 닫기·크래시 TTL 만료)
+  // 재오픈 없이 내가 이어받아 편집할 수 있다.
   useEffect(() => {
     if (!editingBlockId || !isServerBlock(editingBlockId)) return undefined;
     const blockId = editingBlockId;
     let heartbeatTimer = null;
+    let retryTimer = null;
     let acquired = false;
     let cancelled = false;
 
-    blockApi
-      .acquireDetailLock(blockId)
-      .then((r) => {
-        if (cancelled) {
-          // 응답 전에 모달이 닫혔다 — 방금 얻은 락을 바로 되돌려 준다
-          if (r?.acquired) blockApi.releaseDetailLock(blockId).catch(() => {});
-          return;
-        }
-        if (r?.acquired) {
-          acquired = true;
-          heartbeatTimer = setInterval(() => {
-            blockApi.heartbeatDetailLock(blockId).catch(() => {});
-          }, 10_000);
-        } else if (r?.holder != null) {
-          // 남이 잡고 있다 — 배지 상태에 직접 반영한다. 락이 내 구독 이전부터
-          // 있었으면 DETAIL_LOCK 메시지를 받은 적이 없어 이 경로가 유일한 단서다.
-          setDetailLocks((prev) => ({ ...prev, [blockId]: r.holder }));
-        }
-      })
-      .catch(() => {});
+    const promote = () => {
+      acquired = true;
+      if (retryTimer) {
+        clearInterval(retryTimer);
+        retryTimer = null;
+      }
+      // 내가 잡았으니 남의 배지 흔적을 걷는다(재획득이 TTL 만료로 성사된 경우
+      // 해제 메시지가 없어 옛 소유자 배지가 남아 있을 수 있다)
+      setDetailLocks((prev) => {
+        if (!(blockId in prev)) return prev;
+        const next = { ...prev };
+        delete next[blockId];
+        return next;
+      });
+      heartbeatTimer = setInterval(() => {
+        blockApi.heartbeatDetailLock(blockId).catch(() => {});
+      }, 10_000);
+    };
+
+    const attempt = () =>
+      blockApi
+        .acquireDetailLock(blockId)
+        .then((r) => {
+          if (cancelled) {
+            // 응답 전에 모달이 닫혔다 — 방금 얻은 락을 바로 되돌려 준다
+            if (r?.acquired) blockApi.releaseDetailLock(blockId).catch(() => {});
+            return;
+          }
+          if (r?.acquired) {
+            promote();
+          } else if (r?.holder != null) {
+            // 남이 잡고 있다 — 배지에 반영하고(구독 이전부터 있던 락이면 이 경로가
+            // 유일한 단서다) 놓일 때까지 재획득을 재시도한다
+            setDetailLocks((prev) => ({ ...prev, [blockId]: r.holder }));
+            if (!retryTimer) {
+              retryTimer = setInterval(() => {
+                attempt().catch(() => {});
+              }, 4_000);
+            }
+          }
+        });
+
+    attempt().catch(() => {});
 
     return () => {
       cancelled = true;
       if (heartbeatTimer) clearInterval(heartbeatTimer);
+      if (retryTimer) clearInterval(retryTimer);
       if (acquired) blockApi.releaseDetailLock(blockId).catch(() => {});
     };
   }, [editingBlockId]);
@@ -3460,13 +3486,14 @@ export function DashboardPage() {
                 // 서버가 category 필드 갱신을 지원하지 않는다(BLOCK400_2) —
                 // 카테고리는 생성 시에만 정할 수 있다
                 categoryLocked={!isTempId(editingBlockId)}
-                // advisory 락 — 편집을 막지 않고 동시 편집 사실만 알린다.
-                // 세부 내용(detail)은 마지막 저장이 통째로 이기므로 겹치면 유실될 수 있다.
+                // 상세락 — 남이 잡고 있으면 비고(detail) 입력을 잠근다.
+                // 다른 필드는 필드 단위 LWW라 그대로 편집 가능(막지 않는다).
                 lockNotice={
                   lockedByName
-                    ? `✎ ${lockedByName} 님도 이 블록을 편집하고 있어요`
+                    ? `✎ ${lockedByName} 님이 이 블록을 편집하고 있어요`
                     : ""
                 }
+                detailLocked={Boolean(lockedByName)}
                 pinnedLocation={pinnedLocation}
                 onRequestPinPick={handleRequestPinPick}
                 onSave={handleSaveBlock}

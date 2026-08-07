@@ -32,6 +32,8 @@ export function BlockEditForm({
   timeString,
   categoryLocked = false,
   lockNotice = "",
+  // 다른 멤버가 상세락을 잡고 있으면 true — 비고(detail) 입력을 잠근다.
+  detailLocked = false,
   // 지도에서 찍어 온 위치 { lat, lng, address }. 부모가 지정할 때마다 새 객체를
   // 넘기고, 모달을 닫을 때 null 로 되돌린다.
   pinnedLocation = null,
@@ -390,13 +392,19 @@ export function BlockEditForm({
         <div className="bef-col">
           <label className="bef-label">비고 — 메모·세부사항</label>
           <textarea
-            className="bef-textarea"
+            className={`bef-textarea ${detailLocked ? "is-locked" : ""}`}
             name="detail"
             value={formData.detail}
             onChange={handleChange}
             maxLength={500}
             placeholder="상세 내용을 입력하세요"
+            readOnly={detailLocked}
           />
+          {detailLocked && (
+            <p className="bef-lock-hint">
+              🔒 다른 멤버가 편집 중이라 지금은 수정할 수 없어요
+            </p>
+          )}
         </div>
       </div>
 
