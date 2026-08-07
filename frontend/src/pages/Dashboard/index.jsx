@@ -407,7 +407,9 @@ function TimelineCard({
         {!isThisResizing && (
           <>
             <BlockEditBadge onEdit={onEditBlock && (() => onEditBlock(id))} />
-            <BlockCopyBadge onCopy={onCopy && (() => onCopy(id))} />
+            <BlockCopyBadge
+              onCopy={onCopy && item?.cat !== "trans" && (() => onCopy(id))}
+            />
             <BlockLinkBadge item={item} />
           </>
         )}

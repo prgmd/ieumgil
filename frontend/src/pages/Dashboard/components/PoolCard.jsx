@@ -47,7 +47,10 @@ export function PoolCard({ id, item, onEditBlock, onCopy, lockedBy, editor }) {
         lockedBy={lockedBy}
       />
       <BlockEditBadge onEdit={onEditBlock && (() => onEditBlock(id))} />
-      <BlockCopyBadge onCopy={onCopy && (() => onCopy(id))} />
+      {/* 교통 블록은 구간에 묶여 복사 대상이 아니라 버튼을 숨긴다 */}
+      <BlockCopyBadge
+        onCopy={onCopy && item?.cat !== "trans" && (() => onCopy(id))}
+      />
       <BlockLinkBadge item={item} />
     </div>
   );
