@@ -9,6 +9,20 @@ import { TransitCandidateCard } from "./TransitCandidateCard";
 import { Select } from "../../../global/components/Select";
 import "./BlockEditForm.css";
 
+// 금액 읽기용 — 1만원 이상은 만원 단위 소수 첫째자리까지("1.5만원"), 미만은 원 콤마.
+function moneyHint(n) {
+  if (!n || n <= 0) return "";
+  if (n >= 10000) {
+    const man = n / 10000;
+    const text =
+      man >= 100
+        ? Math.round(man).toLocaleString("ko-KR")
+        : man.toFixed(1).replace(/\.0$/, "");
+    return `${text}만원`;
+  }
+  return `${n.toLocaleString("ko-KR")}원`;
+}
+
 // 서버가 lat/lng 를 필수로 보는 장소성 카테고리 — 좌표 없이 보내면 BLOCK400 이다.
 // 교통·기타는 지도에 찍을 지점이 없을 수 있어 좌표를 요구하지 않는다.
 const PLACE_CATEGORIES = new Set(["SPOT", "FOOD", "STAY"]);
@@ -178,11 +192,12 @@ export function BlockEditForm({
     }));
   };
 
-  // 비용을 만원 단위로 환산해 입력칸 옆에 병렬 표기(예: 15000 → ≈ 1.5만원).
+  // 비용을 읽기 좋게 환산해 입력칸 '안'에 겹쳐 보여준다(예: 15000 → ≈ 1.5만원).
+  // 만원 밑은 의미가 작아 소수 첫째자리까지만.
   const budgetNum = Number(formData.budget);
   const costManwon =
     formData.budget !== "" && !Number.isNaN(budgetNum) && budgetNum > 0
-      ? `≈ ${(budgetNum / 10000).toLocaleString()}만원`
+      ? `≈ ${moneyHint(budgetNum)}`
       : "";
 
   return (
@@ -358,7 +373,7 @@ export function BlockEditForm({
       <div className="bef-row">
         <div className="bef-col">
           <label className="bef-label">비용 (직접 입력 · 원)</label>
-          <div className="bef-cost-row">
+          <div className="bef-cost-wrap">
             <input
               className="bef-input"
               type="number"

@@ -15,6 +15,21 @@ function yymmdd(iso) {
   return iso ? iso.slice(2).replace(/-/g, '') : '';
 }
 
+// 금액 읽기용 — 1만원 이상은 만원 단위 소수 첫째자리까지("61.5만원"), 그 미만은
+// 원 콤마("5,000원"). 3자리 소수까지 나오던 표기를 정리한다.
+function moneyHint(n) {
+  if (!n || n <= 0) return '';
+  if (n >= 10000) {
+    const man = n / 10000;
+    const text =
+      man >= 100
+        ? Math.round(man).toLocaleString('ko-KR')
+        : man.toFixed(1).replace(/\.0$/, '');
+    return `${text}만원`;
+  }
+  return `${n.toLocaleString('ko-KR')}원`;
+}
+
 const initialForm = {
   name: '',
   destination: '',
@@ -149,11 +164,12 @@ export default function CreateProjectModal({ open, onClose, onCreate }) {
     }
   }
 
-  // 금액 입력을 만원 단위로 환산해 옆에 보여준다(예: 600000 → ≈ 60만원).
+  // 금액을 읽기 좋게 환산해 입력칸 안에 겹쳐 보여준다(예: 600000 → ≈ 60만원,
+  // 615000 → ≈ 61.5만원). 만원 밑 단위는 의미가 작아 소수 첫째자리까지만 쓴다.
   const budgetNum = Number(form.targetBudget);
   const budgetManwon =
     form.targetBudget !== '' && !Number.isNaN(budgetNum) && budgetNum > 0
-      ? `≈ ${(budgetNum / 10000).toLocaleString()}만원`
+      ? `≈ ${moneyHint(budgetNum)}`
       : '';
 
   return (
@@ -276,7 +292,7 @@ export default function CreateProjectModal({ open, onClose, onCreate }) {
       />
 
       <label>목표 예산 (총액, 원)</label>
-      <div className="bud-row">
+      <div className="bud-input-wrap">
         <input
           className="bud-amount"
           type="number"
