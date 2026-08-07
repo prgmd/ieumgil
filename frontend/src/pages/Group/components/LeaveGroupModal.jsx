@@ -35,7 +35,7 @@ export default function LeaveGroupModal({ open, onClose, group, onLeave }) {
   }
 
   return (
-    <Modal open={open} onClose={onClose}>
+    <Modal open={open} onClose={onClose} closeOnBackdrop>
       <h3>그룹을 나갈까요?</h3>
       <p className="s">
         작성한 블록·기록은 그룹 자산으로 유지되고, 작성자는 "탈퇴한 멤버"로

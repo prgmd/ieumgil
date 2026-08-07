@@ -33,6 +33,7 @@ import {
   dayNoOf,
   dayKeysOf,
   dayDate,
+  catKeyOf,
   spilloversInto,
   spilloverFloorOf,
   regroupChainsByOffset,
@@ -56,6 +57,7 @@ import {
 } from "@dnd-kit/sortable";
 import { generateKeyBetween } from "fractional-indexing";
 import { AppBar } from "../My/shared/ui/AppBar";
+import Modal from "../My/shared/ui/Modal";
 import EditProjectModal from "../Group/components/EditProjectModal";
 import { useDashboard } from "../../features/dashboard/hooks/useDashboard";
 import { useProjectOps } from "../../features/dashboard/realtime/useProjectOps";
@@ -63,6 +65,7 @@ import { useVoiceChat } from "../../features/dashboard/voice/useVoiceChat";
 import { createOpSequencer } from "../../features/dashboard/realtime/opSequencer";
 import * as blockApi from "../../features/dashboard/api/dashboardApi";
 import { getClientId } from "../../global/api/clientId";
+import { Select } from "../../global/components/Select";
 import { useGroupDetail } from "../../features/group/hooks/useGroupDetail";
 import { useProjects } from "../../features/group/hooks/useProjects";
 import { useIsMobile } from "../../global/hooks/useIsMobile";
@@ -71,6 +74,9 @@ import { useToastStore } from "../../global/stores/toastStore";
 import "./index.css";
 
 const PX = 2.0;
+// 블록 사이 "이동 추가" 갭 버튼의 최소 높이(px). 빈 시간이 이보다 좁아도 이만큼은
+// 확보해 경계선에 걸쳐 클릭할 수 있게 한다.
+const TRANS_GAP_MIN_PX = 16;
 // 드래그 스냅 1분 (QA ⓑ) — 10분 스냅이던 시절엔 분 단위 교통블록(실제 API 소요시간)
 // 과 완벽하게 맞물리지 않았다. 리사이즈는 원래 분 단위라 이제 둘이 같은 정밀도다.
 const SNAP = 1;
@@ -254,9 +260,13 @@ const resolveOverlaps = (currentItems, dayChain, fixedId, dayBase) => {
  * 모양(리본 노치·보드 아래로 끼워지는 느낌)은 CSS(.day-tab)에서 만들고 여기서는
  * 책갈피에 적히는 세 줄 — Day 번호 / 날짜 / 블록 수 — 만 담는다.
  */
-function DayTab({ label, date, count, isActive, onClick, viewers = [] }) {
+const DayTab = React.forwardRef(function DayTab(
+  { label, date, count, isActive, onClick, viewers = [] },
+  ref,
+) {
   return (
     <button
+      ref={ref}
       className={`day-tab ${isActive ? "on" : ""}`}
       onClick={onClick}
       aria-current={isActive ? "true" : undefined}
@@ -294,7 +304,7 @@ function DayTab({ label, date, count, isActive, onClick, viewers = [] }) {
       )}
     </button>
   );
-}
+});
 
 function TimelineCard({
   id,
@@ -474,6 +484,13 @@ export function DashboardPage() {
   const activeDay = dayKeys.includes(selectedDay) ? selectedDay : dayKeys[0];
   const activeDayIndex = Math.max(0, dayKeys.indexOf(activeDay));
 
+  // Day 목록 내부 스크롤 컨테이너 + 활성 탭. 여행이 길어 목록이 뷰포트를 넘으면
+  // 컨테이너 안에서만 스크롤되고, 활성 Day 가 목록 밖으로 나가면 자동으로 보이게 한다.
+  const activeTabRef = useRef(null);
+  useEffect(() => {
+    activeTabRef.current?.scrollIntoView({ block: "nearest" });
+  }, [activeDay]);
+
   // 타임라인 좌표계 = 블록의 startOffsetMinutes 와 같은 공간(Day 1 00:00 기준 절대 분).
   // 보이는 창만 활성 Day 의 00:00~24:00 으로 잘라 쓰므로, 렌더 식은 전부
   // (값 - timelineStart) * PX 꼴 그대로다 — 기준선만 Day 베이스로 옮긴다.
@@ -486,6 +503,20 @@ export function DashboardPage() {
   const [items, setItems] = useState({});
   const [chains, setChains] = useState({});
   const [pool, setPool] = useState([]);
+  // 후보 목록 필터 — 대분류(cat) + 제목 검색. 렌더만 거른다(원본 pool 은 그대로).
+  const [poolCat, setPoolCat] = useState("ALL");
+  const [poolQuery, setPoolQuery] = useState("");
+  const poolFilterActive = poolCat !== "ALL" || poolQuery.trim() !== "";
+  const visiblePool = useMemo(() => {
+    const q = poolQuery.trim().toLowerCase();
+    return pool.filter((id) => {
+      const it = items[id];
+      if (!it) return false;
+      if (poolCat !== "ALL" && catKeyOf(it) !== poolCat) return false;
+      if (q && !(it.name || "").toLowerCase().includes(q)) return false;
+      return true;
+    });
+  }, [pool, items, poolCat, poolQuery]);
 
   // ── 함께 있는 느낌 (6단계) ───────────────────────────
   // members: 스냅샷이 시드하고 MEMBER_JOINED/LEFT op 가 갱신한다 (상단바 아바타).
@@ -2692,17 +2723,20 @@ export function DashboardPage() {
               }
             >
               <div className="daycol">
-                {dayKeys.map((day, i) => (
-                  <DayTab
-                    key={day}
-                    label={`Day ${i + 1}`}
-                    date={dayDate(project, i, "short")}
-                    count={(chains[day] || []).length}
-                    isActive={activeDay === day}
-                    onClick={() => setActiveDay(day)}
-                    viewers={dayViewersOf(day)}
-                  />
-                ))}
+                <div className="day-list">
+                  {dayKeys.map((day, i) => (
+                    <DayTab
+                      key={day}
+                      ref={activeDay === day ? activeTabRef : null}
+                      label={`Day ${i + 1}`}
+                      date={dayDate(project, i, "short")}
+                      count={(chains[day] || []).length}
+                      isActive={activeDay === day}
+                      onClick={() => setActiveDay(day)}
+                      viewers={dayViewersOf(day)}
+                    />
+                  ))}
+                </div>
               </div>
 
               <div className="main">
@@ -2852,11 +2886,17 @@ export function DashboardPage() {
                           data.item.cat !== "trans" &&
                           nextData.item.cat !== "trans";
 
-                        // 💡 추가된 부분: 두 일정 사이의 빈 시간(gap) 계산
+                        // 두 일정 사이의 빈 시간(gap). 이 빈 구간 자체가 "이동 추가"
+                        // 버튼이 된다 — 높이 = gap 크기라 좁아져도 오른쪽으로 밀리지
+                        // 않고, 너무 좁으면 최소 높이만큼 경계선에 걸쳐 클릭 여지를 남긴다.
                         const gapMins = nextData
                           ? nextData.startMins - data.endMins
                           : 0;
-                        const hasEnoughGap = gapMins >= 15; // 빈 시간이 15분 이상인지 확인
+                        const gapPx = gapMins * PX;
+                        const gapZoneH = Math.max(gapPx, TRANS_GAP_MIN_PX);
+                        const gapZoneTop =
+                          (data.endMins - timelineStart) * PX -
+                          (gapZoneH - gapPx) / 2;
 
                         const isThisActiveTimelineCard =
                           activeId === data.id &&
@@ -2891,39 +2931,32 @@ export function DashboardPage() {
                               />
                             )}
 
-                            {/* 💡 업데이트된 부분: 블록과 겹치지 않는 스마트 교통 아이콘.
-                                hover 색 반전은 CSS(.trans-chip:hover)가 한다 — 예전에는
-                                onMouseEnter 에서 스타일을 직접 바꿨다. */}
+                            {/* 두 블록 사이 빈 시간 = "이동 추가" 존. 갭 전체를 은은한
+                                빗금 버튼으로 채우고, hover 하면 빗금이 진해지며 라벨이
+                                뜬다. 높이가 gap 크기라 좁아져도 밀리지 않는다. */}
                             {showGapBtn && !isThisActiveTimelineCard && (
-                              <div
-                                className={`trans-slot ${hasEnoughGap ? "has-gap" : ""}`}
+                              <button
+                                type="button"
+                                className="trans-gap"
+                                title="이동 추가"
                                 style={{
-                                  // 시간이 비어있으면 갭의 정중앙에, 딱 붙어있으면 경계선에
-                                  top: hasEnoughGap
-                                    ? `${(data.endMins + gapMins / 2 - timelineStart) * PX}px`
-                                    : `${(data.endMins - timelineStart) * PX}px`,
+                                  top: `${gapZoneTop}px`,
+                                  height: `${gapZoneH}px`,
+                                }}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleAddSingleTransport(
+                                    activeDay,
+                                    data.id,
+                                    nextData.id,
+                                  );
                                 }}
                               >
-                                <button
-                                  type="button"
-                                  className="trans-chip"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    handleAddSingleTransport(
-                                      activeDay,
-                                      data.id,
-                                      nextData.id,
-                                    );
-                                  }}
-                                >
-                                  <span className="trans-chip-ico">🚗</span>
-                                  <span className="trans-chip-label">
-                                    {hasEnoughGap
-                                      ? "이동 시간 계산"
-                                      : "이동 추가"}
-                                  </span>
-                                </button>
-                              </div>
+                                <span className="trans-gap-label">
+                                  <span className="trans-gap-ico">🚗</span>
+                                  이동 추가
+                                </span>
+                              </button>
                             )}
                           </React.Fragment>
                         );
@@ -2958,8 +2991,13 @@ export function DashboardPage() {
                   ref={setPoolRef}
                 >
                   <div className="pool-head">
-                    <div>
-                      <b>후보 목록</b> <span className="n">{pool.length}</span>
+                    <div className="pool-head-title">
+                      <b>후보 목록</b>{" "}
+                      <span className="n">
+                        {poolFilterActive
+                          ? `${visiblePool.length}/${pool.length}`
+                          : pool.length}
+                      </span>
                       {/* 사용 안내는 ⓘ 커스텀 툴팁으로 (QA 배치2) — 호버 즉시,
                           앱 디자인에 맞는 말풍선. 문구는 data-tip 이 CSS content 로 그린다 */}
                       <span
@@ -2971,6 +3009,43 @@ export function DashboardPage() {
                         ⓘ
                       </span>
                     </div>
+                    {/* 대분류 필터 + 제목 검색 — 헤더에 함께 둔다. 렌더만 거른다 */}
+                    <div className="pool-tools">
+                      <div className="pool-filter-cat">
+                        <Select
+                          value={poolCat}
+                          onChange={setPoolCat}
+                          options={[
+                            { value: "ALL", label: "전체" },
+                            { value: "spot", label: "명소/활동" },
+                            { value: "food", label: "식당" },
+                            { value: "stay", label: "숙소" },
+                            { value: "trans", label: "교통" },
+                            { value: "etc", label: "기타" },
+                          ]}
+                        />
+                      </div>
+                      <input
+                        className="pool-search"
+                        type="text"
+                        placeholder="제목 검색"
+                        value={poolQuery}
+                        onChange={(e) => setPoolQuery(e.target.value)}
+                      />
+                      {poolFilterActive && (
+                        <button
+                          type="button"
+                          className="pool-filter-clear"
+                          onClick={() => {
+                            setPoolCat("ALL");
+                            setPoolQuery("");
+                          }}
+                          aria-label="필터 초기화"
+                        >
+                          ✕
+                        </button>
+                      )}
+                    </div>
                     <button
                       className="pool-add-btn"
                       onClick={handleCreateCustomBlock}
@@ -2979,8 +3054,11 @@ export function DashboardPage() {
                     </button>
                   </div>
                   <div className="pool">
-                    <SortableContext items={pool} strategy={rectSortingStrategy}>
-                      {pool.map((id) => (
+                    <SortableContext
+                      items={visiblePool}
+                      strategy={rectSortingStrategy}
+                    >
+                      {visiblePool.map((id) => (
                         <PoolCard
                           key={id}
                           id={id}
@@ -3011,11 +3089,22 @@ export function DashboardPage() {
                         </span>
                       </div>
                     )}
+                    {/* 블록은 있는데 필터·검색에 걸리는 게 없을 때 */}
+                    {pool.length > 0 &&
+                      visiblePool.length === 0 &&
+                      dragPreview?.region !== "pool" && (
+                        <div className="pool-noresult">
+                          조건에 맞는 블록이 없어요.
+                        </div>
+                      )}
                   </div>
                 </div>
               </div>
 
               <div className="side">
+                {/* 예산+지도를 한 묶음으로 — 높이를 계획표에 맞추고 지도가 남는
+                    공간을 채워, 두 카드의 아랫줄이 계획표 아랫줄과 맞는다. */}
+                <div className="side-top">
                 <BudgetPanel
                   totalBudget={totalBudget}
                   perPersonBudget={perPersonBudget}
@@ -3036,6 +3125,7 @@ export function DashboardPage() {
                   pinPickMode={pinPickMode}
                   onCancelPinPick={cancelPinPick}
                 />
+                </div>
 
                 <SearchPanel
                   searchKeyword={searchKeyword}
@@ -3127,9 +3217,19 @@ export function DashboardPage() {
       </div>
 
       {editingBlockId && items[editingBlockId] && (
-        // 지도에서 위치를 찍는 동안엔 감추기만 한다(언마운트 아님) — 조건에서
-        // 빼 버리면 폼 state 가 통째로 날아가 지정하러 가기 전 입력이 사라진다
-        <div className={`blk-modal-ov${pinPickMode ? " is-hidden" : ""}`}>
+        // 공유 Modal 로 열기·Esc·백드롭 정책을 통일하되, 겉모습은 기존 blk-modal-ov
+        // 를 그대로 쓴다(bodyless — .md 박스 안 두름). 지도에서 위치를 찍는 동안엔
+        // hidden 으로 감추기만 한다(언마운트 아님) — 언마운트하면 폼 state 가 통째로
+        // 날아가 지정하러 가기 전 입력이 사라진다. 그 동안엔 Esc 도 끈다.
+        // 큰 폼이라 백드롭 클릭으론 닫지 않는다(closeOnBackdrop 기본 false).
+        <Modal
+          open
+          onClose={handleCancelEdit}
+          overlayClassName="blk-modal-ov"
+          hidden={pinPickMode}
+          bodyless
+          closeOnEsc={!pinPickMode}
+        >
           {(() => {
             const item = items[editingBlockId];
             const sMins = item.startMins;
@@ -3172,7 +3272,7 @@ export function DashboardPage() {
               />
             );
           })()}
-        </div>
+        </Modal>
       )}
 
       <TransitPickerModals
