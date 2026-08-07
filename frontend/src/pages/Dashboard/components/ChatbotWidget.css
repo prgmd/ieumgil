@@ -43,6 +43,24 @@
   border-radius: 16px;
   background: #fbf8f1;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
+  /* 열릴 때 FAB(우하단) 쪽에서 살짝 떠오르며 나타난다 */
+  transform-origin: bottom right;
+  animation: cbw-open 0.22s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+@keyframes cbw-open {
+  from {
+    opacity: 0;
+    transform: translateY(12px) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .cbw {
+    animation: none;
+  }
 }
 
 .cbw-head {
@@ -101,10 +119,18 @@
   padding: 20px 16px;
   background: #fbf8f1;
 }
-/* 이음이가 하는 말 */
+/* 메시지 한 덩어리(말풍선 + 후보 카드) — flex 컬럼이라 안의 말풍선 align-self 가
+   살아난다. 예전엔 플레인 div 라 말풍선이 전부 왼쪽에 붙었다. */
+.cbw-row {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+/* 이음이가 하는 말 — 왼쪽 정렬 말풍선(좌상단 노치). */
 .cbw-bubble {
   align-self: flex-start;
   max-width: 90%;
+  box-sizing: border-box;
   padding: 14px;
   border: 1px solid #eee;
   border-radius: 0 12px 12px 12px;
@@ -181,6 +207,7 @@
 }
 
 /* 내가 보낸 말 — 오른쪽 정렬 + 테마색 */
+/* 내가 보낸 말 — 오른쪽 정렬 말풍선(우상단 노치) + 테마색 */
 .cbw-bubble.is-user {
   align-self: flex-end;
   border-radius: 12px 0 12px 12px;

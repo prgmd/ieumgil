@@ -319,7 +319,7 @@ export function ChatbotWidget({ projectId, getMapBounds }) {
             )}
 
             {messages.map((m) => (
-              <div key={m.id}>
+              <div key={m.id} className="cbw-row">
                 <div
                   className={`cbw-bubble ${m.role === "user" ? "is-user" : ""} ${m.role === "error" ? "is-error" : ""}`}
                 >
