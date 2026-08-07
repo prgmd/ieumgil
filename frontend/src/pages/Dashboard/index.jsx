@@ -475,12 +475,15 @@ export function DashboardPage() {
   const activeDayIndex = Math.max(0, dayKeys.indexOf(activeDay));
 
   // 타임라인 좌표계 = 블록의 startOffsetMinutes 와 같은 공간(Day 1 00:00 기준 절대 분).
-  // 보이는 창만 활성 Day 의 00:00~24:00 으로 잘라 쓰므로, 렌더 식은 전부
-  // (값 - timelineStart) * PX 꼴 그대로다 — 기준선만 Day 베이스로 옮긴다.
+  // 축은 여행 전체다 — 첫 Day 의 00:00 부터 마지막 Day 의 24:00 까지 한 줄로 잇는다.
+  // 렌더 식은 전부 (값 - timelineStart) * PX 꼴 그대로 두고 기준선만 0 으로 내렸다.
   // dayKeysOf 는 항상 Day 를 하나 이상 주므로 activeDay 는 언제나 "dN" 이다.
+  // dayBase/dayEnd 는 좌표가 아니라 "활성 Day 의 창"이다 — 겹침 해소(resolveOverlaps)와
+  // 자정을 넘어온 블록의 띠(.tl-spill)처럼 아직 Day 단위인 것들만 쓴다.
   const dayBase = (dayNoOf(activeDay) - 1) * blockApi.MINUTES_PER_DAY;
-  const timelineStart = dayBase;
-  const timelineEnd = dayBase + blockApi.MINUTES_PER_DAY;
+  const dayEnd = dayBase + blockApi.MINUTES_PER_DAY;
+  const timelineStart = 0;
+  const timelineEnd = dayKeys.length * blockApi.MINUTES_PER_DAY;
 
   // 보드 편집 상태 — 초기값은 비워 두고, 스냅샷이 도착하면 아래 시드 effect 가 채운다.
   const [items, setItems] = useState({});
@@ -2082,12 +2085,13 @@ export function DashboardPage() {
 
         const relativeY =
           topY - tlRect.top + (timelineDOMRef.current?.scrollTop || 0);
-        // 픽셀은 창(활성 Day) 기준이라 절대 오프셋으로 되돌린다 — timelineStart = 이 Day 의 00:00
+        // 픽셀은 축 기준이라 절대 오프셋으로 되돌린다 — timelineStart 는 여행 첫 Day 의 00:00
         const calcMins =
           timelineStart + Math.round((relativeY - TL_PAD_TOP) / PX);
         let dropMins = Math.round(calcMins / SNAP) * SNAP;
         const dur = items[activeIdLocal]?.dur || 60; // 기본 소요시간 60분
-        // 시작은 보고 있는 Day 안에 머문다. 끝은 자정을 넘겨도 막지 않는다 —
+        // 시작은 여행 기간 안에 머문다 — 축이 전체 기간이라 Day 자정 벽은 없고,
+        // 마지막 Day 의 24:00 만이 상한이다. 끝은 그 너머로 넘쳐도 막지 않는다 —
         // 절대 오프셋에선 넘친 꼬리가 그대로 다음 Day 위에 놓인다.
         //
         // 바닥은 00:00 이 아니라 "자정을 넘어온 블록의 끝"이다(화면의 .tl-spill
@@ -2389,8 +2393,8 @@ export function DashboardPage() {
     }
   };
 
-  // 타임라인은 활성 Day 의 00:00~24:00 전체를 덮는다 — "시작 시각" 개념을 없앴다.
-  // (timelineStart/timelineEnd 는 위 dayBase 에서 잡는다.)
+  // 눈금은 여행 전체를 30분 간격으로 덮는다 — 하루가 49개, 3일이면 145개다.
+  // (긴 여행에서 보이는 범위만 그리는 것은 아직 하지 않았다.)
   // 새벽 빈 공간은 아래 자동 스크롤이 첫 블록(없으면 09:00) 위치로 건너뛴다.
   const timeSlots = [];
   for (let t = timelineStart; t <= timelineEnd; t += 30) timeSlots.push(t);
@@ -2403,18 +2407,18 @@ export function DashboardPage() {
     const el = timelineDOMRef.current;
     if (!el || lastScrollDayRef.current === activeDay) return;
     lastScrollDayRef.current = activeDay;
-    // first 도 절대 오프셋 — 기본값은 이 Day 의 09:00. 스크롤은 창 기준이라 베이스를 뺀다.
-    let first = timelineStart + 540;
+    // first 도 절대 오프셋 — 기본값은 이 Day 의 09:00(축이 여행 전체라 Day 베이스를 얹는다).
+    let first = dayBase + 540;
     for (const id of chains[activeDay] || []) {
       const s = items[id]?.startMins;
       if (s != null && s < first) first = s;
     }
     el.scrollTop = Math.max(0, (first - timelineStart - 15) * PX);
-  }, [status, activeDay, chains, items, timelineStart]);
+  }, [status, activeDay, chains, items, dayBase, timelineStart]);
 
   // ── 라이브 커서 송신 (7단계) — 명세의 50ms 스로틀, 대시보드 전역 ──
   // 타임라인 위에서는 "가로 비율 + 절대 분 오프셋"(area:"tl") — 상대와 내 스크롤·시작
-  // 시각이 달라도 같은 시간 위치에 그려진다(timelineStart 를 더해 Day 베이스를 싣는다). 그 밖(후보·사이드 등)에서는 페이지
+  // 시각이 달라도 같은 시간 위치에 그려진다(축 기준선 timelineStart 를 더해 절대 분으로 만든다). 그 밖(후보·사이드 등)에서는 페이지
   // 비율 좌표(area:"page") — 창 크기가 달라도 대략 같은 자리를 가리킨다.
   const lastCursorSendRef = useRef(0);
   const handlePageCursorMove = (e) => {
@@ -2770,11 +2774,15 @@ export function DashboardPage() {
                           className="tl-mark"
                           style={{ top: `${(t - timelineStart) * PX}px` }}
                         >
-                          {/* 마지막 눈금은 다음 Day 의 00:00 과 같은 값이라 fmtTime 이
-                              "00:00" 을 준다 — 자의 끝은 24:00 으로 읽혀야 한다.
+                          {/* Day 경계 눈금은 값이 다음 Day 의 00:00 과 같아 fmtTime 이
+                              "00:00" 을 준다 — 하루의 끝은 24:00 으로 읽혀야 한다.
+                              맨 위(t === 0)만 예외다. 여행의 시작이지 어느 하루의
+                              끝이 아니라 00:00 그대로 둔다.
                               경계가 있는 건 눈금뿐이라 fmtTime 이 아니라 여기서 다룬다. */}
                           <span className="tl-mark-time">
-                            {t === timelineEnd ? "24:00" : fmtTime(t)}
+                            {t > 0 && t % blockApi.MINUTES_PER_DAY === 0
+                              ? "24:00"
+                              : fmtTime(t)}
                           </span>
                           <div className="tl-mark-line" />
                         </div>
@@ -2784,14 +2792,17 @@ export function DashboardPage() {
                           클릭·드래그·리사이즈 모두 없다(.tl-bg 가 pointer-events:none) —
                           실물은 앞 Day 에 있고 여기 있는 건 그 그림자일 뿐이다.
                           하루를 통째로 덮는 블록(24시간 초과)이면 자정에서 잘라
-                          이 Day 를 가득 채우고, 라벨이 "온종일 이어짐"으로 바뀐다. */}
+                          이 Day 를 가득 채우고, 라벨이 "온종일 이어짐"으로 바뀐다.
+                          띠는 Day 창의 물건이라 축(여행 전체)이 아니라 dayBase~dayEnd
+                          로 잡는다 — 그래서 top 을 CSS 의 0 대신 여기서 직접 준다. */}
                       {spilloverBands.map((band) => (
                         <div
                           key={`spill-${band.id}`}
                           className="tl-spill"
                           style={{
                             "--dc": catOf(band.item).hex,
-                            height: `${(Math.min(band.endMins, timelineEnd) - timelineStart) * PX}px`,
+                            top: `${(dayBase - timelineStart) * PX}px`,
+                            height: `${(Math.min(band.endMins, dayEnd) - dayBase) * PX}px`,
                           }}
                         >
                           <span className="tl-spill-label">
@@ -2799,7 +2810,7 @@ export function DashboardPage() {
                               {band.item.name}
                             </span>
                             <span className="tl-spill-time">
-                              {band.endMins >= timelineEnd
+                              {band.endMins >= dayEnd
                                 ? `Day ${blockApi.dayNoOfOffset(band.item.startMins)} 에서 이어짐 · 온종일`
                                 : `Day ${blockApi.dayNoOfOffset(band.item.startMins)} 에서 이어짐 · ${fmtTime(band.endMins)} 까지`}
                             </span>
