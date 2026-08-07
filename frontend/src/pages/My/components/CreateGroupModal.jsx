@@ -62,7 +62,7 @@ export default function CreateGroupModal({ open, onClose, onCreate }) {
   }
 
   return (
-    <Modal open={open} onClose={handleClose} dismissible={step === 'form'}>
+    <Modal open={open} onClose={handleClose} closeOnBackdrop={step !== 'form'}>
       {step === 'form' && (
         <>
           <h3>새 그룹 만들기</h3>

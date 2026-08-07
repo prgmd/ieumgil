@@ -18,7 +18,7 @@ export default function ConfirmModal({
   submitting = false,
 }) {
   return (
-    <Modal open={open} onClose={onClose}>
+    <Modal open={open} onClose={onClose} closeOnBackdrop>
       <h3>{title}</h3>
       {description && <p className="s">{description}</p>}
       {note && <div className="note">{note}</div>}

@@ -7,6 +7,7 @@
 //   - 재선택: 이미 만든 교통 블록의 수단을 바꾼다 → transportMeta 교체
 //
 // state·확정 콜백은 전부 부모(index.jsx)가 소유한다 — 이 컴포넌트는 그리기만 한다.
+import Modal from "../../My/shared/ui/Modal";
 import { TransitCandidateCard } from "./TransitCandidateCard";
 
 export function TransitPickerModals({
@@ -29,11 +30,14 @@ export function TransitPickerModals({
       {/* 이동수단 자동 생성(통합) — Day 전 구간의 후보를 한 모달에서 고르고
           "적용"하면 일괄 생성된다 (confirmBulkTransit) */}
       {bulkTransitPicker && (
-        <div className="blk-modal-ov" onClick={() => setBulkTransitPicker(null)}>
-          <div
-            className="transit-picker tp-bulk"
-            onClick={(e) => e.stopPropagation()}
-          >
+        <Modal
+          open
+          onClose={() => setBulkTransitPicker(null)}
+          overlayClassName="blk-modal-ov"
+          bodyless
+          closeOnBackdrop
+        >
+          <div className="transit-picker tp-bulk">
             <h3 className="tp-title">이동수단 자동 생성</h3>
             <p className="tp-route">
               구간마다 이동수단을 고르세요 — 기본값은 추천 수단이에요.
@@ -115,14 +119,20 @@ export function TransitPickerModals({
               </button>
             </div>
           </div>
-        </div>
+        </Modal>
       )}
 
       {/* 이동수단 선택 — 구간 버튼이 후보를 받아 오면 열린다. 고른 수단으로
           그 자리에 교통 블록이 생성된다 (confirmTransitChoice) */}
       {transitPicker && (
-        <div className="blk-modal-ov" onClick={() => setTransitPicker(null)}>
-          <div className="transit-picker" onClick={(e) => e.stopPropagation()}>
+        <Modal
+          open
+          onClose={() => setTransitPicker(null)}
+          overlayClassName="blk-modal-ov"
+          bodyless
+          closeOnBackdrop
+        >
+          <div className="transit-picker">
             <h3 className="tp-title">이동수단 선택</h3>
             <p className="tp-route">
               {items[transitPicker.currentId]?.name ?? "출발지"} →{" "}
@@ -177,17 +187,20 @@ export function TransitPickerModals({
               </button>
             </div>
           </div>
-        </div>
+        </Modal>
       )}
 
       {/* 교통 블록 편집 재선택 — 저장된 candidates 스냅샷으로 재조회 없이 연다.
           "저장"을 눌러야 PATCH /blocks/{id}/fields 로 transportMeta 를 통째 교체한다 */}
       {transportReselectPicker && (
-        <div
-          className="blk-modal-ov"
-          onClick={() => setTransportReselectPicker(null)}
+        <Modal
+          open
+          onClose={() => setTransportReselectPicker(null)}
+          overlayClassName="blk-modal-ov"
+          bodyless
+          closeOnBackdrop
         >
-          <div className="transit-picker" onClick={(e) => e.stopPropagation()}>
+          <div className="transit-picker">
             <h3 className="tp-title">이동 수단 변경</h3>
             <div className="tp-list">
               {transportReselectPicker.candidates.map((c, idx) => (
@@ -231,7 +244,7 @@ export function TransitPickerModals({
               </button>
             </div>
           </div>
-        </div>
+        </Modal>
       )}
     </>
   );
