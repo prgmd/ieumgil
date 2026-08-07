@@ -2397,14 +2397,23 @@ export function DashboardPage() {
   /**
    * 그 Day 의 첫 블록으로 스크롤한다. 배치된 블록이 없으면 그 Day 의 00:00 으로.
    * Day 별 스크롤 위치 기억은 없앴다 — 스크롤 컨테이너가 하나라 위치도 하나다.
+   * behavior 를 주지 않으면 **거리가 정한다**(아래).
    */
-  const jumpToDay = (dayKey, behavior = "smooth") => {
+  const jumpToDay = (dayKey, behavior) => {
     const el = timelineDOMRef.current;
     if (!el) return;
     const base = (dayNoOf(dayKey) - 1) * blockApi.MINUTES_PER_DAY;
     const target = firstStartOf(board, items, dayKey) ?? base;
     // 15분(=30px)만 앞에서 멈춘다 — 목표가 sticky Day 머리글에 가리지 않게
     const top = Math.max(0, (target - timelineStart - 15) * PX);
+    // 부드럽게 흘릴지 즉시 뛸지는 거리가 정한다. 기준은 렌더 창의 정의와 같은
+    // ±1 Day 다 — 창 안이면 지나갈 Day 가 이미 마운트돼 있어 부드럽게 가도
+    // 중간이 비지 않는다. 창 밖이면 지나가는 Day 들에 눈금도 카드도 없어
+    // 빈 복도를 흘려보내게 되고, 애초에 Day 1 → Day 30 은 86,520px 라
+    // 부드럽게 볼 거리가 아니다. 그래서 창 밖은 즉시 뛴다 — 복도가 생길 수
+    // 있는 경우 자체가 없어진다.
+    const withinWindow = Math.abs(dayNoOf(dayKey) - dayNoOf(activeDay)) <= 1;
+    const how = behavior ?? (withinWindow ? "smooth" : "auto");
     setScrolledDay(dayKey);
     // 이미 그 자리면 스크롤 이벤트가 안 난다 — 잠그지 않고, 앞선 점프의 락이
     // 남아 있으면 여기서 푼다(위치가 이미 목표라 방금 넣은 값이 곧 정답이다)
@@ -2426,7 +2435,7 @@ export function DashboardPage() {
       jumpLockRef.current = null;
       syncDominantDay();
     }, 1200);
-    el.scrollTo({ top, behavior });
+    el.scrollTo({ top, behavior: how });
   };
 
   // 보드를 열면 첫 Day 의 첫 블록이 보이게 한 번만 맞춘다(부드럽게 갈 이유가 없어
@@ -2880,12 +2889,21 @@ export function DashboardPage() {
                         // 시작으로 풀려 창 밖 이웃을 뚫고 리사이즈된다. 자르는 것은
                         // 렌더뿐이고 상태·저장·겹침 해소가 보는 것은 그대로다.
                         // 걸치기만 해도 그린다(자정을 넘어 창으로 들어오는 블록).
-                        // 끌고 있는 카드만은 창 밖이어도 남긴다 — 먼 Day 로 끌어가는
-                        // 동안 언마운트되면 안 된다.
+                        // 지금 조작 중인 카드는 창 밖이어도 남긴다 — 끌고 있는
+                        // 카드(activeId)는 먼 Day 로 끌어가는 동안, 크기를 잡고
+                        // 있는 카드(resizingState)는 그 사이 휠로 하루를 넘겨도
+                        // 손에서 사라지면 안 된다. 리사이즈는 window 레벨
+                        // mousemove 라 언마운트돼도 상태·저장은 살지만, 잡고 있는
+                        // 것이 눈앞에서 없어지는 것 자체가 결함이다.
                         const inWindow =
                           data.endMins > windowStart &&
                           data.startMins < windowEnd;
-                        if (!inWindow && data.id !== activeId) return null;
+                        if (
+                          !inWindow &&
+                          data.id !== activeId &&
+                          data.id !== resizingState?.id
+                        )
+                          return null;
 
                         // 위 모서리를 끌어올릴 수 있는 한계 — 앞 카드의 끝이다.
                         // 목록이 보드 전체라 자정을 넘어온 블록도 그냥 앞 카드로
