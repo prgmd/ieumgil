@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { useAuth } from "../../global/hooks/useAuth";
+import { ROUTES } from "../../global/constants/routes";
 import logo from "../../assets/img/logo.png";
 
 export function LandingNav() {
@@ -17,13 +18,13 @@ export function LandingNav() {
   return (
     <header className={`landing-nav ${isScrolled ? "is-scrolled" : ""}`}>
       <div className="landing-nav__inner">
-        <Link to="/" className="landing-nav__brand">
+        <Link to={ROUTES.landing} className="landing-nav__brand">
           <img src={logo} alt="이음길" className="landing-nav__logo-img" />
         </Link>
 
         {isAuthenticated && (
           <nav className="landing-nav__links" aria-label="주요 메뉴">
-            <Link to="/my">개인 페이지</Link>
+            <Link to={ROUTES.my}>개인 페이지</Link>
           </nav>
         )}
 
@@ -39,10 +40,10 @@ export function LandingNav() {
             )
           ) : (
             <>
-              {/* <Link to="/login" className="landing-nav__login">
+              {/* <Link to={ROUTES.login} className="landing-nav__login">
                 로그인
               </Link> */}
-              <Link to="/login" className="landing-nav__signup">
+              <Link to={ROUTES.login} className="landing-nav__signup">
                 로그인
               </Link>
             </>

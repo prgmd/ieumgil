@@ -5,6 +5,7 @@ import { useAuthStore } from '../../global/stores/authStore';
 import { useMyGroups } from '../../features/my/hooks/useMyGroups';
 import { useToastStore } from '../../global/stores/toastStore';
 import { ERROR_CODE } from '../../global/api/errorCodes';
+import { ROUTES } from '../../global/constants/routes';
 import { onEnter } from '../../global/util/onEnter';
 import CreateGroupModal from './components/CreateGroupModal';
 import DeleteGroupModal from './components/DeleteGroupModal';
@@ -40,17 +41,23 @@ export function MyPage() {
   async function handleWithdraw() {
     await withdraw(); // 실패는 모달이 받아 사유를 보여준다
     showToast('탈퇴가 완료됐어요. 그동안 이용해주셔서 감사합니다.');
-    navigate('/', { replace: true });
+    navigate(ROUTES.landing, { replace: true });
   }
 
   async function handleJoin() {
     if (joining) return;
     setCodeErr('');
+    // 빈·공백·8자 미만은 서버 요청 전에 막는다(형식은 영대문자·숫자 8자리).
+    const trimmed = code.trim();
+    if (trimmed.length < 8) {
+      setCodeErr('코드는 영대문자·숫자 8자리입니다.');
+      return;
+    }
     setJoining(true);
     try {
-      const group = await joinByCode(code);
+      const group = await joinByCode(trimmed);
       setCode('');
-      navigate(`/groups/${group.id}`);
+      navigate(ROUTES.group(group.id));
     } catch (e) {
       setCodeErr(messageFor(e));
     } finally {
@@ -107,7 +114,7 @@ export function MyPage() {
                 <div
                   key={g.id}
                   className="g-card"
-                  onClick={() => !isEditing && navigate(`/groups/${g.id}`)}
+                  onClick={() => !isEditing && navigate(ROUTES.group(g.id))}
                 >
                   {isEditing ? (
                     <input

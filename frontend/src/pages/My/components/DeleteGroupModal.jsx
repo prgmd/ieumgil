@@ -61,7 +61,7 @@ export default function DeleteGroupModal({ open, onClose, group, onDelete }) {
         </button>
         <button
           className="btn btn-acc"
-          style={{ background: '#9c3b3b' }}
+          style={{ background: 'var(--danger)' }}
           onClick={handleDelete}
           disabled={submitting || typed.length === 0}
         >
