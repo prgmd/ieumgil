@@ -4,19 +4,17 @@
 // 여기서는 컨테이너 div 만 내주고 ref callback 으로 넘긴다 — 그래야 읽기 모드
 // 전환으로 div 가 사라졌다 다시 생겨도 훅이 그 순간을 알아채고 다시 바인딩한다.
 
+import { HintIcon } from "./HintIcon";
+
 export function MapPanel({ initMapOnContainer, pinPickMode, onCancelPinPick }) {
   return (
     <div className="panel">
       <h4 className="panel-title">
         지도
-        <span
-          className="hint-ico"
-          tabIndex={0}
-          aria-label="지도 사용 안내"
-          data-tip="장소를 검색하면 지도가 그 위치로 이동해요. 검색 결과나 지도의 핀을 클릭하면 상세 정보 말풍선이 떠요."
-        >
-          ⓘ
-        </span>
+        <HintIcon
+          label="지도 사용 안내"
+          tip="장소를 검색하면 지도가 그 위치로 이동해요. 검색 결과나 지도의 핀을 클릭하면 상세 정보 말풍선이 떠요."
+        />
       </h4>
       {/* 배너를 지도 위에 얹어야 해서 위치 기준 상자로 한 번 감싼다 */}
       <div className={`map-wrap${pinPickMode ? " is-picking" : ""}`}>

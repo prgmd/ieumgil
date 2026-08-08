@@ -4,6 +4,8 @@
 // 집계와 저장(디바운스)은 useBudget 훅이 소유하고, 여기서는 받은 값을 그린다.
 
 import { HoldRepeatButton } from "./HoldRepeatButton";
+import { HintIcon } from "./HintIcon";
+import { MoneyInput } from "../../../global/components/MoneyInput";
 import { won } from "../dashboardHelpers";
 
 export function BudgetPanel({
@@ -26,14 +28,10 @@ export function BudgetPanel({
           이 카드만 제목이 없으면 본문이 한 카드만 위에서 시작해 눈에 걸린다 */}
       <h4 className="panel-title">
         예산
-        <span
-          className="hint-ico"
-          tabIndex={0}
-          aria-label="예산 사용 안내"
-          data-tip="블록마다 입력한 예산을 모두 더한 금액이에요. 희망 총 예산을 정하면 아래 막대가 얼마나 썼는지 보여줘요. 금액을 눌러 직접 입력할 수도 있어요."
-        >
-          ⓘ
-        </span>
+        <HintIcon
+          label="예산 사용 안내"
+          tip="일정에 배치된 블록의 비용 합계예요(1인 요금 이동수단은 인원만큼 곱해요). 희망 총 예산을 정하면 아래 막대가 얼마나 썼는지 보여줘요. 금액을 눌러 직접 입력할 수도 있어요."
+        />
       </h4>
 
       <div className="bud-total">
@@ -63,14 +61,12 @@ export function BudgetPanel({
               {targetBudget.toLocaleString()}원
             </button>
           ) : (
-            <input
+            <MoneyInput
               className="bud-stepper-input"
-              type="number"
-              min="0"
-              step="10000"
+              hint={false}
               autoFocus
               value={budgetDraft}
-              onChange={(e) => setBudgetDraft(e.target.value)}
+              onChange={setBudgetDraft}
               onBlur={commitBudgetDraft}
               onKeyDown={(e) => {
                 if (e.key === "Enter") e.currentTarget.blur();
@@ -120,12 +116,19 @@ export function BudgetPanel({
       )}
 
       <div className="bud-foot">
-        <span>희망 예산의 {Math.round(budgetPct)}% 사용</span>
-        <span className={`bud-left ${remainingBudget < 0 ? "is-over" : ""}`}>
-          {remainingBudget < 0
-            ? `${won(Math.abs(remainingBudget))} 초과`
-            : `남은 ${won(remainingBudget) || "0원"}`}
-        </span>
+        {targetBudget > 0 ? (
+          <>
+            <span>희망 예산의 {Math.round(budgetPct)}% 사용</span>
+            <span className={`bud-left ${remainingBudget < 0 ? "is-over" : ""}`}>
+              {remainingBudget < 0
+                ? `${won(Math.abs(remainingBudget))} 초과`
+                : `남은 ${won(remainingBudget) || "0원"}`}
+            </span>
+          </>
+        ) : (
+          // 희망 예산 미설정 — 초과/퍼센트가 0 기준으로 모순되게 뜨던 것을 안내로 대체
+          <span className="bud-foot-hint">희망 예산을 정하면 사용률을 보여드려요</span>
+        )}
       </div>
     </div>
   );

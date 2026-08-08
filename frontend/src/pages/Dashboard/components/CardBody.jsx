@@ -30,7 +30,7 @@ function CardBody({
             {catStyle.nm}
             {subLabelOf(item) ? ` · ${subLabelOf(item)}` : ""}
           </span>
-          {lockedBy && <span className="lock-badge">✎ {lockedBy}</span>}
+          {lockedBy && <span className="lock-badge">✎ {lockedBy} 편집 중</span>}
           <span className="grip">⠿</span>
         </div>
         {/* 💡 연필 아이콘 삭제, 글씨 두께만 강조 */}
@@ -60,12 +60,11 @@ function CardBody({
         </span>
         {item?.auto && <span className="auto-badge">자동</span>}
         {lockedBy && <span className="lock-badge">✎ {lockedBy} 편집 중</span>}
-        <span>
-          <span className="nm">{item?.name}</span>{" "}
-          <span className="nm-sub">{item?.detail}</span>
+        <span className="nm" title={item?.name}>
+          {item?.name}
         </span>
         <span className="time">
-          {fmtTime(startMins)} – {fmtTime(endMins)}
+          {fmtTime(startMins)} ~ {fmtTime(endMins)}
         </span>
         {/* 무료(0원)는 표기 자체를 생략한다 (QA 배치2).
             대중교통·기차·항공은 1인 요금이라 "/인"을 붙인다 — 안 붙이면 옆 패널의
@@ -90,6 +89,8 @@ function CardBody({
       ) : (
         <div className="addr">📍 {item?.address || "위치 정보 없음"}</div>
       )}
+      {/* 메모(비고) — 주소 아래. 길면 여러 줄로 줄바꿈(카드 높이 넘치면 잘린다) */}
+      {item?.detail && <div className="nm-memo">📝 {item?.detail}</div>}
       <div className="ctl">
         {/* 리사이즈 중에는 안내 문구가 카테고리 색으로 강조된다(.dur.is-resizing) */}
         <span className={`dur ${isThisResizing ? "is-resizing" : ""}`}>

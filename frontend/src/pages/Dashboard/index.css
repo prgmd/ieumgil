@@ -290,7 +290,7 @@
   border: none;
   border-radius: 18px;
   background: transparent;
-  color: #8c7b70;
+  color: var(--ink2);
   font-size: 14px;
   cursor: pointer;
   transition: all 0.2s;
@@ -300,7 +300,7 @@
 }
 .mode-tab.on {
   background: var(--bg2, #fdfbf7);
-  color: #7c5443;
+  color: var(--btn-brown);
   font-weight: bold;
   box-shadow: 0 2px 6px rgba(61, 43, 34, 0.12);
 }
@@ -351,31 +351,6 @@
   padding-left: 16px;
   margin-left: -16px;
   padding-bottom: 12px;
-}
-/* 크림 테마에 맞춘 얇은 스크롤바 */
-/* 앱 공통 커스텀 스크롤바 — 얇은 크림/갈색. 스크롤되는 영역들에 함께 적용한다
-   (Day 네비·일정 타임라인·후보목록·장소검색). */
-.day-list::-webkit-scrollbar,
-.tl::-webkit-scrollbar,
-.pool::-webkit-scrollbar,
-.search-results::-webkit-scrollbar,
-.blk-modal-ov::-webkit-scrollbar {
-  width: 6px;
-}
-.day-list::-webkit-scrollbar-thumb,
-.tl::-webkit-scrollbar-thumb,
-.pool::-webkit-scrollbar-thumb,
-.search-results::-webkit-scrollbar-thumb,
-.blk-modal-ov::-webkit-scrollbar-thumb {
-  background: rgba(61, 43, 34, 0.22);
-  border-radius: 3px;
-}
-.day-list::-webkit-scrollbar-track,
-.tl::-webkit-scrollbar-track,
-.pool::-webkit-scrollbar-track,
-.search-results::-webkit-scrollbar-track,
-.blk-modal-ov::-webkit-scrollbar-track {
-  background: transparent;
 }
 .day-tab {
   position: relative;
@@ -503,7 +478,7 @@
   font-size: 24px;
 }
 .bd-head .date {
-  color: var(--ink3, #786d63);
+  color: var(--ink3);
 }
 .bd-head .right {
   margin-left: auto;
@@ -657,12 +632,13 @@
 }
 
 /* Day 탭의 "보는 중" 아바타 — 테두리가 그 멤버의 커서 색 (7단계).
-   여러 명이면 살짝 겹쳐 쌓는다(AppBar 의 crew 겹침과 같은 문법). */
+   탭이 좁아 가로로는 넘쳤다 — 세로로 겹쳐 쌓고 3명 이상이면 +N 으로 줄인다. */
 .dt-viewers {
   position: absolute;
   top: 5px;
   right: 8px;
   display: flex;
+  flex-direction: column;
   align-items: center;
 }
 .dt-viewers img,
@@ -688,18 +664,26 @@
   font-weight: bold;
   color: hsl(var(--vh) 65% 38%);
 }
-.dt-viewers img + img,
-.dt-viewers img + i,
-.dt-viewers i + img,
-.dt-viewers i + i {
-  margin-left: -6px;
+/* 세로로 6px 겹쳐 쌓는다 (첫 요소 제외 전부) */
+.dt-viewers > * + * {
+  margin-top: -6px;
 }
+/* +N 배지 — 아바타와 같은 원형 크기로 맞춰 스택에 자연스럽게 얹힌다 */
 .dt-viewers-more {
-  font-size: 9px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  border: 2px solid var(--line, #e6dccb);
+  background: var(--cream, #fffdf8);
+  font-size: 8.5px;
   font-style: normal;
   font-weight: bold;
   color: var(--ink3, #8a776a);
-  margin-left: 2px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
 }
 
 /* 라이브 커서(7단계) — 눈금·카드와 같은 오프셋의 오버레이. 클릭·드래그를
@@ -854,7 +838,10 @@
   position: absolute;
   left: 10px;
   right: 10px;
-  z-index: 30;
+  /* 카드(.slot z5)보다 아래 — 실제 빈 공간에선 위에 아무것도 없어 클릭되지만,
+     좁은 갭이 카드 경계에 걸쳐도 그 부분은 카드·리사이즈 손잡이가 이긴다.
+     (간격이 정확히 0인 붙은 블록 경계에선 갭버튼이 카드에 완전히 가려진다) */
+  z-index: 4;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1042,7 +1029,7 @@
   padding: 6px 14px;
   border: none;
   border-radius: 8px;
-  background: #7c5443;
+  background: var(--btn-brown);
   color: #fff;
   font-family: inherit;
   font-size: 13px;
@@ -1051,7 +1038,7 @@
   box-shadow: 0 2px 6px rgba(124, 84, 67, 0.2);
 }
 .pool-add-btn:hover {
-  background: #6a4536;
+  background: var(--btn-brown-hover);
 }
 /* 후보 목록 빈 상태 (POOL-01) — 어디서 채우는지 알려주는 자리 표시.
    .pool 이 5열 그리드라 grid-column 없이는 첫 칸(폭의 1/5)만 차지해 왼쪽으로
@@ -1369,8 +1356,8 @@
 /* 다른 멤버가 이 블록의 상세를 편집 중(advisory 락, 6단계).
    자동 배지와 달리 채우지 않고 점선 테두리 — "정보"지 "속성"이 아니라서. */
 .lock-badge {
-  border: 1.5px dashed var(--dc, #7c5443);
-  color: var(--dc, #7c5443);
+  border: 1.5px dashed var(--dc, var(--btn-brown));
+  color: var(--dc, var(--btn-brown));
   background: #fff;
   padding: 1px 6px;
   border-radius: 6px;
@@ -1390,14 +1377,30 @@
   }
 }
 .card .nm {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
   font-weight: bold;
   color: #333;
   font-size: 15px;
 }
-.card .nm-sub {
+/* 메모(비고) — 주소 아래 별도 줄, 여러 줄 줄바꿈. 가장 덜 중요하므로 공간이 모자라면
+   이 줄부터 먼저 줄어들며(clip) 잘린다 — 이름·주소·소요는 flex-shrink:0 으로 지킨다. */
+.card .nm-memo {
+  flex: 0 1 auto;
+  min-height: 0;
+  overflow: hidden;
   font-size: 12px;
   color: var(--ink3);
-  margin-left: 4px;
+  overflow-wrap: anywhere;
+  margin-top: 2px;
+}
+.card .l1,
+.card .addr,
+.card .ctl {
+  flex-shrink: 0;
 }
 .card .time {
   margin-left: auto;
@@ -1419,11 +1422,15 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
-/* 교통 블록의 경로 줄 — 노선명이 길어 잘리기 쉬우니 카테고리 색으로 눈에 띄게 하고,
-   전체 문구는 title 툴팁으로 받친다(카드 높이를 늘리지 않기 위해 한 줄 유지) */
+/* 교통 블록의 경로 줄 — 노선명이 길어 한 줄로 잘리던 것을 여러 줄로 줄바꿈해 보여준다
+   (부모 .addr 의 nowrap 을 덮는다). 카테고리 색으로 눈에 띄게. */
 .card .addr-route {
   color: var(--dc);
   font-weight: 500;
+  white-space: normal;
+  overflow: visible;
+  text-overflow: clip;
+  overflow-wrap: anywhere;
 }
 .card .addr-transfers {
   margin-left: 6px;
@@ -1455,7 +1462,24 @@
 .slot.hide-ctl .card .ctl {
   display: none;
 }
-.slot.is-short .card .addr {
+/* 리사이즈 중에는 짧은 블록(hide-ctl)이라도 확정 안내(.ctl 안의 .dur)를
+   계속 보여준다 — 안 그러면 92px 미만으로 줄이는 순간 "…클릭하여 확정"이
+   사라져 어떻게 마무리하는지 알 수 없다. (뒤에 와서 위 규칙을 덮는다) */
+.slot.is-resizing .card .ctl {
+  display: flex;
+}
+/* 짧은 블록은 위·아래 16px 손잡이 두 개가 카드를 거의 다 덮어 가운데를
+   눌러 편집할 수 없다 — 높이에 맞춰 손잡이를 줄여 클릭 여지를 남긴다 */
+.slot.is-short .tl-edge {
+  height: 11px;
+}
+.slot.is-tiny .tl-edge {
+  height: 7px;
+}
+/* 주소가 사라지는 높이에선 메모도 함께 숨긴다 — 메모가 주소보다 덜 중요한데
+   주소만 사라지고 메모가 남아 있으면 어색하다. */
+.slot.is-short .card .addr,
+.slot.is-short .card .nm-memo {
   display: none;
 }
 .slot.is-short .card .l1 {
@@ -1469,7 +1493,7 @@
   padding-bottom: 2px;
 }
 .slot.is-tiny .card .cat,
-.slot.is-tiny .card .nm-sub,
+.slot.is-tiny .card .nm-memo,
 .slot.is-tiny .card .auto-badge,
 .slot.is-tiny .card .lock-badge {
   display: none;
@@ -1602,8 +1626,12 @@
   font-size: 12.5px;
   line-height: 1.5;
   color: var(--ink2, #6b5a4e);
-  white-space: pre-wrap;
   word-break: break-word;
+  /* 말풍선은 공간이 좁다 — 메모는 최대 2줄로 자른다(넘치면 …). */
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 .map-ov-link {
   display: inline-block;
@@ -1813,7 +1841,7 @@
   flex: 1;
   min-width: 0;
   padding: 12px;
-  border: 1px solid #e6dec8;
+  border: 1px solid var(--line);
   border-radius: 10px;
   background: #fff;
   font-family: inherit;
@@ -1824,20 +1852,20 @@
   padding: 0 16px;
   border: none;
   border-radius: 10px;
-  background: #7c5443;
+  background: var(--btn-brown);
   color: #fff;
   font-family: inherit;
   font-weight: bold;
   cursor: pointer;
 }
 .search-form button:hover {
-  background: #6a4536;
+  background: var(--btn-brown-hover);
 }
 /* 검색 내역 초기화 (QA) — 입력칸과 검색 버튼 사이의 보조 버튼.
    검색(채움)과 급이 다르다는 걸 테두리형으로 말한다 */
 .search-form button.search-clear {
   background: #fff;
-  border: 1px solid #e6dec8;
+  border: 1px solid var(--line);
   color: var(--ink2, #6b5a4e);
   font-weight: normal;
 }
@@ -1866,7 +1894,7 @@
   justify-content: space-between;
   align-items: center;
   padding: 10px 12px;
-  border: 1px solid #e6dec8;
+  border: 1px solid var(--line);
   border-radius: 10px;
   background: #fff;
   cursor: grab;
@@ -1919,7 +1947,7 @@
   justify-content: center;
   /* dim 은 공유 Modal(.ov)과 같은 값으로 맞춘다 — 크림 테마의 갈색 반투명 + blur.
      레이아웃·z-index·오버레이 스크롤 전략은 tall 모달용이라 그대로 둔다. */
-  background: rgba(61, 43, 34, 0.4);
+  background: var(--overlay-dim);
   backdrop-filter: blur(3px);
   /* 창이 화면보다 커지는 예외(아주 낮은 창·확대 배율)를 위한 마지막 안전망 */
   overflow-y: auto;
@@ -1994,10 +2022,10 @@
   max-height: min(84vh, 700px);
   display: flex;
   flex-direction: column;
-  background: var(--bg2, #fdfbf7);
-  border-radius: 14px;
+  background: var(--surface-modal);
+  border-radius: var(--radius-modal);
   padding: 18px;
-  box-shadow: 0 12px 32px rgba(61, 43, 34, 0.28);
+  box-shadow: var(--shadow-modal);
 }
 /* 제목·경로·안내 배너는 줄어들지 않는다 — 목록만 남는 높이를 가져간다 */
 .transit-picker > .tp-title,
@@ -2075,7 +2103,7 @@
   font-style: normal;
   font-size: 11.5px;
   font-weight: normal;
-  color: #9c3b3b;
+  color: var(--danger);
   margin-left: 6px;
 }
 .tp-banner {
@@ -2084,7 +2112,7 @@
   color: var(--ink3, #8a776a);
 }
 .tp-banner-warn {
-  color: #9c3b3b;
+  color: var(--danger);
 }
 /* 일괄 생성 모달의 후보 카드 — flex-wrap 이면 내용따라 폭이 제각각이라, 균등
    폭 그리드로 깔아 카드 크기를 맞춘다(같은 행은 높이도 함께 stretch). */
@@ -2093,7 +2121,9 @@
   grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
   gap: 8px;
 }
-.tp-chip {
+/* 교통 피커 후보 칩 — modal.css 의 .tp-chip(TransportPicker 토글)과 이름이 겹쳐
+   한 화면(대시보드+수정모달)에서 충돌했다. .transit-picker 하위로 스코프해 분리한다. */
+.transit-picker .tp-chip {
   display: inline-flex;
   align-items: center;
   gap: 5px;
@@ -2108,32 +2138,32 @@
     border-color 0.15s ease,
     background-color 0.15s ease;
 }
-.tp-chip:hover:not(:disabled) {
+.transit-picker .tp-chip:hover:not(:disabled) {
   border-color: var(--acc, #9c4a2f);
 }
-.tp-chip.on {
+.transit-picker .tp-chip.on {
   border-color: var(--acc, #9c4a2f);
   background: #fdf6ef;
   font-weight: bold;
 }
-.tp-chip:disabled {
+.transit-picker .tp-chip:disabled {
   opacity: 0.4;
   cursor: default;
 }
-.tp-chip-skip {
+.transit-picker .tp-chip-skip {
   color: var(--ink3, #8a776a);
 }
 .tp-actions {
   display: flex;
-  gap: 8px;
-  margin-top: 14px;
+  gap: var(--modal-foot-gap);
+  margin-top: var(--modal-foot-mt);
 }
 .tp-actions .tp-cancel {
   margin-top: 0;
   flex: 1;
 }
 .tp-apply {
-  flex: 2;
+  flex: 1;
   padding: 9px 0;
   border: none;
   border-radius: 9px;
@@ -2144,7 +2174,7 @@
   cursor: pointer;
 }
 .tp-apply:hover {
-  background: #7c5443;
+  background: var(--btn-brown);
 }
 
 /* ── 예산: 블록별 색 세그먼트 막대 ─────────────────────────── */
@@ -2152,7 +2182,7 @@
   display: flex;
   width: 100%;
   height: 12px;
-  background: #e6dec8;
+  background: var(--line);
   border-radius: 99px;
   overflow: hidden;
   margin-bottom: 6px;
@@ -2253,7 +2283,7 @@
   top: 20px;
   bottom: 20px;
   width: 2px;
-  background: #e6dec8;
+  background: var(--line);
   z-index: 0;
 }
 .rv-row {

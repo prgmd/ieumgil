@@ -5,15 +5,25 @@
   width: 460px;
   max-height: 90vh;
   overflow-y: auto;
-  padding: 20px;
-  border-radius: 16px;
-  background: #fbf8f1;
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.15);
+  /* 상단 패딩은 sticky 헤더가 대신 낸다 — 컨테이너에 두면 헤더 위에 안 덮이는
+     밴드가 남아 스크롤 시 그 틈으로 내용이 비친다("글씨 뚫림"). */
+  padding: 0 20px 20px;
+  border-radius: var(--radius-modal);
+  background: var(--surface-modal);
+  box-shadow: var(--shadow-modal);
   color: #4a3a31;
 }
 
+/* 스크롤이 생겨도 무슨 창인지 보이게 상단 고정. 헤더가 y=0 부터 전체폭 불투명
+   배경으로 덮어 내용이 비치지 않는다. 상단 여백은 헤더 padding-top 이 낸다. */
 .bef-head {
-  margin-bottom: 14px;
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  background: var(--surface-modal);
+  margin: 0 -20px 14px;
+  padding: 20px 20px 10px;
+  border-bottom: 1px solid var(--line);
 }
 .bef-title {
   margin: 0 0 3px;
@@ -24,7 +34,7 @@
 .bef-sub {
   margin: 0;
   font-size: 12px;
-  color: #8c7b70;
+  color: var(--ink2);
 }
 
 .bef-row {
@@ -42,14 +52,14 @@
   margin-bottom: 4px;
   font-size: 12px;
   font-weight: 700;
-  color: #7a6a5c;
+  color: var(--ink2);
 }
 
 .bef-input,
 .bef-textarea {
-  padding: 9px 12px;
-  border: 1px solid #e6dec8;
-  border-radius: 10px;
+  padding: 10px 13px;
+  border: 1.5px solid var(--line);
+  border-radius: 11px;
   background: #fff;
   font-family: inherit;
   font-size: 13.5px;
@@ -68,7 +78,7 @@
 /* 다른 멤버가 상세락을 잡고 있을 때 — 읽기만 가능하게 흐리게 잠근다 */
 .bef-textarea.is-locked {
   background: #f4f0e6;
-  color: #8c7b70;
+  color: var(--ink2);
   cursor: not-allowed;
 }
 .bef-lock-hint {
@@ -131,7 +141,7 @@
   padding: 9px 16px;
   border: none;
   border-radius: 10px;
-  background: #7c5443;
+  background: var(--btn-brown);
   color: #fff;
   font-family: inherit;
   font-size: 13px;
@@ -141,7 +151,7 @@
   transition: background 0.15s ease;
 }
 .bef-addr-btn:hover:not(:disabled) {
-  background: #6a4536;
+  background: var(--btn-brown-hover);
 }
 .bef-addr-btn:disabled {
   background: #c9beb2;
@@ -157,22 +167,22 @@
   color: #3e8e63;
 }
 .bef-addr-hint.is-warn {
-  color: #9c3b3b;
+  color: var(--danger);
 }
 
 .bef-foot {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-top: 16px;
+  margin-top: var(--modal-foot-mt);
 }
 .bef-editor {
   font-size: 12px;
-  color: #8c7b70;
+  color: var(--ink2);
 }
 .bef-btns {
   display: flex;
-  gap: 8px;
+  gap: var(--modal-foot-gap);
 }
 .bef-btn {
   padding: 8px 20px;
@@ -183,7 +193,7 @@
   cursor: pointer;
 }
 .bef-btn-cancel {
-  border: 1px solid #d9cebc;
+  border: 1px solid var(--line);
   background: #fff;
   color: #4a3a31;
 }
@@ -192,38 +202,14 @@
 }
 .bef-btn-save {
   border: none;
-  background: #7c5443;
+  background: var(--btn-brown);
   color: #fff;
 }
 .bef-btn-save:hover {
-  background: #6a4536;
+  background: var(--btn-brown-hover);
 }
 
-/* 모달 본문 스크롤 — 앱 공통 크림 커스텀 스크롤바 */
-.bef::-webkit-scrollbar{width:6px}
-.bef::-webkit-scrollbar-thumb{background:rgba(61,43,34,.22);border-radius:3px}
-.bef::-webkit-scrollbar-track{background:transparent;margin:16px 0}
-
-/* 비용 입력 + 환산 힌트 — 입력칸 '안' 오른쪽에 겹쳐 보여준다(옆에 두면 값 바뀔 때
-   폭이 흔들린다). 오른쪽에 자리를 비워 두고 그 위에 얹는다. */
-.bef-cost-wrap {
-  position: relative;
-}
-.bef-cost-wrap .bef-input {
-  width: 100%;
-  padding-right: 84px;
-}
-.bef-cost-man {
-  position: absolute;
-  right: 13px;
-  top: 50%;
-  transform: translateY(-50%);
-  font-size: 12.5px;
-  color: #8c7b70;
-  white-space: nowrap;
-  pointer-events: none;
-}
-/* number 입력의 위아래 스피너 제거 — 금액·소요를 스피너로 바꿀 일이 없다. */
+/* number 입력의 위아래 스피너 제거 — 소요를 스피너로 바꿀 일이 없다. */
 .bef input[type="number"] {
   -moz-appearance: textfield;
   appearance: textfield;

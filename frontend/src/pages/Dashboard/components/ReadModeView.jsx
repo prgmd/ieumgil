@@ -6,6 +6,7 @@ import {
   catOf,
   dayDate,
   fmtTime,
+  fmtDur,
   effectiveCostOf,
   blocksOfDay,
 } from "../dashboardHelpers";
@@ -23,7 +24,7 @@ function gapWarn(prev, cur) {
   if (prevEnd > curStart) return "앞 일정과 시간이 겹쳐요";
   const gap = curStart - prevEnd;
   const bothPlace = prev.cat !== "trans" && cur.cat !== "trans";
-  if (bothPlace && gap > 0) return `이동 정보가 없어요 · 빈 시간 ${gap}분`;
+  if (bothPlace && gap > 0) return `이동 정보가 없어요 · 빈 시간 ${fmtDur(gap)}`;
   return null;
 }
 
@@ -46,7 +47,7 @@ export function ReadModeView({ board, items, dayKeys, project }) {
       <div className="rv-total">
         {/* 편집 모드와 헷갈리지 않게 모드를 명시한다 (QA 배치3) */}
         <span className="rv-mode-chip">📖 읽기 전용</span>
-        여행 총 비용 <b>{won(totalCost) || "0원"}</b>
+        여행 총 비용 <b>{`${totalCost.toLocaleString("ko-KR")}원`}</b>
       </div>
       {dayKeys.map((day, index) => {
         // 보드 목록이 이미 오프셋 순이라 그 Day 만 걸러 내면 시각 순이다 —
@@ -145,7 +146,7 @@ export function ReadModeView({ board, items, dayKeys, project }) {
                               접어 보여주므로, 표기가 없으면 23:30 - 05:00 이 하루 안에서
                               거꾸로 간 것처럼 읽힌다. 편집 모달과 같은 규칙이다. */}
                           <div className="rv-range">
-                            {fmtTime(startMins)} - {fmtTime(endMins)}
+                            {fmtTime(startMins)} ~ {fmtTime(endMins)}
                             {(() => {
                               const over =
                                 blockApi.dayNoOfOffset(endMins) -

@@ -52,7 +52,7 @@
 .tcc-fail {
   font-style: normal;
   font-size: 11px;
-  color: #9c3b3b;
+  color: var(--danger);
 }
 /* 재시도가 유효한 실패만 다른 색이다 — 경로 없음·운행 없음은 다시 눌러도 같은 답이라
    같은 붉은색으로 두면 사용자가 계속 재시도한다 */
@@ -175,6 +175,10 @@
   font-size: 12px;
   color: var(--ink1, #3d2b22);
   text-align: left;
+  cursor: default;
+}
+/* 클릭으로 편을 고를 수 있는 select 모드(버튼)만 포인터 커서 — view(div)는 기본 커서 */
+button.tcc-departure {
   cursor: pointer;
 }
 /* 읽기 모드 — 확정된 편은 꽉 찬 선택 상자 대신 내용만큼 하는 알약 태그로.

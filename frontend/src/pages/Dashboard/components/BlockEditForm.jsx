@@ -7,21 +7,8 @@ import {
 import { geocodeAddress } from "../../../features/place/api/placeApi";
 import { TransitCandidateCard } from "./TransitCandidateCard";
 import { Select } from "../../../global/components/Select";
+import { MoneyInput } from "../../../global/components/MoneyInput";
 import "./BlockEditForm.css";
-
-// 금액 읽기용 — 1만원 이상은 만원 단위 소수 첫째자리까지("1.5만원"), 미만은 원 콤마.
-function moneyHint(n) {
-  if (!n || n <= 0) return "";
-  if (n >= 10000) {
-    const man = n / 10000;
-    const text =
-      man >= 100
-        ? Math.round(man).toLocaleString("ko-KR")
-        : man.toFixed(1).replace(/\.0$/, "");
-    return `${text}만원`;
-  }
-  return `${n.toLocaleString("ko-KR")}원`;
-}
 
 // 서버가 lat/lng 를 필수로 보는 장소성 카테고리 — 좌표 없이 보내면 BLOCK400 이다.
 // 교통·기타는 지도에 찍을 지점이 없을 수 있어 좌표를 요구하지 않는다.
@@ -79,6 +66,9 @@ export function BlockEditForm({
   const isNew = !categoryLocked;
   const needsCoords = isNew && PLACE_CATEGORIES.has(formData.category);
   const hasCoords = formData.lat != null && formData.lng != null;
+  // 자동 생성 교통 블록 — 소요는 길찾기 계산값이라 직접 못 고치게 하고,
+  // 아래 "이동수단 재선택"으로만 바꾸게 한다.
+  const isAutoTransit = initialData?.auto && initialData?.cat === "trans";
 
   // 폼이 열리는 동안 미리 받아 둔다 — 버튼을 누른 뒤에 받으면 그 사이에
   // 팝업 허용 자격이 만료돼 차단될 수 있다.
@@ -161,6 +151,10 @@ export function BlockEditForm({
       setError("소요 시간은 1440분(24시간) 이하로 입력해주세요.");
       return;
     }
+    if (Number(formData.budget) < 0) {
+      setError("비용은 0원 이상으로 입력해주세요.");
+      return;
+    }
     setError("");
     setSaving(true);
     try {
@@ -209,21 +203,12 @@ export function BlockEditForm({
     }));
   };
 
-  // 비용을 읽기 좋게 환산해 입력칸 '안'에 겹쳐 보여준다(예: 15000 → ≈ 1.5만원).
-  // 만원 밑은 의미가 작아 소수 첫째자리까지만.
-  const budgetNum = Number(formData.budget);
-  const costManwon =
-    formData.budget !== "" && !Number.isNaN(budgetNum) && budgetNum > 0
-      ? `≈ ${moneyHint(budgetNum)}`
-      : "";
-
   return (
-    <div className="bef">
+    <div className="bef cream-scroll-round">
       <div className="bef-head">
         <h2 className="bef-title">블록 상세</h2>
         <p className="bef-sub">
-          장소명·주소·시간은 자동으로 채워진 뒤 수정할 수 있어요. 비용은 직접
-          입력합니다.
+          블록 정보를 확인하고 수정할 수 있어요. 비용은 직접 입력합니다.
         </p>
       </div>
 
@@ -245,7 +230,7 @@ export function BlockEditForm({
             ]}
           />
           {categoryLocked && (
-            <p style={{ fontSize: "11px", color: "#8c7b70", margin: "4px 0 0" }}>
+            <p style={{ fontSize: "11px", color: "var(--ink2)", margin: "4px 0 0" }}>
               카테고리·소분류·주소는 만들 때만 정할 수 있어요
             </p>
           )}
@@ -383,23 +368,25 @@ export function BlockEditForm({
             name="durationMin"
             value={formData.durationMin}
             onChange={handleChange}
+            readOnly={isAutoTransit}
           />
+          {isAutoTransit && (
+            <p className="bef-lock-hint">
+              자동 계산된 소요예요 — 아래 이동수단 재선택으로만 바뀌어요
+            </p>
+          )}
         </div>
       </div>
 
       <div className="bef-row">
         <div className="bef-col">
           <label className="bef-label">비용 (직접 입력 · 원)</label>
-          <div className="bef-cost-wrap">
-            <input
-              className="bef-input"
-              type="number"
-              name="budget"
-              value={formData.budget}
-              onChange={handleChange}
-            />
-            {costManwon && <span className="bef-cost-man">{costManwon}</span>}
-          </div>
+          <MoneyInput
+            className="bef-input"
+            name="budget"
+            value={formData.budget}
+            onChange={(v) => setFormData((p) => ({ ...p, budget: v }))}
+          />
         </div>
       </div>
 
@@ -424,7 +411,7 @@ export function BlockEditForm({
       </div>
 
       {error && (
-        <p style={{ color: "#9c3b3b", fontSize: "12.5px", margin: "0 0 10px" }}>
+        <p style={{ color: "var(--danger)", fontSize: "12.5px", margin: "0 0 10px" }}>
           {error}
         </p>
       )}
