@@ -14,6 +14,4 @@ public interface GroupCommandService {
     GroupResDTO.Left leaveGroup(Long userId, Long groupId);
 
     GroupResDTO.Updated updateGroupName(Long userId, Long groupId, GroupReqDTO.UpdateName request);
-
-    void softDeleteGroup(Long userId, Long groupId, GroupReqDTO.Delete request);
 }

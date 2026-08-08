@@ -9,9 +9,6 @@ import org.springframework.http.HttpStatus;
 @AllArgsConstructor
 public enum GroupErrorCode implements BaseErrorCode {
 
-    // 400
-    GROUP_NAME_MISMATCH(HttpStatus.BAD_REQUEST, "GROUP400", "그룹명이 일치하지 않습니다."),
-
     // 403
     NOT_GROUP_MEMBER(HttpStatus.FORBIDDEN, "GROUP403", "해당 그룹의 멤버가 아닙니다."),
 

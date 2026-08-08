@@ -97,15 +97,4 @@ public class GroupController {
             @Valid @RequestBody GroupReqDTO.UpdateName request) {
         return CustomResponse.onSuccess(groupCommandService.updateGroupName(userId, groupId, request));
     }
-
-    @GroupMember
-    @DeleteMapping("/{groupId}")
-    @Operation(summary = "그룹 삭제", description = "소프트 삭제합니다. 오조작 방지를 위해 그룹명을 다시 입력받아 검증합니다.")
-    public CustomResponse<Void> deleteGroup(
-            @Parameter(hidden = true) @AuthenticationPrincipal Long userId,
-            @PathVariable Long groupId,
-            @Valid @RequestBody GroupReqDTO.Delete request) {
-        groupCommandService.softDeleteGroup(userId, groupId, request);
-        return CustomResponse.onSuccess(GeneralSuccessCode.OK);
-    }
 }
