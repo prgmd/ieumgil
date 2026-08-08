@@ -8,6 +8,7 @@ import { GroupPage } from "../pages/Group";
 import { MyPage } from "../pages/My";
 import ProtectedRoute from "../global/components/ProtectedRoute";
 import GuestOnlyRoute from "../global/components/GuestOnlyRoute";
+import { ROUTES } from "../global/constants/routes";
 
 export const router = createBrowserRouter([
   {
@@ -43,7 +44,7 @@ export const router = createBrowserRouter([
       },
 
       // 정의되지 않은 모든 경로는 랜딩으로 (기본 차단)
-      { path: "*", element: <Navigate to="/" replace /> },
+      { path: "*", element: <Navigate to={ROUTES.landing} replace /> },
     ],
   },
 ]);

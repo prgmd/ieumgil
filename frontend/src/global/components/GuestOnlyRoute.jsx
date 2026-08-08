@@ -1,5 +1,6 @@
 import { Navigate, Outlet } from "react-router-dom";
 import { tokenStorage } from "../util/tokenStorage";
+import { ROUTES } from "../constants/routes";
 
 /**
  * 비로그인 전용 가드 (ProtectedRoute 의 대칭)
@@ -16,7 +17,7 @@ import { tokenStorage } from "../util/tokenStorage";
 function GuestOnlyRoute() {
   const isAuthenticated = !!tokenStorage.getAccessToken();
 
-  return isAuthenticated ? <Navigate to="/my" replace /> : <Outlet />;
+  return isAuthenticated ? <Navigate to={ROUTES.my} replace /> : <Outlet />;
 }
 
 export default GuestOnlyRoute;
