@@ -3,7 +3,8 @@ import { useDraggable } from "@dnd-kit/core";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm"; // 표·취소선 등 GFM 확장 — 표는 기본 문법에 없다
 import { sendChatbotMessage, fetchChatbotHistory } from "../../../features/dashboard/api/dashboardApi";
-import chatbotIcon from "../../../assets/img/chatbot.png";
+import chatbotOpen from "../../../assets/img/chatbot_open.png";
+import chatbotClose from "../../../assets/img/chatbot_close.png";
 import "./ChatbotWidget.css";
 
 const CAT_LABEL = {
@@ -88,6 +89,7 @@ export function ChatbotWidget({ projectId, getMapBounds }) {
   const [sending, setSending] = useState(false);
   const bodyRef = useRef(null);
   const msgSeqRef = useRef(0);
+  const inputRef = useRef(null);
 
   // ── 로고 버튼 드래그 이동 (QA 배치3) — 기본은 우하단, 끌어서 어디든 ──
   // null = 기본 위치(CSS 의 right/bottom). 드래그하면 {left, top} 픽셀 고정.
@@ -156,7 +158,12 @@ export function ChatbotWidget({ projectId, getMapBounds }) {
     : undefined;
   const panelStyle = fabPos
     ? {
-        right: Math.max(8, window.innerWidth - fabPos.left - 60),
+        // 패널 폭(~340)을 넘겨 왼쪽으로 밀리지 않게 상한을 둔다(FAB를 왼쪽 끝으로
+        // 끌어도 패널이 화면 밖으로 잘리지 않는다)
+        right: Math.min(
+          Math.max(8, window.innerWidth - fabPos.left - 60),
+          window.innerWidth - 348,
+        ),
         bottom: Math.min(
           Math.max(8, window.innerHeight - fabPos.top + 10),
           window.innerHeight - 540, // 패널(~530px)이 화면 위로 밀려나지 않게
@@ -232,10 +239,14 @@ export function ChatbotWidget({ projectId, getMapBounds }) {
         candidates: result?.candidates ?? [],
       });
     } catch (e) {
+      // 서버 응답 본문(CustomResponse)일 때만 그 메시지를 쓴다 — 타임아웃·네트워크
+      // 오류는 axios 원문("timeout of 30000ms exceeded")이라 그대로 노출하지 않는다.
+      const fallback = "응답을 받지 못했어요. 잠시 후 다시 시도해주세요.";
       pushMessage({
         role: "error",
-        text: e?.message ?? "응답을 받지 못했어요. 잠시 후 다시 시도해주세요.",
+        text: e?.code ? (e.message ?? fallback) : fallback,
       });
+      setInputValue(message); // 실패 시 입력을 되살려 재타이핑을 없앤다
     } finally {
       setSending(false);
     }
@@ -244,7 +255,7 @@ export function ChatbotWidget({ projectId, getMapBounds }) {
   return (
     <>
       {/* 로고 버튼은 항상 같은 자리에 남는다(QA 배치2) — 열려 있어도 사라지지
-          않고, 같은 위치를 다시 눌러 닫는다. 열림 상태에선 ✕ 모양으로 바뀐다.
+          않고, 같은 위치를 다시 눌러 닫는다. 열림 상태에선 닫기 아이콘으로 바뀐다.
           꾹 잡고 끌면 원하는 곳으로 옮길 수 있다(QA 배치3). */}
       <button
         className={`cbw-fab ${isOpen ? "is-open" : ""}`}
@@ -253,14 +264,18 @@ export function ChatbotWidget({ projectId, getMapBounds }) {
         onClick={handleFabClick}
         title={isOpen ? "이음이 닫기" : "이음이 열기 · 끌어서 이동"}
       >
-        {isOpen ? "✕" : <img src={chatbotIcon} alt="챗봇 이음이" className="cbw-fab-icon" />}
+        <img
+          src={isOpen ? chatbotClose : chatbotOpen}
+          alt={isOpen ? "이음이 닫기" : "챗봇 이음이"}
+          className="cbw-fab-icon"
+        />
       </button>
 
       {isOpen && (
         <div className="cbw" style={panelStyle}>
           <div className="cbw-head">
             <span className="cbw-head-title">
-              <img src={chatbotIcon} alt="" className="cbw-head-icon" /> 챗봇 이음이
+              <img src={chatbotClose} alt="" className="cbw-head-icon" /> 챗봇 이음이
             </span>
             <button className="cbw-close" onClick={() => setIsOpen(false)}>
               ✕
@@ -304,7 +319,7 @@ export function ChatbotWidget({ projectId, getMapBounds }) {
 
             {/* 예시 프롬프트 칩 — 대화가 시작되기 전(intro 시점)에만 노출.
                 클릭하면 입력창에 텍스트만 채운다(전송은 사용자가 확인 후 직접). */}
-            {messages.length === 0 && (
+            {!messages.some((m) => m.role === "user" || m.role === "bot") && (
               <div className="cbw-chips">
                 {(activeTab === "map" ? MAP_CHIPS : GENERAL_CHIPS).map(
                   (chip) => (
@@ -312,7 +327,10 @@ export function ChatbotWidget({ projectId, getMapBounds }) {
                       key={chip}
                       type="button"
                       className="cbw-chip"
-                      onClick={() => setInputValue(chip)}
+                      onClick={() => {
+                        setInputValue(chip);
+                        inputRef.current?.focus();
+                      }}
                     >
                       {chip}
                     </button>
@@ -387,6 +405,7 @@ export function ChatbotWidget({ projectId, getMapBounds }) {
 
           <div className="cbw-foot">
             <input
+              ref={inputRef}
               className="cbw-input"
               type="text"
               value={inputValue}
