@@ -1,8 +1,7 @@
 import Modal from './Modal';
 
 /**
- * 단순 "확인/취소" 류 모달의 공통 뼈대. 타이핑 확인이 필요한 그룹삭제는
- * 별도 컴포넌트(DeleteGroupModal)를 쓰고, 이건 프로젝트 삭제처럼
+ * 단순 "확인/취소" 류 모달의 공통 뼈대. 프로젝트 삭제처럼
  * "설명 읽고 확인 버튼 누르면 바로 실행"인 케이스에 쓴다.
  */
 export default function ConfirmModal({

@@ -7,7 +7,6 @@ import { useToastStore } from '../../global/stores/toastStore';
 import { ERROR_CODE } from '../../global/api/errorCodes';
 import { onEnter } from '../../global/util/onEnter';
 import CreateGroupModal from './components/CreateGroupModal';
-import DeleteGroupModal from './components/DeleteGroupModal';
 import WithdrawModal from './components/WithdrawModal';
 import { AppBar } from './shared/ui/AppBar';
 import { Avatar } from './shared/ui/Avatar';
@@ -15,7 +14,7 @@ import { Avatar } from './shared/ui/Avatar';
 export function MyPage() {
   const currentUser = useAuthStore((s) => s.currentUser);
   // 그룹 목록은 이 페이지가 소유한다 — 훅이 조회·갱신을 함께 담당한다.
-  const { groups, status, createGroup, renameGroup, deleteGroup, joinByCode } =
+  const { groups, status, createGroup, renameGroup, joinByCode } =
     useMyGroups(currentUser);
   const showToast = useToastStore((s) => s.show);
   const navigate = useNavigate();
@@ -24,7 +23,6 @@ export function MyPage() {
   const [codeErr, setCodeErr] = useState('');
   const [joining, setJoining] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
-  const [deleteTarget, setDeleteTarget] = useState(null); // 삭제 모달에 넘길 그룹
   const [editingId, setEditingId] = useState(null); // 인라인 이름 수정 중인 그룹 id
   const [editValue, setEditValue] = useState('');
   const [withdrawOpen, setWithdrawOpen] = useState(false);
@@ -148,7 +146,8 @@ export function MyPage() {
                       ))}
                     </div>
                   )}
-                  {/* flat 모델 — 모든 멤버가 이름 수정·그룹 삭제를 할 수 있다 */}
+                  {/* flat 모델 — 모든 멤버가 그룹 이름을 수정할 수 있다.
+                      그룹 삭제는 없다 — 전원이 나가면 서버가 자동으로 소멸시킨다. */}
                   {!isEditing && (
                     <div className="ops">
                       <button
@@ -159,15 +158,6 @@ export function MyPage() {
                         }}
                       >
                         ✎
-                      </button>
-                      <button
-                        className="op"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setDeleteTarget(g);
-                        }}
-                      >
-                        🗑
                       </button>
                     </div>
                   )}
@@ -222,12 +212,6 @@ export function MyPage() {
         open={createOpen}
         onCreate={createGroup}
         onClose={() => setCreateOpen(false)}
-      />
-      <DeleteGroupModal
-        open={!!deleteTarget}
-        group={deleteTarget}
-        onDelete={deleteGroup}
-        onClose={() => setDeleteTarget(null)}
       />
       <WithdrawModal
         open={withdrawOpen}

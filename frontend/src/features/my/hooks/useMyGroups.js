@@ -95,14 +95,6 @@ export function useMyGroups(currentUser) {
     }));
   }, []);
 
-  const deleteGroup = useCallback(async (groupId, typedName) => {
-    await api.deleteGroup(groupId, typedName);
-    setResult((prev) => ({
-      ...prev,
-      groups: prev.groups.filter((g) => g.id !== groupId),
-    }));
-  }, []);
-
   /**
    * 입장 응답(Joined)은 id·name 뿐이고, 남이 만든 그룹이라 멤버 수·여행 수를
    * 추측할 방법이 없다. 목록에 반쪽짜리 카드를 넣지 않는다 — 호출부가 성공 즉시
@@ -116,7 +108,6 @@ export function useMyGroups(currentUser) {
     status: !userId ? "idle" : isStale ? "loading" : result.status,
     createGroup,
     renameGroup,
-    deleteGroup,
     joinByCode,
   };
 }

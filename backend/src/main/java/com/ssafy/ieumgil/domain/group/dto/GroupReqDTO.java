@@ -33,15 +33,4 @@ public class GroupReqDTO {
             String inviteCode
     ) {
     }
-
-    /**
-     * 그룹 삭제 요청 (DELETE /api/groups/{groupId}).
-     * flat 모델이라 누구나 삭제할 수 있어, 오입력 방지용으로 그룹명을 한 번 더 받는다(MY-04).
-     */
-    public record Delete(
-            @Schema(description = "삭제를 확인하기 위해 다시 입력한 그룹명", example = "제주 여행팀")
-            @NotBlank(message = "삭제할 그룹명을 입력해주세요.")
-            String confirmName
-    ) {
-    }
 }

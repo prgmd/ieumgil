@@ -2,11 +2,9 @@ package com.ssafy.ieumgil.domain.group.repository;
 
 import com.ssafy.ieumgil.domain.group.entity.TravelGroup;
 import org.springframework.data.jpa.repository.JpaRepository;
-import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
-import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 
@@ -40,12 +38,4 @@ public interface TravelGroupRepository extends JpaRepository<TravelGroup, Long> 
             ORDER BY gm.travelGroup.id DESC
             """)
     List<TravelGroup> findMyGroups(@Param("userId") Long userId);
-
-    /**
-     * 소프트 삭제 후 보존 기간(30일)이 지난 그룹을 하드 삭제한다 (MY-04, 스케줄러 전용).
-     * 그룹 행이 지워지면 소속·프로젝트는 FK의 ON DELETE CASCADE로 함께 삭제된다.
-     */
-    @Modifying(clearAutomatically = true, flushAutomatically = true)
-    @Query("DELETE FROM TravelGroup g WHERE g.deletedAt < :threshold")
-    int deleteAllSoftDeletedBefore(@Param("threshold") LocalDateTime threshold);
 }
