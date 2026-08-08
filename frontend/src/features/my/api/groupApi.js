@@ -72,20 +72,6 @@ export async function renameGroup(groupId, name) {
   }
 }
 
-export async function deleteGroup(groupId, typedName) {
-  try {
-    // axios의 delete 는 두 번째 인자가 config 다 — 본문은 config.data 로 감싸야
-    // 실제로 전송된다. 그냥 넘기면 axios 가 모르는 옵션으로 취급해 본문 없이 나가고,
-    // 백엔드의 @RequestBody 검증에서 400 이 된다.
-    const { data } = await axiosInstance.delete(`/groups/${groupId}`, {
-      data: { confirmName: typedName },
-    });
-    return unwrap(data);
-  } catch (error) {
-    unwrapError(error);
-  }
-}
-
 // ── 초대 코드 ─────────────────────────
 export async function joinByCode(code) {
   try {
