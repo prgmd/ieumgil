@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../../../../global/stores/authStore';
+import { ROUTES } from '../../../../global/constants/routes';
 import { Avatar } from './Avatar';
 import logo from '../../../../assets/img/logo.png';
 
@@ -49,7 +50,7 @@ export function AppBar({ crumbs, members = [], activeMemberIds = [], extra = nul
       // 혹시 예외가 새어나오더라도 unhandled rejection이 되지 않도록 안전망으로 막는다.
       console.error('로그아웃 처리 중 오류', e);
     } finally {
-      navigate('/', { replace: true });
+      navigate(ROUTES.landing, { replace: true });
     }
   }
 
@@ -61,7 +62,7 @@ export function AppBar({ crumbs, members = [], activeMemberIds = [], extra = nul
 
   return (
     <header className="appbar">
-      <button className="logo" onClick={() => navigate('/my')} aria-label="개인 페이지로 이동">
+      <button className="logo" onClick={() => navigate(ROUTES.my)} aria-label="개인 페이지로 이동">
         <img src={logo} alt="이음길" className="logo-img" />
       </button>
 

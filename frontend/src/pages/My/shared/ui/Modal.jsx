@@ -49,7 +49,7 @@ export default function Modal({
         if (e.target === e.currentTarget && closeOnBackdrop) onClose();
       }}
     >
-      {bodyless ? children : <div className="md">{children}</div>}
+      {bodyless ? children : <div className="md cream-scroll-round">{children}</div>}
     </div>
   );
 }

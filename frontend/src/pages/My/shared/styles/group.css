@@ -19,7 +19,7 @@
 .code-input{display:flex;gap:8px;margin-top:12px;flex-wrap:wrap}
 .code-input input{flex:1 1 140px;min-width:0;border:1.5px solid var(--line);border-radius:11px;padding:10px 13px;font-size:14px;letter-spacing:.12em;font-weight:500;background:#fff}
 .code-input .btn{flex:0 0 auto}
-.code-err{color:#9c3b3b;font-size:12px;margin-top:8px;min-height:16px}
+.code-err{color:var(--danger);font-size:12px;margin-top:8px;min-height:16px}
 .code-chip{background:var(--cream);border:1.5px dashed var(--line);border-radius:11px;padding:9px;text-align:center;font-weight:500;letter-spacing:.14em;margin:6px 0 10px}
 
 /* 그룹 페이지 — 좌측 콘텐츠 + 우측 320px 고정 패널 */
@@ -49,11 +49,11 @@
 /* 멤버 목록 */
 .f-row{display:flex;align-items:center;gap:9px;padding:7px 0;font-size:13px;border-bottom:1px solid rgba(61,43,34,.06)}
 .f-row:last-child{border-bottom:none}
-.leave-btn{width:100%;margin-top:14px;border:1px solid #e3c0c0;background:#fbeeee;color:#9c3b3b;border-radius:11px;padding:10px;font-weight:500;font-size:12.5px}
+.leave-btn{width:100%;margin-top:14px;border:1px solid #e3c0c0;background:#fbeeee;color:var(--danger);border-radius:11px;padding:10px;font-weight:500;font-size:12.5px}
 
 /* 계정(회원 탈퇴) 패널 — 되돌릴 수 없는 동작이라 주 흐름에서 떨어뜨려 두고,
    버튼도 위험색 테두리로만 표시한다(채운 버튼은 실수 클릭을 부른다) */
 .acct-pnl{margin-top:14px}
 .acct-pnl .btn{margin-top:10px;width:100%}
-.btn-gh.danger{color:#9c3b3b;border-color:rgba(156,59,59,.35)}
-.btn-gh.danger:hover{background:#fdf1ef;border-color:#9c3b3b}
+.btn-gh.danger{color:var(--danger);border-color:rgba(156,59,59,.35)}
+.btn-gh.danger:hover{background:#fdf1ef;border-color:var(--danger)}

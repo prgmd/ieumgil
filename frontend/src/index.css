@@ -22,3 +22,39 @@ html,
 body {
   font-family: var(--font-app);
 }
+
+/* 앱 전역 스크롤바 (bare minimum) — 어디서나 얇은 크림 바, 상하 화살표 버튼 없음.
+   ⚠️ 표준 scrollbar-width/scrollbar-color 는 여기서 쓰지 않는다 — 크롬(Blink)에선
+   그게 설정되면 ::-webkit-scrollbar 규칙(버튼 제거 포함)이 통째로 무시된다.
+   Firefox(웹킷 미지원)만 아래 @supports 로 따로 챙긴다. */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(124, 84, 67, 0.45); /* 테마 갈색(#7c5443) 톤 — 회색빛 대신 따뜻하게 */
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(124, 84, 67, 0.65);
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-button {
+  display: none;
+  width: 0;
+  height: 0;
+}
+/* 둥근 모서리 컨테이너(모달)용 — 트랙 상하 여백을 조금 줘 라운드 코너에 여유를 둔다. */
+.cream-scroll-round::-webkit-scrollbar-track {
+  margin: 6px 0;
+}
+/* Firefox 등 ::-webkit-scrollbar 미지원 브라우저 — 표준 속성으로 얇은 크림 바.
+   selector() 지원 검사로 크롬에는 적용되지 않아 위 웹킷 규칙을 깨지 않는다. */
+@supports not selector(::-webkit-scrollbar) {
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(124, 84, 67, 0.45) transparent;
+  }
+}
