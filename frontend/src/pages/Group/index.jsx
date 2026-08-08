@@ -5,6 +5,7 @@ import { useGroupDetail } from '../../features/group/hooks/useGroupDetail';
 import { useProjects } from '../../features/group/hooks/useProjects';
 import { isTripFinished } from '../../features/group/util/tripStatus';
 import { useToastStore } from '../../global/stores/toastStore';
+import { ROUTES } from '../../global/constants/routes';
 import { onEnter } from '../../global/util/onEnter';
 import LeaveGroupModal from './components/LeaveGroupModal';
 import CreateProjectModal from './components/CreateProjectModal';
@@ -21,13 +22,20 @@ export function GroupPage() {
   // groupId만 들고 들어오므로 그룹·프로젝트를 URL 파라미터로 직접 조회한다.
   const { group, status, reissueInviteCode, renameGroup, leaveGroup } =
     useGroupDetail(groupId);
-  const { projects, createProject, updateProject, deleteProject } = useProjects(groupId);
+  const {
+    projects,
+    status: projectsStatus,
+    createProject,
+    updateProject,
+    deleteProject,
+  } = useProjects(groupId);
   const showToast = useToastStore((s) => s.show);
   const navigate = useNavigate();
 
   const [leaveOpen, setLeaveOpen] = useState(false);
   const [renaming, setRenaming] = useState(false); // 그룹명 인라인 수정 중인지
   const [nameDraft, setNameDraft] = useState('');
+  const [reissuing, setReissuing] = useState(false); // 초대코드 재발급 요청 중인지
   const [createProjectOpen, setCreateProjectOpen] = useState(false);
   const [editProjectTarget, setEditProjectTarget] = useState(null);
   const [deleteProjectTarget, setDeleteProjectTarget] = useState(null);
@@ -60,26 +68,51 @@ export function GroupPage() {
   }
 
   async function handleReissue() {
+    if (reissuing) return; // 연타 시 중복 재발급 방지
+    setReissuing(true);
     try {
       await reissueInviteCode();
       showToast('코드 재발급 — 기존 코드는 즉시 무효화됐어요');
     } catch {
       showToast('코드 재발급에 실패했어요. 잠시 후 다시 시도해주세요.');
+    } finally {
+      setReissuing(false);
     }
+  }
+
+  // 초대코드 남은 유효기간 — 로컬 날짜(자정 기준)로 계산한다.
+  function inviteDaysLeft(iso) {
+    if (!iso) return null;
+    const now = new Date();
+    const exp = new Date(iso);
+    const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const startOfExp = new Date(exp.getFullYear(), exp.getMonth(), exp.getDate());
+    return Math.round((startOfExp - startOfToday) / 86400000);
   }
 
   // 없는 그룹·권한 없는 그룹·잘못된 URL(/groups/abc)이면 개인 페이지로 되돌린다.
   useEffect(() => {
     if (status !== 'error') return;
     showToast('그룹을 찾을 수 없어요.');
-    navigate('/my', { replace: true });
+    navigate(ROUTES.my, { replace: true });
   }, [status, navigate, showToast]);
 
-  if (!group) return null;
+  // 그룹 조회가 끝나기 전에는 완전 백지 대신 상단바와 안내를 보여준다.
+  // (status === 'error' 는 위 effect 가 개인 페이지로 돌려보낸다.)
+  if (!group) {
+    return (
+      <>
+        <AppBar crumbs={[{ label: '개인 페이지', to: ROUTES.my }]} />
+        <div className="page">
+          <p className="nodata">불러오는 중…</p>
+        </div>
+      </>
+    );
+  }
 
   return (
     <>
-      <AppBar crumbs={[{ label: '개인 페이지', to: '/my' }, { label: group.name }]} />
+      <AppBar crumbs={[{ label: '개인 페이지', to: ROUTES.my }, { label: group.name }]} />
       <div className="page">
       {/* 머리글은 grid 밖으로 — 그래야 좌측 프로젝트 리스트와 우측 친구 패널이
           같은 라인에서 시작한다(My 페이지와 동일 구조) */}
@@ -118,11 +151,17 @@ export function GroupPage() {
       <div className="group-grid">
         <div>
           <div>
-            {/* 노데이터 (QA 배치2) */}
-            {projects.length === 0 && (
+            {/* 노데이터 (QA 배치2) — 로딩 중 깜빡임·조회 실패의 빈 그룹 위장을 막기 위해
+                status 로 판정한다. 진짜 비었을 때(loaded)만 노데이터, error 면 실패 문구. */}
+            {projectsStatus === 'loaded' && projects.length === 0 && (
               <p className="nodata">
                 아직 프로젝트가 없어요 — 위 <b>＋ 새 프로젝트</b>로 첫 여행
                 계획을 시작해보세요.
+              </p>
+            )}
+            {projectsStatus === 'error' && (
+              <p className="nodata">
+                프로젝트 목록을 불러오지 못했어요. 잠시 후 다시 시도해주세요.
               </p>
             )}
             {projects.map((p) => {
@@ -132,7 +171,7 @@ export function GroupPage() {
                 <div
                   key={p.projectId}
                   className="p-card"
-                  onClick={() => navigate(`/groups/${groupId}/projects/${p.projectId}`)}
+                  onClick={() => navigate(ROUTES.project(groupId, p.projectId))}
                 >
                   <div style={{ flex: 1 }}>
                     <h3>{p.name}</h3>
@@ -186,11 +225,27 @@ export function GroupPage() {
             <div className="code-chip">
               <span>{group.inviteCode}</span>
             </div>
+            {(() => {
+              const d = inviteDaysLeft(group.inviteExpiresAt);
+              if (d == null) return null;
+              const label =
+                d > 0 ? `${d}일 후 만료` : d === 0 ? '오늘 만료' : '만료됨';
+              return (
+                <p style={{ fontSize: 11, color: 'var(--ink2)', margin: '0 0 8px' }}>
+                  {label}
+                </p>
+              );
+            })()}
             <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
               <button className="btn btn-gh" style={{ flex: 1 }} onClick={handleCopyCode}>
                 복사
               </button>
-              <button className="btn btn-gh" style={{ flex: 1 }} onClick={handleReissue}>
+              <button
+                className="btn btn-gh"
+                style={{ flex: 1 }}
+                onClick={handleReissue}
+                disabled={reissuing}
+              >
                 재발급
               </button>
             </div>
@@ -219,6 +274,7 @@ export function GroupPage() {
         open={createProjectOpen}
         onCreate={createProject}
         onClose={() => setCreateProjectOpen(false)}
+        defaultHeadcount={group?.members?.length || 1}
       />
       {/* 열려 있을 때만 마운트한다 — 다른 프로젝트의 ✎ 를 누르면 폼이 그 프로젝트
           값으로 새로 잡히도록(key) 하기 위함 */}

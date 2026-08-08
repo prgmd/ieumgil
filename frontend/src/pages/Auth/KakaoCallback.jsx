@@ -2,6 +2,8 @@ import { useEffect } from "react";
 import { useSearchParams, useNavigate } from "react-router-dom";
 import { useAuthStore } from "../../global/stores/authStore";
 import { useToastStore } from "../../global/stores/toastStore";
+import { ROUTES } from "../../global/constants/routes";
+import "../../global/components/spinner.css"; // gspin-turn 키프레임 재사용
 
 /**
  * 이미 처리에 착수한 인가코드. 인가코드는 1회용이라 두 번 보내면 두 번째는 반드시 실패한다.
@@ -29,21 +31,50 @@ function KakaoCallback() {
       // (refreshToken 은 백엔드가 httpOnly 쿠키로 내려주므로 프론트가 다루지 않는다.)
       login(code)
         // 이미 사용한 인가 코드가 붙은 이 URL 로 뒤로가기 되지 않도록 replace 로 이동
-        .then(() => navigate("/my", { replace: true }))
+        .then(() => navigate(ROUTES.my, { replace: true }))
         .catch((error) => {
           console.error("백엔드 로그인 처리 실패:", error);
           // 여기서 멈추면 "처리 중" 화면에 갇힌다. 인가코드 만료·재사용(AUTH401_4)은
           // 다시 로그인하면 풀리므로 로그인 페이지로 되돌린다.
           // 서버가 사유를 한국어 message 로 주므로 그대로 보여준다.
           showToast(error?.message ?? "로그인에 실패했어요. 다시 시도해주세요.");
-          navigate("/login", { replace: true });
+          navigate(ROUTES.login, { replace: true });
         });
     }
   }, [code, login, navigate, showToast]);
 
   return (
-    <div style={{ padding: "50px", textAlign: "center" }}>
-      <h2>카카오 로그인 처리 중입니다...</h2>
+    <div
+      role="status"
+      aria-live="polite"
+      style={{
+        minHeight: "100vh",
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center",
+        justifyContent: "center",
+        gap: "18px",
+        background:
+          "linear-gradient(150deg, #fdf6ea 0%, #f4ecd9 45%, #efe7d2 100%)",
+        color: "#3d2b22",
+        fontFamily:
+          'var(--font-app), "Noto Sans KR", -apple-system, BlinkMacSystemFont, sans-serif',
+      }}
+    >
+      <span
+        aria-hidden="true"
+        style={{
+          width: "34px",
+          height: "34px",
+          border: "3px solid rgba(61, 43, 34, 0.18)",
+          borderTopColor: "#9c4a2f",
+          borderRadius: "50%",
+          animation: "gspin-turn 0.7s linear infinite",
+        }}
+      />
+      <p style={{ margin: 0, fontSize: "15px", fontWeight: 500 }}>
+        로그인 중이에요…
+      </p>
     </div>
   );
 }

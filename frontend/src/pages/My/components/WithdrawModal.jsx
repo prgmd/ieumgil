@@ -80,7 +80,7 @@ export default function WithdrawModal({
         </button>
         <button
           className="btn btn-acc"
-          style={{ background: '#9c3b3b' }}
+          style={{ background: 'var(--danger)' }}
           onClick={handleWithdraw}
           disabled={submitting || typed.trim() !== CONFIRM_PHRASE}
         >

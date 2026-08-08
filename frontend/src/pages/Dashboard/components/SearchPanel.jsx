@@ -5,6 +5,7 @@
 // 검색 상태·지도 조작은 전부 useKakaoMap 훅이 들고 있고 여기는 그리기만 한다.
 
 import { SearchResultDraggable } from "./SearchResultDraggable";
+import { HintIcon } from "./HintIcon";
 
 export function SearchPanel({
   searchKeyword,
@@ -19,14 +20,10 @@ export function SearchPanel({
     <div className="panel">
       <h4 className="panel-title">
         카카오 장소 검색
-        <span
-          className="hint-ico"
-          tabIndex={0}
-          aria-label="장소 검색 사용 안내"
-          data-tip="장소를 검색한 뒤 마음에 드는 결과를 끌어다 후보 목록에 담아요. 계획표에는 후보 목록을 거쳐 올릴 수 있어요."
-        >
-          ⓘ
-        </span>
+        <HintIcon
+          label="장소 검색 사용 안내"
+          tip="장소를 검색한 뒤 마음에 드는 결과를 끌어다 후보 목록에 담아요. 계획표에는 후보 목록을 거쳐 올릴 수 있어요."
+        />
       </h4>
       <div className="search-box">
         <form className="search-form" onSubmit={handleSearchPlace}>

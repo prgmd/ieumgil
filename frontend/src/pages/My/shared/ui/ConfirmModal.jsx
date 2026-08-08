@@ -27,7 +27,7 @@ export default function ConfirmModal({
         </button>
         <button
           className="btn btn-acc"
-          style={danger ? { background: '#9c3b3b' } : undefined}
+          style={danger ? { background: 'var(--danger)' } : undefined}
           onClick={onConfirm}
           disabled={submitting}
         >

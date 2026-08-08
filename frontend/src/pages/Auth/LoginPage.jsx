@@ -1,4 +1,5 @@
 import "./Login.css"; // 동일 폴더에 생성할 CSS 파일 임포트
+import { useToastStore } from "../../global/stores/toastStore";
 import logo from "../../assets/img/logo.png";
 import planeIcon from '../../assets/img/plane.png';
 import packageIcon from '../../assets/img/package.png';
@@ -7,6 +8,8 @@ import compassIcon from '../../assets/img/compass.png';
 import calendarIcon from '../../assets/img/calendar.png';
 
 export function LoginPage() {
+  const showToast = useToastStore((s) => s.show);
+
   const handleKakaoLogin = () => {
     const REST_API_KEY = import.meta.env.VITE_KAKAO_REST_API_KEY;
     const REDIRECT_URI = import.meta.env.VITE_KAKAO_REDIRECT_URI;
@@ -15,6 +18,7 @@ export function LoginPage() {
       console.error(
         "환경변수(.env)에 카카오 API 키와 REDIRECT_URI를 설정해주세요.",
       );
+      showToast("로그인 설정이 누락됐어요. 잠시 후 다시 시도해주세요.");
       return;
     }
 
@@ -101,8 +105,8 @@ export function LoginPage() {
             </div>
 
             <p className="login-panel__terms">
-              로그인 시 <a href="#">이용약관</a> 및{" "}
-              <a href="#">개인정보처리방침</a>에 동의하게 됩니다.
+              로그인 시 <span className="login-panel__terms-doc">이용약관</span> 및{" "}
+              <span className="login-panel__terms-doc">개인정보처리방침</span>에 동의하게 됩니다.
             </p>
           </div>
         </section>

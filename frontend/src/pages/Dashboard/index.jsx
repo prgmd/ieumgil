@@ -14,6 +14,7 @@ import { VoiceBar } from "./components/VoiceBar";
 import { hueOf } from "./components/memberColor";
 import { buildTransportMeta } from "./transitMeta";
 import { CardBody } from "./components/CardBody";
+import { HintIcon } from "./components/HintIcon";
 import {
   BlockEditBadge,
   BlockLinkBadge,
@@ -72,6 +73,7 @@ import { useProjects } from "../../features/group/hooks/useProjects";
 import { useIsMobile } from "../../global/hooks/useIsMobile";
 import { useAuthStore } from "../../global/stores/authStore";
 import { useToastStore } from "../../global/stores/toastStore";
+import { ROUTES } from "../../global/constants/routes";
 import "./index.css";
 
 const PX = 2.0;
@@ -299,7 +301,7 @@ const DayTab = React.forwardRef(function DayTab(
           className="dt-viewers"
           title={`보는 중: ${viewers.map((v) => v.name).join(", ")}`}
         >
-          {viewers.slice(0, 3).map((v) =>
+          {viewers.slice(0, 2).map((v) =>
             v.profileImg?.startsWith("http") ? (
               <img
                 key={v.id}
@@ -313,8 +315,8 @@ const DayTab = React.forwardRef(function DayTab(
               </i>
             ),
           )}
-          {viewers.length > 3 && (
-            <em className="dt-viewers-more">+{viewers.length - 3}</em>
+          {viewers.length > 2 && (
+            <em className="dt-viewers-more">+{viewers.length - 2}</em>
           )}
         </span>
       )}
@@ -400,7 +402,11 @@ function TimelineCard({
           startMins={startMins}
           endMins={endMins}
           isThisResizing={isThisResizing}
-          onEdge={handleEdgeClick}
+          // 자동 생성 교통 블록은 소요(door-to-door)가 길찾기 계산값이라 손으로
+          // 리사이즈 못 하게 막는다 — 손잡이를 아예 안 그린다
+          onEdge={
+            item?.auto && item?.cat === "trans" ? undefined : handleEdgeClick
+          }
           onEditBlock={onEditBlock}
           lockedBy={lockedBy}
         />
@@ -840,7 +846,7 @@ export function DashboardPage() {
   useEffect(() => {
     if (status !== "error") return;
     showToast(error?.message ?? "프로젝트를 열 수 없어요.");
-    navigate(`/groups/${groupId}`, { replace: true });
+    navigate(ROUTES.group(groupId), { replace: true });
   }, [status, error, groupId, navigate, showToast]);
 
   // 임시 id 로 만든 로컬 블록을 서버 blockId 로 교체한다 (items + pool).
@@ -1376,7 +1382,7 @@ export function DashboardPage() {
         break;
       case "PROJECT_DELETED":
         showToast("이 프로젝트가 삭제됐어요.");
-        navigate(`/groups/${groupId}`, { replace: true });
+        navigate(ROUTES.group(groupId), { replace: true });
         break;
       case "MEMBER_JOINED":
         // 그룹의 모든 프로젝트 토픽에 발행된다 — 상단바 아바타 목록 갱신.
@@ -2226,7 +2232,7 @@ export function DashboardPage() {
 
         // 자석 스냅 — 이웃 블록 가장자리에 아주 가까우면 딱 붙인다(빈틈 0). 손으로
         // 정확히 맞추기 어려운 걸 돕는다. 임계값 밖이면 원래 위치 그대로.
-        const SNAP_MAGNET = 10; // 분 (이 안이면 스냅)
+        const SNAP_MAGNET = 5; // 분 (이 안이면 스냅) — 의도치 않게 붙는 경우를 줄임
         let bestSnap = null;
         // 축이 전 기간 연속이라 스냅도 배치된 모든 블록을 본다 — Day 로 한정하면
         // 경계 근처(23:58 드롭인데 이웃이 다음 날 00:05)에 스냅이 안 걸린다.
@@ -2255,7 +2261,13 @@ export function DashboardPage() {
       // 후보 목록·타임라인 어느 쪽도 아니면 "보드 밖" — 놓으면 삭제다.
       // 별도 휴지통 영역 대신 이 판정을 쓴다(후보 목록이 그만큼 넓어진다).
       // 단 검색 결과는 아직 블록이 아니라 지울 대상이 없다 — 그냥 취소한다.
-      if (active.data?.current?.from === "search") return { region: null };
+      // 검색·챗봇 추천 카드는 아직 블록이 아니라 지울 대상이 없다 — 후보 밖에 놓으면
+      // 삭제가 아니라 그냥 취소다("삭제됩니다" 경고를 띄우지 않는다)
+      if (
+        active.data?.current?.from === "search" ||
+        active.data?.current?.from === "chatbot"
+      )
+        return { region: null };
       return { region: "discard" };
     },
     [pool, items, timelineStart, timelineEnd, board],
@@ -2863,7 +2875,7 @@ export function DashboardPage() {
       <AppBar
         // 마지막 항목(프로젝트명)은 extra 의 제목이 대신한다 — 두 번 보이지 않게
         crumbs={[
-          { label: "개인 페이지", to: "/my" },
+          { label: "개인 페이지", to: ROUTES.my },
           { label: group?.name ?? "그룹", to: `/groups/${groupId}` },
         ]}
         // 제목·기간·모드 전환을 상단바에 올린다 — 보드 위 툴바 띠를 없애
@@ -2974,15 +2986,10 @@ export function DashboardPage() {
                     <span className="date">
                       {dayDate(project, activeDayIndex) || "날짜 미정"}
                     </span>
-                    <span
-                      // tip-down: 헤더 바로 아래라 위로 열면 상단바에 가린다
-                      className="hint-ico tip-down"
-                      tabIndex={0}
-                      aria-label="계획표 사용 안내"
-                      data-tip="후보 블록을 원하는 시간에 끌어다 놓아 일정을 만들어요. 블록의 위·아래 가장자리를 누르면 10분 단위로 길이를 조절하고, 블록 사이 🚗 버튼으로 이동수단을 추가할 수 있어요. 여행 날짜는 위 제목 옆 ✎ 에서 바꿀 수 있어요."
-                    >
-                      ⓘ
-                    </span>
+                    <HintIcon
+                      label="계획표 사용 안내"
+                      tip="후보 블록을 원하는 시간에 끌어다 놓아 일정을 만들어요. 블록의 위·아래 가장자리를 누르면 원하는 만큼 길이를 조절하고, 블록 사이 🚗 버튼으로 이동수단을 추가할 수 있어요. 여행 날짜는 위 제목 옆 ✎ 에서 바꿀 수 있어요."
+                    />
                     <div className="right">
                       <button
                         className="auto-transport-btn"
@@ -2990,7 +2997,7 @@ export function DashboardPage() {
                         disabled={
                           isGeneratingTransport ||
                           blocksOfDay(board, items, activeDay).filter(
-                            (id) => !items[id]?.auto,
+                            (id) => !items[id]?.auto && isServerBlock(id),
                           ).length < 2
                         }
                       >
@@ -3053,7 +3060,7 @@ export function DashboardPage() {
                           }}
                         >
                           <span className="tl-ghost-label">
-                            {fmtTime(dragPreview.dropMins)} 에 놓기
+                            {fmtTime(dragPreview.dropMins)}에 놓기
                           </span>
                         </div>
                       )}
@@ -3229,15 +3236,11 @@ export function DashboardPage() {
                           : pool.length}
                       </span>
                       {/* 사용 안내는 ⓘ 커스텀 툴팁으로 (QA 배치2) — 호버 즉시,
-                          앱 디자인에 맞는 말풍선. 문구는 data-tip 이 CSS content 로 그린다 */}
-                      <span
-                        className="hint-ico"
-                        tabIndex={0}
-                        aria-label="후보 목록 사용 안내"
-                        data-tip="블록을 끌어다 놓아 보관하는 공간이에요. 타임라인·후보 목록 밖에 놓으면 삭제됩니다."
-                      >
-                        ⓘ
-                      </span>
+                          앱 디자인에 맞는 말풍선. 위 공간 부족하면 아래로 뒤집힘 */}
+                      <HintIcon
+                        label="후보 목록 사용 안내"
+                        tip="블록을 끌어다 놓아 보관하는 공간이에요. 타임라인·후보 목록 밖에 놓으면 삭제됩니다."
+                      />
                     </div>
                     {/* 대분류 필터 + 제목 검색 — 헤더에 함께 둔다. 렌더만 거른다 */}
                     <div className="pool-tools">
@@ -3293,7 +3296,7 @@ export function DashboardPage() {
                           key={id}
                           id={id}
                           item={items[id]}
-                          onEditBlock={setEditingBlockId}
+                          onEditBlock={openBlockDetail}
                           onCopy={handleCopyBlock}
                           lockedBy={lockBadgeOf(id)}
                           editor={editorBadgeOf(id)}

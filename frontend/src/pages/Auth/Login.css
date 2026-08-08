@@ -264,9 +264,10 @@
   color: var(--ink2);
 }
 
-.login-panel__terms a {
+.login-panel__terms-doc {
   color: var(--ink);
-  text-decoration: underline;
+  font-weight: 500;
+  cursor: default;
 }
 
 /* ===== 반응형: 좁은 화면에서는 히어로 숨기고 로그인 패널만 ===== */

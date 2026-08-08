@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import Modal from '../../My/shared/ui/Modal';
 import { useAuthStore } from '../../../global/stores/authStore';
 import { useToastStore } from '../../../global/stores/toastStore';
+import { ROUTES } from '../../../global/constants/routes';
 
 /**
  * @param onLeave () => Promise<{ groupDeleted }> — 그룹을 소유한 페이지가 내려준다.
@@ -27,7 +28,7 @@ export default function LeaveGroupModal({ open, onClose, group, onLeave }) {
           ? '마지막 멤버였어요 — 그룹이 완전히 삭제됐어요'
           : '그룹에서 나갔어요'
       );
-      navigate('/my');
+      navigate(ROUTES.my);
     } finally {
       setSubmitting(false);
       onClose();
@@ -53,7 +54,7 @@ export default function LeaveGroupModal({ open, onClose, group, onLeave }) {
         </button>
         <button
           className="btn btn-acc"
-          style={{ background: '#9c3b3b' }}
+          style={{ background: 'var(--danger)' }}
           onClick={handleLeave}
           disabled={submitting}
         >

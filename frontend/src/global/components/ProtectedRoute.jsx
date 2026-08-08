@@ -1,5 +1,6 @@
 import { Navigate, Outlet } from "react-router-dom";
 import { tokenStorage } from "../util/tokenStorage";
+import { ROUTES } from "../constants/routes";
 
 /**
  * 인증 가드 (Authentication Guard)
@@ -13,7 +14,7 @@ import { tokenStorage } from "../util/tokenStorage";
 function ProtectedRoute() {
   const isAuthenticated = !!tokenStorage.getAccessToken();
 
-  return isAuthenticated ? <Outlet /> : <Navigate to="/" replace />;
+  return isAuthenticated ? <Outlet /> : <Navigate to={ROUTES.landing} replace />;
 }
 
 export default ProtectedRoute;

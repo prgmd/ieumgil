@@ -100,7 +100,14 @@ export default function EditProjectModal({
           <label>여행 시작일 *</label>
           <DatePicker
             value={form.startDate}
-            onChange={(v) => update('startDate', v)}
+            onChange={(v) =>
+              // 시작일이 종료일보다 뒤로 가면 종료일도 같이 끌어올린다
+              setForm((f) => ({
+                ...f,
+                startDate: v,
+                endDate: f.endDate && f.endDate < v ? v : f.endDate,
+              }))
+            }
           />
         </div>
         <div>

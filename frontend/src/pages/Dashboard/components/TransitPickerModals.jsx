@@ -111,11 +111,13 @@ export function TransitPickerModals({
                 className="tp-apply"
                 onClick={confirmBulkTransit}
               >
-                {
-                  Object.values(bulkTransitPicker.choices).filter(Boolean)
-                    .length
-                }
-                개 구간 적용
+                {Object.values(bulkTransitPicker.choices).filter(Boolean)
+                  .length === 0
+                  ? "기존 이동 삭제"
+                  : `${
+                      Object.values(bulkTransitPicker.choices).filter(Boolean)
+                        .length
+                    }개 구간 적용`}
               </button>
             </div>
           </div>

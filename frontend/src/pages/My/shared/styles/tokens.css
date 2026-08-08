@@ -1,3 +1,11 @@
 :root{--ink:#3d2b22;--ink2:#8a776a;--line:#e6dccb;--cream:#fffdf8;--acc:#9c4a2f;
 --stay:#8a5aa8;--stayB:#f3edfa;--food:#d97e3c;--foodB:#fdf1e4;--spot:#3e8e63;--spotB:#eaf5ec;
---etc:#7a6a5c;--etcB:#f1ece4;--trans:#6b7fc7;--transB:#eef0fb}
+--etc:#7a6a5c;--etcB:#f1ece4;--trans:#6b7fc7;--transB:#eef0fb;
+/* 코드 곳곳에서 var(--ink1)/(--ink3)/(--border1)/(--bg1)/(--bg2) 를 fallback 과 함께
+   쓰는데 정작 정의가 없었다(fallback 없는 4곳은 죽은 선언). 그 fallback 값 그대로
+   정의해 살린다 — 현재 렌더값과 같아 시각 변화는 없다. */
+--ink1:#3d2b22;--ink3:#8a776a;--border1:#e3dfd8;--bg1:#fffdf8;--bg2:#fdfbf7;
+--overlay-dim:rgba(61, 43, 34, 0.4);--danger:#9c3b3b;--btn-brown:#7c5443;--btn-brown-hover:#6a4536;
+/* 모달 크롬·푸터 공통 토큰 — 여러 모달의 서피스/라운드/그림자/푸터간격을 통일 */
+--surface-modal:#fffdf8;--radius-modal:16px;--shadow-modal:0 12px 32px rgba(61, 43, 34, 0.28);
+--modal-foot-gap:8px;--modal-foot-mt:16px}

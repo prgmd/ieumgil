@@ -30,17 +30,15 @@ export const CAT_COLORS = {
  * "48:30" 으로 보인다 — 화면이 읽는 시각은 언제나 그 Day 안의 시각이다.
  * Day 번호가 함께 필요한 자리는 dayNoOfOffset 으로 따로 얻는다.
  */
-// 24시 대신 오전/오후 표기 — 정각은 "오전 9시", 그 외는 "오후 2:30" 처럼.
-// 자정=오전 12시, 정오=오후 12시.
+// 24시 대신 오전/오후 표기 — 항상 "오전 9:00" / "오후 2:30" 처럼 콜론 형식으로 통일한다
+// (정각을 "9시"로 따로 쓰면 한 블록 안에서 표기가 갈려 보인다). 자정=오전 12:00, 정오=오후 12:00.
 export const fmtTime = (mins) => {
   const minuteOfDay = ((mins % MINUTES_PER_DAY) + MINUTES_PER_DAY) % MINUTES_PER_DAY;
   const h24 = Math.floor(minuteOfDay / 60);
   const m = minuteOfDay % 60;
   const period = h24 < 12 ? "오전" : "오후";
   const h12 = h24 % 12 === 0 ? 12 : h24 % 12;
-  return m === 0
-    ? `${period} ${h12}시`
-    : `${period} ${h12}:${String(m).padStart(2, "0")}`;
+  return `${period} ${h12}:${String(m).padStart(2, "0")}`;
 };
 
 // 타임라인 눈금 전용 — ":30" 대신 "9시 30분" 처럼 풀어 쓴다(정각은 "9시").

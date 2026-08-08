@@ -17,7 +17,15 @@ export function PoolCard({ id, item, onEditBlock, onCopy, lockedBy, editor }) {
     transform,
     transition,
     isDragging,
-  } = useSortable({ id, data: { from: "pool" } });
+    // 드래그 시각은 DragOverlay 가 대신 그린다. 이때 dnd-kit 의 기본 layout
+    // 애니메이션을 켜 두면 드롭 직후 소스 카드(특히 첫 카드)에 복귀 transform 이
+    // 물린 채 안 지워져 카드가 어긋난 자리에 "벽돌"처럼 굳는다(다른 카드를
+    // 움직여 리렌더되면 풀림). 오버레이가 있으니 이 애니메이션은 끈다.
+  } = useSortable({
+    id,
+    data: { from: "pool" },
+    animateLayoutChanges: () => false,
+  });
   const catStyle = catOf(item);
   // dnd-kit 이 만들어주는 이동값과 카테고리 색만 인라인으로 넘긴다(색 지정은 CSS 몫).
   const style = {
