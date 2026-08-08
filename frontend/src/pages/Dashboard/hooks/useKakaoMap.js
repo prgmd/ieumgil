@@ -305,13 +305,14 @@ export function useKakaoMap({ board, items, activeDay, showToast }) {
     infoWindowRef.current?.close();
     overlayRef.current?.setMap(null);
 
+    // 이전 검색의 핀부터 걷는다 — 0건이어도 옛 핀이 지도에 남지 않게 먼저 걷는다
+    // (안 걷으면 "결과 없음"인데 지도엔 직전 검색 핀이 그대로 남았다)
+    searchMarkersRef.current.forEach((m) => m.setMap(null));
+    searchMarkersRef.current = [];
+
     // 결과가 없으면 목록의 빈 상태(SearchPanel 의 search-empty)가 알려준다 —
     // 검색 결과 없음은 에러가 아니므로 토스트를 띄우지 않는다
     if (!map || results.length === 0) return;
-
-    // 이전 검색의 핀부터 걷는다 — 안 걷으면 검색할 때마다 지도에 쌓인다
-    searchMarkersRef.current.forEach((m) => m.setMap(null));
-    searchMarkersRef.current = [];
 
     const bounds = new window.kakao.maps.LatLngBounds();
     results.forEach((place) => {
@@ -349,7 +350,7 @@ export function useKakaoMap({ board, items, activeDay, showToast }) {
     if (map && window.kakao && window.kakao.maps) {
       const moveLatLon = new window.kakao.maps.LatLng(place.lat, place.lng);
 
-      map.setLevel(4);
+      if (map.getLevel() > 4) map.setLevel(4); // 더 확대해 둔 지도를 되레 축소하지 않게
       map.panTo(moveLatLon);
 
       // 💡 2-1. 인포윈도우가 아직 안 만들어졌다면 최초 1회 생성
@@ -364,9 +365,9 @@ export function useKakaoMap({ board, items, activeDay, showToast }) {
       // 현재 앱의 테마 색상(#d97e3c 등)을 사용해 통일감을 주었습니다.
       const content = `
         <div style="padding:15px; font-size:13px; color:#333; min-width:200px; border-radius:8px;">
-          <b style="font-size:15px; display:block; margin-bottom:5px; color:#d97e3c;">${place.name}</b>
-          ${place.address ? `<span style="display:block;">${place.address}</span>` : ""}
-          ${place.phone ? `<span style="display:block; margin-top:5px; color:#6b7fc7;">📞 ${place.phone}</span>` : ""}
+          <b style="font-size:15px; display:block; margin-bottom:5px; color:#d97e3c;">${escapeHtml(place.name)}</b>
+          ${place.address ? `<span style="display:block;">${escapeHtml(place.address)}</span>` : ""}
+          ${place.phone ? `<span style="display:block; margin-top:5px; color:#6b7fc7;">📞 ${escapeHtml(place.phone)}</span>` : ""}
         </div>
       `;
 
