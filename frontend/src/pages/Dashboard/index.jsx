@@ -3437,7 +3437,13 @@ export function DashboardPage() {
 
               {/* 챗봇 — 추천 카드를 후보 목록으로 드래그해야 하므로 반드시
                   이 DndContext 안에서 렌더한다 (위치는 fixed 라 화면상 그대로) */}
-              <ChatbotWidget projectId={projectId} getMapBounds={getMapBounds} />
+              {/* 보고 있는 Day 를 같이 넘긴다 — "점심 먹은 데" 처럼 일정을 가리키는 말이
+                  여러 날에 걸릴 때 서버가 되묻지 않고 이 Day 의 블록을 고른다 */}
+              <ChatbotWidget
+                projectId={projectId}
+                getMapBounds={getMapBounds}
+                dayNo={dayNoOf(activeDay)}
+              />
             </div>
           </DndContext>
         ) : (

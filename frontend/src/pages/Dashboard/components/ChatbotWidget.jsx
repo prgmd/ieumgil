@@ -80,8 +80,10 @@ function CandidateDraggable({ dragId, candidate }) {
  *
  * @param {number} projectId
  * @param {() => ({swLat,swLng,neLat,neLng}|null)} getMapBounds 지도 뷰포트 (지도 미준비면 null)
+ * @param {number} dayNo 지금 보고 있는 Day 번호(1부터) — "점심 먹은 데" 처럼 일정을 가리키는
+ *        말이 여러 날에 걸릴 때 서버가 이 Day 의 블록을 고른다
  */
-export function ChatbotWidget({ projectId, getMapBounds }) {
+export function ChatbotWidget({ projectId, getMapBounds, dayNo }) {
   const [isOpen, setIsOpen] = useState(false);
   const [activeTab, setActiveTab] = useState("general");
   const [inputValue, setInputValue] = useState("");
@@ -232,6 +234,7 @@ export function ChatbotWidget({ projectId, getMapBounds }) {
         message,
         mode,
         mapContext,
+        dayNo,
       });
       pushMessage({
         role: "bot",
