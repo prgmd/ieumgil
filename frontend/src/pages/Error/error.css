@@ -1,0 +1,66 @@
+/* 404·에러 화면 — App 레이아웃 안(Outlet)에 렌더되며, 페이지별 토큰 CSS가
+   실리지 않은 상태(부팅 에러 등)에서도 성립하도록 색을 fallback 과 함께 쓰고
+   버튼도 자립적으로 정의한다. */
+.epage {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 70vh;
+  padding: 40px 20px;
+  text-align: center;
+}
+
+/* 홈으로/새로고침 버튼 — My/Group 의 .btn 규칙과 톤을 맞추되 자립형 */
+.epage .btn {
+  display: inline-block;
+  border: none;
+  border-radius: 11px;
+  padding: 9px 16px;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  text-decoration: none;
+  cursor: pointer;
+}
+.epage .btn-acc {
+  background: var(--acc, #9c4a2f);
+  color: #fff;
+  box-shadow: 0 5px 14px rgba(156, 74, 47, 0.25);
+}
+.epage .btn-acc:hover {
+  background: #833d26;
+}
+.epage .btn-gh {
+  background: #fff;
+  border: 1.5px solid var(--line, #e6dccb);
+  color: var(--ink, #3d2b22);
+}
+
+.epage__actions {
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
+/* 원인은 개발 참고용 — 기본 접힘, 흐릿하게 */
+.epage__detail {
+  margin-top: 18px;
+  max-width: 90%;
+  font-size: 12px;
+  color: var(--ink2, #8a776a);
+}
+.epage__detail summary {
+  cursor: pointer;
+}
+.epage__detail pre {
+  margin-top: 8px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.04);
+  text-align: left;
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow-x: auto;
+}

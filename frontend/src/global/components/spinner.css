@@ -70,6 +70,43 @@
   font-weight: 500;
 }
 
+/* 빈 상태 안내 — 캐릭터를 가만히 세우고 아래에 제목·설명·(선택) 액션.
+   로딩(iumi-bounce)과 달리 대기 중이 아니라 튐 없이 정적으로 둔다. */
+.estate {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  padding: 16px 20px;
+  text-align: center;
+  /* 부모 높이에 맞춰 그 안에서 세로 중앙 정렬 — 부모가 높이를 안 정했으면
+     100% 는 auto 로 풀려 내용만큼만 차지한다(다른 화면 안전). */
+  height: 100%;
+  box-sizing: border-box;
+}
+.estate__img {
+  width: 48px;
+  height: 48px;
+  object-fit: contain;
+  /* 은은한 존재감만 — 완전 정지보다 살짝 여유를 준다 */
+  opacity: 0.92;
+}
+.estate__title {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--ink, #231c16);
+}
+.estate__desc {
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--ink2, #8a776a);
+  max-width: 34ch;
+}
+.estate__action {
+  margin-top: 4px;
+}
+
 @keyframes iumi-bounce {
   0%,
   100% {

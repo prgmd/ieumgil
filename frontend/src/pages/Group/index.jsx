@@ -8,6 +8,7 @@ import { useToastStore } from '../../global/stores/toastStore';
 import { ROUTES } from '../../global/constants/routes';
 import { onEnter } from '../../global/util/onEnter';
 import { LoadingScreen } from '../../global/components/LoadingScreen';
+import { EmptyState } from '../../global/components/EmptyState';
 import LeaveGroupModal from './components/LeaveGroupModal';
 import CreateProjectModal from './components/CreateProjectModal';
 import EditProjectModal from './components/EditProjectModal';
@@ -155,10 +156,14 @@ export function GroupPage() {
             {/* 노데이터 (QA 배치2) — 로딩 중 깜빡임·조회 실패의 빈 그룹 위장을 막기 위해
                 status 로 판정한다. 진짜 비었을 때(loaded)만 노데이터, error 면 실패 문구. */}
             {projectsStatus === 'loaded' && projects.length === 0 && (
-              <p className="nodata">
-                아직 프로젝트가 없어요 — 위 <b>＋ 새 프로젝트</b>로 첫 여행
-                계획을 시작해보세요.
-              </p>
+              <EmptyState
+                title="아직 프로젝트가 없어요"
+                desc={
+                  <>
+                    위 <b>＋ 새 프로젝트</b>로 첫 여행 계획을 시작해보세요.
+                  </>
+                }
+              />
             )}
             {projectsStatus === 'error' && (
               <p className="nodata">
