@@ -6,9 +6,14 @@
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  min-height: 70vh;
+  min-height: 100vh; /* 뷰포트 정중앙 (상단바 없는 전체 화면: 라우트 404·대시보드) */
   padding: 40px 20px;
   text-align: center;
+}
+/* 상단바(AppBar 50px) 아래에 놓이는 경우(그룹 not-found 등) — 헤더 높이를 빼
+   남은 영역의 정중앙에 온다. */
+.epage.epage--in-page {
+  min-height: calc(100vh - 50px);
 }
 
 /* 전체 화면 안내(404·에러·프로젝트 열기 실패)는 인라인 빈 상태(.estate 기본)보다
@@ -16,17 +21,17 @@
    viewport 단위 clamp 를 쓴다. .epage 안에서만 덮으므로 후보/마이/그룹의
    인라인 빈 상태 크기는 그대로다. */
 .epage .estate {
-  gap: clamp(12px, 1.6vw, 22px);
+  gap: clamp(10px, 1.3vw, 16px);
 }
 .epage .estate__img {
-  width: clamp(88px, 11vw, 160px);
-  height: clamp(88px, 11vw, 160px);
+  width: clamp(84px, 9vw, 130px);
+  height: clamp(84px, 9vw, 130px);
 }
 .epage .estate__title {
-  font-size: clamp(20px, 2.8vw, 34px);
+  font-size: clamp(19px, 2.3vw, 28px);
 }
 .epage .estate__desc {
-  font-size: clamp(14px, 1.5vw, 20px);
+  font-size: clamp(13.5px, 1.4vw, 18px);
   max-width: 44ch;
 }
 

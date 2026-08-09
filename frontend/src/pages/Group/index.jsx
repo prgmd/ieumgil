@@ -10,6 +10,7 @@ import { onEnter } from '../../global/util/onEnter';
 import { LoadingScreen } from '../../global/components/LoadingScreen';
 import { EmptyState } from '../../global/components/EmptyState';
 import notFoundImg from '../../assets/img/notfound.png';
+import '../Error/error.css';
 import LeaveGroupModal from './components/LeaveGroupModal';
 import CreateProjectModal from './components/CreateProjectModal';
 import EditProjectModal from './components/EditProjectModal';
@@ -99,7 +100,7 @@ export function GroupPage() {
     return (
       <>
         <AppBar crumbs={[{ label: '개인 페이지', to: ROUTES.my }]} />
-        <div className="page">
+        <div className="epage epage--in-page">
           <EmptyState
             img={notFoundImg}
             title="그룹을 찾을 수 없어요"
@@ -175,16 +176,18 @@ export function GroupPage() {
         </span>
       </div>
       <div className="group-grid">
-        <div>
-          <div>
+        <div className="proj-col">
+          <div className="proj-list">
             {/* 노데이터 (QA 배치2) — 로딩 중 깜빡임·조회 실패의 빈 그룹 위장을 막기 위해
                 status 로 판정한다. 진짜 비었을 때(loaded)만 노데이터, error 면 실패 문구. */}
             {projectsStatus === 'loaded' && projects.length === 0 && (
               <EmptyState
+                bordered
                 title="아직 프로젝트가 없어요"
                 desc={
                   <>
-                    위 <b>＋ 새 프로젝트</b>로 첫 여행 계획을 시작해보세요.
+                    오른쪽 위 <span className="estate-btnhint">＋ 새 프로젝트</span>
+                    를 눌러 첫 여행 계획을 시작해보세요.
                   </>
                 }
               />

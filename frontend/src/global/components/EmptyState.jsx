@@ -5,9 +5,9 @@ import "./spinner.css";
 // 보여준다. 로딩과 달리 대기 중이 아니므로 캐릭터는 튀지 않고 가만히 서 있다.
 // action 은 선택적 버튼 등(없으면 문구만). img 로 상태별 캐릭터를 갈아끼운다
 // (404·에러 등은 각자 다른 포즈를 넘긴다. 기본은 빈 목록용 empty).
-export function EmptyState({ title, desc, action, img = emptyImg }) {
+export function EmptyState({ title, desc, action, img = emptyImg, bordered = false }) {
   return (
-    <div className="estate">
+    <div className={`estate ${bordered ? "estate--bordered" : ""}`}>
       <img
         className="estate__img"
         src={img}
