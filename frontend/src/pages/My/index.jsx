@@ -8,6 +8,8 @@ import { ERROR_CODE } from '../../global/api/errorCodes';
 import { ROUTES } from '../../global/constants/routes';
 import { onEnter } from '../../global/util/onEnter';
 import { useInlineRename } from '../../global/hooks/useInlineRename';
+import { LoadingScreen } from '../../global/components/LoadingScreen';
+import { EmptyState } from '../../global/components/EmptyState';
 import CreateGroupModal from './components/CreateGroupModal';
 import WithdrawModal from './components/WithdrawModal';
 import { AppBar } from './shared/ui/AppBar';
@@ -82,15 +84,22 @@ export function MyPage() {
           동시에 시작하게 하고, 오른쪽 칸은 스크롤 시 sticky로 고정된다. */}
       <div className="group-grid">
         <div>
+          {status === 'loading' ? (
+            <LoadingScreen />
+          ) : status === 'error' ? (
+            <p className="nodata">그룹 목록을 불러오지 못했어요.</p>
+          ) : (
           <div className="grid-groups">
-            {status === 'loading' && <p>불러오는 중…</p>}
-            {status === 'error' && <p>그룹 목록을 불러오지 못했어요.</p>}
             {/* 노데이터 (QA 배치2) — 빈 화면이 "고장"으로 읽히지 않게 다음 행동을 안내 */}
-            {status !== 'loading' && status !== 'error' && groups.length === 0 && (
-              <p className="nodata">
-                아직 함께하는 그룹이 없어요 — 아래 <b>＋ 새 그룹</b> 카드로 첫
-                여행 그룹을 만들어보세요.
-              </p>
+            {groups.length === 0 && (
+              <EmptyState
+                title="아직 함께하는 그룹이 없어요"
+                desc={
+                  <>
+                    아래 <b>＋ 새 그룹</b> 카드로 첫 여행 그룹을 만들어보세요.
+                  </>
+                }
+              />
             )}
             {groups.map((g) => {
               const isEditing = rename.isEditing(g.id);
@@ -161,6 +170,7 @@ export function MyPage() {
               ＋ 새 그룹 만들기
             </div>
           </div>
+          )}
         </div>
 
         <div>

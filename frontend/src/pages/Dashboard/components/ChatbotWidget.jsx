@@ -9,6 +9,7 @@ import {
 } from "../../../features/dashboard/api/dashboardApi";
 import chatbotOpen from "../../../assets/img/chatbot_open.png";
 import chatbotClose from "../../../assets/img/chatbot_close.png";
+import iumiChar from "../../../assets/img/greeting.png";
 import "./ChatbotWidget.css";
 
 const CAT_LABEL = {
@@ -86,8 +87,10 @@ function CandidateDraggable({ dragId, candidate, onClick }) {
  * @param {number} projectId
  * @param {() => ({swLat,swLng,neLat,neLng}|null)} getMapBounds 지도 뷰포트 (지도 미준비면 null)
  * @param {(item: object) => void} [focusPlace] 추천 카드 클릭 시 사이드 지도를 그 장소로 옮기고 말풍선 표시
+ * @param {number} dayNo 지금 보고 있는 Day 번호(1부터) — "점심 먹은 데" 처럼 일정을 가리키는
+ *        말이 여러 날에 걸릴 때 서버가 이 Day 의 블록을 고른다
  */
-export function ChatbotWidget({ projectId, getMapBounds, focusPlace }) {
+export function ChatbotWidget({ projectId, getMapBounds, dayNo, focusPlace }) {
   const [isOpen, setIsOpen] = useState(false);
   const [activeTab, setActiveTab] = useState("general");
   const [inputValue, setInputValue] = useState("");
@@ -253,6 +256,7 @@ export function ChatbotWidget({ projectId, getMapBounds, focusPlace }) {
         message,
         mode,
         mapContext,
+        dayNo,
       });
       pushMessage({
         role: "bot",
@@ -321,6 +325,19 @@ export function ChatbotWidget({ projectId, getMapBounds, focusPlace }) {
           </div>
 
           <div className="cbw-body" ref={bodyRef}>
+            {/* 대화 시작 전(intro)에만 캐릭터로 인사 — 첫 인상만 살리고
+                대화가 시작되면 사라진다(스크롤 공간을 차지하지 않게). */}
+            {!messages.some((m) => m.role === "user" || m.role === "bot") && (
+              <div className="cbw-intro">
+                <img
+                  className="cbw-intro__char"
+                  src={iumiChar}
+                  alt=""
+                  aria-hidden="true"
+                />
+                <span className="cbw-intro__hi">이음이가 도와드릴게요</span>
+              </div>
+            )}
             <div className="cbw-bubble">
               {activeTab === "map" ? (
                 <>

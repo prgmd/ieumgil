@@ -3,6 +3,7 @@ import { Outlet } from "react-router-dom";
 import { useAuthStore } from "../global/stores/authStore";
 import { Toast } from "../global/components/Toast";
 import { GlobalSpinner } from "../global/components/GlobalSpinner";
+import { LoadingScreen } from "../global/components/LoadingScreen";
 
 /**
  * 공통 레이아웃 컴포넌트.
@@ -39,9 +40,7 @@ function App() {
   // 각 페이지가 currentUser 가 채워져 있다고 가정할 수 있게 하기 위함.
   // (자식은 이 시점 이후 딱 한 번 마운트된다.)
   if (!booted) {
-    return (
-      <div style={{ padding: "50px", textAlign: "center" }}>불러오는 중…</div>
-    );
+    return <LoadingScreen full />;
   }
 
   return (

@@ -36,18 +36,12 @@ public class KakaoPlaceSearchTool {
             """)
     public List<PlaceSearchSummary> searchPlaces(String keyword, @ToolParam(required = false) String nearPlaceName) {
         try {
-            // 기준 장소가 있으면 그 좌표 주변을 거리순으로 찾는다. 좌표가 범위를 좁히므로
-            // 목적지 접두사는 붙이지 않는다 — 붙이면 검색어 특이성만 떨어진다.
             // 좌표는 보드 우선으로 해석되므로 일정에 올려둔 블록이면 카카오 재검색이 없다.
             Optional<PlaceResDTO.Place> anchor = resolveAnchor(nearPlaceName);
-            String query = anchor.isPresent() ? keyword : destination + " " + keyword;
-            // searchPlaces는 사용자 검색 패널 상한(15)으로 오므로, 여기서 챗봇 상한으로
-            // 다시 자른다 — 뷰포트 tool과 같은 CHATBOT_SEARCH_LIMIT을 공유해 LLM 프롬프트
-            // 토큰이 3배로 뛰지 않게 한다.
-            List<PlaceResDTO.Place> places = placeQueryService.searchPlaces(
-                    query,
-                    anchor.map(PlaceResDTO.Place::lat).orElse(null),
-                    anchor.map(PlaceResDTO.Place::lng).orElse(null))
+            // searchPlaces는 사용자 검색 패널 상한(15)으로 오므로, 여기서 일반 모드 상한으로
+            // 다시 자른다 — 그대로 실으면 LLM 프롬프트 토큰이 3배로 뛴다. 지도 모드는 재정렬을
+            // 위해 더 많이 받아 자기 상한(LLM_CANDIDATE_LIMIT)으로 자르므로 이 값과 무관하다.
+            List<PlaceResDTO.Place> places = searchWithKeywordFallback(keyword, anchor)
                     .stream()
                     .limit(PlaceQueryService.CHATBOT_SEARCH_LIMIT)
                     .toList();
@@ -63,6 +57,45 @@ public class KakaoPlaceSearchTool {
             throw new IllegalStateException(
                     "Place search failed due to an internal error. Do not claim there are no matching places; tell the user the search could not be completed and to try again.", e);
         }
+    }
+
+    /**
+     * 0건이면 검색어를 바꿔 재시도한다 — 카카오는 수식어가 붙은 서술구에 0건을 준다.
+     * 후보는 붙여쓰기 → 오른쪽 단일 토큰 순이다({@link KeywordFallback}).
+     *
+     * <p>축약 대상은 {@code keyword} 뿐이고 목적지 접두사 규칙은 그대로다 — 폴백 질의도
+     * 앵커가 없으면 {@code 목적지 + " " + 축약키워드}다. 목적지 문자열 자체를 잘라내면
+     * 엉뚱한 지역이 나온다. 첫 비-empty에서 멈추고, 전부 0건이면 예전처럼 빈 목록이다.
+     * 예외는 폴백 대상이 아니다(0건과 실패는 다른 신호다).
+     */
+    private List<PlaceResDTO.Place> searchWithKeywordFallback(String keyword, Optional<PlaceResDTO.Place> anchor) {
+        Double lat = anchor.map(PlaceResDTO.Place::lat).orElse(null);
+        Double lng = anchor.map(PlaceResDTO.Place::lng).orElse(null);
+        boolean anchored = anchor.isPresent();
+
+        List<PlaceResDTO.Place> found = placeQueryService.searchPlaces(queryFor(keyword, anchored), lat, lng);
+        if (!found.isEmpty()) {
+            return found;
+        }
+        for (String candidate : KeywordFallback.candidatesFor(keyword)) {
+            String retryQuery = queryFor(candidate, anchored);
+            List<PlaceResDTO.Place> retried = placeQueryService.searchPlaces(retryQuery, lat, lng);
+            if (!retried.isEmpty()) {
+                // 운영에서 이 폴백이 얼마나 자주 도는지 봐야 한다
+                log.info("장소 검색 0건 — 검색어 폴백 성공: '{}' -> '{}' ({}건)",
+                        queryFor(keyword, anchored), retryQuery, retried.size());
+                return retried;
+            }
+        }
+        return found;
+    }
+
+    /**
+     * 기준 장소가 있으면 그 좌표 주변을 거리순으로 찾는다. 좌표가 범위를 좁히므로
+     * 목적지 접두사는 붙이지 않는다 — 붙이면 검색어 특이성만 떨어진다.
+     */
+    private String queryFor(String keyword, boolean anchored) {
+        return anchored ? keyword : destination + " " + keyword;
     }
 
     /** 기준 장소를 좌표로 바꾼다. 못 구하면 빈 Optional — 호출부가 목적지 기준 검색으로 떨어진다. */

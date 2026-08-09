@@ -16,7 +16,7 @@ class ChatbotReqDTOTest {
 
     @Test
     void blankMessageFailsValidation() {
-        ChatbotReqDTO.SendMessage request = new ChatbotReqDTO.SendMessage("", null, null);
+        ChatbotReqDTO.SendMessage request = new ChatbotReqDTO.SendMessage("", null, null, null);
 
         Set<ConstraintViolation<ChatbotReqDTO.SendMessage>> violations = validator.validate(request);
 
@@ -26,7 +26,7 @@ class ChatbotReqDTOTest {
     @Test
     void tooLongMessageFailsValidation() {
         String longMessage = "a".repeat(2001);
-        ChatbotReqDTO.SendMessage request = new ChatbotReqDTO.SendMessage(longMessage, null, null);
+        ChatbotReqDTO.SendMessage request = new ChatbotReqDTO.SendMessage(longMessage, null, null, null);
 
         Set<ConstraintViolation<ChatbotReqDTO.SendMessage>> violations = validator.validate(request);
 
@@ -35,7 +35,7 @@ class ChatbotReqDTOTest {
 
     @Test
     void validRequestPassesValidation() {
-        ChatbotReqDTO.SendMessage request = new ChatbotReqDTO.SendMessage("안녕", null, null);
+        ChatbotReqDTO.SendMessage request = new ChatbotReqDTO.SendMessage("안녕", null, null, null);
 
         Set<ConstraintViolation<ChatbotReqDTO.SendMessage>> violations = validator.validate(request);
 
@@ -44,14 +44,14 @@ class ChatbotReqDTOTest {
 
     @Test
     void omittedModeDefaultsToGeneral() {
-        ChatbotReqDTO.SendMessage request = new ChatbotReqDTO.SendMessage("안녕", null, null);
+        ChatbotReqDTO.SendMessage request = new ChatbotReqDTO.SendMessage("안녕", null, null, null);
 
         assertThat(request.modeOrDefault()).isEqualTo(ChatbotMode.GENERAL);
     }
 
     @Test
     void explicitModeIsKept() {
-        ChatbotReqDTO.SendMessage request = new ChatbotReqDTO.SendMessage("안녕", ChatbotMode.MAP, null);
+        ChatbotReqDTO.SendMessage request = new ChatbotReqDTO.SendMessage("안녕", ChatbotMode.MAP, null, null);
 
         assertThat(request.modeOrDefault()).isEqualTo(ChatbotMode.MAP);
     }

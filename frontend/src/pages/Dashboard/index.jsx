@@ -68,6 +68,9 @@ import { createOpSequencer } from "../../features/dashboard/realtime/opSequencer
 import * as blockApi from "../../features/dashboard/api/dashboardApi";
 import { getClientId } from "../../global/api/clientId";
 import { Select } from "../../global/components/Select";
+import { EmptyState } from "../../global/components/EmptyState";
+import notFoundImg from "../../assets/img/notfound.png";
+import "../Error/error.css";
 import { useGroupDetail } from "../../features/group/hooks/useGroupDetail";
 import { useProjects } from "../../features/group/hooks/useProjects";
 import { useIsMobile } from "../../global/hooks/useIsMobile";
@@ -441,7 +444,6 @@ export function DashboardPage() {
     items: serverItems,
     pool: serverPool,
     status,
-    error,
     reload,
     lastSeq,
   } = useDashboard(projectId);
@@ -842,12 +844,6 @@ export function DashboardPage() {
     setTargetBudget(project?.targetBudget ?? 0);
   }
 
-  // 없는 프로젝트·비멤버·잘못된 URL 이면 그룹 페이지로 되돌린다 (GroupPage 와 같은 규칙)
-  useEffect(() => {
-    if (status !== "error") return;
-    showToast(error?.message ?? "프로젝트를 열 수 없어요.");
-    navigate(ROUTES.group(groupId), { replace: true });
-  }, [status, error, groupId, navigate, showToast]);
 
   // 임시 id 로 만든 로컬 블록을 서버 blockId 로 교체한다 (items + pool).
   // 보드 목록은 items 에서 파생하므로 따로 갈아끼울 것이 없다.
@@ -2846,8 +2842,40 @@ export function DashboardPage() {
       });
   };
 
-  // 스냅샷이 시드되기 전(로딩 중)에는 보드를 그리지 않는다.
-  // 에러일 때는 위 effect 가 그룹 페이지로 되돌린다.
+  // 없는 프로젝트·비멤버·잘못된 URL 이면 자동 이동 대신 같은 화면에서 안내한다.
+  // (반드시 아래 "!loaded → null" 보다 앞에 둔다 — 안 그러면 에러가 null 로
+  //  삼켜져 빈 화면이 된다.)
+  if (status === "error") {
+    return (
+      <div className="epage">
+        <EmptyState
+          img={notFoundImg}
+          title="프로젝트를 열 수 없어요"
+          desc="없거나 접근 권한이 없는 프로젝트예요. 그룹에서 다시 들어와 주세요."
+          action={
+            <div className="epage__actions">
+              <button
+                type="button"
+                className="btn btn-acc"
+                onClick={() => navigate(ROUTES.group(groupId))}
+              >
+                그룹으로
+              </button>
+              <button
+                type="button"
+                className="btn btn-gh"
+                onClick={() => window.location.reload()}
+              >
+                다시 시도
+              </button>
+            </div>
+          }
+        />
+      </div>
+    );
+  }
+
+  // 스냅샷이 시드되기 전(로딩 중)에는 보드를 그리지 않는다(전역 스피너가 알린다).
   if (status !== "loaded") return null;
 
   // 💡 타임라인 드래그 미리보기 합치기
@@ -3310,17 +3338,16 @@ export function DashboardPage() {
                         드래그로 놓으려는 중에는 드롭존이 대신 보이므로 숨긴다 */}
                     {pool.length === 0 && dragPreview?.region !== "pool" && (
                       <div className="pool-empty">
-                        <span className="pool-empty__ico" aria-hidden="true">
-                          🗂️
-                        </span>
-                        <b className="pool-empty__title">
-                          아직 보관한 블록이 없어요
-                        </b>
-                        <span className="pool-empty__desc">
-                          오른쪽 <b>지도 검색</b>이나 <b>챗봇 이음이</b>의 추천을
-                          끌어다 여기에 보관하고, <b>+ 커스텀 블록</b>으로 직접
-                          만들 수도 있어요.
-                        </span>
+                        <EmptyState
+                          title="아직 보관한 블록이 없어요"
+                          desc={
+                            <>
+                              오른쪽 <b>지도 검색</b>이나 <b>챗봇 이음이</b>의
+                              추천을 끌어다 여기에 보관하고, <b>+ 커스텀 블록</b>
+                              으로 직접 만들 수도 있어요.
+                            </>
+                          }
+                        />
                       </div>
                     )}
                     {/* 블록은 있는데 필터·검색에 걸리는 게 없을 때 */}
@@ -3328,7 +3355,10 @@ export function DashboardPage() {
                       visiblePool.length === 0 &&
                       dragPreview?.region !== "pool" && (
                         <div className="pool-noresult">
-                          조건에 맞는 블록이 없어요.
+                          <EmptyState
+                            title="조건에 맞는 블록이 없어요"
+                            desc="대분류나 검색어를 바꾸거나, 필터를 초기화해 다시 찾아보세요."
+                          />
                         </div>
                       )}
                   </div>
@@ -3437,9 +3467,12 @@ export function DashboardPage() {
 
               {/* 챗봇 — 추천 카드를 후보 목록으로 드래그해야 하므로 반드시
                   이 DndContext 안에서 렌더한다 (위치는 fixed 라 화면상 그대로) */}
+              {/* 보고 있는 Day 를 같이 넘긴다 — "점심 먹은 데" 처럼 일정을 가리키는 말이
+                  여러 날에 걸릴 때 서버가 되묻지 않고 이 Day 의 블록을 고른다 */}
               <ChatbotWidget
                 projectId={projectId}
                 getMapBounds={getMapBounds}
+                dayNo={dayNoOf(activeDay)}
                 focusPlace={focusPlace}
               />
             </div>

@@ -1,4 +1,4 @@
-import { createBrowserRouter, Navigate } from "react-router-dom";
+import { createBrowserRouter } from "react-router-dom";
 import App from "./App";
 import { LandingPage } from "../pages/Landing";
 import { LoginPage } from "../pages/Auth/LoginPage";
@@ -8,12 +8,14 @@ import { GroupPage } from "../pages/Group";
 import { MyPage } from "../pages/My";
 import ProtectedRoute from "../global/components/ProtectedRoute";
 import GuestOnlyRoute from "../global/components/GuestOnlyRoute";
-import { ROUTES } from "../global/constants/routes";
+import { NotFoundPage } from "../pages/Error/NotFoundPage";
+import { ErrorPage } from "../pages/Error/ErrorPage";
 
 export const router = createBrowserRouter([
   {
     path: "/",
     element: <App />, // 공통 레이아웃 (<Outlet /> 렌더)
+    errorElement: <ErrorPage />, // 하위 렌더/로더 throw 시 백지 대신 안내 화면
     children: [
       // ===== 비로그인 전용: 토큰이 있으면 "/my"로 리다이렉트 =====
       {
@@ -43,8 +45,8 @@ export const router = createBrowserRouter([
         ],
       },
 
-      // 정의되지 않은 모든 경로는 랜딩으로 (기본 차단)
-      { path: "*", element: <Navigate to={ROUTES.landing} replace /> },
+      // 정의되지 않은 모든 경로는 404 안내 화면 (조용한 리다이렉트 대신)
+      { path: "*", element: <NotFoundPage /> },
     ],
   },
 ]);

@@ -1,4 +1,5 @@
 import { useLoadingStore } from "../stores/loadingStore";
+import loadingImg from "../../assets/img/loading.png";
 import "./spinner.css";
 
 /**
@@ -9,7 +10,8 @@ import "./spinner.css";
  * 재생되지 않는다(토스트와 같은 이유).
  */
 export function GlobalSpinner() {
-  const visible = useLoadingStore((s) => s.visible);
+  // 전체화면 로더가 떠 있으면 알약은 숨긴다(겹침 방지)
+  const visible = useLoadingStore((s) => s.visible && s.fullscreen === 0);
 
   return (
     <div
@@ -18,7 +20,14 @@ export function GlobalSpinner() {
       aria-live="polite"
       aria-hidden={!visible}
     >
-      <span className="gspin__ring" aria-hidden="true" />
+      <img
+        className="gspin__img"
+        src={loadingImg}
+        alt=""
+        aria-hidden="true"
+        width={22}
+        height={22}
+      />
       <span>불러오는 중…</span>
     </div>
   );

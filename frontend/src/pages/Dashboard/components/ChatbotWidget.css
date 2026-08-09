@@ -280,6 +280,25 @@
 }
 
 /* 예시 프롬프트 칩 — intro 시점(대화 시작 전)에만 노출되는 pill 버튼 */
+/* intro 인사 — 캐릭터 + 한 줄, 대화 시작 전에만 뜬다 */
+.cbw-intro {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 0 4px;
+}
+.cbw-intro__char {
+  width: 48px;
+  height: 48px;
+  object-fit: contain;
+}
+.cbw-intro__hi {
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--ink2, #8a776a);
+}
+
 .cbw-chips {
   display: flex;
   flex-wrap: wrap;
