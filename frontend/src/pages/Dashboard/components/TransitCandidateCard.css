@@ -1,0 +1,244 @@
+/* TransitCandidateCard — 교통 후보 카드(편집 피커/열람 접기 공유). index.css 와
+   분리해 동시 진행 중인 다른 브랜치와의 충돌 폭을 줄인다. tp-* 톤에 맞춘다. */
+
+.tcc {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 10px;
+  border: 1px solid var(--border1, #e3dfd8);
+  border-radius: 10px;
+  background: #fff;
+}
+/* 선택 모드 — 카드 전체가 클릭 범위라는 걸 커서·호버로 말한다 */
+.tcc.is-clickable {
+  cursor: pointer;
+}
+.tcc.is-clickable:hover {
+  border-color: var(--acc, #9c4a2f);
+}
+.tcc.on {
+  border-color: var(--acc, #9c4a2f);
+  background: #fdf6ef;
+}
+.tcc.is-unavailable {
+  opacity: 0.55;
+}
+
+.tcc-head {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 0;
+  border: none;
+  background: none;
+  cursor: pointer;
+  text-align: left;
+  font: inherit;
+  color: var(--ink1, #3d2b22);
+}
+.tcc-head:disabled {
+  cursor: default;
+}
+.tcc-ico {
+  font-size: 16px;
+  flex-shrink: 0;
+}
+.tcc-name {
+  font-size: 13.5px;
+  font-weight: bold;
+}
+.tcc-fail {
+  font-style: normal;
+  font-size: 11px;
+  color: var(--danger);
+}
+/* 재시도가 유효한 실패만 다른 색이다 — 경로 없음·운행 없음은 다시 눌러도 같은 답이라
+   같은 붉은색으로 두면 사용자가 계속 재시도한다 */
+.tcc-fail.is-retryable {
+  color: var(--ink3, #8a776a);
+}
+.tcc-dur,
+.tcc-fare,
+.tcc-interval {
+  font-size: 12px;
+  color: var(--ink1, #3d2b22);
+}
+
+.tcc-labels {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.tcc-labels em {
+  font-style: normal;
+  font-size: 10.5px;
+  padding: 1px 6px;
+  border-radius: 7px;
+  background: rgba(61, 43, 34, 0.07);
+  color: var(--ink2, #6b5a4e);
+}
+
+/* 환승 횟수·도보 거리, 그리고 노선 구간 — "어느 버스를 타고 어디서 갈아타는지"가
+   이 카드를 보는 이유다. 회색이 아니라 본문색으로 읽히게 한다. */
+.tcc-sub {
+  display: flex;
+  gap: 10px;
+  font-size: 11.5px;
+  color: var(--ink1, #3d2b22);
+}
+
+.tcc-legs {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 3px;
+  font-size: 11.5px;
+  color: var(--ink1, #3d2b22);
+}
+/* 상세 경로 펼치기/접기 토글 */
+.tcc-legs-toggle {
+  padding: 0;
+  border: none;
+  background: none;
+  font-family: inherit;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--acc, #9c4a2f);
+  cursor: pointer;
+}
+.tcc-legs-toggle:hover {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.tcc-legs-list {
+  margin: 2px 0 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.tcc-leg-row {
+  display: flex;
+  gap: 6px;
+  align-items: baseline;
+}
+.tcc-leg-mode {
+  flex-shrink: 0;
+  font-weight: 600;
+  color: var(--ink2, #6b5a4e);
+}
+.tcc-leg-path {
+  min-width: 0;
+}
+
+.tcc-departures {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 2px;
+}
+/* 전부 펼쳤을 때 아주 긴 시간표는 카드 안에서만 스크롤 */
+.tcc-departures.is-scroll {
+  max-height: 260px;
+  overflow-y: auto;
+}
+/* 편 목록 펼치기/접기 토글 */
+.tcc-dep-more {
+  align-self: flex-start;
+  margin-top: 4px;
+  padding: 3px 9px;
+  border: none;
+  border-radius: 7px;
+  background: none;
+  color: var(--acc, #9c4a2f);
+  font-family: inherit;
+  font-size: 11.5px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 0.12s ease;
+}
+.tcc-dep-more:hover {
+  background: rgba(156, 74, 47, 0.08);
+}
+.tcc-departure {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 6px 8px;
+  border: 1px solid var(--border1, #e3dfd8);
+  border-radius: 8px;
+  background: #fdfbf7;
+  font-size: 12px;
+  color: var(--ink1, #3d2b22);
+  text-align: left;
+  cursor: default;
+}
+/* 클릭으로 편을 고를 수 있는 select 모드(버튼)만 포인터 커서 — view(div)는 기본 커서 */
+button.tcc-departure {
+  cursor: pointer;
+}
+/* 읽기 모드 — 확정된 편은 꽉 찬 선택 상자 대신 내용만큼 하는 알약 태그로.
+   어느 편인지 또렷하되 카드에 무겁지 않게 얹힌다. */
+.rv-transit .tcc-departure {
+  align-self: flex-start;
+  width: auto;
+  padding: 4px 12px;
+  border: none;
+  border-radius: 999px;
+  background: rgba(61, 43, 34, 0.06);
+  cursor: default;
+}
+.tcc-departure.on {
+  border-color: var(--acc, #9c4a2f);
+  background: #fdf6ef;
+  font-weight: bold;
+}
+.tcc-dep-name {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.tcc-dep-grade {
+  font-style: normal;
+  font-size: 10.5px;
+  color: var(--ink3, #8a776a);
+}
+/* 출발·도착 시각과 요금도 골라야 할 값이라 본문색으로 (등급 배지만 회색으로 남긴다) */
+.tcc-dep-time,
+.tcc-dep-fare {
+  font-size: 11.5px;
+  color: var(--ink1, #3d2b22);
+}
+.tcc-dep-wait {
+  font-size: 11.5px;
+  color: var(--ink3, #8a776a);
+}
+/* 연결편은 줄을 통째로 차지한다 — 첫 편 옆에 붙이면 어느 편의 환승인지 흐려진다 */
+.tcc-dep-conn {
+  flex-basis: 100%;
+  font-size: 11px;
+  color: var(--ink2, #6b5a4e);
+  padding-left: 2px;
+}
+.tcc-dep-labels {
+  display: flex;
+  gap: 4px;
+}
+.tcc-dep-labels em {
+  font-style: normal;
+  font-size: 10px;
+  padding: 1px 5px;
+  border-radius: 6px;
+  background: rgba(61, 43, 34, 0.07);
+  color: var(--ink2, #6b5a4e);
+}
+.tcc-banner,
+.tcc-no-departure {
+  margin: 0;
+  font-size: 11.5px;
+  color: var(--ink3, #8a776a);
+}

@@ -1,0 +1,221 @@
+/* 블록 상세 수정 폼 (BlockEditForm.jsx 전용).
+   색·여백은 전부 여기서 관리한다 — jsx 에는 값이 남지 않게. */
+
+.bef {
+  width: 460px;
+  max-height: 90vh;
+  overflow-y: auto;
+  /* 상단 패딩은 sticky 헤더가 대신 낸다 — 컨테이너에 두면 헤더 위에 안 덮이는
+     밴드가 남아 스크롤 시 그 틈으로 내용이 비친다("글씨 뚫림"). */
+  padding: 0 20px 20px;
+  border-radius: var(--radius-modal);
+  background: var(--surface-modal);
+  box-shadow: var(--shadow-modal);
+  color: #4a3a31;
+}
+
+/* 스크롤이 생겨도 무슨 창인지 보이게 상단 고정. 헤더가 y=0 부터 전체폭 불투명
+   배경으로 덮어 내용이 비치지 않는다. 상단 여백은 헤더 padding-top 이 낸다. */
+.bef-head {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  background: var(--surface-modal);
+  margin: 0 -20px 14px;
+  padding: 20px 20px 10px;
+  border-bottom: 1px solid var(--line);
+}
+.bef-title {
+  margin: 0 0 3px;
+  font-size: 18px;
+  font-weight: 800;
+  color: #3d2b22;
+}
+.bef-sub {
+  margin: 0;
+  font-size: 12px;
+  color: var(--ink2);
+}
+
+.bef-row {
+  display: flex;
+  gap: 14px;
+  margin-bottom: 10px;
+}
+.bef-col {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.bef-label {
+  margin-bottom: 4px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--ink2);
+}
+
+.bef-input,
+.bef-textarea {
+  padding: 10px 13px;
+  border: 1.5px solid var(--line);
+  border-radius: 11px;
+  background: #fff;
+  font-family: inherit;
+  font-size: 13.5px;
+  color: #333;
+  outline: none;
+  transition: border 0.2s;
+}
+.bef-input:focus,
+.bef-textarea:focus {
+  border-color: #b99a7e;
+}
+.bef-textarea {
+  min-height: 56px;
+  resize: none;
+}
+/* 다른 멤버가 상세락을 잡고 있을 때 — 읽기만 가능하게 흐리게 잠근다 */
+.bef-textarea.is-locked {
+  background: #f4f0e6;
+  color: var(--ink2);
+  cursor: not-allowed;
+}
+.bef-lock-hint {
+  margin: 6px 0 0;
+  font-size: 12px;
+  color: #a8541f;
+}
+/* 체인에서 자동 계산되는 값 — 읽기 전용임이 배경색으로 보이게 */
+.bef-input[readonly] {
+  background: #f0ebd8;
+  color: #555;
+}
+
+/* ── 주소 입력 ─────────────────────────────────────────────
+   입력칸 + [주소 검색] 버튼 한 줄. 입력칸이 남는 폭을 다 먹고
+   (min-width:0 이 있어야 긴 주소가 버튼을 밀어내지 않는다) 버튼은 제 폭만 쓴다. */
+/* 주소 입력칸 + [주소 검색] 버튼 한 줄. 입력칸이 남는 폭을 다 먹고 버튼은 제 폭만. */
+.bef-addr {
+  display: flex;
+  gap: 8px;
+  align-items: stretch;
+}
+.bef-addr .bef-input {
+  flex: 1;
+  min-width: 0;
+}
+/* 지도에서 위치 지정 — 부차적 탈출구라 박스 버튼 대신 아이콘+accent 색 텍스트로
+   둔다. 아이콘과 색이 "누를 수 있음"을 알리고, hover 시 밑줄로 링크임을 굳힌다. */
+.bef-pin-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  align-self: flex-start;
+  /* 아이콘/텍스트 왼쪽 끝을 위 라벨·입력칸과 같은 x=0 에 맞춘다. hover 알약은
+     왼쪽은 텍스트에 붙고 오른쪽으로만 늘어나 정렬이 흐트러지지 않는다. */
+  margin: 8px 0 0 0;
+  padding: 4px 10px 4px 0;
+  border: none;
+  border-radius: 8px;
+  background: none;
+  color: #9c4a2f;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: bold;
+  cursor: pointer;
+  transition:
+    background 0.15s ease,
+    color 0.15s ease;
+}
+.bef-pin-link:hover:not(:disabled) {
+  background: #f4e7de;
+  color: #7a3722;
+}
+.bef-pin-link:disabled {
+  color: #c9beb2;
+  cursor: default;
+}
+.bef-addr-btn {
+  flex-shrink: 0;
+  padding: 9px 16px;
+  border: none;
+  border-radius: 10px;
+  background: var(--btn-brown);
+  color: #fff;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: bold;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+.bef-addr-btn:hover:not(:disabled) {
+  background: var(--btn-brown-hover);
+}
+.bef-addr-btn:disabled {
+  background: #c9beb2;
+  cursor: default;
+}
+
+/* 좌표를 잡았는지 알려주는 한 줄 — 저장을 눌러서야 알게 되면 늦다 */
+.bef-addr-hint {
+  margin: 6px 0 0;
+  font-size: 12px;
+}
+.bef-addr-hint.is-ok {
+  color: #3e8e63;
+}
+.bef-addr-hint.is-warn {
+  color: var(--danger);
+}
+
+.bef-foot {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: var(--modal-foot-mt);
+}
+.bef-editor {
+  font-size: 12px;
+  color: var(--ink2);
+}
+.bef-btns {
+  display: flex;
+  gap: var(--modal-foot-gap);
+}
+.bef-btn {
+  padding: 8px 20px;
+  border-radius: 10px;
+  font-family: inherit;
+  font-weight: bold;
+  font-size: 14px;
+  cursor: pointer;
+}
+.bef-btn-cancel {
+  border: 1px solid var(--line);
+  background: #fff;
+  color: #4a3a31;
+}
+.bef-btn-cancel:hover {
+  background: #f6f1e7;
+}
+.bef-btn-save {
+  border: none;
+  background: var(--btn-brown);
+  color: #fff;
+}
+.bef-btn-save:hover {
+  background: var(--btn-brown-hover);
+}
+
+/* number 입력의 위아래 스피너 제거 — 소요를 스피너로 바꿀 일이 없다. */
+.bef input[type="number"] {
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+.bef input[type="number"]::-webkit-outer-spin-button,
+.bef input[type="number"]::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}

@@ -1,0 +1,443 @@
+/* 챗봇 이음이 위젯 (ChatbotWidget.jsx 전용) */
+
+/* 접혀 있을 때의 둥근 버튼 */
+.cbw-fab {
+  position: fixed;
+  right: 30px;
+  bottom: 30px;
+  z-index: 9999;
+  width: 60px;
+  height: 60px;
+  border: none;
+  border-radius: 50%;
+  background: #6a4c3d;
+  color: #fff;
+  font-size: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  transition: transform 0.2s;
+  touch-action: none; /* 드래그 이동(포인터 이벤트)이 터치 스크롤과 안 싸우게 */
+}
+.cbw-fab:hover {
+  transform: scale(1.05);
+}
+/* 닫힌 상태에서 보이는 캐릭터 아이콘 — 버튼(60px) 안에 여백 두고 꽉 차게 */
+.cbw-fab-icon {
+  width: 44px;
+  height: 44px;
+  object-fit: contain;
+  pointer-events: none; /* 드래그·클릭 판정은 버튼(.cbw-fab)이 그대로 받는다 */
+}
+/* 열림 상태 — 같은 자리에서 ✕ 로 바뀐다(로고 버튼이 사라지지 않는다, QA 배치2) */
+.cbw-fab.is-open {
+  background: var(--ink2);
+  font-size: 22px;
+}
+
+/* 펼친 패널 — 항상 떠 있는 로고 버튼(60px) 위에 얹힌다 */
+.cbw {
+  position: fixed;
+  right: 30px;
+  bottom: 100px;
+  z-index: 9999;
+  width: 340px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border-radius: var(--radius-modal);
+  background: var(--surface-modal);
+  box-shadow: var(--shadow-modal);
+  /* 열릴 때 FAB(우하단) 쪽에서 살짝 떠오르며 나타난다 */
+  transform-origin: bottom right;
+  animation: cbw-open 0.22s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+@keyframes cbw-open {
+  from {
+    opacity: 0;
+    transform: translateY(12px) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .cbw {
+    animation: none;
+  }
+}
+
+.cbw-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px;
+  background: #6a4c3d;
+  color: #fff;
+}
+.cbw-head-title {
+  font-weight: bold;
+  font-size: 15px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.cbw-head-icon {
+  width: 20px;
+  height: 20px;
+  object-fit: contain;
+  vertical-align: middle;
+}
+.cbw-close {
+  border: none;
+  background: none;
+  color: #fff;
+  font-size: 18px;
+  cursor: pointer;
+}
+
+.cbw-tabs {
+  display: flex;
+  gap: 8px;
+  padding: 12px 16px 0;
+}
+.cbw-tab {
+  flex: 1;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-bottom: none;
+  border-radius: 8px 8px 0 0;
+  background: #fff;
+  color: var(--ink2);
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: bold;
+  cursor: pointer;
+  box-shadow: inset 0 -2px 5px rgba(0, 0, 0, 0.05);
+}
+.cbw-tab.on {
+  background: #8a624a;
+  color: #fff;
+  border-color: #8a624a;
+  box-shadow: none;
+}
+
+.cbw-body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  /* 고정 높이 — 모드 전환·대화 길이에 따라 패널 크기가 튀지 않게. 넘치면 안에서 스크롤 */
+  height: 300px;
+  overflow-y: auto;
+  padding: 20px 16px;
+  background: var(--surface-modal);
+}
+/* 메시지 한 덩어리(말풍선 + 후보 카드) — flex 컬럼이라 안의 말풍선 align-self 가
+   살아난다. 예전엔 플레인 div 라 말풍선이 전부 왼쪽에 붙었다. */
+.cbw-row {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+/* 이음이가 하는 말 — 왼쪽 정렬 말풍선(좌상단 노치). */
+.cbw-bubble {
+  align-self: flex-start;
+  max-width: 90%;
+  box-sizing: border-box;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 0 12px 12px 12px;
+  background: #fff;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--ink);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.02);
+}
+
+/* 봇 응답 마크다운 — 말풍선 크기에 맞춘 소형 타이포그래피 */
+.cbw-md > *:first-child {
+  margin-top: 0;
+}
+.cbw-md > *:last-child {
+  margin-bottom: 0;
+}
+.cbw-md p {
+  margin: 0 0 8px;
+}
+.cbw-md ul,
+.cbw-md ol {
+  margin: 0 0 8px;
+  padding-left: 18px;
+}
+.cbw-md li {
+  margin-bottom: 3px;
+}
+.cbw-md h1,
+.cbw-md h2,
+.cbw-md h3,
+.cbw-md h4 {
+  margin: 10px 0 6px;
+  font-size: 13.5px; /* 말풍선 안에서 제목은 살짝 굵은 줄 정도로 */
+  color: #3d2b22;
+}
+.cbw-md strong {
+  color: var(--btn-brown);
+}
+.cbw-md code {
+  background: #f4f1ea;
+  border-radius: 4px;
+  padding: 1px 4px;
+  font-size: 12px;
+}
+.cbw-md a {
+  color: #9c4a2f;
+}
+.cbw-md blockquote {
+  margin: 0 0 8px;
+  padding-left: 10px;
+  border-left: 3px solid var(--line);
+  color: #8a776a;
+}
+/* 표(GFM) — 말풍선 폭이 좁아 넘치면 표만 가로 스크롤 */
+.cbw-md table {
+  border-collapse: collapse;
+  margin: 0 0 8px;
+  font-size: 12px;
+  display: block;
+  overflow-x: auto;
+  max-width: 100%;
+}
+.cbw-md th,
+.cbw-md td {
+  border: 1px solid var(--line);
+  padding: 4px 8px;
+  text-align: left;
+  white-space: nowrap;
+}
+.cbw-md th {
+  background: #f4f1ea;
+  color: #3d2b22;
+}
+
+/* 내가 보낸 말 — 오른쪽 정렬 + 테마색 */
+/* 내가 보낸 말 — 오른쪽 정렬 말풍선(우상단 노치) + 테마색 */
+.cbw-bubble.is-user {
+  align-self: flex-end;
+  border-radius: 12px 0 12px 12px;
+  background: var(--btn-brown);
+  border-color: var(--btn-brown);
+  color: #fff;
+}
+/* 실패 안내 */
+.cbw-bubble.is-error {
+  background: #fdf1ef;
+  border-color: #e8c7bf;
+  color: var(--danger);
+}
+/* 응답 대기 — 점 세 개가 차례로 튀어 "진행 중"임을 보여준다 (QA 배치2) */
+.cbw-bubble.is-typing {
+  color: #8a776a;
+  font-style: italic;
+}
+.cbw-dots {
+  display: inline-flex;
+  gap: 3px;
+  margin-left: 5px;
+  vertical-align: 1px;
+}
+.cbw-dots i {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: #8a776a;
+  animation: cbw-dot-bounce 1.2s infinite ease-in-out;
+}
+.cbw-dots i:nth-child(2) {
+  animation-delay: 0.15s;
+}
+.cbw-dots i:nth-child(3) {
+  animation-delay: 0.3s;
+}
+@keyframes cbw-dot-bounce {
+  0%,
+  60%,
+  100% {
+    transform: translateY(0);
+    opacity: 0.4;
+  }
+  30% {
+    transform: translateY(-4px);
+    opacity: 1;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .cbw-dots i {
+    animation: none;
+  }
+}
+
+/* 예시 프롬프트 칩 — intro 시점(대화 시작 전)에만 노출되는 pill 버튼 */
+/* intro 인사 — 캐릭터 + 한 줄, 대화 시작 전에만 뜬다 */
+.cbw-intro {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 0 4px;
+}
+.cbw-intro__char {
+  width: 48px;
+  height: 48px;
+  object-fit: contain;
+}
+.cbw-intro__hi {
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--ink2, #8a776a);
+}
+
+.cbw-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-self: flex-start;
+  max-width: 100%;
+}
+.cbw-chip {
+  padding: 6px 12px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: #fff;
+  color: var(--btn-brown);
+  font-family: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.cbw-chip:hover {
+  background: #f4ede4;
+  border-color: #d8c9ae;
+}
+
+/* 추천 후보 카드 — 봇 말풍선 아래에 붙는다 */
+.cbw-cands {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 6px;
+}
+.cbw-cands-hint {
+  font-size: 11px;
+  color: #8a776a;
+}
+.cbw-cand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 12px;
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  cursor: grab; /* 드래그해서 후보 목록에 담는다 */
+  touch-action: none; /* dnd-kit PointerSensor 권장 — 터치 스크롤과 충돌 방지 */
+}
+.cbw-cand:active {
+  cursor: grabbing;
+}
+.cbw-cand.is-dragging {
+  opacity: 0.35;
+}
+.cbw-cand-main {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  flex: 1;
+  font-size: 12.5px;
+  color: var(--ink);
+}
+.cbw-cand-main b {
+  font-size: 13px;
+}
+.cbw-cand-meta {
+  color: #8a776a;
+  font-size: 11.5px;
+}
+.cbw-cand-addr {
+  color: var(--ink2);
+  font-size: 11.5px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.cbw-cand-grip {
+  flex-shrink: 0;
+  color: #cfc5b8;
+  font-size: 14px;
+}
+
+.cbw-foot {
+  display: flex;
+  gap: 8px;
+  padding: 12px 16px;
+  background: #fff;
+  border-top: 1px solid var(--line);
+}
+.cbw-input {
+  flex: 1;
+  min-width: 0;
+  padding: 10px 14px;
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  background: #fff;
+  font-family: inherit;
+  font-size: 13px;
+  outline: none;
+}
+.cbw-send {
+  padding: 0 18px;
+  border: none;
+  border-radius: 20px;
+  background: #6a4c3d;
+  color: #fff;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: bold;
+  cursor: pointer;
+}
+.cbw-send:hover {
+  background: #5a3f32;
+}
+
+/* ── 모바일(≤768px) ─────────────────────────────────────────
+   패널이 340px 고정이라 좁은 화면에서 오른쪽으로 삐져나갔다. 좌우로 붙인다.
+   보이스 탭은 모바일에서 렌더되지 않으므로 하단을 나눠 쓸 일이 없다. */
+@media (max-width: 768px) {
+  .cbw-fab {
+    right: 14px;
+    bottom: 16px;
+    width: 50px;
+    height: 50px;
+    font-size: 24px;
+  }
+  .cbw-fab-icon {
+    width: 36px;
+    height: 36px;
+  }
+  .cbw {
+    right: 12px;
+    left: 12px;
+    bottom: 76px;
+    width: auto;
+    max-height: min(70vh, 520px);
+  }
+  /* 모바일은 화면 캡(70vh)에 맞춰 본문이 줄도록 — 고정 360 을 풀고 남는 높이를 쓴다 */
+  .cbw-body {
+    height: auto;
+    flex: 1;
+    min-height: 0;
+  }
+}

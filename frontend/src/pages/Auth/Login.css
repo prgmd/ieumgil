@@ -1,0 +1,283 @@
+/* ==========================================================================
+   Login page
+   - 좌: 브랜드 히어로 / 우: 소셜 로그인 카드 로 구성된 좌우 분할 레이아웃.
+   - 색상 변수는 컴포넌트 레벨에서 재정의 (필요시 전역 css로 이동 가능).
+   ========================================================================== */
+.login-page {
+  --ink: #3d2b22;
+  --ink2: #8a776a;
+  --faint: #b3a998;
+  --acc: #9c4a2f;
+  --brand: #3d2b22;
+
+  font-family: var(--font-app), "Noto Sans KR", -apple-system, BlinkMacSystemFont, sans-serif;
+  color: var(--ink);
+
+  min-height: 100vh;
+  display: flex;
+}
+
+.login-frame {
+  display: flex;
+  width: 100%;
+  min-height: 100vh;
+}
+
+/* ===== 좌측: 브랜드 히어로 ===== */
+.login-hero {
+  position: relative;
+  flex: 1.27;
+  overflow: hidden;
+  padding: 56px 52px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  background: linear-gradient(
+    150deg,
+    #fdf6ea 0%,
+    #f4ecd9 45%,
+    #efe7d2 100%
+  );
+}
+
+.login-hero__icons {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.login-hero__icon {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.4rem;
+  box-shadow: 0 10px 24px rgba(61, 43, 34, 0.12);
+}
+
+.login-hero__icon img {
+  width: 58%;
+  height: 58%;
+  object-fit: contain;
+}
+
+.login-hero__icon--plane {
+  top: 26%;
+  left: 8%;
+  width: 54px;
+  height: 54px;
+  border-radius: 50%;
+  background: #fffdf8;
+}
+
+.login-hero__icon--pin {
+  top: 15%;
+  left: 30%;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: rgba(61, 43, 34, 0.06);
+  box-shadow: none;
+  font-size: 1.1rem;
+  opacity: 0.85;
+}
+
+.login-hero__icon--compass {
+  top: 30%;
+  left: 43%;
+  width: 66px;
+  height: 66px;
+  border-radius: 20px;
+  background: var(--brand);
+}
+
+.login-hero__icon--calendar {
+  top: 25%;
+  left: 65%;
+  width: 50px;
+  height: 50px;
+  border-radius: 14px;
+  background: #f7efd8;
+  border: 1px solid #ece0c4;
+  box-shadow: 0 8px 18px rgba(61, 43, 34, 0.08);
+}
+
+.login-hero__icon--package {
+  top: 38%;
+  left: 76%;
+  width: 58px;
+  height: 58px;
+  border-radius: 18px;
+  background: #fcfcfb;
+}
+
+.login-hero__content {
+  position: relative;
+  z-index: 2;
+  margin-top: 22%;
+}
+
+.login-hero__badge {
+  display: inline-block;
+  padding: 7px 16px;
+  border-radius: 999px;
+  background: rgba(61, 43, 34, 0.07);
+  color: var(--ink2);
+  font-size: 0.78rem;
+  font-weight: 500;
+  margin-bottom: 20px;
+}
+
+.login-hero__title {
+  margin: 0;
+  font-weight: 500;
+  font-size: clamp(1.9rem, 3.2vw, 2.9rem);
+  line-height: 1.32;
+  letter-spacing: -0.02em;
+  color: var(--ink);
+}
+
+.login-hero__accent {
+  position: relative;
+  display: inline-block;
+  color: var(--brand);
+}
+
+.login-hero__underline {
+  position: absolute;
+  left: 0;
+  bottom: -12px;
+  width: 100%;
+  height: auto;
+}
+
+.login-hero__subtitle {
+  margin: 34px 0 0;
+  color: var(--ink2);
+  font-size: 1rem;
+  line-height: 1.8;
+}
+
+/* ===== 우측: 로그인 패널 ===== */
+.login-panel {
+  flex: 1;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  padding: 0% 35px 40px;
+  background: #fbf8f1;
+}
+
+.login-panel__nav {
+  display: flex;
+  align-items: center;
+}
+
+.login-panel__brand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 1.28rem;
+  font-weight: 500;
+  color: var(--ink);
+}
+
+.login-panel__logo-img {
+  display: block;
+  height: 60px;
+  width: auto;
+}
+
+.login-panel__body {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+
+.login-card {
+  width: min(360px, 100%);
+  background: #fff;
+  border-radius: 20px;
+  box-shadow: 0 20px 50px rgba(61, 43, 34, 0.1);
+  padding: 36px 30px;
+  text-align: center;
+}
+
+.login-card__title {
+  margin: 0;
+  font-size: 1.6rem;
+  font-weight: 500;
+  color: var(--ink);
+}
+
+.login-card__subtitle {
+  margin: 8px 0 26px;
+  color: var(--ink2);
+  font-size: 0.95rem;
+}
+
+/* ---- 소셜 로그인 버튼 ---- */
+.login-btn {
+  width: 100%;
+  border: none;
+  border-radius: 12px;
+  padding: 14px;
+  font-size: 0.98rem;
+  font-weight: 500;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  cursor: pointer;
+  font-family: inherit;
+  transition: opacity 0.2s, transform 0.2s;
+}
+
+.login-btn:hover {
+  opacity: 0.92;
+  transform: translateY(-1px);
+}
+
+.login-btn__ic {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.95rem;
+  font-weight: 500;
+}
+
+.login-btn.kakao {
+  background: #fee500;
+  color: #3a2d1a;
+}
+
+.login-btn.kakao .login-btn__ic {
+  color: #3a2d1a;
+}
+
+.login-panel__terms {
+  margin: 26px 0 0;
+  text-align: center;
+  font-size: 0.8rem;
+  color: var(--ink2);
+}
+
+.login-panel__terms-doc {
+  color: var(--ink);
+  font-weight: 500;
+  cursor: default;
+}
+
+/* ===== 반응형: 좁은 화면에서는 히어로 숨기고 로그인 패널만 ===== */
+@media (max-width: 860px) {
+  .login-hero {
+    display: none;
+  }
+
+  .login-frame {
+    width: min(440px, 100%);
+    min-height: auto;
+  }
+}

@@ -8,7 +8,62 @@ spring:
   jpa:
     hibernate:
       ddl-auto: none
+  http:
+    client:
+      connect-timeout: 5s
+      read-timeout: 15s
+  ai:
+    retry:
+      # 기본값 10회(지수 백오프)는 과하다 — 실패한 GMS 호출 하나가 요청 스레드를 몇 분씩 붙잡는다.
+      # 일시 장애는 2~3회면 대개 넘어가고, 그 이상은 재시도가 아니라 장애다.
+      max-attempts: 3
+    anthropic:
+      api-key: ${GMS_API_KEY:}
+      base-url: https://gms.ssafy.io/gmsapi/api.anthropic.com
+      chat:
+        options:
+          model: claude-haiku-4-5-20251001
+          max-tokens: 1024
 
 logging:
   level:
     root: info
+
+cors:
+  allowed-origins: http://localhost:5173  # 배포 시 프론트 도메인을 콤마로 추가
+
+auth:
+  refresh-cookie:
+    secure: false   # HTTPS 배포 시 true
+    same-site: Lax  # 프론트/백엔드가 다른 도메인이면 None (+ secure: true 필수)
+
+jwt:
+  secret: ${JWT_SECRET}
+  access-token-validity: 1800000      # 30분 (ms)
+  refresh-token-validity: 1209600000  # 14일 (ms)
+
+tourapi:
+  service-key: ${TOUR_API_KEY:}
+  base-url: http://apis.data.go.kr/B551011/KorService2
+
+oauth:
+  kakao:
+    client-id: ${KAKAO_CLIENT_ID}
+    client-secret: ${KAKAO_CLIENT_SECRET:}
+    redirect-uri: ${KAKAO_REDIRECT_URI}
+    token-uri: https://kauth.kakao.com/oauth/token
+    user-info-uri: https://kapi.kakao.com/v2/user/me
+
+kakao:
+  local:
+    rest-api-key: ${KAKAO_REST_API_KEY:}
+    base-url: https://dapi.kakao.com
+
+odsay:
+  api-key: ${ODSAY_API_KEY:}
+  base-url: https://api.odsay.com/v1/api
+
+# 자차 연료비 추정에 쓰는 전국 평균 휘발유가. 키가 없으면 상수 유가(ConstantFuelPriceProvider)로 동작한다
+opinet:
+  api-key: ${OPINET_API_KEY:}
+  base-url: https://www.opinet.co.kr/api

@@ -1,0 +1,54 @@
+# 이음길 프론트엔드 — **빌드용** Docker Compose (소스가 있는 곳에서 실행)
+#
+# 이 파일은 이미지를 만드는 쪽(로컬 PC·Jenkins)에서 쓴다. EC2 는 저장소를 클론하지
+# 않고 이미지만 받아 켜므로 docker-compose.prod.yml 을 쓴다.
+#
+# 값은 개발용 .env 를 그대로 쓴다 — 배포와 다른 값은 VITE_KAKAO_REDIRECT_URI
+# 하나뿐이라, 그것만 셸에서 덮어쓴다(셸 환경변수가 .env 보다 우선한다).
+#
+#   cd frontend
+#   TAG=$(git rev-parse --short HEAD)
+#   VITE_KAKAO_REDIRECT_URI=https://<도메인>/oauth/kakao/callback \
+#     FRONTEND_IMAGE_REPO=<계정>/ieumgil-frontend IMAGE_TAG=$TAG \
+#     docker compose build
+#   docker push <계정>/ieumgil-frontend:$TAG
+#
+# 덮어쓰는 걸 잊으면 Dockerfile 이 "localhost 입니다" 로 빌드를 끊는다 —
+# 조용히 잘못된 번들이 나가는 것보다 낫다.
+#
+# 백엔드 스택(backend/docker-compose.yml)과 프로젝트를 분리했다 — 프론트만 다시
+# 올릴 때 DB·Redis 를 건드리지 않기 위함이다. 두 스택은 네트워크를 공유하지 않고,
+# 호스트 nginx 가 각각의 공개 포트로 프록시한다.
+
+name: ieumgil-frontend
+
+services:
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      # VITE_* 는 빌드 시점에 번들로 들어간다 — environment 가 아니라 args 다
+      args:
+        VITE_API_BASE_URL: ${VITE_API_BASE_URL:-/api}
+        VITE_KAKAO_REST_API_KEY: ${VITE_KAKAO_REST_API_KEY}
+        VITE_KAKAO_REDIRECT_URI: ${VITE_KAKAO_REDIRECT_URI}
+    # 레지스트리에 푸시할 이름 그대로 짓는다 — build 후 바로 docker push 할 수 있게.
+    # 태그는 커밋 SHA 를 권한다(latest 로 두면 롤백할 대상이 없다).
+    image: ${FRONTEND_IMAGE_REPO:-ieumgil/frontend}:${IMAGE_TAG:-latest}
+    # EC2 가 amd64 다. 맥(M시리즈)에서 빌드하면 기본이 arm64 라 배포 서버에서
+    # "exec format error" 로 안 뜬다 — 빌드 머신과 무관하게 여기서 못 박는다.
+    # (docker compose build 에는 --platform 플래그가 없어 파일로 지정한다)
+    platform: linux/amd64
+    container_name: ieumgil-frontend
+    restart: unless-stopped
+    mem_limit: 128m
+    ports:
+      # 127.0.0.1 고정 — 0.0.0.0 으로 열면 HTTPS 를 우회해 평문으로 접속하는
+      # 경로가 생긴다. 외부 노출은 호스트 nginx(443)만 담당한다.
+      - "127.0.0.1:${FRONTEND_PORT:-5173}:80"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost/index.html"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 5s

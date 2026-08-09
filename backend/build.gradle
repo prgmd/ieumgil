@@ -1,6 +1,6 @@
 plugins {
 	id 'java'
-	id 'org.springframework.boot' version '3.4.1'
+	id 'org.springframework.boot' version '3.4.13'
 	id 'io.spring.dependency-management' version '1.1.7'
 }
 
@@ -17,15 +17,37 @@ repositories {
 	mavenCentral()
 }
 
+dependencyManagement {
+	imports {
+		mavenBom "org.springframework.ai:spring-ai-bom:1.1.8"
+	}
+}
+
+// Spring Boot 3.4 BOM의 Testcontainers 1.20.4는 Docker Engine 29(API 최소 1.44)와
+// 비호환 — npipe 연결이 400으로 죽는다. 도커 29 대응이 들어간 패치 버전으로 올린다
+// (https://github.com/testcontainers/testcontainers-java/issues/11212)
+ext['testcontainers.version'] = '1.21.4'
+
+// GroupMemberAspect가 파라미터 이름(groupId/projectId)으로 인자를 찾으므로 이름을 보존한다
+tasks.withType(JavaCompile).configureEach {
+	options.compilerArgs << '-parameters'
+}
+
 dependencies {
+	implementation 'org.springframework.boot:spring-boot-starter-aop'
 	implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
 	implementation 'org.springframework.boot:spring-boot-starter-data-redis'
 	implementation 'org.springframework.boot:spring-boot-starter-security'
-	implementation 'org.springframework.boot:spring-boot-starter-oauth2-client'
 	implementation 'org.springframework.boot:spring-boot-starter-validation'
 	implementation 'org.springframework.boot:spring-boot-starter-web'
 	implementation 'org.springframework.boot:spring-boot-starter-websocket'
 	implementation 'org.springdoc:springdoc-openapi-starter-webmvc-ui:2.7.0'
+	implementation 'org.springframework.ai:spring-ai-starter-model-anthropic'
+	implementation 'me.paulschwarz:spring-dotenv:4.0.0'
+
+	implementation 'io.jsonwebtoken:jjwt-api:0.12.6'
+	runtimeOnly 'io.jsonwebtoken:jjwt-impl:0.12.6'
+	runtimeOnly 'io.jsonwebtoken:jjwt-jackson:0.12.6'
 
 	compileOnly 'org.projectlombok:lombok'
 	runtimeOnly 'org.postgresql:postgresql'
@@ -36,6 +58,11 @@ dependencies {
 	testImplementation 'org.springframework.boot:spring-boot-starter-test'
 	testImplementation 'org.springframework.security:spring-security-test'
 
+	// 통합 테스트용 실제 PostgreSQL/Redis — 행 잠금(FOR UPDATE)과 JSONB는 H2로 재현이 안 된다
+	testImplementation 'org.springframework.boot:spring-boot-testcontainers'
+	testImplementation 'org.testcontainers:junit-jupiter'
+	testImplementation 'org.testcontainers:postgresql'
+
 	testCompileOnly 'org.projectlombok:lombok'
 	testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 
@@ -43,5 +70,13 @@ dependencies {
 }
 
 tasks.named('test') {
-	useJUnitPlatform()
+	useJUnitPlatform {
+		// 실 외부 API를 호출하는 테스트(@Tag("live"))는 기본 실행에서 제외한다.
+		// GMS는 크레딧을, 카카오·ODsay·TourAPI는 일일 쿼터를 소모하므로
+		// 넓은 패턴(예: --tests "...chatbot.*")에 딸려 도는 것을 막는다.
+		// 필요할 때만: ./gradlew test -PincludeLive
+		if (!project.hasProperty('includeLive')) {
+			excludeTags 'live'
+		}
+	}
 }

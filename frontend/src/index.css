@@ -1,0 +1,60 @@
+@font-face {
+  font-family: 'MemomentKkukKkuk';
+  src: url('./assets/fonts/MemomentKkukkukk.ttf') format('truetype');
+  font-weight: normal;
+  font-style: normal;
+  /* swap이 없으면 브라우저 기본이 "폰트 로드까지 글자 미표시(FOIT)" — 5.4MB ttf라
+     첫 화면이 수 초간 백지가 된다. swap은 폴백 폰트로 먼저 그리고 로드 후 갈아끼운다. */
+  font-display: swap;
+}
+
+/* 실험용 폰트 스위치 지점.
+   여러 폰트를 테스트할 거면 이 한 줄만 바꾸면 프로젝트 전체(Landing/My/Group/Login)에
+   한 번에 반영된다. 다른 파일들은 전부 var(--font-app)를 참조하도록 되어 있음.
+   ex) 폰트 두 개를 더 추가해서 비교하고 싶으면:
+     1) 위에 @font-face 블록 하나 더 추가 (font-family 이름 다르게)
+     2) 아래 --font-app 값만 그 이름으로 바꿔서 새로고침 */
+:root {
+  --font-app: 'MemomentKkukKkuk', 'Pretendard', 'Noto Sans KR', sans-serif;
+}
+
+html,
+body {
+  font-family: var(--font-app);
+}
+
+/* 앱 전역 스크롤바 (bare minimum) — 어디서나 얇은 크림 바, 상하 화살표 버튼 없음.
+   ⚠️ 표준 scrollbar-width/scrollbar-color 는 여기서 쓰지 않는다 — 크롬(Blink)에선
+   그게 설정되면 ::-webkit-scrollbar 규칙(버튼 제거 포함)이 통째로 무시된다.
+   Firefox(웹킷 미지원)만 아래 @supports 로 따로 챙긴다. */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(124, 84, 67, 0.45); /* 테마 갈색(#7c5443) 톤 — 회색빛 대신 따뜻하게 */
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(124, 84, 67, 0.65);
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-button {
+  display: none;
+  width: 0;
+  height: 0;
+}
+/* 둥근 모서리 컨테이너(모달)용 — 트랙 상하 여백을 조금 줘 라운드 코너에 여유를 둔다. */
+.cream-scroll-round::-webkit-scrollbar-track {
+  margin: 6px 0;
+}
+/* Firefox 등 ::-webkit-scrollbar 미지원 브라우저 — 표준 속성으로 얇은 크림 바.
+   selector() 지원 검사로 크롬에는 적용되지 않아 위 웹킷 규칙을 깨지 않는다. */
+@supports not selector(::-webkit-scrollbar) {
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(124, 84, 67, 0.45) transparent;
+  }
+}

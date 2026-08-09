@@ -1,0 +1,80 @@
+*{margin:0;padding:0;box-sizing:border-box;font-family:var(--font-app)}
+button{cursor:pointer;font-family:inherit}
+body{background:linear-gradient(150deg,#fdf6ea 0%,#f4ecd9 55%,#efe7d2 100%) fixed;color:var(--ink);font-size:14px;min-height:100vh}
+
+/* 공통 버튼 */
+.btn{border:none;border-radius:11px;padding:9px 15px;font-size:12.5px;font-weight:500;white-space:nowrap;flex-shrink:0}
+.btn-acc{background:var(--acc);color:#fff;box-shadow:0 5px 14px rgba(156,74,47,.25)}
+.btn-danger{background:var(--danger);color:#fff;box-shadow:0 5px 14px rgba(156,59,59,.25)}
+.btn-acc:hover{background:#833d26}
+.btn-gh{background:#fff;border:1.5px solid var(--line);color:var(--ink)}
+
+/* 노데이터 안내 (QA 배치2) — 목록이 비었을 때 다음 행동을 알려주는 자리 표시 */
+.nodata{padding:26px 18px;border:1.5px dashed rgba(61,43,34,.18);border-radius:12px;text-align:center;font-size:13px;line-height:1.7;color:var(--ink3,#8a776a)}
+.nodata b{color:var(--ink2,#6b5a4e)}
+
+/* 공통 아바타 */
+.mini-av{width:30px;height:30px;border-radius:50%;color:#fff;display:flex;align-items:center;justify-content:center;font-weight:500;font-size:12.5px;object-fit:cover}
+
+/* 상단 앱바 (라우트 공통) */
+.appbar{display:flex;align-items:center;gap:18px;height:50px;padding:8px 22px;background:rgba(255,253,248,.87);backdrop-filter:blur(10px);border-bottom:1px solid rgba(156,74,47,.14);position:sticky;top:0;z-index:40}
+.appbar .logo{display:flex;align-items:center;background:none;border:none;padding:0;cursor:pointer;flex-shrink:0}
+.appbar .logo .logo-img{height:62px;width:auto;display:block}
+.appbar .crumb{display:flex;align-items:center;gap:8px;font-size:14px;color:var(--ink2);min-width:0}
+.appbar .crumb-item{display:flex;align-items:center;gap:8px;min-width:0}
+.appbar .crumb button{background:none;border:none;color:var(--ink2);font-size:14px;padding:0}
+.appbar .crumb button:hover{color:var(--acc)}
+.appbar .crumb b{color:var(--ink);font-weight:500;font-size:15px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.appbar .crumb-sep{color:#cdbfad;font-family:'Noto Sans KR',Arial,sans-serif}
+/* 함께 보는 멤버 겹침 아바타 (대시보드) — 개인 페이지 그룹 카드(.g-card .avs)와 같은 겹침 규칙 */
+.appbar .crew{margin-left:auto;display:flex;align-items:center;padding-right:10px;margin-right:4px;border-right:1px solid rgba(61,43,34,.14)}
+.appbar .crew-item{position:relative;display:inline-flex;margin-left:-8px;transition:transform .15s}
+.appbar .crew-item:first-child{margin-left:0}
+.appbar .crew-item:hover{transform:translateY(-2px);z-index:2}
+.appbar .crew-item .mini-av{width:28px;height:28px;font-size:11.5px;border:2px solid #fffdf8;box-shadow:0 2px 5px rgba(61,43,34,.14)}
+.appbar .crew-item.is-off .mini-av{filter:grayscale(.65);opacity:.55}
+/* 활동 표시 — 초록 점(활동 중) / 회색 점(오프라인) */
+.appbar .crew-dot{position:absolute;right:-1px;bottom:-1px;width:9px;height:9px;border-radius:50%;border:2px solid #fffdf8;background:#b8ada2}
+.appbar .crew-item.is-on .crew-dot{background:#3e8e63;box-shadow:0 0 0 3px rgba(62,142,99,.18)}
+.appbar .crew-more{margin-left:-8px;width:28px;height:28px;border-radius:50%;border:2px solid #fffdf8;background:#efe7d8;color:var(--ink2);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:500}
+.appbar .me{margin-left:auto;display:flex;align-items:center;gap:8px;font-size:13px;font-weight:500;flex-shrink:0}
+.appbar .me.with-crew{margin-left:0}
+.appbar .me .crew-item{margin-left:0}
+.appbar .me-avatar,.appbar .me-avatar-fallback{width:28px;height:28px;border-radius:50%;object-fit:cover;flex-shrink:0}
+.appbar .me-avatar-fallback{width:28px;height:28px;font-size:12px}
+.appbar .logout-btn{margin-left:6px;padding:5px 10px;font-size:12px;font-weight:500;color:var(--ink2);background:none;border:1px solid rgba(61,43,34,.16);border-radius:8px;cursor:pointer}
+.appbar .logout-btn:hover{color:var(--acc);border-color:var(--acc)}
+.appbar .logout-btn:disabled{opacity:.55;cursor:default}
+
+/* 페이지 공통 컨테이너 / 섹션 헤더 */
+.page{max-width:1080px;margin:0 auto;padding:26px 22px 96px}
+.sec-head{display:flex;align-items:baseline;gap:12px;margin-bottom:16px;flex-wrap:wrap}
+.sec-head h2{font-family:var(--font-app);font-size:24px}
+.sec-head span{color:var(--ink2);font-size:12.5px}
+.sec-head .right{margin-left:auto}
+
+/* ── 모바일(≤768px) ─────────────────────────────────────────
+   상단바는 로고·경로·멤버·프로필이 한 줄에 들어가는 전제로 짜여 있어서,
+   좁은 화면에서는 요소들이 서로 밀려 겹친다. 여백·크기를 줄이고
+   없어도 되는 것(로그아웃 글자·내 닉네임)은 접는다. */
+@media (max-width: 768px) {
+  .appbar { gap: 8px; padding: 6px 12px; }
+  .appbar .logo .logo-img { height: 40px; }
+  .appbar .crumb { gap: 5px; font-size: 12.5px; max-width: 26vw; }
+  .appbar .crumb b { font-size: 12.5px; }
+  /* 경로가 길면 제목만 남긴다 — 뒤로가기는 브라우저 제스처로 충분하다 */
+  .appbar .crumb-item:not(:last-child) { display: none; }
+  .appbar .crumb-sep { display: none; }
+  /* 함께 보는 멤버 표시는 접는다 — 좁은 화면에서는 지금 무엇을 보고 있는지
+     (프로젝트 제목)가 누가 접속했는지보다 먼저다. 폭도 그만큼 제목에 넘긴다. */
+  .appbar .crew { display: none; }
+  .appbar .crew-item .mini-av,
+  .appbar .crew-more,
+  .appbar .me-avatar,
+  .appbar .me-avatar-fallback { width: 24px; height: 24px; font-size: 10.5px; }
+  .appbar .me { gap: 5px; font-size: 0; }  /* 닉네임 감추고 아바타만 */
+  .appbar .logout-btn { margin-left: 4px; padding: 4px 7px; font-size: 11px; }
+
+  .page { padding: 16px 12px 80px; }
+  .sec-head h2 { font-size: 19px; }
+}

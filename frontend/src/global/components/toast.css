@@ -1,0 +1,28 @@
+.toast {
+  position: fixed;
+  left: 50%;
+  bottom: 32px;
+  transform: translate(-50%, 12px);
+  /* 토스트는 항상 최상위 — 모달 오버레이(대시보드 9999)보다 위여야
+     "저장 실패" 같은 안내가 모달에 가려지지 않는다 */
+  z-index: 20000;
+
+  max-width: min(90vw, 420px);
+  padding: 12px 20px;
+  border-radius: 12px;
+  background: rgba(35, 28, 22, 0.92);
+  color: #fffdf8;
+  font-size: 13.5px;
+  font-weight: 500;
+  text-align: center;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
+
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s ease, transform 0.2s ease;
+}
+
+.toast--visible {
+  opacity: 1;
+  transform: translate(-50%, 0);
+}

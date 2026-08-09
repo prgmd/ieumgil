@@ -1,3 +1,253 @@
+import './shared/styles/index.css';
+import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { useAuthStore } from '../../global/stores/authStore';
+import { useMyGroups } from '../../features/my/hooks/useMyGroups';
+import { useToastStore } from '../../global/stores/toastStore';
+import { ERROR_CODE } from '../../global/api/errorCodes';
+import { ROUTES } from '../../global/constants/routes';
+import { onEnter } from '../../global/util/onEnter';
+import { useInlineRename } from '../../global/hooks/useInlineRename';
+import { LoadingScreen } from '../../global/components/LoadingScreen';
+import { EmptyState } from '../../global/components/EmptyState';
+import CreateGroupModal from './components/CreateGroupModal';
+import WithdrawModal from './components/WithdrawModal';
+import { AppBar } from './shared/ui/AppBar';
+import { Avatar } from './shared/ui/Avatar';
+
 export function MyPage() {
-  return <div>Test MyPage</div>;
+  const currentUser = useAuthStore((s) => s.currentUser);
+  // 그룹 목록은 이 페이지가 소유한다 — 훅이 조회·갱신을 함께 담당한다.
+  const { groups, status, createGroup, renameGroup, joinByCode } =
+    useMyGroups(currentUser);
+  const showToast = useToastStore((s) => s.show);
+  const navigate = useNavigate();
+
+  const [code, setCode] = useState('');
+  const [codeErr, setCodeErr] = useState('');
+  const [joining, setJoining] = useState(false);
+  const [createOpen, setCreateOpen] = useState(false);
+  // 그룹 카드 이름 인라인 수정 — 그룹 페이지 그룹명과 공통 훅(useInlineRename)
+  const rename = useInlineRename({
+    rename: (id, name) => renameGroup(id, name),
+    onSuccess: () => showToast('이름이 수정됐어요 ✓'),
+    onError: () => showToast('그룹명은 2~20자로 입력해주세요.'),
+  });
+  const [withdrawOpen, setWithdrawOpen] = useState(false);
+
+  const withdraw = useAuthStore((s) => s.withdraw);
+
+  // 나 혼자인 그룹은 탈퇴와 함께 서버가 하드 삭제한다(프로젝트·블록까지) —
+  // 모달이 그 사실을 숫자로 알리도록 미리 센다.
+  const soloGroupCount = groups.filter(
+    (g) => (g.memberCount ?? g.members?.length ?? 1) <= 1,
+  ).length;
+
+  async function handleWithdraw() {
+    await withdraw(); // 실패는 모달이 받아 사유를 보여준다
+    showToast('탈퇴가 완료됐어요. 그동안 이용해주셔서 감사합니다.');
+    navigate(ROUTES.landing, { replace: true });
+  }
+
+  async function handleJoin() {
+    if (joining) return;
+    setCodeErr('');
+    // 빈·공백·8자 미만은 서버 요청 전에 막는다(형식은 영대문자·숫자 8자리).
+    const trimmed = code.trim();
+    if (trimmed.length < 8) {
+      setCodeErr('코드는 영대문자·숫자 8자리입니다.');
+      return;
+    }
+    setJoining(true);
+    try {
+      const group = await joinByCode(trimmed);
+      setCode('');
+      navigate(ROUTES.group(group.id));
+    } catch (e) {
+      setCodeErr(messageFor(e));
+    } finally {
+      setJoining(false);
+    }
+  }
+
+  return (
+    <>
+      <AppBar crumbs={[{ label: '개인 페이지' }]} />
+      <div className="page">
+      <div className="sec-head">
+        <h2>내 그룹</h2>
+        <span>카드를 눌러 입장</span>
+      </div>
+
+      {/* group-grid 재사용: 좌측 콘텐츠 + 우측 320px 고정 패널.
+          sec-head를 grid 밖으로 빼서 양쪽 칸이 실제 콘텐츠(카드/패널)로
+          동시에 시작하게 하고, 오른쪽 칸은 스크롤 시 sticky로 고정된다. */}
+      <div className="group-grid">
+        <div>
+          {status === 'loading' ? (
+            <LoadingScreen />
+          ) : status === 'error' ? (
+            <p className="nodata">그룹 목록을 불러오지 못했어요.</p>
+          ) : (
+          <div className="grid-groups">
+            {/* 노데이터 (QA 배치2) — 빈 화면이 "고장"으로 읽히지 않게 다음 행동을 안내 */}
+            {groups.length === 0 && (
+              <EmptyState
+                title="아직 함께하는 그룹이 없어요"
+                desc={
+                  <>
+                    아래 <b>＋ 새 그룹</b> 카드로 첫 여행 그룹을 만들어보세요.
+                  </>
+                }
+              />
+            )}
+            {groups.map((g) => {
+              const isEditing = rename.isEditing(g.id);
+              return (
+                <div
+                  key={g.id}
+                  className="g-card"
+                  onClick={() => !isEditing && navigate(ROUTES.group(g.id))}
+                >
+                  {isEditing ? (
+                    <input
+                      className="rename-input"
+                      value={rename.value}
+                      autoFocus
+                      onClick={(e) => e.stopPropagation()}
+                      onChange={(e) => rename.setValue(e.target.value)}
+                      onBlur={() => rename.commit(g.name)}
+                      onKeyDown={onEnter((e) => e.currentTarget.blur())}
+                      maxLength={20}
+                      style={{
+                        fontSize: 16,
+                        fontWeight: 800,
+                        border: '1.5px solid var(--acc)',
+                        borderRadius: 8,
+                        padding: '2px 8px',
+                        width: '90%',
+                      }}
+                    />
+                  ) : (
+                    <h3>{g.name}</h3>
+                  )}
+                  {/* memberCount·tripCount 는 서버가 계산해 내려준다(GroupResDTO.Summary).
+                      tripCount 는 완료 여부와 무관한 전체 프로젝트 수라 "완료"를 붙이지 않는다. */}
+                  <div className="meta">
+                    멤버 {g.memberCount}명 · 여행 {g.tripCount}개
+                  </div>
+                  {g.members?.length > 0 && (
+                    <div className="avs">
+                      {g.members.map((m) => (
+                        <Avatar
+                          key={m.memberId}
+                          memberId={m.memberId}
+                          nickname={m.nickname}
+                          profileImg={m.profileImg}
+                        />
+                      ))}
+                    </div>
+                  )}
+                  {/* flat 모델 — 모든 멤버가 그룹 이름을 수정할 수 있다.
+                      그룹 삭제는 없다 — 전원이 나가면 서버가 자동으로 소멸시킨다. */}
+                  {!isEditing && (
+                    <div className="ops">
+                      <button
+                        className="op"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          rename.start(g.id, g.name);
+                        }}
+                      >
+                        ✎
+                      </button>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+            <div className="g-card add" onClick={() => setCreateOpen(true)}>
+              ＋ 새 그룹 만들기
+            </div>
+          </div>
+          )}
+        </div>
+
+        <div>
+          <div className="pnl">
+            <h3>초대 코드로 입장</h3>
+            <p style={{ fontSize: 12.5, color: 'var(--ink2)' }}>
+              친구에게 받은 8자리 코드를 입력하세요. 코드는 발급 후 7일간 유효합니다.
+            </p>
+            <div className="code-input">
+              <input
+                maxLength={8}
+                placeholder="예: YJ3K7Q2M"
+                value={code}
+                onChange={(e) => setCode(e.target.value.toUpperCase())}
+                onKeyDown={onEnter(handleJoin)}
+              />
+              <button className="btn btn-acc" onClick={handleJoin} disabled={joining}>
+                입장
+              </button>
+            </div>
+            {codeErr && <div className="code-err">{codeErr}</div>}
+          </div>
+
+          {/* 계정 관리 — 되돌릴 수 없는 동작이라 주 흐름(그룹)에서 멀찍이,
+              패널 맨 아래에 조용히 둔다 */}
+          <div className="pnl acct-pnl">
+            <h3>계정</h3>
+            <p style={{ fontSize: 12.5, color: 'var(--ink2)' }}>
+              탈퇴하면 계정 정보가 파기되고 모든 그룹에서 나가게 됩니다.
+            </p>
+            <button
+              className="btn btn-gh danger"
+              onClick={() => setWithdrawOpen(true)}
+            >
+              회원 탈퇴
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <CreateGroupModal
+        open={createOpen}
+        onCreate={createGroup}
+        onClose={() => setCreateOpen(false)}
+      />
+      <WithdrawModal
+        open={withdrawOpen}
+        soloGroupCount={soloGroupCount}
+        onWithdraw={handleWithdraw}
+        onClose={() => setWithdrawOpen(false)}
+      />
+      </div>
+    </>
+  );
+}
+
+// MY-05: 입장 실패 사유를 사용자 문구로 매핑.
+//
+// 여기서 직접 적는 건 서버 문구보다 부드럽게 쓰고 싶은 다섯 가지뿐이고, 그 밖의
+// 코드는 서버가 준 message 를 그대로 보여준다 — 고정 문구로 뭉개면 "잠시 후 다시
+// 시도"만 반복돼 실제 사유를 알 수 없다.
+//
+// VALIDATION_FAILED 는 공용 코드라 화면마다 의미가 다르지만, 이 폼에서 오는 400 은
+// 초대 코드 형식 위반뿐이다(@Pattern ^[A-Z0-9]{8}$).
+function messageFor(error) {
+  switch (error?.code) {
+    case ERROR_CODE.VALIDATION_FAILED:
+      return '코드는 영대문자·숫자 8자리입니다.';
+    case ERROR_CODE.INVITE_CODE_NOT_FOUND:
+      return '존재하지 않는 코드예요. 코드를 다시 확인해주세요.';
+    case ERROR_CODE.INVITE_CODE_EXPIRED:
+      return '만료된 코드입니다 — 그룹 멤버에게 재발급을 요청하세요.';
+    case ERROR_CODE.GROUP_FULL:
+      return '정원이 가득 찼어요 (최대 10명).';
+    case ERROR_CODE.ALREADY_GROUP_MEMBER:
+      return '이미 가입된 그룹이에요.';
+    default:
+      return error?.message ?? '입장에 실패했어요. 잠시 후 다시 시도해주세요.';
+  }
 }
