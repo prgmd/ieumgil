@@ -7,6 +7,7 @@ import { isTripFinished } from '../../features/group/util/tripStatus';
 import { useToastStore } from '../../global/stores/toastStore';
 import { ROUTES } from '../../global/constants/routes';
 import { onEnter } from '../../global/util/onEnter';
+import { copyInviteCode } from '../../global/util/copyInviteCode';
 import LeaveGroupModal from './components/LeaveGroupModal';
 import CreateProjectModal from './components/CreateProjectModal';
 import EditProjectModal from './components/EditProjectModal';
@@ -41,12 +42,7 @@ export function GroupPage() {
   const [deleteProjectTarget, setDeleteProjectTarget] = useState(null);
 
   async function handleCopyCode() {
-    try {
-      await navigator.clipboard.writeText(group.inviteCode);
-      showToast('초대 코드가 복사됐어요 🔗');
-    } catch {
-      showToast('복사에 실패했어요 — 코드를 직접 선택해 복사해주세요.');
-    }
+    await copyInviteCode(group.inviteCode, showToast);
   }
 
   // 개인 페이지의 그룹 카드와 같은 인라인 수정 규칙 — 빈 값이면 조용히 취소한다.
