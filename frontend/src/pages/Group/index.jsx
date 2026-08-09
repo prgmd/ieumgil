@@ -7,6 +7,7 @@ import { isTripFinished } from '../../features/group/util/tripStatus';
 import { useToastStore } from '../../global/stores/toastStore';
 import { ROUTES } from '../../global/constants/routes';
 import { onEnter } from '../../global/util/onEnter';
+import { LoadingScreen } from '../../global/components/LoadingScreen';
 import LeaveGroupModal from './components/LeaveGroupModal';
 import CreateProjectModal from './components/CreateProjectModal';
 import EditProjectModal from './components/EditProjectModal';
@@ -104,7 +105,7 @@ export function GroupPage() {
       <>
         <AppBar crumbs={[{ label: '개인 페이지', to: ROUTES.my }]} />
         <div className="page">
-          <p className="nodata">불러오는 중…</p>
+          <LoadingScreen />
         </div>
       </>
     );

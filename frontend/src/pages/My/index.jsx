@@ -7,6 +7,7 @@ import { useToastStore } from '../../global/stores/toastStore';
 import { ERROR_CODE } from '../../global/api/errorCodes';
 import { ROUTES } from '../../global/constants/routes';
 import { onEnter } from '../../global/util/onEnter';
+import { LoadingScreen } from '../../global/components/LoadingScreen';
 import CreateGroupModal from './components/CreateGroupModal';
 import DeleteGroupModal from './components/DeleteGroupModal';
 import WithdrawModal from './components/WithdrawModal';
@@ -99,7 +100,7 @@ export function MyPage() {
       <div className="group-grid">
         <div>
           <div className="grid-groups">
-            {status === 'loading' && <p>불러오는 중…</p>}
+            {status === 'loading' && <LoadingScreen />}
             {status === 'error' && <p>그룹 목록을 불러오지 못했어요.</p>}
             {/* 노데이터 (QA 배치2) — 빈 화면이 "고장"으로 읽히지 않게 다음 행동을 안내 */}
             {status !== 'loading' && status !== 'error' && groups.length === 0 && (

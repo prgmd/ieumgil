@@ -3,7 +3,7 @@ import { useSearchParams, useNavigate } from "react-router-dom";
 import { useAuthStore } from "../../global/stores/authStore";
 import { useToastStore } from "../../global/stores/toastStore";
 import { ROUTES } from "../../global/constants/routes";
-import "../../global/components/spinner.css"; // gspin-turn 키프레임 재사용
+import { LoadingScreen } from "../../global/components/LoadingScreen";
 
 /**
  * 이미 처리에 착수한 인가코드. 인가코드는 1회용이라 두 번 보내면 두 번째는 반드시 실패한다.
@@ -61,20 +61,7 @@ function KakaoCallback() {
           'var(--font-app), "Noto Sans KR", -apple-system, BlinkMacSystemFont, sans-serif',
       }}
     >
-      <span
-        aria-hidden="true"
-        style={{
-          width: "34px",
-          height: "34px",
-          border: "3px solid rgba(61, 43, 34, 0.18)",
-          borderTopColor: "#9c4a2f",
-          borderRadius: "50%",
-          animation: "gspin-turn 0.7s linear infinite",
-        }}
-      />
-      <p style={{ margin: 0, fontSize: "15px", fontWeight: 500 }}>
-        로그인 중이에요…
-      </p>
+      <LoadingScreen label="로그인 중이에요…" />
     </div>
   );
 }

@@ -33,30 +33,62 @@
   transform: translate(-50%, 0);
 }
 
-.gspin__ring {
-  width: 14px;
-  height: 14px;
-  border: 2px solid rgba(255, 255, 255, 0.28);
-  border-top-color: #fff;
-  border-radius: 50%;
-  animation: gspin-turn 0.7s linear infinite;
+/* 알약 안 이음이 — 작게 통통 튄다(회전은 캐릭터가 뒤집혀 어색해서 안 쓴다) */
+.gspin__img {
+  width: 22px;
+  height: 22px;
+  object-fit: contain;
+  animation: iumi-bounce 0.9s ease-in-out infinite;
 }
 
-@keyframes gspin-turn {
-  to {
-    transform: rotate(360deg);
+/* 콘텐츠 영역 로딩 화면 — 캐릭터를 크게 세우고 아래에 문구 */
+.lscreen {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  /* 놓인 영역에서 세로 중앙에 오도록 최소 높이를 준다 — 컨테이너마다
+     위쪽에 붙어 제각각으로 보이던 것을 일정하게 가운데로 맞춘다 */
+  min-height: 55vh;
+  padding: 40px 20px;
+  text-align: center;
+}
+/* 화면 전체를 기다리는 자리(앱 부팅 등)는 뷰포트 정중앙 */
+.lscreen--full {
+  min-height: 100vh;
+}
+.lscreen__img {
+  width: 72px;
+  height: 72px;
+  object-fit: contain;
+  animation: iumi-bounce 0.9s ease-in-out infinite;
+}
+.lscreen__label {
+  font-size: 14px;
+  color: var(--ink2, #8a776a);
+  font-weight: 500;
+}
+
+@keyframes iumi-bounce {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-8px);
   }
 }
 
+/* 모션을 원치 않으면 튐 없이 은은한 점멸로 대체한다 */
 @keyframes gspin-pulse {
   50% {
-    opacity: 0.35;
+    opacity: 0.4;
   }
 }
-
-/* 회전 애니메이션을 원치 않는 사용자에게는 점멸로 대체한다 */
 @media (prefers-reduced-motion: reduce) {
-  .gspin__ring {
-    animation: gspin-pulse 1.2s ease-in-out infinite;
+  .gspin__img,
+  .lscreen__img {
+    animation: gspin-pulse 1.4s ease-in-out infinite;
   }
 }
