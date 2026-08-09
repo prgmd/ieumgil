@@ -212,6 +212,8 @@ export async function fetchOpsAfter(projectId, afterSeq) {
  *
  * @param {"GENERAL"|"MAP"} [options.mode] 미지정이면 GENERAL.
  *        MAP 은 mapContext(지도 뷰포트 남서·북동 좌표)가 필수 — 그 범위 안에서 추천한다.
+ * @param {number} [options.dayNo] 사용자가 보고 있는 Day 번호(1부터). "점심 먹은 데" 처럼
+ *        일정을 가리키는 말이 여러 날에 걸릴 때 서버가 이 Day 의 것을 고른다.
  * @returns {Promise<{reply: string, candidates: Array<{
  *   name, category, lat, lng, address, placeId, source, subCategory,
  *   eventStartDate, eventEndDate, detail
@@ -219,12 +221,17 @@ export async function fetchOpsAfter(projectId, afterSeq) {
  */
 export async function sendChatbotMessage(
   projectId,
-  { message, mode = "GENERAL", mapContext },
+  { message, mode = "GENERAL", mapContext, dayNo },
 ) {
   try {
     const { data } = await axiosInstance.post(
       `/projects/${projectId}/chatbot/messages`,
-      { message, mode, ...(mapContext ? { mapContext } : {}) },
+      {
+        message,
+        mode,
+        ...(mapContext ? { mapContext } : {}),
+        ...(typeof dayNo === "number" ? { dayNo } : {}),
+      },
       // LLM 응답은 전역 기본(10초)을 넘기기 쉽다 — 이 요청만 넉넉히.
       // 진행 표시는 대화창의 "이음이가 생각 중"이 이미 하므로 전역 스피너는 뺀다.
       { timeout: 30000, meta: { silent: true } },

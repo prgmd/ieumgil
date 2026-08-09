@@ -5,6 +5,7 @@ import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.DecimalMax;
 import jakarta.validation.constraints.DecimalMin;
+import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
@@ -21,7 +22,12 @@ public class ChatbotReqDTO {
             ChatbotMode mode,
 
             @Schema(description = "지도 뷰포트. mode가 MAP이면 필수, GENERAL이면 무시된다")
-            @Valid MapContext mapContext
+            @Valid MapContext mapContext,
+
+            @Schema(description = "사용자가 지금 보고 있는 Day 번호(1부터). 없으면 안 보낸 것으로 본다",
+                    example = "2")
+            @Min(value = 1, message = "Day 번호는 1 이상이어야 합니다.")
+            Integer dayNo
     ) {
 
         /** mode 미지정(구 클라이언트)은 GENERAL로 취급한다 */

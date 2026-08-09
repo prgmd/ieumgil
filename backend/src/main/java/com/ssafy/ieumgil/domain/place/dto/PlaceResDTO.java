@@ -15,6 +15,13 @@ public class PlaceResDTO {
             String category,
             /** category_group_code — 프론트가 블록 카테고리를 정하는 키("CE7") */
             String categoryCode,
+            /**
+             * category_name 원문 — 계층 전체("음식점 &gt; 카페 &gt; 커피전문점 &gt; 스타벅스").
+             *
+             * <p>마지막 마디에 브랜드가 오는 경우가 있어 프랜차이즈 판별에 쓴다. 카카오가
+             * 안 줄 수 있으므로 nullable 이다.
+             */
+            String categoryPath,
             /** 없으면 null. 카카오는 없을 때 빈 문자열을 준다 */
             String phone
     ) {

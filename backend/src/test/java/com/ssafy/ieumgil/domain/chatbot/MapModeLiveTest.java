@@ -5,6 +5,7 @@ import com.ssafy.ieumgil.domain.chatbot.dto.ChatbotReqDTO;
 import com.ssafy.ieumgil.domain.chatbot.service.ChatbotPrompt;
 import com.ssafy.ieumgil.domain.chatbot.service.TripContextBuilder;
 import com.ssafy.ieumgil.domain.chatbot.tool.CandidateCollector;
+import com.ssafy.ieumgil.domain.chatbot.tool.PlaceRanker;
 import com.ssafy.ieumgil.domain.chatbot.tool.ViewportPlaceSearchTool;
 import com.ssafy.ieumgil.domain.place.dto.PlaceResDTO;
 import com.ssafy.ieumgil.domain.place.service.PlaceQueryService;
@@ -51,6 +52,11 @@ class MapModeLiveTest {
     private static final ChatbotReqDTO.MapContext HAEUNDAE_VIEWPORT =
             new ChatbotReqDTO.MapContext(35.155, 129.155, 35.165, 129.170);
 
+    /** 보드 없는 상황 — 재정렬 기준은 뷰포트 중심이다 */
+    private static final PlaceRanker.RankingContext RANKING_CONTEXT =
+            new PlaceRanker.RankingContext(List.of(),
+                    new PlaceRanker.Anchor(35.160, 129.1625, null), List.of());
+
     @Test
     @DisplayName("자유 문장에서 검색어를 도출해 뷰포트 tool을 호출하고, 범위 밖 장소를 지어내지 않는다")
     void modelDerivesKeywordAndCallsViewportTool() throws IOException {
@@ -79,7 +85,8 @@ class MapModeLiveTest {
                 .prompt(new Prompt(List.of(
                         new SystemMessage(systemPrompt),
                         new UserMessage("조용히 앉아서 커피 마실 데 있을까?"))))
-                .tools(new ViewportPlaceSearchTool(HAEUNDAE_VIEWPORT, placeQueryService, collector))
+                .tools(new ViewportPlaceSearchTool(
+                        HAEUNDAE_VIEWPORT, placeQueryService, collector, RANKING_CONTEXT))
                 .call()
                 .content();
 
@@ -131,7 +138,8 @@ class MapModeLiveTest {
                         new UserMessage("조용한 카페 추천해줘"),
                         new AssistantMessage("어느 지역에서 찾을까요? 해운대, 남포동, 광안리 같은 위치를 알려주시면 찾아드릴게요!"),
                         new UserMessage("여기는 어때?"))))
-                .tools(new ViewportPlaceSearchTool(HAEUNDAE_VIEWPORT, placeQueryService, collector))
+                .tools(new ViewportPlaceSearchTool(
+                        HAEUNDAE_VIEWPORT, placeQueryService, collector, RANKING_CONTEXT))
                 .call()
                 .content();
 
@@ -146,9 +154,9 @@ class MapModeLiveTest {
     }
 
     private AnthropicChatModel buildGmsChatModel(String apiKey) {
-        // 프로덕션과 동일하게 WebSearchInterceptor를 단다 — MAP 모드에서 web_search가 주입되면
-        // 모델이 뷰포트 tool 대신 산문 답을 내 카드가 사라지므로, interceptor의 MAP 스킵이 실제로
-        // 동작하는지까지 이 경로로 검증한다.
+        // 프로덕션과 동일하게 WebSearchInterceptor를 단다 — MAP 모드에도 web_search가 주입되므로
+        // (예산만 max_uses 1), 웹 검색이 붙은 상태에서도 모델이 뷰포트 tool을 부르는지를 이 경로로 본다.
+        // 예전 주석은 "interceptor의 MAP 스킵"을 검증한다고 했으나 그 스킵은 더 이상 없다.
         AnthropicApi api = AnthropicApi.builder()
                 .baseUrl("https://gms.ssafy.io/gmsapi/api.anthropic.com")
                 .apiKey(apiKey)

@@ -3,11 +3,13 @@ package com.ssafy.ieumgil.domain.chatbot.tool;
 import com.ssafy.ieumgil.domain.block.entity.Block;
 import com.ssafy.ieumgil.domain.block.entity.BlockCategory;
 import com.ssafy.ieumgil.domain.block.entity.BlockSource;
+import com.ssafy.ieumgil.domain.chatbot.dto.ChatbotResDTO;
 import com.ssafy.ieumgil.domain.place.dto.PlaceResDTO;
 import com.ssafy.ieumgil.domain.place.service.PlaceQueryService;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
@@ -21,6 +23,7 @@ import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -160,5 +163,111 @@ class KakaoPlaceSearchToolTest {
 
         assertThat(result).hasSize(5);
         assertThat(collector.candidates()).hasSize(5);
+    }
+
+    private static PlaceResDTO.Place place(String id, String name) {
+        return PlaceResDTO.Place.builder()
+                .placeId(id).name(name).address("부산").lat(35.1).lng(129.0).category("관광명소")
+                .build();
+    }
+
+    private KakaoPlaceSearchTool busanTool(CandidateCollector collector) {
+        return new KakaoPlaceSearchTool("부산", placeQueryService, collector,
+                new KakaoPlaceCoordinateResolver(placeQueryService, List::of));
+    }
+
+    @Test
+    @DisplayName("첫 검색이 결과를 주면 축약 재시도를 하지 않는다 — 불필요한 카카오 호출 금지")
+    void doesNotRetryWhenFirstSearchHits() {
+        when(placeQueryService.searchPlaces("부산 실내 관광지", null, null))
+                .thenReturn(List.of(place("1", "부산박물관")));
+
+        assertThat(busanTool(new CandidateCollector()).searchPlaces("실내 관광지", null))
+                .extracting(PlaceSearchSummary::name).containsExactly("부산박물관");
+        verify(placeQueryService, times(1)).searchPlaces(anyString(), any(), any());
+    }
+
+    @Test
+    @DisplayName("0건이면 붙여쓰기부터 재시도하고, 폴백 결과도 카드로 수집된다")
+    void retriesWithConcatenatedKeywordAndCollectsFallbackResult() {
+        when(placeQueryService.searchPlaces("부산 실내 관광지 아이", null, null)).thenReturn(List.of());
+        // 1번 후보는 축약("아이")이 아니라 붙여쓰기다 — 의도를 버리기 전에 보존부터 시도한다
+        when(placeQueryService.searchPlaces("부산 실내관광지아이", null, null)).thenReturn(List.of(place("2", "키즈카페")));
+        CandidateCollector collector = new CandidateCollector();
+
+        assertThat(busanTool(collector).searchPlaces("실내 관광지 아이", null))
+                .extracting(PlaceSearchSummary::name).containsExactly("키즈카페");
+        assertThat(collector.candidates()).extracting(ChatbotResDTO.Candidate::placeId).containsExactly("2");
+        verify(placeQueryService, times(2)).searchPlaces(anyString(), any(), any());
+    }
+
+    @Test
+    @DisplayName("폴백 질의도 목적지 접두사를 유지한다 — 목적지를 잘라내면 엉뚱한 지역이 나온다")
+    void fallbackKeepsDestinationPrefixWithoutAnchor() {
+        when(placeQueryService.searchPlaces("부산 실내 관광지 아이", null, null)).thenReturn(List.of());
+        when(placeQueryService.searchPlaces("부산 실내관광지아이", null, null)).thenReturn(List.of());
+        when(placeQueryService.searchPlaces("부산 아이", null, null)).thenReturn(List.of());
+        when(placeQueryService.searchPlaces("부산 관광지", null, null)).thenReturn(List.of(place("3", "태종대")));
+
+        assertThat(busanTool(new CandidateCollector()).searchPlaces("실내 관광지 아이", null))
+                .extracting(PlaceSearchSummary::name).containsExactly("태종대");
+
+        ArgumentCaptor<String> queries = ArgumentCaptor.forClass(String.class);
+        verify(placeQueryService, times(4)).searchPlaces(queries.capture(), isNull(), isNull());
+        assertThat(queries.getAllValues())
+                .containsExactly("부산 실내 관광지 아이", "부산 실내관광지아이", "부산 아이", "부산 관광지");
+    }
+
+    @Test
+    @DisplayName("기준 장소가 있으면 폴백 질의에도 목적지를 붙이지 않는다 — 좌표가 이미 범위를 좁힌다")
+    void anchoredFallbackKeepsQueryUnprefixed() {
+        Block onBoard = Block.builder()
+                .startOffsetMinutes(0).orderKey("a0").name("해운대해수욕장")
+                .category(BlockCategory.SPOT).durationMin(60).budget(0)
+                .lat(java.math.BigDecimal.valueOf(35.1587)).lng(java.math.BigDecimal.valueOf(129.1604))
+                .source(BlockSource.KAKAO)
+                .build();
+        when(placeQueryService.searchPlaces("조용한 카페", 35.1587, 129.1604)).thenReturn(List.of());
+        when(placeQueryService.searchPlaces("조용한카페", 35.1587, 129.1604)).thenReturn(List.of());
+        when(placeQueryService.searchPlaces("카페", 35.1587, 129.1604)).thenReturn(List.of(place("4", "해운대 카페")));
+        KakaoPlaceSearchTool tool = new KakaoPlaceSearchTool("부산", placeQueryService, new CandidateCollector(),
+                new KakaoPlaceCoordinateResolver(placeQueryService, () -> List.of(onBoard)));
+
+        assertThat(tool.searchPlaces("조용한 카페", "해운대해수욕장"))
+                .extracting(PlaceSearchSummary::name).containsExactly("해운대 카페");
+        verify(placeQueryService, never()).searchPlaces(eq("부산 카페"), any(), any());
+        verify(placeQueryService, never()).searchPlaces(eq("부산 조용한카페"), any(), any());
+    }
+
+    @Test
+    @DisplayName("폴백까지 전부 0건이면 예전처럼 빈 목록이다 — 상한 3회를 넘겨 더 때리지 않는다")
+    void allEmptyStillReturnsEmptyListWithinRetryCap() {
+        when(placeQueryService.searchPlaces(anyString(), any(), any())).thenReturn(List.of());
+
+        assertThat(busanTool(new CandidateCollector()).searchPlaces("사진 촬영 명소", null)).isEmpty();
+        verify(placeQueryService).searchPlaces("부산 사진 촬영 명소", null, null);
+        verify(placeQueryService).searchPlaces("부산 사진촬영명소", null, null);
+        verify(placeQueryService).searchPlaces("부산 명소", null, null);
+        verify(placeQueryService).searchPlaces("부산 촬영", null, null);
+        verify(placeQueryService, times(4)).searchPlaces(anyString(), any(), any());
+    }
+
+    @Test
+    @DisplayName("단일 토큰 검색어는 0건이어도 재시도하지 않는다 — 축약할 것이 없다")
+    void singleTokenKeywordIsNotRetried() {
+        when(placeQueryService.searchPlaces("부산 편의점", null, null)).thenReturn(List.of());
+
+        assertThat(busanTool(new CandidateCollector()).searchPlaces("편의점", null)).isEmpty();
+        verify(placeQueryService, times(1)).searchPlaces(anyString(), any(), any());
+    }
+
+    @Test
+    @DisplayName("검색이 예외를 던지면 폴백을 타지 않는다 — 0건과 실패는 다른 신호다")
+    void exceptionIsNotRetried() {
+        when(placeQueryService.searchPlaces(anyString(), any(), any())).thenThrow(new RuntimeException("kakao down"));
+
+        assertThatThrownBy(() -> busanTool(new CandidateCollector()).searchPlaces("사진 촬영 명소", null))
+                .isInstanceOf(IllegalStateException.class);
+        verify(placeQueryService, times(1)).searchPlaces(anyString(), any(), any());
     }
 }

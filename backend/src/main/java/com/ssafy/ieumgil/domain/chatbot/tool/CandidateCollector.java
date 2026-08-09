@@ -86,8 +86,10 @@ public class CandidateCollector {
      * 프론트엔드는 같은 판단을 category_group_code로 한다(FD6·CE7→food, AD5→stay, 그 외 spot).
      * 우리는 group_name을 받으므로 대응하는 이름으로 매핑한다 — 카페=CE7, 음식점=FD6, 숙박=AD5.
      * 카테고리가 아예 빈 장소도 실제로 존재하므로 기본값은 SPOT이다.
+     * {@link PlaceRanker}도 "계획에 이미 있는 종류"를 판정할 때 같은 접기를 써야 해서 static 이다 —
+     * 두 곳이 각자 매핑하면 카드의 카테고리와 랭킹의 판단이 조용히 어긋난다.
      */
-    private BlockCategory toBlockCategory(String kakaoCategoryGroupName) {
+    static BlockCategory toBlockCategory(String kakaoCategoryGroupName) {
         if (kakaoCategoryGroupName == null) {
             return BlockCategory.SPOT;
         }
