@@ -3437,7 +3437,11 @@ export function DashboardPage() {
 
               {/* 챗봇 — 추천 카드를 후보 목록으로 드래그해야 하므로 반드시
                   이 DndContext 안에서 렌더한다 (위치는 fixed 라 화면상 그대로) */}
-              <ChatbotWidget projectId={projectId} getMapBounds={getMapBounds} />
+              <ChatbotWidget
+                projectId={projectId}
+                getMapBounds={getMapBounds}
+                focusPlace={focusPlace}
+              />
             </div>
           </DndContext>
         ) : (

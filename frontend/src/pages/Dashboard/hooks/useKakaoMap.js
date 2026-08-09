@@ -11,7 +11,7 @@ import { useState, useRef, useEffect, useCallback } from "react";
 import { ensureKakaoMaps } from "../../../features/dashboard/map/addressLookup";
 import * as placeApi from "../../../features/place/api/placeApi";
 import { planPinImage, searchPinImage, ROUTE_LINE_COLOR } from "../mapPins";
-import { blocksOfDay, catOf } from "../dashboardHelpers";
+import { blocksOfDay, catOf, catFromKakaoGroup } from "../dashboardHelpers";
 import {
   buildKakaoPlaceUrl,
   buildKakaoSearchUrl,
@@ -59,8 +59,7 @@ export function useKakaoMap({ board, items, activeDay, showToast }) {
   const [searchKeyword, setSearchKeyword] = useState("");
   const [searchResults, setSearchResults] = useState([]);
   const searchListRef = useRef(null);
-  const infoWindowRef = useRef(null); // 검색 결과용 카카오 기본 말풍선
-  const overlayRef = useRef(null); // 블록 핀용 커스텀 오버레이(디자인 직접 그림)
+  const overlayRef = useRef(null); // 블록 핀·검색 결과 공용 커스텀 오버레이(디자인 직접 그림)
   // 검색 결과 핀 — 추적해 둬야 재검색·초기화 때 지도에서 걷을 수 있다
   const searchMarkersRef = useRef([]);
   // 검색 요청 세대 — SDK 콜백과 달리 HTTP 는 순서가 뒤집힐 수 있어, 늦게 도착한
@@ -116,7 +115,6 @@ export function useKakaoMap({ board, items, activeDay, showToast }) {
   const openBlockOverlay = useCallback(
     (position, item) => {
       if (!map || !window.kakao?.maps) return;
-      infoWindowRef.current?.close(); // 검색 말풍선이 떠 있으면 닫는다
       if (!overlayRef.current) {
         overlayRef.current = new window.kakao.maps.CustomOverlay({
           xAnchor: 0.5,
@@ -302,7 +300,6 @@ export function useKakaoMap({ board, items, activeDay, showToast }) {
 
     // 새 검색을 하면 결과 목록 스크롤을 맨 위로 올리고, 열려 있던 말풍선을 닫는다
     if (searchListRef.current) searchListRef.current.scrollTop = 0;
-    infoWindowRef.current?.close();
     overlayRef.current?.setMap(null);
 
     // 이전 검색의 핀부터 걷는다 — 0건이어도 옛 핀이 지도에 남지 않게 먼저 걷는다
@@ -342,40 +339,27 @@ export function useKakaoMap({ board, items, activeDay, showToast }) {
     setSearchKeyword("");
     searchMarkersRef.current.forEach((m) => m.setMap(null));
     searchMarkersRef.current = [];
-    infoWindowRef.current?.close();
     overlayRef.current?.setMap(null);
   };
 
+  // 검색 결과 클릭(마커·목록 카드 공통) — 블록 핀과 똑같은 커스텀 말풍선을 띄운다.
+  // place 를 blockOverlayInner 가 아는 item 모양으로 어댑트한다(블록 생성 분기와 동일 매핑).
   const handlePlaceClick = (place) => {
-    if (map && window.kakao && window.kakao.maps) {
-      const moveLatLon = new window.kakao.maps.LatLng(place.lat, place.lng);
+    if (!map || !window.kakao?.maps) return;
 
-      if (map.getLevel() > 4) map.setLevel(4); // 더 확대해 둔 지도를 되레 축소하지 않게
-      map.panTo(moveLatLon);
+    const moveLatLon = new window.kakao.maps.LatLng(place.lat, place.lng);
+    if (map.getLevel() > 4) map.setLevel(4); // 더 확대해 둔 지도를 되레 축소하지 않게
+    map.panTo(moveLatLon);
 
-      // 💡 2-1. 인포윈도우가 아직 안 만들어졌다면 최초 1회 생성
-      if (!infoWindowRef.current) {
-        infoWindowRef.current = new window.kakao.maps.InfoWindow({
-          zIndex: 1,
-          removable: true, // 창 닫기(X) 버튼 활성화
-        });
-      }
-
-      // 💡 2-2. 정보 창 안에 들어갈 디자인(HTML) 구성
-      // 현재 앱의 테마 색상(#d97e3c 등)을 사용해 통일감을 주었습니다.
-      const content = `
-        <div style="padding:15px; font-size:13px; color:#333; min-width:200px; border-radius:8px;">
-          <b style="font-size:15px; display:block; margin-bottom:5px; color:#d97e3c;">${escapeHtml(place.name)}</b>
-          ${place.address ? `<span style="display:block;">${escapeHtml(place.address)}</span>` : ""}
-          ${place.phone ? `<span style="display:block; margin-top:5px; color:#6b7fc7;">📞 ${escapeHtml(place.phone)}</span>` : ""}
-        </div>
-      `;
-
-      // 💡 2-3. 내용과 좌표를 갱신하고 지도에 열기
-      infoWindowRef.current.setContent(content);
-      infoWindowRef.current.setPosition(moveLatLon);
-      infoWindowRef.current.open(map);
-    }
+    openBlockOverlay(moveLatLon, {
+      cat: catFromKakaoGroup(place.categoryCode),
+      name: place.name,
+      detail: place.address,
+      source: "KAKAO",
+      placeId: place.placeId,
+      lat: place.lat,
+      lng: place.lng,
+    });
   };
 
   // ── 지도에 핀 직접 찍기 (MAP-04) ──
