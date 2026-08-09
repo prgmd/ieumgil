@@ -17,14 +17,17 @@
 git clone <저장소 URL> ieumgil && cd ieumgil
 
 cd backend
-cp .env.example .env && vi .env          # DB·JWT·카카오 값 채우기
+vi .env                                  # 새로 작성 (01 문서 STEP 2 템플릿)
 docker compose up -d --build backend     # backend + postgres + redis
 
 cd ../frontend
-cp .env.example .env && vi .env          # 카카오 키 + 프록시 대상
+vi .env                                  # 새로 작성 (01 문서 STEP 4 템플릿)
 npm install
 npm run dev
 ```
+
+`.env` 두 개는 `.gitignore` 로 제외되어 저장소에 없다.
+**[01 문서](./01-빌드-배포-매뉴얼.md)의 STEP 2·4 템플릿을 붙여넣어 새로 만든다.**
 
 → **`http://localhost:5173`**
 
