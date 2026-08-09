@@ -11,6 +11,25 @@
   text-align: center;
 }
 
+/* 전체 화면 안내(404·에러·프로젝트 열기 실패)는 인라인 빈 상태(.estate 기본)보다
+   크게 — 화면이 커질수록 커지되 상·하한을 둔다. %는 뷰포트에 반응하지 않아
+   viewport 단위 clamp 를 쓴다. .epage 안에서만 덮으므로 후보/마이/그룹의
+   인라인 빈 상태 크기는 그대로다. */
+.epage .estate {
+  gap: clamp(12px, 1.6vw, 22px);
+}
+.epage .estate__img {
+  width: clamp(88px, 11vw, 160px);
+  height: clamp(88px, 11vw, 160px);
+}
+.epage .estate__title {
+  font-size: clamp(20px, 2.8vw, 34px);
+}
+.epage .estate__desc {
+  font-size: clamp(14px, 1.5vw, 20px);
+  max-width: 44ch;
+}
+
 /* 홈으로/새로고침 버튼 — My/Group 의 .btn 규칙과 톤을 맞추되 자립형 */
 .epage .btn {
   display: inline-block;
