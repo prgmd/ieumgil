@@ -8,6 +8,7 @@ import { useToastStore } from '../../global/stores/toastStore';
 import { ROUTES } from '../../global/constants/routes';
 import { onEnter } from '../../global/util/onEnter';
 import { copyInviteCode } from '../../global/util/copyInviteCode';
+import { useInlineRename } from '../../global/hooks/useInlineRename';
 import LeaveGroupModal from './components/LeaveGroupModal';
 import CreateProjectModal from './components/CreateProjectModal';
 import EditProjectModal from './components/EditProjectModal';
@@ -34,8 +35,12 @@ export function GroupPage() {
   const navigate = useNavigate();
 
   const [leaveOpen, setLeaveOpen] = useState(false);
-  const [renaming, setRenaming] = useState(false); // 그룹명 인라인 수정 중인지
-  const [nameDraft, setNameDraft] = useState('');
+  // 그룹명 인라인 수정 — 개인 페이지 그룹 카드와 공통 훅(useInlineRename)을 쓴다
+  const rename = useInlineRename({
+    rename: (_key, name) => renameGroup(name),
+    onSuccess: () => showToast('그룹명이 수정됐어요 ✓'),
+    onError: () => showToast('그룹명은 2~20자로 입력해주세요.'),
+  });
   const [reissuing, setReissuing] = useState(false); // 초대코드 재발급 요청 중인지
   const [createProjectOpen, setCreateProjectOpen] = useState(false);
   const [editProjectTarget, setEditProjectTarget] = useState(null);
@@ -46,23 +51,6 @@ export function GroupPage() {
   }
 
   // 개인 페이지의 그룹 카드와 같은 인라인 수정 규칙 — 빈 값이면 조용히 취소한다.
-  function startRename() {
-    setNameDraft(group.name);
-    setRenaming(true);
-  }
-
-  async function commitRename() {
-    const trimmed = nameDraft.trim();
-    setRenaming(false);
-    if (!trimmed || trimmed === group.name) return;
-    try {
-      await renameGroup(trimmed);
-      showToast('그룹명이 수정됐어요 ✓');
-    } catch {
-      showToast('그룹명은 2~20자로 입력해주세요.');
-    }
-  }
-
   async function handleReissue() {
     if (reissuing) return; // 연타 시 중복 재발급 방지
     setReissuing(true);
@@ -114,14 +102,14 @@ export function GroupPage() {
           같은 라인에서 시작한다(My 페이지와 동일 구조) */}
       <div className="sec-head">
         {/* 그룹명도 이 화면에서 바로 수정한다 — 상단바·대시보드 경로에 함께 반영된다 */}
-        {renaming ? (
+        {rename.isEditing('name') ? (
           <input
             className="rename-input sec-rename"
-            value={nameDraft}
+            value={rename.value}
             autoFocus
             maxLength={20}
-            onChange={(e) => setNameDraft(e.target.value)}
-            onBlur={commitRename}
+            onChange={(e) => rename.setValue(e.target.value)}
+            onBlur={() => rename.commit(group.name)}
             onKeyDown={onEnter((e) => e.currentTarget.blur())}
           />
         ) : (
@@ -131,7 +119,7 @@ export function GroupPage() {
               type="button"
               className="sec-op"
               title="그룹명 수정"
-              onClick={startRename}
+              onClick={() => rename.start('name', group.name)}
             >
               ✎
             </button>
