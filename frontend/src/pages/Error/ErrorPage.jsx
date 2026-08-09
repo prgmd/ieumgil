@@ -1,6 +1,7 @@
 import { useRouteError } from "react-router-dom";
 import { EmptyState } from "../../global/components/EmptyState";
 import { ROUTES } from "../../global/constants/routes";
+import errorImg from "../../assets/img/error.png";
 import "./error.css";
 
 // 라우트 렌더/로더에서 throw 된 예외를 받는 화면 — 사용자에겐 백지 대신
@@ -12,6 +13,7 @@ export function ErrorPage() {
   return (
     <div className="epage">
       <EmptyState
+        img={errorImg}
         title="문제가 생겼어요"
         desc="잠시 문제가 있었어요. 새로고침하거나 처음 화면으로 돌아가 다시 시도해주세요."
         action={

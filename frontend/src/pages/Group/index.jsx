@@ -9,6 +9,7 @@ import { ROUTES } from '../../global/constants/routes';
 import { onEnter } from '../../global/util/onEnter';
 import { LoadingScreen } from '../../global/components/LoadingScreen';
 import { EmptyState } from '../../global/components/EmptyState';
+import notFoundImg from '../../assets/img/notfound.png';
 import LeaveGroupModal from './components/LeaveGroupModal';
 import CreateProjectModal from './components/CreateProjectModal';
 import EditProjectModal from './components/EditProjectModal';
@@ -100,6 +101,7 @@ export function GroupPage() {
         <AppBar crumbs={[{ label: '개인 페이지', to: ROUTES.my }]} />
         <div className="page">
           <EmptyState
+            img={notFoundImg}
             title="그룹을 찾을 수 없어요"
             desc="없거나 접근 권한이 없는 그룹이에요. 주소를 확인하거나 내 그룹에서 다시 들어와 주세요."
             action={

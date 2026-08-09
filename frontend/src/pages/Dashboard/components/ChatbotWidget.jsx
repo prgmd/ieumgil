@@ -5,7 +5,7 @@ import remarkGfm from "remark-gfm"; // 표·취소선 등 GFM 확장 — 표는 
 import { sendChatbotMessage, fetchChatbotHistory } from "../../../features/dashboard/api/dashboardApi";
 import chatbotOpen from "../../../assets/img/chatbot_open.png";
 import chatbotClose from "../../../assets/img/chatbot_close.png";
-import iumiChar from "../../../assets/img/loading.png";
+import iumiChar from "../../../assets/img/greeting.png";
 import "./ChatbotWidget.css";
 
 const CAT_LABEL = {

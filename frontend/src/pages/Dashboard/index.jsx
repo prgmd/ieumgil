@@ -69,6 +69,7 @@ import * as blockApi from "../../features/dashboard/api/dashboardApi";
 import { getClientId } from "../../global/api/clientId";
 import { Select } from "../../global/components/Select";
 import { EmptyState } from "../../global/components/EmptyState";
+import notFoundImg from "../../assets/img/notfound.png";
 import "../Error/error.css";
 import { useGroupDetail } from "../../features/group/hooks/useGroupDetail";
 import { useProjects } from "../../features/group/hooks/useProjects";
@@ -2848,6 +2849,7 @@ export function DashboardPage() {
     return (
       <div className="epage">
         <EmptyState
+          img={notFoundImg}
           title="프로젝트를 열 수 없어요"
           desc="없거나 접근 권한이 없는 프로젝트예요. 그룹에서 다시 들어와 주세요."
           action={
