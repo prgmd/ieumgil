@@ -100,11 +100,14 @@ export function MyPage() {
           동시에 시작하게 하고, 오른쪽 칸은 스크롤 시 sticky로 고정된다. */}
       <div className="group-grid">
         <div>
+          {status === 'loading' ? (
+            <LoadingScreen />
+          ) : status === 'error' ? (
+            <p className="nodata">그룹 목록을 불러오지 못했어요.</p>
+          ) : (
           <div className="grid-groups">
-            {status === 'loading' && <LoadingScreen />}
-            {status === 'error' && <p>그룹 목록을 불러오지 못했어요.</p>}
             {/* 노데이터 (QA 배치2) — 빈 화면이 "고장"으로 읽히지 않게 다음 행동을 안내 */}
-            {status !== 'loading' && status !== 'error' && groups.length === 0 && (
+            {groups.length === 0 && (
               <EmptyState
                 title="아직 함께하는 그룹이 없어요"
                 desc={
@@ -191,6 +194,7 @@ export function MyPage() {
               ＋ 새 그룹 만들기
             </div>
           </div>
+          )}
         </div>
 
         <div>
