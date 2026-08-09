@@ -53,8 +53,7 @@ export default function LeaveGroupModal({ open, onClose, group, onLeave }) {
           취소
         </button>
         <button
-          className="btn btn-acc"
-          style={{ background: 'var(--danger)' }}
+          className="btn btn-danger"
           onClick={handleLeave}
           disabled={submitting}
         >

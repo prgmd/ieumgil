@@ -3473,6 +3473,7 @@ export function DashboardPage() {
                 projectId={projectId}
                 getMapBounds={getMapBounds}
                 dayNo={dayNoOf(activeDay)}
+                focusPlace={focusPlace}
               />
             </div>
           </DndContext>

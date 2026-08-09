@@ -2,6 +2,7 @@ import { useState } from 'react';
 import Modal from '../shared/ui/Modal';
 import { useToastStore } from '../../../global/stores/toastStore';
 import { onEnter } from '../../../global/util/onEnter';
+import { copyInviteCode } from '../../../global/util/copyInviteCode';
 
 /**
  * MY-02: 그룹명(2~20자) 입력 → 생성 → 생성 직후 초대코드 공유 모달로 이어짐.
@@ -53,12 +54,7 @@ export default function CreateGroupModal({ open, onClose, onCreate }) {
   }
 
   async function handleCopy() {
-    try {
-      await navigator.clipboard.writeText(createdGroup.inviteCode);
-      showToast('초대 코드가 복사됐어요 🔗');
-    } catch {
-      showToast('복사에 실패했어요 — 코드를 직접 선택해 복사해주세요.');
-    }
+    await copyInviteCode(createdGroup.inviteCode, showToast);
   }
 
   return (

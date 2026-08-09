@@ -2,7 +2,11 @@ import { useEffect, useRef, useState } from "react";
 import { useDraggable } from "@dnd-kit/core";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm"; // 표·취소선 등 GFM 확장 — 표는 기본 문법에 없다
-import { sendChatbotMessage, fetchChatbotHistory } from "../../../features/dashboard/api/dashboardApi";
+import {
+  sendChatbotMessage,
+  fetchChatbotHistory,
+  CAT_FROM_SERVER,
+} from "../../../features/dashboard/api/dashboardApi";
 import chatbotOpen from "../../../assets/img/chatbot_open.png";
 import chatbotClose from "../../../assets/img/chatbot_close.png";
 import iumiChar from "../../../assets/img/greeting.png";
@@ -32,7 +36,7 @@ const MAP_CHIPS = ["이 근처 카페 추천", "주변 관광지 알려줘"];
  * 같은 문법. 드롭 처리(블록 생성)는 대시보드의 handleDragEnd 가 from:"chatbot" 으로
  * 분기한다. 그래서 이 위젯은 반드시 보드와 같은 DndContext 안에서 렌더돼야 한다.
  */
-function CandidateDraggable({ dragId, candidate }) {
+function CandidateDraggable({ dragId, candidate, onClick }) {
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
     id: dragId,
     data: { from: "chatbot", candidate },
@@ -43,6 +47,7 @@ function CandidateDraggable({ dragId, candidate }) {
       className={`cbw-cand ${isDragging ? "is-dragging" : ""}`}
       {...attributes}
       {...listeners}
+      onClick={() => onClick?.(candidate)}
     >
       <div className="cbw-cand-main">
         <b>{candidate.name}</b>
@@ -81,10 +86,11 @@ function CandidateDraggable({ dragId, candidate }) {
  *
  * @param {number} projectId
  * @param {() => ({swLat,swLng,neLat,neLng}|null)} getMapBounds 지도 뷰포트 (지도 미준비면 null)
+ * @param {(item: object) => void} [focusPlace] 추천 카드 클릭 시 사이드 지도를 그 장소로 옮기고 말풍선 표시
  * @param {number} dayNo 지금 보고 있는 Day 번호(1부터) — "점심 먹은 데" 처럼 일정을 가리키는
  *        말이 여러 날에 걸릴 때 서버가 이 Day 의 블록을 고른다
  */
-export function ChatbotWidget({ projectId, getMapBounds, dayNo }) {
+export function ChatbotWidget({ projectId, getMapBounds, dayNo, focusPlace }) {
   const [isOpen, setIsOpen] = useState(false);
   const [activeTab, setActiveTab] = useState("general");
   const [inputValue, setInputValue] = useState("");
@@ -202,6 +208,21 @@ export function ChatbotWidget({ projectId, getMapBounds, dayNo }) {
       cancelled = true;
     };
   }, [projectId]);
+
+  // 추천 카드 클릭 → 사이드 지도로 focus + 블록 핀과 같은 커스텀 말풍선.
+  // candidate 를 blockOverlayInner 가 아는 item 모양으로 어댑트한다(드롭 분기와 동일 매핑).
+  // 좌표 없는 후보(교통 등)는 focusPlace 가 내부에서 무시한다.
+  const handleCandidateClick = (candidate) => {
+    focusPlace?.({
+      cat: CAT_FROM_SERVER[candidate.category] ?? "etc",
+      name: candidate.name,
+      detail: candidate.detail || candidate.address,
+      source: candidate.source ?? "BOT",
+      placeId: candidate.placeId != null ? String(candidate.placeId) : null,
+      lat: candidate.lat,
+      lng: candidate.lng,
+    });
+  };
 
   const pushMessage = (msg) => {
     msgSeqRef.current += 1;
@@ -401,6 +422,7 @@ export function ChatbotWidget({ projectId, getMapBounds, dayNo }) {
                         key={`${m.id}-${i}`}
                         dragId={`chatbot-cand-${m.id}-${i}`}
                         candidate={c}
+                        onClick={handleCandidateClick}
                       />
                     ))}
                   </div>

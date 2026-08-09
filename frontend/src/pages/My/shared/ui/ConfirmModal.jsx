@@ -26,8 +26,7 @@ export default function ConfirmModal({
           {cancelLabel}
         </button>
         <button
-          className="btn btn-acc"
-          style={danger ? { background: 'var(--danger)' } : undefined}
+          className={`btn ${danger ? 'btn-danger' : 'btn-acc'}`}
           onClick={onConfirm}
           disabled={submitting}
         >

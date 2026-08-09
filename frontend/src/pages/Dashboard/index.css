@@ -791,6 +791,9 @@
   position: relative;
   overflow: hidden;
   cursor: pointer;
+  /* 블록을 끌 때 카드 안 텍스트가 긁히지 않게 — 드래그 대상이라 선택 불필요 */
+  user-select: none;
+  -webkit-user-select: none;
 }
 .slot.is-resizing .card {
   cursor: ns-resize;
@@ -1199,6 +1202,9 @@
   color: var(--ink1);
   display: flex;
   flex-direction: column;
+  /* 후보 카드도 끌 때 텍스트 선택 방지(드래그 대상) */
+  user-select: none;
+  -webkit-user-select: none;
 }
 .card:hover,
 .pcard:hover {

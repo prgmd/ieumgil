@@ -7,6 +7,7 @@ import { useToastStore } from '../../global/stores/toastStore';
 import { ERROR_CODE } from '../../global/api/errorCodes';
 import { ROUTES } from '../../global/constants/routes';
 import { onEnter } from '../../global/util/onEnter';
+import { useInlineRename } from '../../global/hooks/useInlineRename';
 import { LoadingScreen } from '../../global/components/LoadingScreen';
 import { EmptyState } from '../../global/components/EmptyState';
 import CreateGroupModal from './components/CreateGroupModal';
@@ -26,8 +27,12 @@ export function MyPage() {
   const [codeErr, setCodeErr] = useState('');
   const [joining, setJoining] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
-  const [editingId, setEditingId] = useState(null); // 인라인 이름 수정 중인 그룹 id
-  const [editValue, setEditValue] = useState('');
+  // 그룹 카드 이름 인라인 수정 — 그룹 페이지 그룹명과 공통 훅(useInlineRename)
+  const rename = useInlineRename({
+    rename: (id, name) => renameGroup(id, name),
+    onSuccess: () => showToast('이름이 수정됐어요 ✓'),
+    onError: () => showToast('그룹명은 2~20자로 입력해주세요.'),
+  });
   const [withdrawOpen, setWithdrawOpen] = useState(false);
 
   const withdraw = useAuthStore((s) => s.withdraw);
@@ -65,25 +70,6 @@ export function MyPage() {
     }
   }
 
-  function startEdit(g) {
-    setEditingId(g.id);
-    setEditValue(g.name);
-  }
-
-  async function commitEdit(groupId) {
-    const trimmed = editValue.trim();
-    setEditingId(null);
-    if (!trimmed) return; // 빈 값이면 조용히 취소 (원본 이름 유지)
-    const group = groups.find((g) => g.id === groupId);
-    if (trimmed === group?.name) return; // 변경 없으면 조용히 취소
-    try {
-      await renameGroup(groupId, trimmed);
-      showToast('이름이 수정됐어요 ✓');
-    } catch {
-      showToast('그룹명은 2~20자로 입력해주세요.');
-    }
-  }
-
   return (
     <>
       <AppBar crumbs={[{ label: '개인 페이지' }]} />
@@ -116,7 +102,7 @@ export function MyPage() {
               />
             )}
             {groups.map((g) => {
-              const isEditing = editingId === g.id;
+              const isEditing = rename.isEditing(g.id);
               return (
                 <div
                   key={g.id}
@@ -126,11 +112,11 @@ export function MyPage() {
                   {isEditing ? (
                     <input
                       className="rename-input"
-                      value={editValue}
+                      value={rename.value}
                       autoFocus
                       onClick={(e) => e.stopPropagation()}
-                      onChange={(e) => setEditValue(e.target.value)}
-                      onBlur={() => commitEdit(g.id)}
+                      onChange={(e) => rename.setValue(e.target.value)}
+                      onBlur={() => rename.commit(g.name)}
                       onKeyDown={onEnter((e) => e.currentTarget.blur())}
                       maxLength={20}
                       style={{
@@ -170,7 +156,7 @@ export function MyPage() {
                         className="op"
                         onClick={(e) => {
                           e.stopPropagation();
-                          startEdit(g);
+                          rename.start(g.id, g.name);
                         }}
                       >
                         ✎

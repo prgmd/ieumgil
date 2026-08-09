@@ -79,8 +79,7 @@ export default function WithdrawModal({
           취소
         </button>
         <button
-          className="btn btn-acc"
-          style={{ background: 'var(--danger)' }}
+          className="btn btn-danger"
           onClick={handleWithdraw}
           disabled={submitting || typed.trim() !== CONFIRM_PHRASE}
         >
