@@ -1,12 +1,16 @@
 import '../My/shared/styles/index.css';
-import { useEffect, useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useState } from 'react';
+import { Link, useNavigate, useParams } from 'react-router-dom';
 import { useGroupDetail } from '../../features/group/hooks/useGroupDetail';
 import { useProjects } from '../../features/group/hooks/useProjects';
 import { isTripFinished } from '../../features/group/util/tripStatus';
 import { useToastStore } from '../../global/stores/toastStore';
 import { ROUTES } from '../../global/constants/routes';
 import { onEnter } from '../../global/util/onEnter';
+import { LoadingScreen } from '../../global/components/LoadingScreen';
+import { EmptyState } from '../../global/components/EmptyState';
+import notFoundImg from '../../assets/img/notfound.png';
+import '../Error/error.css';
 import LeaveGroupModal from './components/LeaveGroupModal';
 import CreateProjectModal from './components/CreateProjectModal';
 import EditProjectModal from './components/EditProjectModal';
@@ -90,21 +94,44 @@ export function GroupPage() {
     return Math.round((startOfExp - startOfToday) / 86400000);
   }
 
-  // 없는 그룹·권한 없는 그룹·잘못된 URL(/groups/abc)이면 개인 페이지로 되돌린다.
-  useEffect(() => {
-    if (status !== 'error') return;
-    showToast('그룹을 찾을 수 없어요.');
-    navigate(ROUTES.my, { replace: true });
-  }, [status, navigate, showToast]);
+  // 없는 그룹·권한 없는 그룹·잘못된 URL(/groups/abc)이면 자동 이동 대신 같은
+  // 화면에서 안내한다 — 사용자가 직접 나갈 길(내 그룹으로)을 준다.
+  if (status === 'error') {
+    return (
+      <>
+        <AppBar crumbs={[{ label: '개인 페이지', to: ROUTES.my }]} />
+        <div className="epage epage--in-page">
+          <EmptyState
+            img={notFoundImg}
+            title="그룹을 찾을 수 없어요"
+            desc="없거나 접근 권한이 없는 그룹이에요. 주소를 확인하거나 내 그룹에서 다시 들어와 주세요."
+            action={
+              <div className="estate-actions">
+                <Link className="btn btn-acc" to={ROUTES.my}>
+                  내 그룹으로
+                </Link>
+                <button
+                  type="button"
+                  className="btn btn-gh"
+                  onClick={() => window.location.reload()}
+                >
+                  다시 시도
+                </button>
+              </div>
+            }
+          />
+        </div>
+      </>
+    );
+  }
 
-  // 그룹 조회가 끝나기 전에는 완전 백지 대신 상단바와 안내를 보여준다.
-  // (status === 'error' 는 위 effect 가 개인 페이지로 돌려보낸다.)
+  // 조회 중에는 완전 백지 대신 상단바와 로딩 화면을 보여준다.
   if (!group) {
     return (
       <>
         <AppBar crumbs={[{ label: '개인 페이지', to: ROUTES.my }]} />
         <div className="page">
-          <p className="nodata">불러오는 중…</p>
+          <LoadingScreen />
         </div>
       </>
     );
@@ -149,15 +176,21 @@ export function GroupPage() {
         </span>
       </div>
       <div className="group-grid">
-        <div>
-          <div>
+        <div className="proj-col">
+          <div className="proj-list">
             {/* 노데이터 (QA 배치2) — 로딩 중 깜빡임·조회 실패의 빈 그룹 위장을 막기 위해
                 status 로 판정한다. 진짜 비었을 때(loaded)만 노데이터, error 면 실패 문구. */}
             {projectsStatus === 'loaded' && projects.length === 0 && (
-              <p className="nodata">
-                아직 프로젝트가 없어요 — 위 <b>＋ 새 프로젝트</b>로 첫 여행
-                계획을 시작해보세요.
-              </p>
+              <EmptyState
+                bordered
+                title="아직 프로젝트가 없어요"
+                desc={
+                  <>
+                    오른쪽 위 <span className="estate-btnhint">＋ 새 프로젝트</span>
+                    를 눌러 첫 여행 계획을 시작해보세요.
+                  </>
+                }
+              />
             )}
             {projectsStatus === 'error' && (
               <p className="nodata">

@@ -24,6 +24,12 @@ export const useLoadingStore = create((set, get) => ({
   pending: 0, // 진행 중인 "표시 대상" 요청 수 (silent 요청은 세지 않는다)
   visible: false,
 
+  // 전체화면 로더(LoadingScreen)가 떠 있는 동안엔 알약 스피너를 숨긴다 —
+  // 화면을 이미 캐릭터가 채우고 있는데 상단에 같은 안내가 겹치면 지저분하다.
+  fullscreen: 0,
+  pushFullscreen: () => set({ fullscreen: get().fullscreen + 1 }),
+  popFullscreen: () => set({ fullscreen: Math.max(0, get().fullscreen - 1) }),
+
   begin: () => {
     set({ pending: get().pending + 1 });
     // 이미 떠 있거나 대기 타이머가 도는 중이면 새로 걸지 않는다 — 뒤이어 시작한

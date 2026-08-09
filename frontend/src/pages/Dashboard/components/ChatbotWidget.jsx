@@ -5,6 +5,7 @@ import remarkGfm from "remark-gfm"; // 표·취소선 등 GFM 확장 — 표는 
 import { sendChatbotMessage, fetchChatbotHistory } from "../../../features/dashboard/api/dashboardApi";
 import chatbotOpen from "../../../assets/img/chatbot_open.png";
 import chatbotClose from "../../../assets/img/chatbot_close.png";
+import iumiChar from "../../../assets/img/greeting.png";
 import "./ChatbotWidget.css";
 
 const CAT_LABEL = {
@@ -300,6 +301,19 @@ export function ChatbotWidget({ projectId, getMapBounds }) {
           </div>
 
           <div className="cbw-body" ref={bodyRef}>
+            {/* 대화 시작 전(intro)에만 캐릭터로 인사 — 첫 인상만 살리고
+                대화가 시작되면 사라진다(스크롤 공간을 차지하지 않게). */}
+            {!messages.some((m) => m.role === "user" || m.role === "bot") && (
+              <div className="cbw-intro">
+                <img
+                  className="cbw-intro__char"
+                  src={iumiChar}
+                  alt=""
+                  aria-hidden="true"
+                />
+                <span className="cbw-intro__hi">이음이가 도와드릴게요</span>
+              </div>
+            )}
             <div className="cbw-bubble">
               {activeTab === "map" ? (
                 <>

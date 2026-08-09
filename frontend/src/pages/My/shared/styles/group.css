@@ -24,6 +24,11 @@
 
 /* 그룹 페이지 — 좌측 콘텐츠 + 우측 320px 고정 패널 */
 .group-grid{display:grid;grid-template-columns:minmax(0,1fr) 320px;gap:22px;align-items:start}
+/* 프로젝트 목록 열은 우측 친구 패널 높이에 맞춰 늘어난다 — 프로젝트가 없을 때
+   빈 상태(점선 박스)가 옆 패널과 같은 높이로 차도록. (My 페이지는 이 클래스가
+   없어 영향받지 않는다) */
+.group-grid > .proj-col{align-self:stretch;display:flex;flex-direction:column}
+.proj-col > .proj-list{flex:1;min-width:0}
 .group-grid>div:last-child{position:sticky;top:84px}
 @media(max-width:760px){.group-grid{grid-template-columns:1fr}}
 
