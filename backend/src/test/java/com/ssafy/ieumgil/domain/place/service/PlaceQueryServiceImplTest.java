@@ -32,7 +32,7 @@ class PlaceQueryServiceImplTest {
     void searchPlacesNormalizesFieldsAndPrefersRoadAddress() {
         placeQueryService = new PlaceQueryServiceImpl(kakaoLocalClient);
         KakaoPlaceResponse.Document doc = new KakaoPlaceResponse.Document(
-                "26338954", "성산일출봉", "관광명소", "AT4",
+                "26338954", "성산일출봉", null, "관광명소", "AT4",
                 "제주 서귀포시 성산읍 성산리", "제주 서귀포시 성산읍 일출로 284-12", "064-123-4567",
                 "126.9425", "33.4581");
         when(kakaoLocalClient.searchByKeyword("성산일출봉", 33.5, 126.5)).thenReturn(List.of(doc));
@@ -59,22 +59,23 @@ class PlaceQueryServiceImplTest {
     }
 
     @Test
-    @DisplayName("챗봇 뷰포트 검색은 5건으로 묶어 둔다 — 결과가 LLM 컨텍스트로 들어간다")
-    void 챗봇_뷰포트_검색은_다섯건이다() {
+    @DisplayName("지도 뷰포트 검색은 15건까지 받는다 — 재정렬할 여지를 만들기 위해서다")
+    void 지도_뷰포트_검색은_열다섯건이다() {
         placeQueryService = new PlaceQueryServiceImpl(kakaoLocalClient);
         when(kakaoLocalClient.searchByKeywordInRect("카페", 37.4, 126.9, 37.6, 127.1))
                 .thenReturn(documents(20));
 
-        // 두 경로가 같은 상수를 다시 공유하면 이 단정이 15로 깨진다
+        // 5건만 받으면 순서를 바꿔도 같은 5건이라 재정렬이 의미가 없다.
+        // LLM 프롬프트에 실리는 건 재정렬 뒤 LLM_CANDIDATE_LIMIT 건뿐이라 토큰은 늘지 않는다.
         assertThat(placeQueryService.searchPlacesInRect("카페", 37.4, 126.9, 37.6, 127.1))
-                .hasSize(5);
+                .hasSize(15);
     }
 
     /** 상한만 보는 테스트라 좌표·이름은 구별만 되면 된다 */
     private List<KakaoPlaceResponse.Document> documents(int count) {
         return IntStream.range(0, count)
                 .mapToObj(i -> new KakaoPlaceResponse.Document(
-                        String.valueOf(i), "장소" + i, "카페", "CE7",
+                        String.valueOf(i), "장소" + i, null, "카페", "CE7",
                         "지번주소", "도로명주소", null, "127.0", "37.5"))
                 .toList();
     }
@@ -251,7 +252,7 @@ class PlaceQueryServiceImplTest {
     void searchPlacesInRectDelegatesToRectSearch() {
         placeQueryService = new PlaceQueryServiceImpl(kakaoLocalClient);
         KakaoPlaceResponse.Document doc = new KakaoPlaceResponse.Document(
-                "id0", "장소0", "카페", "CE7", "제주 서귀포시", "제주 서귀포시 일출로", null, "126.94", "33.45");
+                "id0", "장소0", null, "카페", "CE7", "제주 서귀포시", "제주 서귀포시 일출로", null, "126.94", "33.45");
         when(kakaoLocalClient.searchByKeywordInRect("카페", 33.44, 126.93, 33.47, 126.95))
                 .thenReturn(List.of(doc));
 
@@ -267,7 +268,7 @@ class PlaceQueryServiceImplTest {
     void 카테고리코드와_전화번호를_싣는다() {
         placeQueryService = new PlaceQueryServiceImpl(kakaoLocalClient);
         KakaoPlaceResponse.Document doc = new KakaoPlaceResponse.Document(
-                "12345", "스타벅스 강남점", "카페", "CE7",
+                "12345", "스타벅스 강남점", null, "카페", "CE7",
                 "서울 강남구 역삼동 1", "서울 강남구 테헤란로 1",
                 "02-123-4567", "127.0276", "37.4979");
         when(kakaoLocalClient.searchByKeyword("스타벅스", null, null)).thenReturn(List.of(doc));
@@ -285,7 +286,7 @@ class PlaceQueryServiceImplTest {
     void 빈_전화번호는_null_이다() {
         placeQueryService = new PlaceQueryServiceImpl(kakaoLocalClient);
         KakaoPlaceResponse.Document doc = new KakaoPlaceResponse.Document(
-                "999", "한강공원", "관광명소", "AT4",
+                "999", "한강공원", null, "관광명소", "AT4",
                 "서울 영등포구 여의동", "", "", "126.9", "37.5");
         when(kakaoLocalClient.searchByKeyword("공원", null, null)).thenReturn(List.of(doc));
 
@@ -293,5 +294,26 @@ class PlaceQueryServiceImplTest {
 
         // 빈 문자열을 그대로 두면 프론트가 detail 에 ""를 넣고 말풍선에 빈 줄이 생긴다
         assertThat(place.phone()).isNull();
+    }
+
+    @Test
+    @DisplayName("카카오 카테고리 계층 전체를 categoryPath 로 넘긴다")
+    void categoryPathIsCarriedThrough() {
+        placeQueryService = new PlaceQueryServiceImpl(kakaoLocalClient);
+        KakaoPlaceResponse.Document doc = new KakaoPlaceResponse.Document(
+                "1", "스타벅스 해운대점",
+                "음식점 > 카페 > 커피전문점 > 스타벅스",
+                "카페", "CE7",
+                "부산 해운대구", "부산 해운대구 구남로 1",
+                "051-000-0000", "129.16", "35.16");
+        when(kakaoLocalClient.searchByKeywordInRect("카페", 35.1, 129.1, 35.2, 129.2))
+                .thenReturn(List.of(doc));
+
+        List<PlaceResDTO.Place> places =
+                placeQueryService.searchPlacesInRect("카페", 35.1, 129.1, 35.2, 129.2);
+
+        assertThat(places).singleElement()
+                .extracting(PlaceResDTO.Place::categoryPath)
+                .isEqualTo("음식점 > 카페 > 커피전문점 > 스타벅스");
     }
 }

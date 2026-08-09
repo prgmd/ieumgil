@@ -8,11 +8,23 @@ import java.util.Optional;
 public interface PlaceQueryService {
 
     /**
-     * 챗봇 장소검색 상한. 결과가 LLM 프롬프트로 들어가므로 사용자 검색(15)과 같이
-     * 올리면 안 된다 — 토큰이 3배가 된다. 일반 모드 tool과 지도뷰포트 tool이 공유하는
-     * 단일 값이라 여기 인터페이스에 둔다.
+     * 일반 모드 챗봇 장소검색 상한. 결과가 LLM 프롬프트로 들어가므로 사용자 검색(15)과 같이
+     * 올리면 안 된다 — 토큰이 3배가 된다. 지도 뷰포트 경로는 재정렬 여지를 만들려고 더 많이
+     * 받으므로 이 값을 쓰지 않는다({@code MAP_SEARCH_LIMIT}/{@code LLM_CANDIDATE_LIMIT}).
      */
     int CHATBOT_SEARCH_LIMIT = 5;
+
+    /**
+     * 지도 뷰포트 검색이 카카오에서 받는 건수.
+     *
+     * <p>{@code CHATBOT_SEARCH_LIMIT}(5)보다 많이 받는 이유는 재정렬 여지를 만들기 위해서다 —
+     * 5건만 받으면 순서를 바꿔도 같은 5건이라 의미가 없다. LLM에 넘기는 건 재정렬 뒤
+     * {@code LLM_CANDIDATE_LIMIT}건뿐이므로 프롬프트 토큰은 늘지 않는다.
+     */
+    int MAP_SEARCH_LIMIT = 15;
+
+    /** 재정렬 후 LLM 프롬프트에 넣는 상한 */
+    int LLM_CANDIDATE_LIMIT = 8;
 
     List<PlaceResDTO.Place> searchPlaces(String query, Double lat, Double lng);
 

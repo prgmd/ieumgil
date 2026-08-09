@@ -35,7 +35,7 @@ public class PlaceQueryServiceImpl implements PlaceQueryService {
     public List<PlaceResDTO.Place> searchPlacesInRect(String query, double swLat, double swLng,
                                                      double neLat, double neLng) {
         return kakaoLocalClient.searchByKeywordInRect(query, swLat, swLng, neLat, neLng).stream()
-                .limit(CHATBOT_SEARCH_LIMIT)
+                .limit(MAP_SEARCH_LIMIT)
                 .map(this::toPlace)
                 .toList();
     }
@@ -96,6 +96,7 @@ public class PlaceQueryServiceImpl implements PlaceQueryService {
                 .lng(Double.parseDouble(d.x()))
                 .category(d.category_group_name())
                 .categoryCode(d.category_group_code())
+                .categoryPath(blankToNull(d.category_name()))
                 // 빈 문자열은 "번호 없음"이다 — 그대로 두면 화면에 빈 줄이 생긴다
                 .phone(blankToNull(d.phone()))
                 .build();
