@@ -69,6 +69,7 @@ import * as blockApi from "../../features/dashboard/api/dashboardApi";
 import { getClientId } from "../../global/api/clientId";
 import { Select } from "../../global/components/Select";
 import { EmptyState } from "../../global/components/EmptyState";
+import "../Error/error.css";
 import { useGroupDetail } from "../../features/group/hooks/useGroupDetail";
 import { useProjects } from "../../features/group/hooks/useProjects";
 import { useIsMobile } from "../../global/hooks/useIsMobile";
@@ -442,7 +443,6 @@ export function DashboardPage() {
     items: serverItems,
     pool: serverPool,
     status,
-    error,
     reload,
     lastSeq,
   } = useDashboard(projectId);
@@ -843,12 +843,6 @@ export function DashboardPage() {
     setTargetBudget(project?.targetBudget ?? 0);
   }
 
-  // 없는 프로젝트·비멤버·잘못된 URL 이면 그룹 페이지로 되돌린다 (GroupPage 와 같은 규칙)
-  useEffect(() => {
-    if (status !== "error") return;
-    showToast(error?.message ?? "프로젝트를 열 수 없어요.");
-    navigate(ROUTES.group(groupId), { replace: true });
-  }, [status, error, groupId, navigate, showToast]);
 
   // 임시 id 로 만든 로컬 블록을 서버 blockId 로 교체한다 (items + pool).
   // 보드 목록은 items 에서 파생하므로 따로 갈아끼울 것이 없다.
@@ -2847,8 +2841,39 @@ export function DashboardPage() {
       });
   };
 
-  // 스냅샷이 시드되기 전(로딩 중)에는 보드를 그리지 않는다.
-  // 에러일 때는 위 effect 가 그룹 페이지로 되돌린다.
+  // 없는 프로젝트·비멤버·잘못된 URL 이면 자동 이동 대신 같은 화면에서 안내한다.
+  // (반드시 아래 "!loaded → null" 보다 앞에 둔다 — 안 그러면 에러가 null 로
+  //  삼켜져 빈 화면이 된다.)
+  if (status === "error") {
+    return (
+      <div className="epage">
+        <EmptyState
+          title="프로젝트를 열 수 없어요"
+          desc="없거나 접근 권한이 없는 프로젝트예요. 그룹에서 다시 들어와 주세요."
+          action={
+            <div className="epage__actions">
+              <button
+                type="button"
+                className="btn btn-acc"
+                onClick={() => navigate(ROUTES.group(groupId))}
+              >
+                그룹으로
+              </button>
+              <button
+                type="button"
+                className="btn btn-gh"
+                onClick={() => window.location.reload()}
+              >
+                다시 시도
+              </button>
+            </div>
+          }
+        />
+      </div>
+    );
+  }
+
+  // 스냅샷이 시드되기 전(로딩 중)에는 보드를 그리지 않는다(전역 스피너가 알린다).
   if (status !== "loaded") return null;
 
   // 💡 타임라인 드래그 미리보기 합치기

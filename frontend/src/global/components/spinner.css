@@ -106,6 +106,13 @@
 .estate__action {
   margin-top: 4px;
 }
+/* 빈 상태 안내 버튼 여러 개 나란히 */
+.estate-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
 
 @keyframes iumi-bounce {
   0%,
