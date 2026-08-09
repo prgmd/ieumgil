@@ -54,25 +54,28 @@ class ChatbotPromptTest {
         // getCurrentPlan 을 안 부르고 "어디서 드셨는지 알려주시면"으로 되물어 카드가 0건이 됐다.
         // 일반적인 "되묻지 말라"는 이미 있었지만, 일정 표현을 도구로 푼다는 연결이 없었다.
         assertThat(ChatbotPrompt.SYSTEM).contains("일정 안의 무언가를 가리키는 말")
-                .contains("되묻지 말고 일정 도구로 직접 확인하세요")
-                .contains("그 블록 이름을 함께 넘겨");
+                .contains("되묻지 말고 일정 도구로 확인해")
+                .contains("장소 검색 도구에 넘겨");
         // 보드를 읽게 만든 뒤에는 다음 턱에 걸렸다 — 1박2일이라 점심 블록이 둘이라서
         // "1일차냐 2일차냐"를 되물으며 또 0건이 됐다. 다중 후보에서도 먼저 답하게 한다.
         assertThat(ChatbotPrompt.SYSTEM).contains("여러 날에 걸쳐 여럿이면")
-                .contains("가장 이른 날의 것을");
+                .contains("가장 이른 날 것을");
         // "가장 이른 날"은 짐작이었다. 사용자가 보고 있는 Day 탭이 곧 그 "점심"이므로 서버가
         // [Viewing] 으로 실어 주고, 이 문장이 거기를 먼저 가리킨다(이른 날은 폴백으로 남는다).
-        assertThat(ChatbotPrompt.SYSTEM).contains("[Viewing] 의 Day 에");
+        assertThat(ChatbotPrompt.SYSTEM).contains("[Viewing] 의 Day 것을");
     }
 
     @Test
-    @DisplayName("SYSTEM 프롬프트는 코스·일정 요청에도 장소는 도구로 찾게 한다")
-    void systemPromptRequiresToolLookupEvenForCourseRequests() {
-        // 시연 대본 9-2의 "부산 2박 3일 코스 추천해줘"에서 모델이 도구를 하나도 안 부르고
-        // 해운대해수욕장·감천문화마을 등을 자체 지식으로 나열해 카드가 0건이 됐다.
-        // 목록 규칙은 이미 있었지만 "코스"를 장소 검색이 아니라 일정 조언으로 읽었다.
-        assertThat(ChatbotPrompt.SYSTEM).contains("코스·일정·루트를 물어도")
-                .contains("도구 없이 아는 장소로 코스를 채우지 마세요");
+    @DisplayName("SYSTEM 프롬프트는 장소 추천 요청에 종류를 되묻지 말고 먼저 검색하게 한다")
+    void systemPromptSearchesBeforeAskingWhatKindOfPlace() {
+        // "부산 가볼 만한 곳 추천해줘"에서 모델이 툴을 하나도 안 부르고 해운대·광안리·용두산공원을
+        // 자체 지식으로 나열하며 "어떤 종류에 관심 있으세요?"로 되물어 카드가 0건이 됐다.
+        // 앞서 이 규칙을 코스 질의에만 걸었더니 다른 질문 모양에서 그대로 재발했다 —
+        // 그래서 "장소를 추천·검색해 달라는 요청" 전체로 넓히고, 대신 문장 수를 줄여
+        // "먼저 답하고 나중에 묻는다"는 원칙이 다른 조항에 희석되지 않게 했다.
+        assertThat(ChatbotPrompt.SYSTEM).contains("어떤 종류를 원하는지 되묻지 말고")
+                .contains("먼저 장소 검색")
+                .contains("코스·루트를 물을 때도 같습니다");
     }
 
     @Test
