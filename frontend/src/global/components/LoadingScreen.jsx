@@ -20,7 +20,14 @@ export function LoadingScreen({ label = "불러오는 중…", full = false }) {
       role="status"
       aria-live="polite"
     >
-      <img className="lscreen__img" src={loadingImg} alt="" aria-hidden="true" />
+      <img
+        className="lscreen__img"
+        src={loadingImg}
+        alt=""
+        aria-hidden="true"
+        width={72}
+        height={72}
+      />
       <span className="lscreen__label">{label}</span>
     </div>
   );

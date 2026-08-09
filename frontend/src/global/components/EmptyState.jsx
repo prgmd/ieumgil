@@ -8,7 +8,14 @@ import "./spinner.css";
 export function EmptyState({ title, desc, action, img = emptyImg }) {
   return (
     <div className="estate">
-      <img className="estate__img" src={img} alt="" aria-hidden="true" />
+      <img
+        className="estate__img"
+        src={img}
+        alt=""
+        aria-hidden="true"
+        width={48}
+        height={48}
+      />
       {title && <b className="estate__title">{title}</b>}
       {desc && <span className="estate__desc">{desc}</span>}
       {action && <div className="estate__action">{action}</div>}

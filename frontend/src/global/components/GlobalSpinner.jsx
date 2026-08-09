@@ -20,7 +20,14 @@ export function GlobalSpinner() {
       aria-live="polite"
       aria-hidden={!visible}
     >
-      <img className="gspin__img" src={loadingImg} alt="" aria-hidden="true" />
+      <img
+        className="gspin__img"
+        src={loadingImg}
+        alt=""
+        aria-hidden="true"
+        width={22}
+        height={22}
+      />
       <span>불러오는 중…</span>
     </div>
   );
