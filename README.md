@@ -83,9 +83,9 @@
 ```
 ①  메인 페이지         카카오 소셜 로그인 (자체 회원가입 절차 생략)
         ↓
-②  마이 페이지         소속 그룹 목록 조회, 생성, 수정 및 삭제
+②  마이 페이지         소속 그룹 목록 조회, 생성, 수정 및 탈퇴
         ↓
-③  그룹 페이지         진행 중인 프로젝트 목록, 멤버 초대 및 방출
+③  그룹 페이지         진행 중인 프로젝트 목록, 멤버 초대
         ↓
 ④  프로젝트 대시보드    핵심 작업 공간 (일정 조각, 챗봇, 지도, 예산, 보이스 통합)
 ```
@@ -111,7 +111,7 @@
 | --- | --- |
 | **백엔드** | Java 21, Spring Boot 3.4 (Web / Data JPA / Security / Validation / AOP), Spring AI 1.1, PostgreSQL 16, Redis 7 |
 | **프론트엔드** | React 19, Vite 8, Zustand, dnd-kit(드래그 앤 드롭), fractional-indexing(블록 순서), React Router 7, Axios |
-| **실시간 통신** | WebSocket + STOMP (@stomp/stompjs), Redis Pub/Sub 기반 오퍼레이션 브로드캐스트 |
+| **실시간 통신** | WebSocket + STOMP (@stomp/stompjs), 인프로세스 SimpleBroker 기반 오퍼레이션 브로드캐스트 |
 | **음성 통신** | WebRTC (P2P mesh, 6인 권장 — 상한 미적용) |
 | **AI 챗봇** | Spring AI + Anthropic Claude (claude-haiku-4-5), Tool Calling 기반 축제/장소 추천 |
 | **인프라 환경** | Amazon EC2, Docker Compose (이미지 pull 배포), Nginx 1.27 (SPA 정적 서빙) |
@@ -128,7 +128,7 @@ S15P11A107/
 │   │   ├── domain/
 │   │   │   ├── auth/         카카오 OAuth 로그인, JWT 발급
 │   │   │   ├── user/         사용자 정보
-│   │   │   ├── group/        그룹 관리, 멤버 초대/방출
+│   │   │   ├── group/        그룹 관리, 멤버 초대/탈퇴
 │   │   │   ├── project/      프로젝트(여행), 예산 관리
 │   │   │   ├── block/        일정 조각(블록) CRUD, 체인 정렬
 │   │   │   ├── place/        카카오 장소 검색, 길찾기(Kakao Mobility)
@@ -138,7 +138,7 @@ S15P11A107/
 │   │   │   └── activitylog/  프로젝트 활동 로그
 │   │   └── global/
 │   │       ├── websocket/    STOMP 설정, 접속자(Presence) 관리
-│   │       ├── realtime/     오퍼레이션 시퀀싱, Redis Pub/Sub 브로드캐스트
+│   │       ├── realtime/     오퍼레이션 시퀀싱(Redis INCR), AFTER_COMMIT 브로드캐스트
 │   │       └── security/     JWT 인증 필터, 시큐리티 설정
 │   └── docker/               PostgreSQL/Redis 커스텀 이미지, 마이그레이션 SQL
 ├── frontend/                 React SPA (Vite)

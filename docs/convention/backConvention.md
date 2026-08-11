@@ -134,8 +134,8 @@ public class UserResDTO {
 - 형식은 `{Entity}Exception` 으로 할 것
 
 ```java
-public class UserException extends GeneralException {
-    public UserException(ErrorStatus errorStatus) {super(errorStatus);}
+public class UserException extends CustomException {
+    public UserException(BaseErrorCode code) {super(code);}
 }
 ```
 

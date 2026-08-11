@@ -197,7 +197,7 @@ erDiagram
 
 > † 앱 기본값(`@Builder.Default now()`) — DB `DEFAULT` 절이 아니다.
 
-> **PK: `(group_id, member_id)`** 복합키. 정원(최대 10명) 검증은 서비스 레이어에서 count 후 삽입, 동시 가입 경합은 그룹 행 `SELECT ... FOR UPDATE`로 방지. 인덱스 `ix_group_member_member (member_id)` — 회원 기준 소속 그룹 역조회용.
+> **PK: `(group_id, member_id)`** 복합키. 정원(최대 10명) 검증은 서비스 레이어에서 count 후 삽입. 동시 가입 경합에는 락을 걸지 않아 순간적으로 정원을 초과할 수 있으나, 실질 피해가 없어 감수하기로 결정(2026-07-29). 필요 시 리포지토리 조회에 `@Lock(PESSIMISTIC_WRITE)` 추가로 해결 가능. 인덱스 `ix_group_member_member (member_id)` — 회원 기준 소속 그룹 역조회용.
 >
 > **flat 모델 (방장 없음)** — `role` 컬럼이 없다. 모든 멤버가 동등해 그룹명 수정·초대 코드 재발급·그룹/프로젝트 삭제를 누구나 할 수 있고, 방장 승계 로직도 없다. 멤버 강제 방출(kick)은 두지 않고 **본인 탈퇴(self-leave)만** 지원 — 탈퇴 = 행 삭제(블록은 author_id로 유지). **마지막 1인이 나가면 그룹은 하드 삭제**된다(복구할 멤버가 없어 즉시 완전 삭제, 프로젝트·블록 CASCADE). 반면 명시적 그룹 삭제(confirmName)는 소프트 삭제(+30일 후 하드)로 별개.
 
