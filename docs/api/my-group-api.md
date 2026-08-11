@@ -29,7 +29,6 @@
 | POST | `/api/groups/join` | 초대 코드로 그룹 입장 | Yes |
 | POST | `/api/groups` | 그룹 생성 | Yes |
 | PATCH | `/api/groups/{groupId}` | 그룹명 수정 | Yes |
-| DELETE | `/api/groups/{groupId}` | 그룹 소프트 삭제 | Yes |
 | GET | `/api/groups/{groupId}/members` | 멤버 목록 + 초대 코드 | Yes |
 | POST | `/api/groups/{groupId}/invite-code` | 초대 코드 재발급 | Yes |
 | DELETE | `/api/groups/{groupId}/members/me` | 자발적 탈퇴 | Yes |
@@ -210,29 +209,6 @@
 | code | HTTP | 상황 |
 |---|---|---|
 | `COMMON400_1` | 400 | name 범위 위반 |
-
----
-
-### DELETE /api/groups/{groupId}
-
-그룹 소프트 삭제. 모든 멤버 가능(flat) — 오입력 방지를 위해 그룹명 일치 검증(MY-04). 스케줄러가 30일 경과분을 하드 삭제. 삭제 시 **그룹 전 멤버의 WS 세션이 강제 종료**된다 — 해당 그룹 프로젝트의 대시보드를 보고 있던 멤버는 연결이 끊긴다.
-
-**Request Body:**
-```json
-{ "confirmName": "제주 여행팀" }
-```
-
-**Response `200`:**
-```json
-{ "isSuccess": true, "code": "COMMON200", "message": "요청에 성공했습니다." }
-```
-
-**Errors:**
-
-| code | HTTP | 상황 |
-|---|---|---|
-| `COMMON400_1` | 400 | confirmName 누락 또는 공백 |
-| `GROUP400` | 400 | confirmName이 그룹명과 불일치 |
 
 ---
 
