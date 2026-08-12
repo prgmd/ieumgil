@@ -3,6 +3,7 @@ package com.ssafy.ieumgil.domain.chatbot.tool;
 import com.ssafy.ieumgil.domain.block.entity.BlockCategory;
 import com.ssafy.ieumgil.domain.block.entity.BlockSource;
 import com.ssafy.ieumgil.domain.chatbot.dto.ChatbotResDTO;
+import com.ssafy.ieumgil.domain.festival.FestivalCategory;
 import com.ssafy.ieumgil.domain.festival.entity.Festival;
 import com.ssafy.ieumgil.domain.place.dto.PlaceResDTO;
 import lombok.extern.slf4j.Slf4j;
@@ -62,7 +63,7 @@ public class CandidateCollector {
                 .address(festival.getAddr())
                 .placeId(festival.getContentId())
                 .source(BlockSource.BOT)
-                .subCategory(toFestivalLabel(festival.getCategory()))
+                .subCategory(FestivalCategory.labelOf(festival.getCategory()))
                 .eventStartDate(festival.getEventStartDate().toString())
                 .eventEndDate(festival.getEventEndDate().toString())
                 // 블록에는 기간 컬럼이 없어 자유텍스트로만 남길 수 있다. 서버가 문구를 만들어
@@ -97,14 +98,6 @@ public class CandidateCollector {
             case "카페", "음식점" -> BlockCategory.FOOD;
             case "숙박" -> BlockCategory.STAY;
             default -> BlockCategory.SPOT;
-        };
-    }
-
-    private String toFestivalLabel(String rawCategory) {
-        return switch (rawCategory) {
-            case "EV01" -> "축제";
-            case "EV02" -> "공연";
-            default -> "행사";
         };
     }
 }

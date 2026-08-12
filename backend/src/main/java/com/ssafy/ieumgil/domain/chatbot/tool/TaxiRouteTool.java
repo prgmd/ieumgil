@@ -1,23 +1,12 @@
 package com.ssafy.ieumgil.domain.chatbot.tool;
 
-import com.ssafy.ieumgil.domain.place.dto.PlaceResDTO;
 import com.ssafy.ieumgil.domain.place.service.PlaceQueryService;
-import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.tool.annotation.Tool;
 
-import java.util.Optional;
-
-@Slf4j
-public class TaxiRouteTool {
-
-    private final String destination;
-    private final PlaceQueryService placeQueryService;
-    private final KakaoPlaceCoordinateResolver resolver;
+public class TaxiRouteTool extends AbstractRouteTool<TaxiRouteResult> {
 
     public TaxiRouteTool(String destination, PlaceQueryService placeQueryService, KakaoPlaceCoordinateResolver resolver) {
-        this.destination = destination;
-        this.placeQueryService = placeQueryService;
-        this.resolver = resolver;
+        super(destination, placeQueryService, resolver);
     }
 
     @Tool(description = """
@@ -29,19 +18,11 @@ public class TaxiRouteTool {
             If it reports that the route was not found, say so plainly. Never estimate the distance, duration, or fare yourself — a straight-line guess is not the travel figure the user asked for.
             """)
     public TaxiRouteResult getTaxiRoute(String startPlaceName, String endPlaceName) {
-        try {
-            Optional<PlaceResDTO.Place> start = resolver.resolve(destination, startPlaceName);
-            Optional<PlaceResDTO.Place> end = resolver.resolve(destination, endPlaceName);
-            if (start.isEmpty() || end.isEmpty()) {
-                return TaxiRouteResult.empty(startPlaceName, endPlaceName);
-            }
-            return placeQueryService.getTaxiRoute(
-                            start.get().lat(), start.get().lng(), end.get().lat(), end.get().lng())
-                    .map(r -> TaxiRouteResult.of(start.get().name(), end.get().name(), r.fare(), r.distance(), r.durationMin()))
-                    .orElseGet(() -> TaxiRouteResult.empty(startPlaceName, endPlaceName));
-        } catch (RuntimeException e) {
-            log.warn("taxi route tool call failed: {} -> {}", startPlaceName, endPlaceName, e);
-            return TaxiRouteResult.empty(startPlaceName, endPlaceName);
-        }
+        return computeRoute(startPlaceName, endPlaceName,
+                (start, end) -> placeQueryService.getTaxiRoute(start.lat(), start.lng(), end.lat(), end.lng())
+                        .map(r -> TaxiRouteResult.of(start.name(), end.name(), r.fare(), r.distance(), r.durationMin()))
+                        .orElse(null),
+                TaxiRouteResult::empty,
+                "taxi");
     }
 }
