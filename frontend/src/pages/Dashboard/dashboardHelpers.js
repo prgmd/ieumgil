@@ -3,6 +3,9 @@ import {
   dayNoOfOffset,
 } from "../../features/dashboard/api/dashboardApi";
 
+// 타임라인 1분당 픽셀 높이. 분↔px 환산(분 × PX)의 단일 기준.
+export const PX = 2.0;
+
 /**
  * 카테고리(대분류) 표. 색은 값을 직접 적지 않고 공통 토큰(tokens.css)을 가리킨다 —
  * 팔레트를 바꿀 일이 생기면 CSS 한 곳만 고치면 된다.
