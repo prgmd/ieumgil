@@ -574,14 +574,6 @@ export function DashboardPage() {
   const activeDragRef = useRef(null);
   const dragRegionRef = useRef(null);
 
-  // 최신 items 를 읽기 위한 latest-ref — 리사이즈 종료 시점과 원격 op 적용이 쓴다.
-  // 원격 적용은 한 tick 에 여러 op 를 연달아 처리할 수 있어(시퀀서 drain), 커밋 전에도
-  // 서로의 결과를 보도록 적용 함수가 이 ref 를 직접 갱신하며 진행한다.
-  const itemsRef = useRef(items);
-  useEffect(() => {
-    itemsRef.current = items;
-  });
-
   // ── 원격 op 적용 ─────────────────────────────────────
   // 원격 블록을 startMins(절대 오프셋)가 가리키는 자리로 놓는다(생성·이동 공용).
   // 시간축 위 자리는 items 갱신만으로 끝난다 — 보드 목록이 오프셋에서 파생하기
@@ -591,7 +583,7 @@ export function DashboardPage() {
     setPool((prev) => {
       const without = prev.filter((id) => id !== block.id);
       return block.startMins == null
-        ? insertByOrderKey(without, itemsRef.current, block)
+        ? insertByOrderKey(without, useBoardStore.getState().items, block)
         : without;
     });
   };
@@ -621,7 +613,6 @@ export function DashboardPage() {
         // (adoptServerId) 사이에 echo 가 끼어들면 같은 블록이 두 벌 들어간다.
         if (own) break;
         const block = blockApi.toUiBlock(payload.block);
-        itemsRef.current = { ...itemsRef.current, [block.id]: block };
         setItems((prev) => ({ ...prev, [block.id]: block }));
         placeRemoteBlock(block);
         break;
@@ -633,11 +624,10 @@ export function DashboardPage() {
         // 블록의 화면상 y 위치는 startMins 라서, 이게 빠지면 이동을 재확정해도
         // 시각은 남의 값 그대로 남는다.
         const id = payload.blockId;
-        const base = itemsRef.current[id];
+        const base = useBoardStore.getState().items[id];
         if (!base) break; // 모르는 블록(이미 삭제 등) — 무시
         const patch = blockApi.serverFieldsToUiPatch(payload.fields);
         const updated = { ...base, ...patch };
-        itemsRef.current = { ...itemsRef.current, [id]: updated };
         setItems((prev) => (prev[id] ? { ...prev, [id]: updated } : prev));
         break;
       }
@@ -645,7 +635,7 @@ export function DashboardPage() {
         recordBlockEditor(payload.blockId, op.actorId);
         // 자기 op 도 적용한다 — 이동은 마지막 쓰기가 이긴다. 남이 먼저 옮긴 op 에
         // 덮인 자리를 자기 echo 가 제 위치로 되돌려 놓는 것이 이 재적용의 목적이다.
-        const base = itemsRef.current[payload.blockId];
+        const base = useBoardStore.getState().items[payload.blockId];
         if (!base) {
           if (own) break; // 내가 옮긴 뒤 지운 블록 — 재시드할 이유가 없다
           reload(); // 모르는 블록의 이동 — 로컬이 어긋난 상태라 재시드가 정직하다
@@ -660,7 +650,6 @@ export function DashboardPage() {
           startMins: offset,
           orderKey: payload.orderKey,
         };
-        itemsRef.current = { ...itemsRef.current, [moved.id]: moved };
         setItems((prev) => (prev[moved.id] ? { ...prev, [moved.id]: moved } : prev));
         placeRemoteBlock(moved);
         break;
@@ -677,9 +666,6 @@ export function DashboardPage() {
         // 삭제했어요" 토스트가 자기 삭제에 뜬다.
         if (own) break;
         const id = payload.blockId;
-        const next = { ...itemsRef.current };
-        delete next[id];
-        itemsRef.current = next;
         setItems((prev) => {
           const n = { ...prev };
           delete n[id];
@@ -933,7 +919,7 @@ export function DashboardPage() {
   // 값이 바뀐 체인 내 서버 블록이 저장 대상이다.
   const persistResize = useCallback(
     async (rs) => {
-      const current = itemsRef.current;
+      const current = useBoardStore.getState().items;
       const original = rs.originalItems;
       // 저장 대상은 보드 전체다 — 밀림이 Day 경계에서 멈추지 않으므로 Day 로
       // 좁히면 자정 너머로 밀린 이웃의 위치가 저장되지 않는다. 실제로 값이
