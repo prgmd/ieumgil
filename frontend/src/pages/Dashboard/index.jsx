@@ -180,7 +180,7 @@ export function DashboardPage() {
   // 축은 여행 전체다 — 첫 Day 의 00:00 부터 마지막 Day 의 24:00 까지 한 줄로 잇는다.
   // 렌더 식은 전부 (값 - timelineStart) * PX 꼴 그대로 두고 기준선만 0 으로 내렸다.
   // dayKeysOf 는 항상 Day 를 하나 이상 주므로 activeDay 는 언제나 "dN" 이다.
-  const activeDayIndex = Math.max(0, dayKeys.indexOf(activeDay));
+  const activeDayIndex = dayNoOf(activeDay) - 1;
   const timelineStart = 0;
   const timelineEnd = dayKeys.length * blockApi.MINUTES_PER_DAY;
 
@@ -963,15 +963,15 @@ export function DashboardPage() {
         centerY <= tlRect.bottom;
 
       if (isOverPool) {
-        let insertIndex = pool.filter((id) => id !== activeIdLocal).length;
+        const poolIds = pool.filter((id) => id !== activeIdLocal);
+        let insertIndex = poolIds.length;
         if (poolDOMRef.current) {
           const cardEls = Array.from(
             poolDOMRef.current.querySelectorAll("[data-pool-id]"),
           ).filter((el) => el.getAttribute("data-pool-id") !== activeIdLocal);
           let closestDist = Infinity,
             closestId = null,
-            closestIsAfter = true,
-            closestRect = null;
+            closestIsAfter = true;
 
           cardEls.forEach((el) => {
             const r = el.getBoundingClientRect();
@@ -983,19 +983,13 @@ export function DashboardPage() {
               closestId = el.getAttribute("data-pool-id");
               closestIsAfter =
                 centerY > cy || (centerY >= r.top && centerX > cx);
-              closestRect = r;
             }
           });
           if (closestId)
             insertIndex = closestIsAfter
-              ? pool.filter((id) => id !== activeIdLocal).indexOf(closestId) + 1
-              : pool.filter((id) => id !== activeIdLocal).indexOf(closestId);
-          return {
-            region: "pool",
-            insertIndex,
-            caretRect: closestRect,
-            caretAfter: closestId ? undefined : undefined,
-          };
+              ? poolIds.indexOf(closestId) + 1
+              : poolIds.indexOf(closestId);
+          return { region: "pool", insertIndex };
         }
         return { region: "pool", insertIndex };
       }
@@ -1083,11 +1077,14 @@ export function DashboardPage() {
     activeDragRef.current = event.active;
     setDragPreview(computeDropTarget(event.active));
   };
-  const handleDragCancel = () => {
+  const clearDragState = () => {
     setActiveId(null);
     setActiveDragMeta(null);
     activeDragRef.current = null;
     setDragPreview(null);
+  };
+  const handleDragCancel = () => {
+    clearDragState();
   };
 
   const handleDragEnd = (event) => {
@@ -1098,10 +1095,7 @@ export function DashboardPage() {
     const isFromChatbot = active.data.current?.from === "chatbot";
     const target = computeDropTarget(active);
 
-    setActiveId(null);
-    setActiveDragMeta(null);
-    activeDragRef.current = null;
-    setDragPreview(null);
+    clearDragState();
 
     if (!target || !target.region) return;
 
