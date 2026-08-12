@@ -90,17 +90,11 @@ export function useBlockCrud({
       const orderKey = safeKeyBetween(null, firstKey);
 
       try {
-        const created = await blockApi.createBlock(projectId, {
+        const created = await blockApi.createBlockWithDetail(projectId, {
           ...merged,
           startMins: null, // 커스텀 블록은 후보(POOL)로 생성된다
           orderKey,
         });
-        // 세부 내용(detail)은 생성 바디에 없다(명세) — 생성 직후 필드 갱신으로 저장
-        if (merged.detail) {
-          await blockApi.updateBlockFields(created.blockId, {
-            detail: merged.detail,
-          });
-        }
 
         const saved = { ...merged, id: created.blockId, orderKey };
         setItems((prev) => {
@@ -242,17 +236,11 @@ export function useBlockCrud({
       try {
         const [before, after] = neighborKeysAround(nextPool, 0, items);
         const orderKey = safeKeyBetween(before, after);
-        const created = await blockApi.createBlock(projectId, {
+        const created = await blockApi.createBlockWithDetail(projectId, {
           ...copy,
           startMins: null,
           orderKey,
         });
-        // 메모(detail)는 생성 바디에 없어(명세) 생성 직후 따로 저장한다.
-        if (copy.detail) {
-          await blockApi.updateBlockFields(created.blockId, {
-            detail: copy.detail,
-          });
-        }
         adoptServerId(newId, created.blockId, { orderKey });
         showToast("블록을 후보로 복사했어요 ⧉");
       } catch (e) {

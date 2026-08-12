@@ -1177,17 +1177,11 @@ export function DashboardPage() {
         try {
           const [before, after] = neighborKeysAround(nextPool, insertAt, items);
           const orderKey = safeKeyBetween(before, after);
-          const created = await blockApi.createBlock(projectId, {
+          const created = await blockApi.createBlockWithDetail(projectId, {
             ...newBlock,
             startMins: null, // 후보(POOL)로 생성된다
             orderKey,
           });
-          // 전화번호(detail)는 생성 바디에 없다(명세) — 생성 직후 별도 저장
-          if (newBlock.detail) {
-            await blockApi.updateBlockFields(created.blockId, {
-              detail: newBlock.detail,
-            });
-          }
           adoptServerId(newId, created.blockId, { orderKey });
         } catch (e) {
           rollbackToServer(e);
