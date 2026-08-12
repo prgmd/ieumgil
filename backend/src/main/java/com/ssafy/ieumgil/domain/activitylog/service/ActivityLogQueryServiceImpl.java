@@ -27,7 +27,7 @@ public class ActivityLogQueryServiceImpl implements ActivityLogQueryService {
      * 마지막 seq로 다시 요청해 이어받는다.
      */
     @Override
-    public List<Map<String, Object>> getOpsAfter(Long userId, Long projectId, long afterSeq) {
+    public List<Map<String, Object>> getOpsAfter(Long projectId, long afterSeq) {
         return activityLogRepository.findOpsAfter(projectId, afterSeq,
                 PageRequest.of(0, MAX_OPS_PER_FETCH));
     }

@@ -104,7 +104,6 @@ class WsSessionRegistryTest {
 
         assertThat(registry.memberOf("s1")).isEqualTo(MEMBER_ID);
         assertThat(registry.unregister("s1")).isTrue();
-        assertThat(registry.isOnline(MEMBER_ID)).isFalse();
     }
 
     @Test

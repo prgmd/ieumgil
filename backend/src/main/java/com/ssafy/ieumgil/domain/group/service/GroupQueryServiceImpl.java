@@ -67,7 +67,7 @@ public class GroupQueryServiceImpl implements GroupQueryService {
      * 조회는 3단계에서 만든 목록용 메서드를 그룹 하나만 넣어 재사용한다.
      */
     @Override
-    public GroupResDTO.MemberList getMembers(Long userId, Long groupId) {
+    public GroupResDTO.MemberList getMembers(Long groupId) {
         TravelGroup group = travelGroupRepository.findByIdAndDeletedAtIsNull(groupId)
                 .orElseThrow(() -> new CustomException(GroupErrorCode.GROUP_NOT_FOUND));
 

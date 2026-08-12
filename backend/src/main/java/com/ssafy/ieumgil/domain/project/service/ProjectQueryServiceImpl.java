@@ -31,7 +31,7 @@ public class ProjectQueryServiceImpl implements ProjectQueryService {
 
     /** 그룹의 프로젝트 카드 목록 (PRJ-04) */
     @Override
-    public List<ProjectResDTO.Card> getGroupProjects(Long userId, Long groupId) {
+    public List<ProjectResDTO.Card> getGroupProjects(Long groupId) {
         return projectRepository.findByTravelGroupIdAndDeletedAtIsNullOrderByIdDesc(groupId)
                 .stream()
                 .map(ProjectConverter::toCard)
@@ -46,7 +46,7 @@ public class ProjectQueryServiceImpl implements ProjectQueryService {
      * 블록마다 작성자를 조회하면 N+1이 되므로 authorId는 FK 값(LAZY 프록시의 id)만 읽는다.
      */
     @Override
-    public ProjectResDTO.Snapshot getSnapshot(Long userId, Long projectId) {
+    public ProjectResDTO.Snapshot getSnapshot(Long projectId) {
         Project project = projectRepository.findByIdAndDeletedAtIsNull(projectId)
                 .orElseThrow(() -> new CustomException(ProjectErrorCode.PROJECT_NOT_FOUND));
 

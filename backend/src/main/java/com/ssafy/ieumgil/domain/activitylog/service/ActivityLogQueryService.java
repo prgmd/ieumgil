@@ -5,5 +5,5 @@ import java.util.Map;
 
 public interface ActivityLogQueryService {
 
-    List<Map<String, Object>> getOpsAfter(Long userId, Long projectId, long afterSeq);
+    List<Map<String, Object>> getOpsAfter(Long projectId, long afterSeq);
 }

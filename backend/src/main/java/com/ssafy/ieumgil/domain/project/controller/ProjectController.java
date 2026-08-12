@@ -53,9 +53,8 @@ public class ProjectController {
     @GetMapping("/groups/{groupId}/projects")
     @Operation(summary = "프로젝트 카드 목록 조회", description = "그룹의 프로젝트를 최근 생성 순으로 조회합니다.")
     public CustomResponse<List<ProjectResDTO.Card>> getGroupProjects(
-            @Parameter(hidden = true) @AuthenticationPrincipal Long userId,
             @PathVariable Long groupId) {
-        return CustomResponse.onSuccess(projectQueryService.getGroupProjects(userId, groupId));
+        return CustomResponse.onSuccess(projectQueryService.getGroupProjects(groupId));
     }
 
     @GroupMember(GroupMember.Source.PROJECT_ID)
@@ -64,9 +63,8 @@ public class ProjectController {
             description = "프로젝트 상세 + 블록 전체 + 멤버 + lastSeq를 한 번에 반환합니다. "
                     + "최초 로딩과 재연결 복구가 같은 응답을 씁니다. online은 presence 연동 전까지 false입니다.")
     public CustomResponse<ProjectResDTO.Snapshot> getSnapshot(
-            @Parameter(hidden = true) @AuthenticationPrincipal Long userId,
             @PathVariable Long projectId) {
-        return CustomResponse.onSuccess(projectQueryService.getSnapshot(userId, projectId));
+        return CustomResponse.onSuccess(projectQueryService.getSnapshot(projectId));
     }
 
     @GroupMember(GroupMember.Source.PROJECT_ID)
@@ -74,12 +72,11 @@ public class ProjectController {
     @Operation(summary = "유실 op 재전송",
             description = "afterSeq 이후의 op를 저장된 전문 그대로 순서대로 반환합니다. 재연결·seq 갭 감지 시 사용합니다.")
     public CustomResponse<List<Map<String, Object>>> getOps(
-            @Parameter(hidden = true) @AuthenticationPrincipal Long userId,
             @PathVariable Long projectId,
             @RequestParam(defaultValue = "0") long afterSeq) {
         // seq는 1부터 시작하므로 음수·누락은 0(처음부터)으로 하한을 건다
         long from = Math.max(0, afterSeq);
-        return CustomResponse.onSuccess(activityLogQueryService.getOpsAfter(userId, projectId, from));
+        return CustomResponse.onSuccess(activityLogQueryService.getOpsAfter(projectId, from));
     }
 
     @GroupMember

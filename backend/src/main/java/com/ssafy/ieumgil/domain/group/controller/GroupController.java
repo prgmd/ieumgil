@@ -65,9 +65,8 @@ public class GroupController {
     @GetMapping("/{groupId}/members")
     @Operation(summary = "멤버 목록 조회", description = "그룹의 멤버 목록과 초대 코드를 함께 조회합니다. online은 presence 연동 전까지 false입니다.")
     public CustomResponse<GroupResDTO.MemberList> getMembers(
-            @Parameter(hidden = true) @AuthenticationPrincipal Long userId,
             @PathVariable Long groupId) {
-        return CustomResponse.onSuccess(groupQueryService.getMembers(userId, groupId));
+        return CustomResponse.onSuccess(groupQueryService.getMembers(groupId));
     }
 
     @GroupMember

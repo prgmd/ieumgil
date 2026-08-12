@@ -90,7 +90,7 @@ class ProjectSnapshotOrderingIntegrationTest extends IntegrationTestSupport {
             }
         });
 
-        ProjectResDTO.Snapshot snapshot = projectQueryService.getSnapshot(user.getId(), project.getId());
+        ProjectResDTO.Snapshot snapshot = projectQueryService.getSnapshot(project.getId());
 
         assertThat(injectionFailure.get()).isNull();
         assertThat(injected.get()).isNotNull();
