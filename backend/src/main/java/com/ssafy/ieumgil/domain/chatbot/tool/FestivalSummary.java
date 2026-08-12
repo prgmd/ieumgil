@@ -1,5 +1,6 @@
 package com.ssafy.ieumgil.domain.chatbot.tool;
 
+import com.ssafy.ieumgil.domain.festival.FestivalCategory;
 import com.ssafy.ieumgil.domain.festival.entity.Festival;
 
 import java.time.LocalDate;
@@ -26,7 +27,7 @@ public record FestivalSummary(
     public static FestivalSummary from(Festival festival, LocalDate tripStartDate, LocalDate tripEndDate) {
         return new FestivalSummary(
                 festival.getTitle(),
-                toCategoryLabel(festival.getCategory()),
+                FestivalCategory.labelOf(festival.getCategory()),
                 festival.getAddr(),
                 festival.getEventStartDate().toString(),
                 festival.getEventEndDate().toString(),
@@ -52,14 +53,5 @@ public record FestivalSummary(
 
     private static LocalDate min(LocalDate a, LocalDate b) {
         return a.isBefore(b) ? a : b;
-    }
-
-    private static String toCategoryLabel(String rawCategory) {
-        return switch (rawCategory) {
-            case "EV01" -> "축제";
-            case "EV02" -> "공연";
-            case "EV03" -> "행사";
-            default -> "행사";
-        };
     }
 }
