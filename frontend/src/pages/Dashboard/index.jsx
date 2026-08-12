@@ -12,7 +12,6 @@ import { RemoteCursorLayer } from "./components/RemoteCursorLayer";
 import { TransitPickerModals } from "./components/TransitPickerModals";
 import { VoiceBar } from "./components/VoiceBar";
 import { DayTab } from "./components/DayTab";
-import { CardBody } from "./components/CardBody";
 import { HintIcon } from "./components/HintIcon";
 import { TimelineCard } from "./components/TimelineCard";
 import { PoolCard } from "./components/PoolCard";
@@ -20,6 +19,7 @@ import { BudgetPanel } from "./components/BudgetPanel";
 import { MapPanel } from "./components/MapPanel";
 import { SearchPanel } from "./components/SearchPanel";
 import { ReadModeView } from "./components/ReadModeView";
+import { DragOverlayPreview } from "./components/DragOverlayPreview";
 import {
   fmtTime,
   fmtTimeLong,
@@ -46,7 +46,6 @@ import { useTransitPicker } from "./hooks/useTransitPicker";
 import { useBoardStore } from "./stores/useBoardStore";
 import {
   DndContext,
-  DragOverlay,
   KeyboardSensor,
   PointerSensor,
   useSensor,
@@ -2041,44 +2040,12 @@ export function DashboardPage() {
               )}
 
               {/* 💡 끌려다니는 마우스 오버레이 부분 업데이트 */}
-              <DragOverlay>
-                {activeId && draggedItem ? (
-                  isDraggingFromPool || isDraggingFromSearch ? (
-                    <div
-                      className="pcard is-overlay"
-                      style={{
-                        "--dc": catOf(draggedItem).hex,
-                        "--cb": catOf(draggedItem).bg,
-                      }}
-                    >
-                      <CardBody
-                        id={draggedItem.id}
-                        item={draggedItem}
-                        mode="pool"
-                      />
-                    </div>
-                  ) : (
-                    <div
-                      className="card is-overlay"
-                      style={{
-                        "--dc": catOf(draggedItem).hex,
-                        "--cb": catOf(draggedItem).bg,
-                      }}
-                    >
-                      <CardBody
-                        id={draggedItem.id}
-                        item={draggedItem}
-                        mode="timeline"
-                        startMins={items[activeId]?.startMins || 0}
-                        endMins={
-                          (items[activeId]?.startMins || 0) +
-                          (draggedItem.dur || 0)
-                        }
-                      />
-                    </div>
-                  )
-                ) : null}
-              </DragOverlay>
+              <DragOverlayPreview
+                activeId={activeId}
+                draggedItem={draggedItem}
+                isDraggingFromPool={isDraggingFromPool}
+                isDraggingFromSearch={isDraggingFromSearch}
+              />
 
               {/* 타임라인 밖(후보·사이드 등)의 라이브 커서 — 페이지 비율 좌표.
                   후보 목록·사이드는 Day 와 무관하게 모두가 같은 것을 보는 영역이라
