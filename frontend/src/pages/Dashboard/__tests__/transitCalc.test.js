@@ -1,5 +1,41 @@
 import { describe, it, expect } from "vitest";
-import { doorToDoorDurOf, transitDurOf, transitCostOf } from "../transitMeta";
+import {
+  doorToDoorDurOf,
+  transitDurOf,
+  transitCostOf,
+  initialCandidateOf,
+} from "../transitMeta";
+
+describe("initialCandidateOf", () => {
+  const A = { mode: "TRANSIT", status: "OK" };
+  const B = { mode: "TRAIN", status: "OK" };
+  const NG = { mode: "AIR", status: "NG" };
+
+  it("defaultMode 가 null 이면 null (자동 선택 안 함)", () => {
+    expect(initialCandidateOf({ defaultMode: null, candidates: [A, B] })).toBe(null);
+  });
+  it("segment 자체가 없으면 null", () => {
+    expect(initialCandidateOf(undefined)).toBe(null);
+  });
+  it("defaultMode 와 mode 가 맞고 OK 인 후보를 우선 고른다", () => {
+    expect(
+      initialCandidateOf({ defaultMode: "TRAIN", candidates: [A, B] }),
+    ).toBe(B);
+  });
+  it("defaultMode 매치가 없으면 첫 OK 후보로 폴백", () => {
+    expect(
+      initialCandidateOf({ defaultMode: "TAXI", candidates: [NG, A, B] }),
+    ).toBe(A);
+  });
+  it("OK 후보가 하나도 없으면 null", () => {
+    expect(
+      initialCandidateOf({ defaultMode: "AIR", candidates: [NG] }),
+    ).toBe(null);
+  });
+  it("candidates 가 없으면 null", () => {
+    expect(initialCandidateOf({ defaultMode: "TRAIN" })).toBe(null);
+  });
+});
 
 describe("doorToDoorDurOf", () => {
   it("departure 없으면 null", () => {
