@@ -42,6 +42,7 @@ import { useDayNav } from "./hooks/useDayNav";
 import { useBudget } from "./hooks/useBudget";
 import { useBlockCrud } from "./hooks/useBlockCrud";
 import { useTransitPicker } from "./hooks/useTransitPicker";
+import { useBoardStore } from "./stores/useBoardStore";
 import {
   DndContext,
   DragOverlay,
@@ -222,8 +223,11 @@ export function DashboardPage() {
       : (dayNoOf(activeDay) + 1) * blockApi.MINUTES_PER_DAY;
 
   // 보드 편집 상태 — 초기값은 비워 두고, 스냅샷이 도착하면 아래 시드 effect 가 채운다.
-  const [items, setItems] = useState({});
-  const [pool, setPool] = useState([]);
+  const items = useBoardStore((s) => s.items);
+  const setItems = useBoardStore((s) => s.setItems);
+  const pool = useBoardStore((s) => s.pool);
+  const setPool = useBoardStore((s) => s.setPool);
+  const resetBoard = useBoardStore((s) => s.resetBoard);
   // 후보 목록 필터 — 대분류(cat) + 제목 검색. 렌더만 거른다(원본 pool 은 그대로).
   const [poolCat, setPoolCat] = useState("ALL");
   const [poolQuery, setPoolQuery] = useState("");
@@ -390,7 +394,8 @@ export function DashboardPage() {
   //  것이 없다. 예전의 로컬 감사는 "여행 기간 밖 오프셋"을 전부 잡아내서, 겹침
   //  해소로 마지막 자정 너머까지 밀린 블록까지 후보로 끌어내리고 있었다.)
 
-  const [editingBlockId, setEditingBlockId] = useState(null);
+  const editingBlockId = useBoardStore((s) => s.editingBlockId);
+  const setEditingBlockId = useBoardStore((s) => s.setEditingBlockId);
   const [activeId, setActiveId] = useState(null);
   const [resizingState, setResizingState] = useState(null);
   const [dragPreview, setDragPreview] = useState(null);
@@ -442,7 +447,7 @@ export function DashboardPage() {
       setEditingBlockId(id);
       focusPlace(items[id]);
     },
-    [focusPlace, items],
+    [focusPlace, items, setEditingBlockId],
   );
 
   // 저장 실패 시 롤백 — "어디서 왔는지"를 복원하는 대신 서버 진실로 보드를
@@ -474,6 +479,15 @@ export function DashboardPage() {
     remainingBudget,
     budgetSegments,
   } = useBudget({ projectId, project, board, items, rollbackToServer });
+
+  // ── 프로젝트 전환 시 보드 스토어 리셋 (모듈 싱글턴 stale 방지) ──
+  // 스토어는 모듈 싱글턴이라 언마운트/재마운트·프로젝트 이동 시 이전 보드가 남는다.
+  // projectId 가 바뀌는 동안 useDashboard 는 isStale 로 status="loading" 을 강제하므로
+  // 아래 시드(status==="loaded" 조건)는 fetch 완료 이후 렌더에서만 실행된다 — 즉 이
+  // effect(projectId 변경 시에만 발화)보다 항상 뒤 렌더라 시드를 덮지 않는다.
+  useEffect(() => {
+    resetBoard();
+  }, [projectId, resetBoard]);
 
   // ── 스냅샷 → 로컬 보드 시드 ──────────────────────────
   // effect 가 아니라 "렌더 중 조건부 setState"(React 공식 파생 상태 리셋 패턴)를 쓴다.
@@ -523,7 +537,7 @@ export function DashboardPage() {
       return next;
     });
     setPool((prev) => prev.map((id) => (id === tempId ? blockId : id)));
-  }, []);
+  }, [setItems, setPool]);
 
   // ── 교통 피커 (후보 생성·단일 추가·선택 확정·재선택·자동 재생성) ──
   const {
@@ -1079,7 +1093,7 @@ export function DashboardPage() {
       window.removeEventListener("mousemove", handleMouseMove);
       window.removeEventListener("click", handleGlobalClick);
     };
-  }, [resizingState, persistResize]);
+  }, [resizingState, persistResize, setItems]);
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
