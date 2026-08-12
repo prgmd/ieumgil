@@ -1,23 +1,12 @@
 package com.ssafy.ieumgil.domain.chatbot.tool;
 
-import com.ssafy.ieumgil.domain.place.dto.PlaceResDTO;
 import com.ssafy.ieumgil.domain.place.service.PlaceQueryService;
-import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.tool.annotation.Tool;
 
-import java.util.Optional;
-
-@Slf4j
-public class WalkingRouteTool {
-
-    private final String destination;
-    private final PlaceQueryService placeQueryService;
-    private final KakaoPlaceCoordinateResolver resolver;
+public class WalkingRouteTool extends AbstractRouteTool<WalkingRouteResult> {
 
     public WalkingRouteTool(String destination, PlaceQueryService placeQueryService, KakaoPlaceCoordinateResolver resolver) {
-        this.destination = destination;
-        this.placeQueryService = placeQueryService;
-        this.resolver = resolver;
+        super(destination, placeQueryService, resolver);
     }
 
     @Tool(description = """
@@ -29,19 +18,11 @@ public class WalkingRouteTool {
             If it reports that the route was not found, say so plainly. Never estimate the distance, duration, or fare yourself — a straight-line guess is not the travel figure the user asked for.
             """)
     public WalkingRouteResult getWalkingRoute(String startPlaceName, String endPlaceName) {
-        try {
-            Optional<PlaceResDTO.Place> start = resolver.resolve(destination, startPlaceName);
-            Optional<PlaceResDTO.Place> end = resolver.resolve(destination, endPlaceName);
-            if (start.isEmpty() || end.isEmpty()) {
-                return WalkingRouteResult.empty(startPlaceName, endPlaceName);
-            }
-            return placeQueryService.getWalkingRoute(
-                            start.get().lat(), start.get().lng(), end.get().lat(), end.get().lng())
-                    .map(r -> WalkingRouteResult.of(start.get().name(), end.get().name(), r.distance(), r.durationMin()))
-                    .orElseGet(() -> WalkingRouteResult.empty(startPlaceName, endPlaceName));
-        } catch (RuntimeException e) {
-            log.warn("walking route tool call failed: {} -> {}", startPlaceName, endPlaceName, e);
-            return WalkingRouteResult.empty(startPlaceName, endPlaceName);
-        }
+        return computeRoute(startPlaceName, endPlaceName,
+                (start, end) -> placeQueryService.getWalkingRoute(start.lat(), start.lng(), end.lat(), end.lng())
+                        .map(r -> WalkingRouteResult.of(start.name(), end.name(), r.distance(), r.durationMin()))
+                        .orElse(null),
+                WalkingRouteResult::empty,
+                "walking");
     }
 }

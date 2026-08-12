@@ -54,33 +54,18 @@ public class ViewportPlaceSearchTool {
             // 실패를 빈 목록으로 삼키면 모델이 "이 지역엔 없어요"로 오인한다. 실패 신호를
             // 그대로 올려 Spring AI가 tool 결과로 모델에 전달하게 한다(호출 abort는 아님).
             log.warn("viewport place search tool call failed for keyword={}", keyword, e);
-            throw new IllegalStateException(
-                    "Place search failed due to an internal error. Do not claim there are no matching places; tell the user the search could not be completed and to try again.", e);
+            throw new IllegalStateException(PlaceSearchSupport.SEARCH_FAILURE_MESSAGE, e);
         }
     }
 
-    /**
-     * 0건이면 검색어를 바꿔 재시도한다 — 카카오는 수식어가 붙은 서술구에 0건을 준다.
-     * 후보는 붙여쓰기 → 오른쪽 단일 토큰 순이다({@link KeywordFallback}).
-     *
-     * <p>첫 비-empty 결과에서 멈추고, 재시도까지 전부 0건이면 예전처럼 빈 목록이다.
-     * 예외는 폴백 대상이 아니다(0건과 실패는 다른 신호이므로 호출부 catch가 그대로 받는다).
-     */
+    /** 공통 폴백 루프는 {@link PlaceSearchSupport}가 담고, 여기서는 뷰포트 검색만 넘긴다. */
     private List<PlaceResDTO.Place> searchWithKeywordFallback(String keyword) {
-        List<PlaceResDTO.Place> found = searchInView(keyword);
-        if (!found.isEmpty()) {
-            return found;
-        }
-        for (String candidate : KeywordFallback.candidatesFor(keyword)) {
-            List<PlaceResDTO.Place> retried = searchInView(candidate);
-            if (!retried.isEmpty()) {
+        return PlaceSearchSupport.searchWithKeywordFallback(
+                keyword,
+                this::searchInView,
                 // 운영에서 이 폴백이 얼마나 자주 도는지 봐야 한다
-                log.info("뷰포트 검색 0건 — 검색어 폴백 성공: '{}' -> '{}' ({}건)",
-                        keyword, candidate, retried.size());
-                return retried;
-            }
-        }
-        return found;
+                (kw, candidate, count) -> log.info("뷰포트 검색 0건 — 검색어 폴백 성공: '{}' -> '{}' ({}건)",
+                        kw, candidate, count));
     }
 
     private List<PlaceResDTO.Place> searchInView(String keyword) {

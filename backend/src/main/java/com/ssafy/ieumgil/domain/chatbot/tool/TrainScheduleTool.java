@@ -3,16 +3,13 @@ package com.ssafy.ieumgil.domain.chatbot.tool;
 import com.ssafy.ieumgil.domain.transit.dto.TransitScheduleResDTO;
 import com.ssafy.ieumgil.domain.transit.service.TrainScheduleProvider;
 import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.tool.annotation.Tool;
 import org.springframework.stereotype.Component;
 
-import java.util.Comparator;
 import java.util.List;
 
 @Component
 @RequiredArgsConstructor
-@Slf4j
 public class TrainScheduleTool {
 
     private final TrainScheduleProvider trainScheduleProvider;
@@ -24,14 +21,8 @@ public class TrainScheduleTool {
             Returns up to 10 entries sorted by earliest departure time.
             """)
     public List<TransitScheduleResDTO.TrainSchedule> getTrainSchedule(String departureName, String arrivalName) {
-        try {
-            return trainScheduleProvider.findSchedule(departureName, arrivalName).stream()
-                    .sorted(Comparator.comparing(TransitScheduleResDTO.TrainSchedule::departureTime))
-                    .limit(10)
-                    .toList();
-        } catch (RuntimeException e) {
-            log.warn("train schedule tool call failed: {} -> {}", departureName, arrivalName, e);
-            return List.of();
-        }
+        return ScheduleToolSupport.topByDepartureTime(departureName, arrivalName,
+                () -> trainScheduleProvider.findSchedule(departureName, arrivalName),
+                TransitScheduleResDTO.TrainSchedule::departureTime, "train");
     }
 }

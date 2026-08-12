@@ -54,40 +54,26 @@ public class KakaoPlaceSearchTool {
             // 실패를 빈 목록으로 삼키면 모델이 "이 지역엔 없어요"로 오인한다. 실패 신호를
             // 그대로 올려 Spring AI가 tool 결과로 모델에 전달하게 한다(호출 abort는 아님).
             log.warn("place search tool call failed for keyword={}", keyword, e);
-            throw new IllegalStateException(
-                    "Place search failed due to an internal error. Do not claim there are no matching places; tell the user the search could not be completed and to try again.", e);
+            throw new IllegalStateException(PlaceSearchSupport.SEARCH_FAILURE_MESSAGE, e);
         }
     }
 
     /**
-     * 0건이면 검색어를 바꿔 재시도한다 — 카카오는 수식어가 붙은 서술구에 0건을 준다.
-     * 후보는 붙여쓰기 → 오른쪽 단일 토큰 순이다({@link KeywordFallback}).
-     *
-     * <p>축약 대상은 {@code keyword} 뿐이고 목적지 접두사 규칙은 그대로다 — 폴백 질의도
-     * 앵커가 없으면 {@code 목적지 + " " + 축약키워드}다. 목적지 문자열 자체를 잘라내면
-     * 엉뚱한 지역이 나온다. 첫 비-empty에서 멈추고, 전부 0건이면 예전처럼 빈 목록이다.
-     * 예외는 폴백 대상이 아니다(0건과 실패는 다른 신호다).
+     * 축약 대상은 {@code keyword} 뿐이고 목적지 접두사 규칙은 그대로다 — 폴백 질의도 앵커가 없으면
+     * {@code 목적지 + " " + 축약키워드}다. 목적지 문자열 자체를 잘라내면 엉뚱한 지역이 나온다.
+     * 공통 폴백 루프는 {@link PlaceSearchSupport}가 담고, 여기서는 접두·좌표만 씌운다.
      */
     private List<PlaceResDTO.Place> searchWithKeywordFallback(String keyword, Optional<PlaceResDTO.Place> anchor) {
         Double lat = anchor.map(PlaceResDTO.Place::lat).orElse(null);
         Double lng = anchor.map(PlaceResDTO.Place::lng).orElse(null);
         boolean anchored = anchor.isPresent();
 
-        List<PlaceResDTO.Place> found = placeQueryService.searchPlaces(queryFor(keyword, anchored), lat, lng);
-        if (!found.isEmpty()) {
-            return found;
-        }
-        for (String candidate : KeywordFallback.candidatesFor(keyword)) {
-            String retryQuery = queryFor(candidate, anchored);
-            List<PlaceResDTO.Place> retried = placeQueryService.searchPlaces(retryQuery, lat, lng);
-            if (!retried.isEmpty()) {
+        return PlaceSearchSupport.searchWithKeywordFallback(
+                keyword,
+                k -> placeQueryService.searchPlaces(queryFor(k, anchored), lat, lng),
                 // 운영에서 이 폴백이 얼마나 자주 도는지 봐야 한다
-                log.info("장소 검색 0건 — 검색어 폴백 성공: '{}' -> '{}' ({}건)",
-                        queryFor(keyword, anchored), retryQuery, retried.size());
-                return retried;
-            }
-        }
-        return found;
+                (kw, candidate, count) -> log.info("장소 검색 0건 — 검색어 폴백 성공: '{}' -> '{}' ({}건)",
+                        queryFor(kw, anchored), queryFor(candidate, anchored), count));
     }
 
     /**
