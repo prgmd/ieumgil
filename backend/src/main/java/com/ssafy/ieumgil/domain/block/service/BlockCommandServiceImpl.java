@@ -10,7 +10,6 @@ import com.ssafy.ieumgil.domain.block.entity.VehicleFlag;
 import com.ssafy.ieumgil.domain.block.exception.BlockErrorCode;
 import com.ssafy.ieumgil.domain.block.repository.BlockRepository;
 import com.ssafy.ieumgil.domain.project.entity.Project;
-import com.ssafy.ieumgil.domain.project.exception.ProjectErrorCode;
 import com.ssafy.ieumgil.domain.project.repository.ProjectRepository;
 import com.ssafy.ieumgil.domain.user.repository.UserRepository;
 import com.ssafy.ieumgil.global.exception.CustomException;
@@ -57,8 +56,7 @@ public class BlockCommandServiceImpl implements BlockCommandService {
             throw new CustomException(BlockErrorCode.VEHICLE_FLAG_NOT_ALLOWED);
         }
 
-        Project project = projectRepository.findByIdAndDeletedAtIsNull(projectId)
-                .orElseThrow(() -> new CustomException(ProjectErrorCode.PROJECT_NOT_FOUND));
+        Project project = projectRepository.findAliveByIdOrThrow(projectId);
 
         String orderKey = request.orderKey() != null
                 ? request.orderKey()

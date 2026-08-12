@@ -67,9 +67,7 @@ public class GroupMemberAspect {
 
             case PROJECT_ID -> {
                 Long projectId = findLongArgument(joinPoint, PROJECT_ID_PARAM);
-                yield projectRepository.findByIdAndDeletedAtIsNull(projectId)
-                        .orElseThrow(() -> new CustomException(
-                                com.ssafy.ieumgil.domain.project.exception.ProjectErrorCode.PROJECT_NOT_FOUND))
+                yield projectRepository.findAliveByIdOrThrow(projectId)
                         .getTravelGroup()
                         .getId();
             }

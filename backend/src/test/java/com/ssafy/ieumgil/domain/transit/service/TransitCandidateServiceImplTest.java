@@ -27,6 +27,7 @@ import com.ssafy.ieumgil.global.exception.CustomException;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.Answers;
 import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
@@ -62,7 +63,9 @@ class TransitCandidateServiceImplTest {
 
     @Mock
     private BlockRepository blockRepository;
-    @Mock
+    // 리포지토리의 default 메서드(findAliveByIdOrThrow)를 목이 실제로 실행하도록 한다.
+    // 런타임 Spring Data 프록시와 동일하게, 내부에서 findByIdAndDeletedAtIsNull 스텁을 그대로 탄다.
+    @Mock(answer = Answers.CALLS_REAL_METHODS)
     private ProjectRepository projectRepository;
     @Mock
     private PlaceQueryService placeQueryService;

@@ -1,6 +1,8 @@
 package com.ssafy.ieumgil.domain.group.repository;
 
 import com.ssafy.ieumgil.domain.group.entity.TravelGroup;
+import com.ssafy.ieumgil.domain.group.exception.GroupErrorCode;
+import com.ssafy.ieumgil.global.exception.CustomException;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -15,6 +17,12 @@ public interface TravelGroupRepository extends JpaRepository<TravelGroup, Long> 
 
     /** 소프트 삭제되지 않은 그룹만 조회. 삭제된 그룹은 없는 것으로 취급한다. */
     Optional<TravelGroup> findByIdAndDeletedAtIsNull(Long id);
+
+    /** 살아 있는 그룹을 가져오거나 404(GROUP_NOT_FOUND)를 던진다. 서비스에 복붙되던 관용구를 한곳으로 모은다. */
+    default TravelGroup findAliveByIdOrThrow(Long id) {
+        return findByIdAndDeletedAtIsNull(id)
+                .orElseThrow(() -> new CustomException(GroupErrorCode.GROUP_NOT_FOUND));
+    }
 
     /** GroupMemberAspect의 존재 확인용. 엔티티가 필요 없으니 exists로 가볍게 */
     boolean existsByIdAndDeletedAtIsNull(Long id);

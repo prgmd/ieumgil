@@ -1,6 +1,8 @@
 package com.ssafy.ieumgil.domain.project.repository;
 
 import com.ssafy.ieumgil.domain.project.entity.Project;
+import com.ssafy.ieumgil.domain.project.exception.ProjectErrorCode;
+import com.ssafy.ieumgil.global.exception.CustomException;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -26,6 +28,12 @@ public interface ProjectRepository extends JpaRepository<Project, Long> {
 
     /** 삭제되지 않은 프로젝트만 조회 */
     Optional<Project> findByIdAndDeletedAtIsNull(Long id);
+
+    /** 살아 있는 프로젝트를 가져오거나 404(PROJECT_NOT_FOUND)를 던진다. 서비스·AOP에 흩어진 관용구를 한곳으로 모은다. */
+    default Project findAliveByIdOrThrow(Long id) {
+        return findByIdAndDeletedAtIsNull(id)
+                .orElseThrow(() -> new CustomException(ProjectErrorCode.PROJECT_NOT_FOUND));
+    }
 
     /** 그룹의 프로젝트 카드 목록. 최근 만든 것이 위로 온다 */
     List<Project> findByTravelGroupIdAndDeletedAtIsNullOrderByIdDesc(Long travelGroupId);

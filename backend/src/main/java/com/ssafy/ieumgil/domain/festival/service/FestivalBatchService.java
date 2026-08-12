@@ -161,10 +161,18 @@ public class FestivalBatchService {
         Double lng = item.mapx() == null || item.mapx().isBlank() ? null : Double.parseDouble(item.mapx());
         String addr = (item.addr1() == null ? "" : item.addr1())
                 + (item.addr2() == null || item.addr2().isBlank() ? "" : " " + item.addr2());
-        String homepage = fetchHomepageQuietly(item.contentid());
 
         Festival festival = festivalRepository.findByContentId(item.contentid())
                 .orElseGet(() -> Festival.builder().contentId(item.contentid()).build());
+
+        // 이미 저장된 homepage가 있으면 상세 HTTP를 다시 부르지 않는다. 야간 sync가 매번 전량(~209건)
+        // 상세를 조회하던 낭비를 없애, 정상 상태에서는 신규 축제(대개 몇 건)만 상세를 조회한다.
+        // 아직 homepage가 없는 축제(신규 또는 지난번 상세 조회 실패분)만 조회해 채운다.
+        String homepage = festival.getHomepage();
+        if (homepage == null || homepage.isBlank()) {
+            homepage = fetchHomepageQuietly(item.contentid());
+        }
+
         festival.update(item.title(), item.lclsSystm2(), item.lDongRegnCd(), item.lDongSignguCd(),
                 addr, lat, lng, eventStartDate, eventEndDate, item.firstimage(), homepage);
         festivalRepository.save(festival);

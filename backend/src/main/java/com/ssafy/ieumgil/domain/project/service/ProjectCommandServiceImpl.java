@@ -3,7 +3,6 @@ package com.ssafy.ieumgil.domain.project.service;
 import com.ssafy.ieumgil.domain.block.entity.Block;
 import com.ssafy.ieumgil.domain.block.repository.BlockRepository;
 import com.ssafy.ieumgil.domain.group.entity.TravelGroup;
-import com.ssafy.ieumgil.domain.group.exception.GroupErrorCode;
 import com.ssafy.ieumgil.domain.group.repository.TravelGroupRepository;
 import com.ssafy.ieumgil.domain.project.converter.ProjectConverter;
 import com.ssafy.ieumgil.domain.project.dto.ProjectReqDTO;
@@ -36,7 +35,7 @@ public class ProjectCommandServiceImpl implements ProjectCommandService {
     /** 프로젝트 생성 (PRJ-01). 대시보드가 아직 열리기 전이라 op는 발행하지 않는다 */
     @Override
     public ProjectResDTO.Created createProject(Long userId, Long groupId, ProjectReqDTO.Create request) {
-        TravelGroup group = getGroup(groupId);
+        TravelGroup group = travelGroupRepository.findAliveByIdOrThrow(groupId);
 
         validateDateRange(request.startDate(), request.endDate());
 
@@ -174,14 +173,8 @@ public class ProjectCommandServiceImpl implements ProjectCommandService {
     }
 
     /** 존재 확인·멤버십은 컨트롤러의 @GroupMember가 끝냈다. 여기서는 엔티티만 가져온다 */
-    private TravelGroup getGroup(Long groupId) {
-        return travelGroupRepository.findByIdAndDeletedAtIsNull(groupId)
-                .orElseThrow(() -> new CustomException(GroupErrorCode.GROUP_NOT_FOUND));
-    }
-
     private Project getProject(Long projectId) {
-        return projectRepository.findByIdAndDeletedAtIsNull(projectId)
-                .orElseThrow(() -> new CustomException(ProjectErrorCode.PROJECT_NOT_FOUND));
+        return projectRepository.findAliveByIdOrThrow(projectId);
     }
 
     private void validateDateRange(LocalDate startDate, LocalDate endDate) {

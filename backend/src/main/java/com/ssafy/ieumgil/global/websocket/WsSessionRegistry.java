@@ -73,11 +73,6 @@ public class WsSessionRegistry {
         return memberBySession.get(sessionId);
     }
 
-    public boolean isOnline(Long memberId) {
-        Set<String> sessions = sessionsByMember.get(memberId);
-        return sessions != null && !sessions.isEmpty();
-    }
-
     /**
      * 이 멤버의 WS 세션을 전부 끊는다 (그룹 탈퇴·회원 탈퇴 — GRP-09).
      *

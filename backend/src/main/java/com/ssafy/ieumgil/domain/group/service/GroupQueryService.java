@@ -8,5 +8,5 @@ public interface GroupQueryService {
 
     List<GroupResDTO.Summary> getMyGroups(Long userId);
 
-    GroupResDTO.MemberList getMembers(Long userId, Long groupId);
+    GroupResDTO.MemberList getMembers(Long groupId);
 }
