@@ -23,6 +23,8 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Set;
 
+import static com.ssafy.ieumgil.global.realtime.OpPayloads.payloadWithNullable;
+
 @Service
 @RequiredArgsConstructor
 @Transactional
@@ -229,15 +231,6 @@ public class BlockCommandServiceImpl implements BlockCommandService {
     private Map<String, Object> toPayloadMap(Block block) {
         @SuppressWarnings("unchecked")
         Map<String, Object> map = objectMapper.convertValue(BlockConverter.toItem(block), Map.class);
-        return map;
-    }
-
-    /** Map.of는 null 값을 거부하므로(startOffsetMinutes null = POOL 이동) 직접 담는다 */
-    private static Map<String, Object> payloadWithNullable(Object... kv) {
-        Map<String, Object> map = new LinkedHashMap<>();
-        for (int i = 0; i < kv.length; i += 2) {
-            map.put((String) kv[i], kv[i + 1]);
-        }
         return map;
     }
 }

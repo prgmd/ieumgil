@@ -18,9 +18,10 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
 import java.time.temporal.ChronoUnit;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+
+import static com.ssafy.ieumgil.global.realtime.OpPayloads.payloadWithNullable;
 
 @Service
 @RequiredArgsConstructor
@@ -66,16 +67,16 @@ public class ProjectCommandServiceImpl implements ProjectCommandService {
 
         List<Long> movedToPool = moveOutOfRangeBlocksToPool(project, startDate, endDate);
 
-        Map<String, Object> payload = new HashMap<>();
-        payload.put("projectId", projectId);
-        payload.put("name", project.getName());
-        payload.put("startDate", project.getStartDate() != null ? project.getStartDate().toString() : null);
-        payload.put("endDate", project.getEndDate() != null ? project.getEndDate().toString() : null);
-        payload.put("destination", project.getDestination());
-        payload.put("movedToPool", movedToPool);
-        payload.put("transportPrefs", project.getTransportPrefs() == null
-                ? List.of()
-                : project.getTransportPrefs().stream().map(Enum::name).toList());
+        Map<String, Object> payload = payloadWithNullable(
+                "projectId", projectId,
+                "name", project.getName(),
+                "startDate", project.getStartDate() != null ? project.getStartDate().toString() : null,
+                "endDate", project.getEndDate() != null ? project.getEndDate().toString() : null,
+                "destination", project.getDestination(),
+                "movedToPool", movedToPool,
+                "transportPrefs", project.getTransportPrefs() == null
+                        ? List.of()
+                        : project.getTransportPrefs().stream().map(Enum::name).toList());
         opPublisher.publish(projectId, userId, clientId, "PROJECT_UPDATED", payload);
 
         return ProjectConverter.toUpdated(project, movedToPool);
@@ -101,10 +102,10 @@ public class ProjectCommandServiceImpl implements ProjectCommandService {
 
         project.changeStatus(request.status());
 
-        Map<String, Object> payload = new HashMap<>();
-        payload.put("projectId", projectId);
-        payload.put("status", project.getStatus().name());
-        payload.put("doneAt", project.getDoneAt() != null ? project.getDoneAt().toString() : null);
+        Map<String, Object> payload = payloadWithNullable(
+                "projectId", projectId,
+                "status", project.getStatus().name(),
+                "doneAt", project.getDoneAt() != null ? project.getDoneAt().toString() : null);
         opPublisher.publish(projectId, userId, clientId, "PROJECT_STATUS_CHANGED", payload);
 
         return ProjectResDTO.StatusChanged.builder()
@@ -121,9 +122,9 @@ public class ProjectCommandServiceImpl implements ProjectCommandService {
 
         project.changeBudgetHeadcount(request.headcount());
 
-        Map<String, Object> payload = new HashMap<>();
-        payload.put("projectId", projectId);
-        payload.put("budgetHeadcount", project.getBudgetHeadcount());   // null 그대로 — 연동 복귀 신호
+        Map<String, Object> payload = payloadWithNullable(
+                "projectId", projectId,
+                "budgetHeadcount", project.getBudgetHeadcount());   // null 그대로 — 연동 복귀 신호
         opPublisher.publish(projectId, userId, clientId, "BUDGET_HEADCOUNT_CHANGED", payload);
 
         return ProjectResDTO.HeadcountChanged.builder()
@@ -139,9 +140,9 @@ public class ProjectCommandServiceImpl implements ProjectCommandService {
 
         project.updateBudget(request.targetBudget());
 
-        Map<String, Object> payload = new HashMap<>();
-        payload.put("projectId", projectId);
-        payload.put("targetBudget", project.getTargetBudget());   // null 그대로 — 예산 해제 신호
+        Map<String, Object> payload = payloadWithNullable(
+                "projectId", projectId,
+                "targetBudget", project.getTargetBudget());   // null 그대로 — 예산 해제 신호
         opPublisher.publish(projectId, userId, clientId, "TARGET_BUDGET_CHANGED", payload);
 
         return ProjectResDTO.BudgetChanged.builder()
