@@ -80,3 +80,38 @@ export const transitRouteSummary = (item) => {
   // 좌표만 있고 경로 상세가 없는 수단(택시·자가용·도보)
   return chosen.label ? { text: chosen.label, transfers: null } : null;
 };
+
+// 고른 편 기준 door-to-door 소요 — 접근 + 대기 + 시외(+ 환승 + 연결편) + 이탈.
+// 후보의 durationMin 도 door-to-door 지만 대표 편(첫 편) 기준이라 다른 편을 고르면
+// 맞지 않고, 편의 durationMin 은 시외 leg 하나만의 소요다(환승이면 첫 leg 만).
+// 교통 블록은 앞 블록이 끝나는 순간부터 시작하므로(startMins = 앞 블록 끝) 접근도 포함한다.
+// 조각이 하나라도 없으면 null 이다 — 고속버스 시간표는 소요를 주지 않을 수 있고,
+// 빠진 조각을 0 으로 채우면 실제보다 짧은 소요가 일정에 박힌다.
+export const doorToDoorDurOf = (candidate, departure) => {
+  if (!departure) return null;
+  const conn = departure.connection;
+  const parts = [
+    candidate?.accessMin,
+    departure.waitMin,
+    departure.durationMin,
+    ...(conn ? [conn.transferMin, conn.durationMin] : []),
+    candidate?.egressMin,
+  ];
+  return parts.some((v) => v == null)
+    ? null
+    : parts.reduce((sum, v) => sum + v, 0);
+};
+
+// 블록에 반영할 소요·비용 — 시외는 고른 출발편 기준 door-to-door 가 후보 대표값보다
+// 정확하다. 계산할 수 없으면(시내 후보·시간표 미적용·조각 누락) 예전대로 편/후보의
+// 값을 쓴다. 소요 10분 미만은 카드가 안 잡힌다.
+export const transitDurOf = (candidate, departure) =>
+  Math.max(
+    10,
+    doorToDoorDurOf(candidate, departure) ??
+      departure?.durationMin ??
+      candidate?.durationMin ??
+      10,
+  );
+export const transitCostOf = (candidate, departure) =>
+  departure?.fare ?? departure?.fareOptions?.general ?? candidate?.fare ?? 0;

@@ -12,7 +12,6 @@ import { RemoteCursorLayer } from "./components/RemoteCursorLayer";
 import { TransitPickerModals } from "./components/TransitPickerModals";
 import { VoiceBar } from "./components/VoiceBar";
 import { DayTab } from "./components/DayTab";
-import { buildTransportMeta } from "./transitMeta";
 import { CardBody } from "./components/CardBody";
 import { HintIcon } from "./components/HintIcon";
 import { TimelineCard } from "./components/TimelineCard";
@@ -41,6 +40,8 @@ import {
 import { useKakaoMap } from "./hooks/useKakaoMap";
 import { useDayNav } from "./hooks/useDayNav";
 import { useBudget } from "./hooks/useBudget";
+import { useBlockCrud } from "./hooks/useBlockCrud";
+import { useTransitPicker } from "./hooks/useTransitPicker";
 import {
   DndContext,
   DragOverlay,
@@ -55,7 +56,13 @@ import {
   sortableKeyboardCoordinates,
   rectSortingStrategy,
 } from "@dnd-kit/sortable";
-import { generateKeyBetween } from "fractional-indexing";
+import {
+  safeKeyBetween,
+  neighborKeysAround,
+  insertByOrderKey,
+  resolveOverlaps,
+  persistMovedOffsets,
+} from "./boardOrdering";
 import { AppBar } from "../My/shared/ui/AppBar";
 import Modal from "../My/shared/ui/Modal";
 import EditProjectModal from "../Group/components/EditProjectModal";
@@ -86,180 +93,6 @@ const SNAP = 1;
 // 소요시간 상한(분) — 서버 검증(@Max(1440)·MAX_DURATION_MIN)과 같은 값을 유지해야 한다
 const MAX_DUR = 1440;
 const TL_PAD_LEFT = 92;
-
-// 고른 편 기준 door-to-door 소요 — 접근 + 대기 + 시외(+ 환승 + 연결편) + 이탈.
-// 후보의 durationMin 도 door-to-door 지만 대표 편(첫 편) 기준이라 다른 편을 고르면
-// 맞지 않고, 편의 durationMin 은 시외 leg 하나만의 소요다(환승이면 첫 leg 만).
-// 교통 블록은 앞 블록이 끝나는 순간부터 시작하므로(startMins = 앞 블록 끝) 접근도 포함한다.
-// 조각이 하나라도 없으면 null 이다 — 고속버스 시간표는 소요를 주지 않을 수 있고,
-// 빠진 조각을 0 으로 채우면 실제보다 짧은 소요가 일정에 박힌다.
-const doorToDoorDurOf = (candidate, departure) => {
-  if (!departure) return null;
-  const conn = departure.connection;
-  const parts = [
-    candidate?.accessMin,
-    departure.waitMin,
-    departure.durationMin,
-    ...(conn ? [conn.transferMin, conn.durationMin] : []),
-    candidate?.egressMin,
-  ];
-  return parts.some((v) => v == null)
-    ? null
-    : parts.reduce((sum, v) => sum + v, 0);
-};
-
-// 블록에 반영할 소요·비용 — 시외는 고른 출발편 기준 door-to-door 가 후보 대표값보다
-// 정확하다. 계산할 수 없으면(시내 후보·시간표 미적용·조각 누락) 예전대로 편/후보의
-// 값을 쓴다. 소요 10분 미만은 카드가 안 잡힌다.
-const transitDurOf = (candidate, departure) =>
-  Math.max(
-    10,
-    doorToDoorDurOf(candidate, departure) ??
-      departure?.durationMin ??
-      candidate?.durationMin ??
-      10,
-  );
-const transitCostOf = (candidate, departure) =>
-  departure?.fare ?? departure?.fareOptions?.general ?? candidate?.fare ?? 0;
-
-/**
- * 중복 orderKey 에 견디는 키 생성 (QA: 블록 이동 시 ">=" 오류 픽스).
- * 삭제 복구(원래 키 재사용)·동시 생성 등으로 이웃 블록의 키가 같아질 수 있는데,
- * fractional-indexing 은 before >= after 면 "a1 >= a1" 을 던지고 그게 토스트로
- * 새어 나왔다. 경계가 모순이면 한쪽 경계를 버리고 다시 만든다 — 그 상태에선
- * 상대 순서가 어차피 애매해서 서버의 (order_key, id) 동점 규칙이 순서를 정한다.
- */
-const safeKeyBetween = (before, after) => {
-  try {
-    return generateKeyBetween(before, after);
-  } catch {
-    try {
-      return generateKeyBetween(before, null);
-    } catch {
-      try {
-        return generateKeyBetween(null, after);
-      } catch {
-        return generateKeyBetween(null, null);
-      }
-    }
-  }
-};
-
-/**
- * 최종 목록에서 pos 위치 블록의 양옆 orderKey 경계를 찾는다.
- * auto- 같은 로컬 전용 블록은 서버에 없어 orderKey 가 없으므로 건너뛰고
- * 가장 가까운 서버 블록의 키를 경계로 쓴다. 끝이면 null(개방 경계).
- */
-const neighborKeysAround = (finalList, pos, itemsMap) => {
-  let before = null;
-  for (let i = pos - 1; i >= 0; i -= 1) {
-    const id = finalList[i];
-    if (isServerBlock(id) && itemsMap[id]?.orderKey != null) {
-      before = itemsMap[id].orderKey;
-      break;
-    }
-  }
-  let after = null;
-  for (let i = pos + 1; i < finalList.length; i += 1) {
-    const id = finalList[i];
-    if (isServerBlock(id) && itemsMap[id]?.orderKey != null) {
-      after = itemsMap[id].orderKey;
-      break;
-    }
-  }
-  return [before, after];
-};
-
-/**
- * orderKey 정렬 위치에 블록을 삽입한 새 배열 (원격 op 적용용).
- * 로컬 전용 블록(auto- 등, orderKey 없음)은 비교에서 건너뛴다 — 서버 블록들
- * 사이의 상대 위치만 orderKey 가 정하고, 로컬 블록은 제자리를 유지한다.
- * 동점은 id 로 판정한다(ERD: ORDER BY order_key, id).
- */
-const insertByOrderKey = (list, itemsMap, block) => {
-  const without = list.filter((id) => id !== block.id);
-  const at = without.findIndex((id) => {
-    const other = itemsMap[id];
-    if (!isServerBlock(id) || other?.orderKey == null) return false;
-    if (other.orderKey > block.orderKey) return true;
-    return (
-      other.orderKey === block.orderKey && Number(other.id) > Number(block.id)
-    );
-  });
-  without.splice(at === -1 ? without.length : at, 0, block.id);
-  return without;
-};
-
-/**
- * 겹침 해소(resolveOverlaps)로 밀린 체인 내 서버 블록들의 시작 오프셋을
- * position PATCH 로 저장한다 — 이웃도 시간축 위치가 바뀐 것이다.
- * 편집(3단계)·이동(5단계)·리사이즈가 공유한다 — 로컬만 밀면 새로고침 때
- * 이웃들이 옛 자리로 되돌아간다(명세 320행: 재계산 저장은 클라이언트 몫).
- * 서버 블록만 보낸다 — 임시 id 는 아직 서버 행이 없고 position 엔드포인트는
- * 비어 있지 않은 orderKey 를 요구한다.
- */
-const persistMovedOffsets = (chainIds, prevItems, nextItems, excludeId) => {
-  const shifted = (chainIds ?? []).filter(
-    (id) =>
-      id !== excludeId &&
-      isServerBlock(id) &&
-      nextItems[id]?.startMins != null &&
-      nextItems[id].startMins !== prevItems[id]?.startMins,
-  );
-  // 순서(orderKey)는 그대로 다시 보낸다 — 바뀐 건 시간축 위치뿐이다
-  return Promise.all(
-    shifted.map((id) =>
-      blockApi.moveBlock(id, {
-        startOffsetMinutes: nextItems[id].startMins,
-        orderKey: nextItems[id].orderKey,
-      }),
-    ),
-  );
-};
-
-/**
- * 보드 위 블록들의 겹침을 해소한다. 시각은 모두 절대 오프셋(Day 1 00:00 기준 분)이라
- * 겹치지 않는 블록은 제자리에 두고(공백 보존), 겹치는 블록만 앞 블록 끝까지 뒤로 민다.
- * fixedId 가 있으면 그 블록만 고정하고 나머지가 비켜난다.
- *
- * boardChain 은 보드 전체다 — Day 별로 나눠 돌리지 않는다. 축이 여행 한 줄이고
- * 오프셋 하나가 Day 와 그 안의 시각을 함께 가리키므로, Day 경계는 해소가 알아야
- * 할 것이 아니다. 자정을 넘겨 이어지는 블록도 그냥 목록 안의 앞 블록이다.
- *
- * 밀림은 Math.max(lastEnd, startMins) 하나로 끝난다 — 겹치지 않는 블록을 만나면
- * 그 블록은 제자리에 남고 lastEnd 가 그 자리로 갱신되므로, 전파가 첫 공백에서
- * 저절로 멈춘다. 밤마다 여덟 시간짜리 공백이 있으니 Day 를 넘는 밀림은 그 Day 가
- * 자정까지 꽉 찼을 때뿐이다.
- */
-const resolveOverlaps = (currentItems, boardChain, fixedId) => {
-  let newItems = { ...currentItems };
-  const others = boardChain.filter((id) => id !== fixedId);
-  others.sort((a, b) => newItems[a].startMins - newItems[b].startMins);
-
-  const fixedStart = fixedId ? newItems[fixedId].startMins : -1;
-  const fixedEnd = fixedId ? fixedStart + newItems[fixedId].dur : -1;
-
-  // 보드의 바닥은 여행 첫 Day 의 00:00 = 0 이다. Day 별 바닥(자정을 넘어온 블록의
-  // 끝)이라는 개념은 없어졌다 — 그 블록이 이미 이 목록 안의 앞 블록이라 lastEnd 가
-  // 같은 일을 Day 경계 없이 한다.
-  let lastEnd = 0;
-
-  others.forEach((id) => {
-    let start = Math.max(lastEnd, newItems[id].startMins);
-    if (fixedId) {
-      let end = start + newItems[id].dur;
-      if (start < fixedEnd && end > fixedStart)
-        start = Math.max(start, fixedEnd);
-    }
-    newItems[id] = { ...newItems[id], startMins: start };
-    lastEnd = start + newItems[id].dur;
-  });
-
-  const newChain = [...boardChain].sort(
-    (a, b) => newItems[a].startMins - newItems[b].startMins,
-  );
-  return { newItems, newChain };
-};
 
 export function DashboardPage() {
   const { groupId } = useParams();
@@ -561,7 +394,6 @@ export function DashboardPage() {
   const [activeId, setActiveId] = useState(null);
   const [resizingState, setResizingState] = useState(null);
   const [dragPreview, setDragPreview] = useState(null);
-  const [isGeneratingTransport, setIsGeneratingTransport] = useState(false);
 
   const {
     initMapOnContainer,
@@ -693,388 +525,34 @@ export function DashboardPage() {
     setPool((prev) => prev.map((id) => (id === tempId ? blockId : id)));
   }, []);
 
-  // ── Day 전체 자동 생성 = 두 단계: ① 전 구간 후보 조회 → 통합 모달,
-  //    ② 구간별 선택 적용 → 일괄 생성 ──
-  // choices: "from-to" → 선택한 후보(null = 그 구간 제외)
-  const [bulkTransitPicker, setBulkTransitPicker] = useState(null); // {dayKey, segments, choices}
-
-  const regenerateAutoTransport = useCallback(
-    async (dayKey) => {
-      if (isGeneratingTransport || bulkTransitPicker) return;
-      const dayIds = blocksOfDay(board, items, dayKey);
-      // 서버 계산 대상 = 그 Day 의 실블록(서버 id 보유)만. 저장 중(임시 id)·자동 생성분 제외
-      const realIds = dayIds.filter(
-        (id) => !items[id]?.auto && isServerBlock(id),
-      );
-      if (realIds.length < 2) return;
-
-      setIsGeneratingTransport(true);
-      try {
-        // 모든 연속 구간의 후보를 한 번의 호출로 받는다.
-        // 서버는 블록을 만들지 않는다 — 생성은 모달에서 적용을 눌러야(confirmBulkTransit).
-        // 출발편 기준 시각은 서버가 구간마다 from 블록의 시각에서 직접 구한다(응답의 referenceAt).
-        const { segments = [] } = await blockApi.calculateTransitCandidates(
-          projectId,
-          realIds,
-        );
-        if (!segments.some((s) => s.candidates?.some((c) => c.status === "OK"))) {
-          showToast("이동 가능한 경로를 찾지 못했어요.");
-          return;
-        }
-        // 구간별 초기 선택 = 서버 추천(defaultMode) → 첫 이용 가능 후보 → 제외(null)
-        // defaultMode 가 null 이면(교통수단 선호 둘 다 선택) 자동 선택하지 않는다 —
-        // choices 에 키를 아예 넣지 않는다(= "제외"와 구분되는 "미선택" 상태),
-        // 사용자가 카드에서 직접 골라야 한다.
-        // choices[pairKey] = {candidate, departure} | null(제외) | undefined(미선택)
-        // — departure 는 시외에서 고른 편(시내면 null), candidate 의 첫 편으로 초기화한다.
-        const choices = {};
-        segments.forEach((s) => {
-          if (s.defaultMode == null) return;
-          const initial =
-            s.candidates?.find(
-              (c) => c.mode === s.defaultMode && c.status === "OK",
-            ) ??
-            s.candidates?.find((c) => c.status === "OK") ??
-            null;
-          choices[`${s.fromBlockId}-${s.toBlockId}`] = initial
-            ? { candidate: initial, departure: initial.departures?.[0] ?? null }
-            : null;
-        });
-        setBulkTransitPicker({ dayKey, segments, choices });
-      } catch (e) {
-        showToast(
-          e?.message ?? "이동수단을 계산하지 못했어요. 잠시 후 다시 시도해주세요.",
-        );
-      } finally {
-        setIsGeneratingTransport(false);
-      }
-    },
-    [
-      isGeneratingTransport,
-      bulkTransitPicker,
-      board,
-      items,
-      projectId,
-      showToast,
-    ],
-  );
-
-  // 통합 모달에서 구간 하나의 선택을 바꾼다 (choice = null 이면 그 구간 제외)
-  const setBulkChoice = (pairKey, choice) => {
-    setBulkTransitPicker((prev) =>
-      prev ? { ...prev, choices: { ...prev.choices, [pairKey]: choice } } : prev,
-    );
-  };
-
-  // "적용" — 구간별 선택대로 이 Day 의 교통 블록을 일괄 재생성한다.
-  // 재생성 = 기존 자동 생성분을 지우고 새로 만든다. 삭제 대상은 체인 소속으로
-  // 한정한다 — 팀원이 직접 만든 교통 블록(auto 아님)은 건드리지 않는다.
-  const confirmBulkTransit = useCallback(
-    async () => {
-      const picker = bulkTransitPicker;
-      if (!picker) return;
-      const { dayKey, choices, segments } = picker;
-      const segmentOf = (fromId, toId) =>
-        segments.find((s) => s.fromBlockId === fromId && s.toBlockId === toId);
-
-      // 모달이 열린 사이 보드가 바뀌었을 수 있다(협업) — 지금 보드를 기준으로
-      // 다시 훑고, 더 이상 인접하지 않은 구간의 선택은 자연히 버려진다(pair 키 불일치)
-      const dayIds = blocksOfDay(board, items, dayKey);
-      const realIds = dayIds.filter(
-        (id) => !items[id]?.auto && isServerBlock(id),
-      );
-      const oldAutoIds = dayIds.filter((id) => items[id]?.auto);
-      if (realIds.length < 2) {
-        setBulkTransitPicker(null);
-        return;
-      }
-
-      setIsGeneratingTransport(true);
-      try {
-        let newItems = { ...items };
-        oldAutoIds.forEach((id) => delete newItems[id]);
-
-        // 해소는 보드 전체를 훑는다 — 이 Day 의 교통 블록이 뒤를 밀면 다음 Day 의
-        // 블록까지 밀릴 수 있으므로 목록도 보드 전체여야 한다. 지운 자동 생성분을
-        // 빼고, 새 교통 블록은 앞 블록 바로 뒤에 끼운다 — 같은 시각(앞 블록의 끝)에
-        // 놓이는 다음 실블록보다 먼저 와야 그 실블록이 밀린다.
-        const rebuilt = board.filter((id) => !oldAutoIds.includes(id));
-        const createdLocalIds = [];
-        realIds.forEach((id, i) => {
-          if (i < realIds.length - 1) {
-            const chosen = choices[`${id}-${realIds[i + 1]}`];
-            if (chosen?.candidate?.status !== "OK") return; // 제외했거나 모르는 구간 — 만들지 않는다
-            const info = {
-              mode: chosen.candidate.label || chosen.candidate.mode,
-              dur: transitDurOf(chosen.candidate, chosen.departure),
-              cost: transitCostOf(chosen.candidate, chosen.departure),
-            };
-            const newId = `auto-${dayKey}-${id}-${i}`;
-            newItems[newId] = {
-              id: newId,
-              cat: "trans",
-              sub: info.mode,
-              name: `${newItems[id]?.name || ""} 다음 이동`,
-              address: "",
-              dur: info.dur,
-              cost: info.cost,
-              auto: true,
-              autoDay: dayKey,
-              startMins: newItems[id].startMins + newItems[id].dur,
-              transportMeta: buildTransportMeta(
-                segmentOf(id, realIds[i + 1]),
-                chosen.candidate,
-                chosen.departure,
-              ),
-            };
-            rebuilt.splice(rebuilt.indexOf(id) + 1, 0, newId);
-            createdLocalIds.push(newId);
-          }
-        });
-        // 만들 것도, 지울 것도 없으면 보드를 건드리지 않는다
-        if (createdLocalIds.length === 0 && oldAutoIds.length === 0) {
-          setBulkTransitPicker(null);
-          return;
-        }
-
-        const { newItems: resolvedItems, newChain } = resolveOverlaps(
-          newItems,
-          rebuilt,
-          null,
-        );
-
-        setBulkTransitPicker(null);
-
-        // 낙관 적용 — 교통 블록이 뒤를 밀어 24:00 을 넘겨도 그대로 둔다.
-        // 절대 오프셋에선 1440 을 넘긴 자리가 곧 다음 Day 다(쪼갤 게 없다).
-        setItems(resolvedItems);
-
-        // ── 서버 반영 (5.5단계): 기존 생성분 삭제 → 밀린 실블록 시각 저장 →
-        //    새 교통 블록 생성 → 로컬 임시 id 를 서버 blockId 로 교체 ──
-        try {
-          await Promise.all(
-            oldAutoIds
-              .filter(isServerBlock)
-              .map((id) => blockApi.deleteBlock(id)),
-          );
-
-          // 새 교통 블록은 아래에서 만든다 — persistMovedOffsets 의 서버 블록
-          // 필터가 로컬 임시 id 를 이미 걸러 준다
-          await persistMovedOffsets(newChain, items, resolvedItems, null);
-
-          for (const localId of createdLocalIds) {
-            const b = resolvedItems[localId];
-            if (!b) continue;
-            // 각 교통 블록의 경계는 양옆 실블록 — 아직 로컬인 다른 교통 블록은
-            // neighborKeysAround 가 건너뛴다
-            const [before, after] = neighborKeysAround(
-              newChain,
-              newChain.indexOf(localId),
-              resolvedItems,
-            );
-            const orderKey = safeKeyBetween(before, after);
-            // transportMeta 는 이미 buildTransportMeta 로 만들어 b 에 실려 있다(...b).
-            // adoptServerId 가 extra 로도 받도록 그 값을 그대로 넘긴다.
-            const transportMeta = b.transportMeta;
-            const created = await blockApi.createBlock(projectId, {
-              ...b,
-              orderKey,
-              transportMeta,
-            });
-            adoptServerId(localId, created.blockId, {
-              orderKey,
-              transportMeta,
-            });
-          }
-        } catch (e) {
-          rollbackToServer(e);
-        }
-      } finally {
-        setIsGeneratingTransport(false);
-      }
-    },
-    [
-      bulkTransitPicker,
-      board,
-      items,
-      projectId,
-      adoptServerId,
-      rollbackToServer,
-    ],
-  );
-
-  // ── 구간 "이동 추가" = 두 단계: ① 후보 조회 → 선택 모달, ② 선택 → 블록 생성 ──
-  // 어떤 수단으로 갈지는 사용자가 고른다 — 서버 추천(defaultMode)은 표시만 한다.
-  const [transitPicker, setTransitPicker] = useState(null); // {dayKey, currentId, nextId, segment, defaultMode, candidates, chosenCandidate, chosenDeparture}
-
-  const handleAddSingleTransport = useCallback(
-    async (dayKey, currentId, nextId) => {
-      if (isGeneratingTransport || transitPicker) return;
-
-      // 보드 소속 판정은 오프셋 하나다 — 시각이 없으면 후보(POOL)라 이을 구간이 없다
-      if (items[currentId]?.startMins == null) return;
-      // 서버 계산은 서버 블록 id 로만 가능하다 — 저장 중(임시 id)이면 잠시 뒤에
-      if (!isServerBlock(currentId) || !isServerBlock(nextId)) {
-        showToast("블록 저장이 끝난 뒤 다시 시도해주세요.");
-        return;
-      }
-
-      setIsGeneratingTransport(true);
-      try {
-        // 두 블록 사이 한 구간만 계산 — blockIds 에 그 둘만 넘긴다.
-        // 출발편 기준 시각은 서버가 from 블록의 시각에서 직접 구한다(응답의 referenceAt).
-        const { segments = [] } = await blockApi.calculateTransitCandidates(
-          projectId,
-          [currentId, nextId],
-        );
-        const segment = segments[0];
-        const candidates = segment?.candidates ?? [];
-        if (!candidates.some((c) => c.status === "OK")) {
-          showToast("두 장소 사이의 경로를 찾지 못했어요.");
-          return;
-        }
-        // defaultMode 가 null 이면(교통수단 선호 둘 다 선택) 자동 선택하지 않는다 —
-        // 사용자가 카드에서 직접 골라야 한다.
-        const initialCandidate =
-          segment.defaultMode == null
-            ? null
-            : candidates.find(
-                (c) => c.mode === segment.defaultMode && c.status === "OK",
-              ) ??
-              candidates.find((c) => c.status === "OK") ??
-              null;
-        // 생성하지 않고 선택 모달을 연다 — 생성은 confirmTransitChoice 가 한다
-        setTransitPicker({
-          dayKey,
-          currentId,
-          nextId,
-          segment,
-          defaultMode: segment.defaultMode,
-          candidates,
-          chosenCandidate: initialCandidate,
-          chosenDeparture: initialCandidate?.departures?.[0] ?? null,
-        });
-      } catch (e) {
-        showToast(
-          e?.message ?? "이동수단을 계산하지 못했어요. 잠시 후 다시 시도해주세요.",
-        );
-      } finally {
-        setIsGeneratingTransport(false);
-      }
-    },
-    [isGeneratingTransport, transitPicker, items, projectId, showToast],
-  );
-
-  // 피커에서 다른 후보/편을 고른다 (아직 생성하지 않는다 — confirmTransitChoice 가 한다)
-  const setTransitPickerCandidate = (c) => {
-    setTransitPicker((prev) =>
-      prev
-        ? { ...prev, chosenCandidate: c, chosenDeparture: c.departures?.[0] ?? null }
-        : prev,
-    );
-  };
-
-  // 선택 모달에서 "확인"을 누르면 그 구간에 교통 블록을 만든다 (기존 5.5단계 경로)
-  const confirmTransitChoice = useCallback(
-    async () => {
-      const picker = transitPicker;
-      setTransitPicker(null);
-      const chosen = picker?.chosenCandidate;
-      if (!picker || chosen?.status !== "OK") return;
-
-      const { dayKey, currentId } = picker;
-      // 해소는 보드 전체를 훑으므로 목록도 보드 전체다 — 새 교통 블록은 앞 블록
-      // 바로 뒤에 끼운다(같은 시각에 놓이는 다음 블록보다 먼저 와야 그쪽이 밀린다).
-      const currentChain = [...board];
-      const insertIdx = currentChain.indexOf(currentId);
-      // 모달이 열린 사이 보드가 바뀌었을 수 있다(협업) — 자리가 사라졌으면 중단
-      if (insertIdx === -1 || items[currentId]?.startMins == null) {
-        showToast("구간이 바뀌어 추가하지 못했어요. 다시 시도해주세요.");
-        return;
-      }
-
-      const info = {
-        mode: chosen.label || chosen.mode,
-        dur: transitDurOf(chosen, picker.chosenDeparture),
-        cost: transitCostOf(chosen, picker.chosenDeparture),
-      };
-
-      setIsGeneratingTransport(true);
-      try {
-        const newId = `auto-${dayKey}-${currentId}-${Date.now()}`;
-
-        let newItems = { ...items };
-        newItems[newId] = {
-          id: newId,
-          cat: "trans",
-          sub: info.mode,
-          name: `${items[currentId]?.name || "이전 장소"} 다음 이동`,
-          address: "",
-          dur: info.dur,
-          cost: info.cost,
-          auto: true,
-          autoDay: dayKey,
-          startMins: items[currentId].startMins + items[currentId].dur,
-          transportMeta: buildTransportMeta(
-            picker.segment,
-            chosen,
-            picker.chosenDeparture,
-          ),
-        };
-        currentChain.splice(insertIdx + 1, 0, newId);
-
-        const { newItems: resolvedItems, newChain } = resolveOverlaps(
-          newItems,
-          currentChain,
-          null,
-        );
-
-        // 낙관 적용 — 교통 블록이 뒤를 밀어 24:00 을 넘겨도 그대로 둔다.
-        // 절대 오프셋에선 1440 을 넘긴 자리가 곧 다음 Day 다(쪼갤 게 없다).
-        setItems(resolvedItems);
-
-        // ── 서버 반영 (5.5단계): 밀린 이웃 위치 저장 → 생성 → id 교체 ──
-        try {
-          // 새 교통 블록은 아래에서 만든다 — persistMovedOffsets 의 서버 블록
-          // 필터가 로컬 임시 id 를 이미 걸러 준다
-          await persistMovedOffsets(newChain, items, resolvedItems, null);
-
-          const b = resolvedItems[newId];
-          const [before, after] = neighborKeysAround(
-            newChain,
-            newChain.indexOf(newId),
-            resolvedItems,
-          );
-          const orderKey = safeKeyBetween(before, after);
-          // transportMeta 는 이미 buildTransportMeta 로 만들어 b 에 실려 있다(...b).
-          // adoptServerId 가 extra 로도 받도록 그 값을 그대로 넘긴다.
-          const transportMeta = b.transportMeta;
-          const created = await blockApi.createBlock(projectId, {
-            ...b,
-            orderKey,
-            transportMeta,
-          });
-          adoptServerId(newId, created.blockId, {
-            orderKey,
-            transportMeta,
-          });
-        } catch (e) {
-          rollbackToServer(e);
-        }
-      } finally {
-        setIsGeneratingTransport(false);
-      }
-    },
-    [
-      transitPicker,
-      items,
-      board,
-      projectId,
-      adoptServerId,
-      rollbackToServer,
-      showToast,
-    ],
-  );
+  // ── 교통 피커 (후보 생성·단일 추가·선택 확정·재선택·자동 재생성) ──
+  const {
+    isGeneratingTransport,
+    regenerateAutoTransport,
+    bulkTransitPicker,
+    setBulkTransitPicker,
+    setBulkChoice,
+    confirmBulkTransit,
+    handleAddSingleTransport,
+    transitPicker,
+    setTransitPicker,
+    setTransitPickerCandidate,
+    confirmTransitChoice,
+    transportReselectPicker,
+    setTransportReselectPicker,
+    handleReselectTransport,
+    setReselectCandidate,
+    applyReselectTransport,
+  } = useTransitPicker({
+    items,
+    setItems,
+    board,
+    projectId,
+    adoptServerId,
+    rollbackToServer,
+    setEditingBlockId,
+    showToast,
+  });
 
   const timelineDOMRef = useRef(null);
   const poolDOMRef = useRef(null);
@@ -1290,385 +768,27 @@ export function DashboardPage() {
     }
   }, [activeId, resizingState]);
 
-  /**
-   * @param form     폼의 현재 값(서버 필드명)
-   * @param baseline 모달을 연 시점의 폼 값 — "사용자가 만진 필드"의 판정 기준.
-   *                 지금의 items[targetId] 와 비교하면, 모달이 열린 사이 다른
-   *                 멤버가 바꾼 필드까지 내 변경으로 잡혀 옛 값이 함께 전송되고
-   *                 서버 LWW(수신 시각)가 그걸 최신으로 받아 남의 변경을 지운다.
-   */
-  const handleSaveBlock = async (form, baseline) => {
-    const targetId = editingBlockId;
-    const base = items[targetId];
-    if (!base) return;
-
-    // 남이 상세락을 쥔 사이엔 비고(detail)를 저장에서 제외한다 — 배지 도착 전
-    // 창에 친 값이나 인계 직전 스냅샷이 남의 최신 비고를 덮어쓰지 않게 한다.
-    // 로컬에도 form.detail 을 반영하지 않아(patched 에서도 뺀다) 서버 진실을 유지한다.
-    const detailLockedByOther =
-      detailLocks[targetId] != null && detailLocks[targetId] !== currentUser?.id;
-
-    // baseline 이 없으면(구 호출부) 지금 값 기준으로 되돌아간다 — 없는 편이 낫지만
-    // 최소한 저장이 통째로 막히지는 않게 한다
-    const openedWith = baseline ?? {
-      name: base.name ?? "",
-      detail: base.detail ?? "",
-      durationMin: base.dur,
-      budget: base.cost,
-    };
-    // 폼 입력은 문자열로 온다("70") — 숫자 필드는 정규화해서 비교해야
-    // "70" !== 70 이 거짓 변경으로 잡히지 않는다
-    const numOf = (v) => (v === "" || v == null ? null : Number(v));
-    const touched = {
-      name: form.name !== openedWith.name,
-      detail: form.detail !== openedWith.detail,
-      dur: numOf(form.durationMin) !== numOf(openedWith.durationMin),
-      cost: numOf(form.budget) !== numOf(openedWith.budget),
-    };
-
-    // 폼(서버 필드명) → 화면 블록 필드.
-    // cat 은 어댑터 매핑으로 되돌린다 — toLowerCase 는 TRANSPORT→"transport" 가
-    // 되어 화면의 "trans" 와 어긋난다(카테고리 왕복 파괴 버그의 원인이었다).
-    const merged = {
-      ...base,
-      name: form.name,
-      cat: blockApi.CAT_FROM_SERVER[form.category] ?? base.cat,
-      sub: form.subCategory,
-      address: form.address,
-      // 좌표는 주소 검색(도로명 주소 → 카카오 지오코딩)이 채워 준다. 장소성
-      // 카테고리(SPOT·FOOD·STAY)는 서버가 lat/lng 를 필수로 보므로(BLOCK400)
-      // 여기서 흘려버리면 커스텀 블록 생성이 통째로 거절된다.
-      lat: form.lat ?? base.lat ?? null,
-      lng: form.lng ?? base.lng ?? null,
-      detail: form.detail,
-      dur: form.durationMin ? Number(form.durationMin) : base.dur,
-      cost: form.budget ? Number(form.budget) : base.cost,
-    };
-
-    // ── 새 블록: 서버에 생성하고 임시 id 를 서버 blockId 로 교체한다 (2단계) ──
-    if (isTempId(targetId)) {
-      // 풀 맨 앞 배치를 서버에도 그대로 남기기 위해 orderKey 를 클라이언트가 만든다.
-      // 미지정으로 보내면 서버가 말단 키를 부여하는데, 응답에 그 키가 없어
-      // 로컬이 순서를 알 수 없게 된다.
-      const firstKey =
-        pool
-          .filter((id) => id !== targetId)
-          .map((id) => items[id]?.orderKey)
-          .find((k) => k != null) ?? null;
-      const orderKey = safeKeyBetween(null, firstKey);
-
-      try {
-        const created = await blockApi.createBlock(projectId, {
-          ...merged,
-          startMins: null, // 커스텀 블록은 후보(POOL)로 생성된다
-          orderKey,
-        });
-        // 세부 내용(detail)은 생성 바디에 없다(명세) — 생성 직후 필드 갱신으로 저장
-        if (merged.detail) {
-          await blockApi.updateBlockFields(created.blockId, {
-            detail: merged.detail,
-          });
-        }
-
-        const saved = { ...merged, id: created.blockId, orderKey };
-        setItems((prev) => {
-          const next = { ...prev };
-          delete next[targetId];
-          next[created.blockId] = saved;
-          return next;
-        });
-        setPool((prev) =>
-          prev.map((id) => (id === targetId ? created.blockId : id)),
-        );
-        setEditingBlockId(null);
-        showToast("블록이 저장됐어요 ✓");
-      } catch (e) {
-        // 임시 블록과 모달을 그대로 남겨 재시도할 수 있게 한다
-        showToast(
-          e?.message ?? "블록을 저장하지 못했어요. 잠시 후 다시 시도해주세요.",
-        );
-      }
-      return;
-    }
-
-    // ── 기존 블록: 사용자가 만진 필드만 PATCH /fields 배치로 저장한다 (3단계) ──
-    // 판정 기준은 모달 오픈 시점(openedWith)이고, 만지지 않은 필드는 지금 서버
-    // 값(base)을 그대로 둔다 — 그래야 모달이 열린 사이 도착한 남의 변경이
-    // 전송에서도, 로컬 상태에서도 살아남는다.
-    const patched = { ...base };
-    if (touched.name) patched.name = form.name;
-    if (touched.detail && !detailLockedByOther) patched.detail = form.detail;
-    if (touched.dur) patched.dur = numOf(form.durationMin) ?? base.dur;
-    if (touched.cost) patched.cost = numOf(form.budget) ?? base.cost;
-
-    const changed = {};
-    if (touched.name) changed.name = patched.name;
-    if (touched.detail && !detailLockedByOther) changed.detail = patched.detail;
-    if (touched.dur) changed.durationMin = patched.dur;
-    if (touched.cost) changed.budget = patched.cost;
-    // category·subCategory·address 는 보내지 않는다 — 서버 LWW 화이트리스트
-    // (LWW_FIELDS: name·budget·durationMin·detail·isTimeFixed·vehicleFlag·
-    // transportMeta)에 없어 BLOCK400_2 로 배치 전체가 거부된다.
-    // 셋 다 "생성 시에만" 정하는 값으로 폼에서 잠갔다.
-    // 종료 시각은 보내지 않는다 — 시작 오프셋 + 소요에서 파생되는 값이다.
-
-    if (Object.keys(changed).length === 0) {
-      setEditingBlockId(null); // 변경 없음 — 요청을 보내지 않는다
-      return;
-    }
-
-    // 소요시간이 늘면 뒤 이웃이 밀린다 — PATCH 전에 밀린 결과를 미리 계산해 둔다.
-    // 24:00 을 넘겨도 그대로 둔다 — 절대 오프셋에선 그 자리가 곧 다음 Day 다.
-    // 해소는 보드 전체를 훑는다: 어느 Day 의 카드에서 열었든, 밀림은 Day 경계가
-    // 아니라 다음 공백에서 멈춘다. 시각이 없는 후보(POOL)만 해소를 건너뛴다.
-    let resolved = null;
-    if (base.startMins != null) {
-      resolved = resolveOverlaps(
-        { ...items, [targetId]: patched },
-        board,
-        targetId,
-      );
-    }
-
-    try {
-      const result = await blockApi.updateBlockFields(targetId, changed);
-      // 1인 모드에서 applied:false(스테일)는 나올 수 없다 — 나오면 그 자체가 조사 대상
-      const stale = Object.entries(result?.applied ?? {})
-        .filter(([, ok]) => !ok)
-        .map(([f]) => f);
-      if (stale.length > 0) {
-        console.warn("[dashboard] LWW 스테일 필드 (1인 모드에서 비정상):", stale);
-      }
-
-      // 로컬 반영. 체인 블록이면 겹침 해소로 밀린 이웃들의 위치도 서버에 저장한다 —
-      // 로컬만 밀면 새로고침 때 이웃들이 옛 자리로 되돌아간다(명세 320행의
-      // "이동 후 시각 재계산은 클라이언트 몫" 규칙과 같은 경로, 5단계에서 재사용).
-      if (resolved) {
-        await persistMovedOffsets(
-          resolved.newChain,
-          items,
-          resolved.newItems,
-          targetId,
-        );
-
-        setItems(resolved.newItems);
-      } else {
-        setItems({ ...items, [targetId]: patched });
-      }
-
-      setEditingBlockId(null);
-      showToast("블록이 저장됐어요 ✓");
-    } catch (e) {
-      // 모달을 열어 둔다 — 재시도하면 같은 diff 가 다시 전송된다(멱등)
-      showToast(
-        e?.message ?? "블록을 저장하지 못했어요. 잠시 후 다시 시도해주세요.",
-      );
-    }
-  };
-
-  const handleCreateCustomBlock = () => {
-    const newId = `custom-${Date.now()}`;
-    const newBlock = {
-      id: newId,
-      cat: "etc",
-      sub: "",
-      name: "새 일정",
-      address: "",
-      detail: "",
-      dur: 60,
-      // 후보(POOL) 블록은 시각 없는 느슨한 블록 — 시각은 체인에 놓일 때 계산된다
-      startMins: null,
-      lat: null,
-      lng: null,
-      cost: 0,
-      auto: false,
-    };
-    setItems((prev) => ({ ...prev, [newId]: newBlock }));
-    setPool((prev) => [newId, ...prev]);
-    setEditingBlockId(newId);
-  };
-
-  // 블록 복사 — 같은 내용의 블록을 후보 목록 맨 위에 하나 더 만든다(숙소 여러 박 등
-  // 반복 생성 편의). 시각·순서는 비우고(후보) 서버에 바로 생성한다. 모달은 열지 않아
-  // 곧바로 여러 번 복사할 수 있다. 교통 블록은 구간에 묶여 있어 복사 대상에서 뺀다.
-  const handleCopyBlock = (id) => {
-    const src = items[id];
-    if (!src || src.cat === "trans") return;
-    const newId = `custom-${Date.now()}`;
-    const copy = {
-      ...src,
-      id: newId,
-      startMins: null, // 후보(POOL)
-      orderKey: undefined,
-      auto: false,
-    };
-    const nextPool = [newId, ...pool];
-    setItems((prev) => ({ ...prev, [newId]: copy }));
-    setPool(nextPool);
-
-    (async () => {
-      try {
-        const [before, after] = neighborKeysAround(nextPool, 0, items);
-        const orderKey = safeKeyBetween(before, after);
-        const created = await blockApi.createBlock(projectId, {
-          ...copy,
-          startMins: null,
-          orderKey,
-        });
-        // 메모(detail)는 생성 바디에 없어(명세) 생성 직후 따로 저장한다.
-        if (copy.detail) {
-          await blockApi.updateBlockFields(created.blockId, {
-            detail: copy.detail,
-          });
-        }
-        adoptServerId(newId, created.blockId, { orderKey });
-        showToast("블록을 후보로 복사했어요 ⧉");
-      } catch (e) {
-        rollbackToServer(e);
-      }
-    })();
-  };
-
-  // 휴지통 드롭 — 서버 블록은 소프트 삭제(tombstone, DELETE /blocks) 후 로컬에서
-  // 제거한다(4단계). 서버 확인 전에는 지우지 않는다 — 실패 시 원래 위치로 복원하는
-  // 롤백을 관리하는 것보다, 확인까지의 짧은 지연을 감수하는 쪽이 단순하다.
-  // 로컬 전용 블록(auto- 교통)은 요청 없이 바로 제거한다.
-  const handleDeleteBlock = async (id) => {
-    if (isServerBlock(id)) {
-      try {
-        await blockApi.deleteBlock(id);
-      } catch (e) {
-        showToast(
-          e?.message ?? "블록을 삭제하지 못했어요. 잠시 후 다시 시도해주세요.",
-        );
-        return; // 블록을 그대로 둔다 — 다시 드래그하면 재시도
-      }
-    }
-
-    setPool((prev) => prev.filter((x) => x !== id));
-    setItems((prev) => {
-      const next = { ...prev };
-      delete next[id];
-      return next;
-    });
-    showToast("블록을 삭제했어요 🗑");
-  };
-
-  // 저장 전에 모달을 닫으면 임시 블록을 남기지 않는다 (서버에도 아직 없다)
-  const handleCancelEdit = () => {
-    if (isTempId(editingBlockId)) {
-      const tempId = editingBlockId;
-      setItems((prev) => {
-        const next = { ...prev };
-        delete next[tempId];
-        return next;
-      });
-      setPool((prev) => prev.filter((id) => id !== tempId));
-    }
-    setEditingBlockId(null);
-  };
-
-  // ── 교통 블록 편집 재선택 — 저장된 candidates 스냅샷으로 피커를 재조회 없이 연다 ──
-  // 생성 흐름(transitPicker)과 상태를 공유하지 않는다 — "생성 후 자리에 삽입" 로직과
-  // 얽히면 오히려 복잡해진다(계획 Task 7).
-  const [transportReselectPicker, setTransportReselectPicker] = useState(null); // {blockId, candidates, chosenCandidate, chosenDeparture}
-
-  const handleReselectTransport = (block) => {
-    const candidates = block.transportMeta?.candidates;
-    if (!candidates || candidates.length === 0) {
-      showToast("다시 계산할 후보가 없어요. 삭제 후 새로 만들어주세요.");
-      return;
-    }
-    const chosenMode = block.transportMeta?.chosen?.mode;
-    const initialCandidate =
-      candidates.find((c) => c.mode === chosenMode) ?? candidates[0];
-    setTransportReselectPicker({
-      blockId: block.id,
-      candidates,
-      chosenCandidate: initialCandidate,
-      chosenDeparture: initialCandidate?.departures?.[0] ?? null,
-    });
-  };
-
-  const setReselectCandidate = (c) => {
-    setTransportReselectPicker((prev) =>
-      prev
-        ? { ...prev, chosenCandidate: c, chosenDeparture: c.departures?.[0] ?? null }
-        : prev,
-    );
-  };
-
-  // "저장" — 같은 블록에서 선택만 바꾼다(재생성 없음).
-  // transportMeta 뿐 아니라 소요(durationMin)·종료시각·비용(budget)까지 PATCH 해야
-  // 새로고침 후에도 유지된다(예전엔 meta 만 보내 소요·비용이 로컬에만 남았다).
-  // 소요가 바뀌면 이웃이 밀린다 — 저장 경로(handleSaveBlock)와 같은
-  // 겹침 해소 + 밀린 이웃 위치 저장을 그대로 태운다.
-  const applyReselectTransport = useCallback(async () => {
-    const picker = transportReselectPicker;
-    const chosen = picker?.chosenCandidate;
-    if (!picker || chosen?.status !== "OK") return;
-    const block = items[picker.blockId];
-    if (!block) {
-      setTransportReselectPicker(null);
-      return; // 모달이 열린 사이 삭제됨(협업)
-    }
-
-    const newMeta = {
-      ...buildTransportMeta(
-        // segment 는 원래 스냅샷의 segment 메타를 그대로 유지 — 재조회하지 않으므로
-        // referenceAt 등은 처음 계산 시점 그대로다. 이 segment 조각에는 candidates 가
-        // 없어 buildTransportMeta 결과가 빈 배열이 되므로 원래 스냅샷으로 덮어쓴다.
-        block.transportMeta?.segment,
-        chosen,
-        picker.chosenDeparture,
-      ),
-      candidates: picker.candidates,
-    };
-    const newDur = transitDurOf(chosen, picker.chosenDeparture);
-    const newCost = transitCostOf(chosen, picker.chosenDeparture);
-    const merged = { ...block, dur: newDur, cost: newCost, transportMeta: newMeta };
-
-    // 보드 위 블록이면 소요 변경이 이웃을 민다 — 저장 전에 밀린 결과를 계산해 둔다.
-    // 24:00 을 넘겨도 그대로 둔다 — 절대 오프셋에선 그 자리가 곧 다음 Day 다.
-    let resolved = null;
-    if (block.startMins != null) {
-      resolved = resolveOverlaps(
-        { ...items, [block.id]: merged },
-        board,
-        block.id,
-      );
-    }
-
-    setTransportReselectPicker(null);
-    // 뒤에 열려 있는 편집 폼도 닫는다 — 폼이 옛 소요·비용을 들고 있어서,
-    // 그대로 두면 사용자가 폼 저장을 눌러 방금 바꾼 값을 되돌려버린다
-    setEditingBlockId(null);
-    try {
-      // 종료 시각은 보내지 않는다 — 시작 오프셋 + 소요에서 파생되는 값이다
-      await blockApi.updateBlockFields(picker.blockId, {
-        durationMin: newDur,
-        budget: newCost,
-        transportMeta: newMeta,
-      });
-
-      if (resolved) {
-        await persistMovedOffsets(
-          resolved.newChain,
-          items,
-          resolved.newItems,
-          block.id,
-        );
-        setItems(resolved.newItems);
-      } else {
-        setItems((prev) =>
-          prev[block.id] ? { ...prev, [block.id]: merged } : prev,
-        );
-      }
-      showToast("이동 수단을 바꿨어요 ✓");
-    } catch (e) {
-      showToast(e?.message ?? "저장하지 못했어요. 잠시 후 다시 시도해주세요.");
-    }
-  }, [transportReselectPicker, items, board, showToast]);
+  const {
+    handleSaveBlock,
+    handleCreateCustomBlock,
+    handleCopyBlock,
+    handleDeleteBlock,
+    handleCancelEdit,
+  } = useBlockCrud({
+    items,
+    setItems,
+    pool,
+    setPool,
+    board,
+    editingBlockId,
+    setEditingBlockId,
+    detailLocks,
+    currentUser,
+    projectId,
+    adoptServerId,
+    rollbackToServer,
+    showToast,
+  });
 
   // ── 편집 락 수명 = 편집 모달 수명 (6단계) ──
   // 모달을 열면 획득 → 10초 주기 하트비트(TTL 30초) → 닫으면 해제.
