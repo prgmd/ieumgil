@@ -3,6 +3,12 @@ import {
   dayNoOfOffset,
 } from "../../features/dashboard/api/dashboardApi";
 
+// 타임라인 1분당 픽셀 높이. 분↔px 환산(분 × PX)의 단일 기준.
+export const PX = 2.0;
+
+// 타임라인 축 위쪽 여백(px). 분 → px 환산의 상수항 — (분 - timelineStart) * PX + TL_PAD_TOP.
+export const TL_PAD_TOP = 20;
+
 /**
  * 카테고리(대분류) 표. 색은 값을 직접 적지 않고 공통 토큰(tokens.css)을 가리킨다 —
  * 팔레트를 바꿀 일이 생기면 CSS 한 곳만 고치면 된다.
@@ -203,4 +209,15 @@ export const blocksOfDay = (board, itemsMap, dayKey) => {
   return (board ?? []).filter(
     (id) => dayNoOfOffset(itemsMap?.[id]?.startMins) === dayNo,
   );
+};
+
+/**
+ * 그 Day 의 가장 이른 시작 오프셋(절대 분). 배치된 블록이 없으면 null.
+ * "그 Day 로 스크롤한다"가 어디로 가야 하는지를 정하는 값이다 — Day 00:00 은
+ * 텅 빈 새벽이라 첫 블록이 있으면 그쪽이 먼저다.
+ * 보드 목록이 오프셋 순이므로 그 Day 의 첫 항목이 곧 가장 이른 블록이다.
+ */
+export const firstStartOf = (board, items, dayKey) => {
+  const first = blocksOfDay(board, items, dayKey)[0];
+  return first == null ? null : items[first].startMins;
 };

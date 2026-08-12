@@ -11,16 +11,11 @@ import { ChatbotWidget } from "./components/ChatbotWidget";
 import { RemoteCursorLayer } from "./components/RemoteCursorLayer";
 import { TransitPickerModals } from "./components/TransitPickerModals";
 import { VoiceBar } from "./components/VoiceBar";
-import { hueOf } from "./components/memberColor";
+import { DayTab } from "./components/DayTab";
 import { buildTransportMeta } from "./transitMeta";
 import { CardBody } from "./components/CardBody";
 import { HintIcon } from "./components/HintIcon";
-import {
-  BlockEditBadge,
-  BlockLinkBadge,
-  BlockCopyBadge,
-  BlockEditorBadge,
-} from "./components/BlockBadges";
+import { TimelineCard } from "./components/TimelineCard";
 import { PoolCard } from "./components/PoolCard";
 import { BudgetPanel } from "./components/BudgetPanel";
 import { MapPanel } from "./components/MapPanel";
@@ -39,8 +34,12 @@ import {
   boardOf,
   blocksOfDay,
   catKeyOf,
+  PX,
+  TL_PAD_TOP,
+  firstStartOf,
 } from "./dashboardHelpers";
 import { useKakaoMap } from "./hooks/useKakaoMap";
+import { useDayNav } from "./hooks/useDayNav";
 import { useBudget } from "./hooks/useBudget";
 import {
   DndContext,
@@ -50,7 +49,6 @@ import {
   useSensor,
   useSensors,
   useDroppable,
-  useDraggable,
 } from "@dnd-kit/core";
 import {
   SortableContext,
@@ -79,7 +77,6 @@ import { useToastStore } from "../../global/stores/toastStore";
 import { ROUTES } from "../../global/constants/routes";
 import "./index.css";
 
-const PX = 2.0;
 // 블록 사이 "이동 추가" 갭 버튼의 최소 높이(px). 빈 시간이 이보다 좁아도 이만큼은
 // 확보해 경계선에 걸쳐 클릭할 수 있게 한다.
 const TRANS_GAP_MIN_PX = 16;
@@ -88,7 +85,6 @@ const TRANS_GAP_MIN_PX = 16;
 const SNAP = 1;
 // 소요시간 상한(분) — 서버 검증(@Max(1440)·MAX_DURATION_MIN)과 같은 값을 유지해야 한다
 const MAX_DUR = 1440;
-const TL_PAD_TOP = 20;
 const TL_PAD_LEFT = 92;
 
 // 고른 편 기준 door-to-door 소요 — 접근 + 대기 + 시외(+ 환승 + 연결편) + 이탈.
@@ -265,168 +261,6 @@ const resolveOverlaps = (currentItems, boardChain, fixedId) => {
   return { newItems, newChain };
 };
 
-/**
- * 그 Day 의 가장 이른 시작 오프셋(절대 분). 배치된 블록이 없으면 null.
- * "그 Day 로 스크롤한다"가 어디로 가야 하는지를 정하는 값이다 — Day 00:00 은
- * 텅 빈 새벽이라 첫 블록이 있으면 그쪽이 먼저다.
- * 보드 목록이 오프셋 순이므로 그 Day 의 첫 항목이 곧 가장 이른 블록이다.
- */
-const firstStartOf = (board, items, dayKey) => {
-  const first = blocksOfDay(board, items, dayKey)[0];
-  return first == null ? null : items[first].startMins;
-};
-
-/**
- * 다이어리 책갈피 모양의 Day 탭.
- * 모양(리본 노치·보드 아래로 끼워지는 느낌)은 CSS(.day-tab)에서 만들고 여기서는
- * 책갈피에 적히는 세 줄 — Day 번호 / 날짜 / 블록 수 — 만 담는다.
- */
-const DayTab = React.forwardRef(function DayTab(
-  { label, date, count, isActive, onClick, viewers = [] },
-  ref,
-) {
-  return (
-    <button
-      ref={ref}
-      className={`day-tab ${isActive ? "on" : ""}`}
-      onClick={onClick}
-      aria-current={isActive ? "true" : undefined}
-    >
-      <span className="dt-top">
-        <span className="dt-label">{label}</span>
-        <span className="cnt">{count}</span>
-      </span>
-      {date && <span className="dt-date">{date}</span>}
-      {/* 이 Day 를 지금 보고 있는 멤버들 — 프로필 아바타, 테두리는 커서와 같은
-          멤버 색 (7단계). 이미지가 없으면 닉네임 첫 글자로 대신한다 */}
-      {viewers.length > 0 && (
-        <span
-          className="dt-viewers"
-          title={`보는 중: ${viewers.map((v) => v.name).join(", ")}`}
-        >
-          {viewers.slice(0, 2).map((v) =>
-            v.profileImg?.startsWith("http") ? (
-              <img
-                key={v.id}
-                src={v.profileImg}
-                alt={v.name}
-                style={{ "--vh": hueOf(v.id) }}
-              />
-            ) : (
-              <i key={v.id} style={{ "--vh": hueOf(v.id) }}>
-                {v.name[0]}
-              </i>
-            ),
-          )}
-          {viewers.length > 2 && (
-            <em className="dt-viewers-more">+{viewers.length - 2}</em>
-          )}
-        </span>
-      )}
-    </button>
-  );
-});
-
-function TimelineCard({
-  id,
-  item,
-  startMins,
-  endMins,
-  resizingState,
-  onResizeStart,
-  timelineStart,
-  boundTop,
-  onEditBlock,
-  onCopy,
-  lockedBy,
-  editor,
-}) {
-  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
-    id,
-    data: { from: "timeline" },
-  });
-  const catStyle = catOf(item);
-  const height = (item?.dur || 30) * PX;
-  // 짧은 블록은 내용이 높이를 넘쳐 글이 잘린다 — 높이에 맞춰 단계적으로 접는다.
-  // 전체 레이아웃(첫 줄+주소+소요)이 필요한 높이는 약 90px(패딩 20+줄 3개) —
-  // 그보다 낮으면 아래 줄부터 순서대로 접는다. 잘린 채 그리는 구간이 없어야 한다.
-  const sizeClass = [
-    height < 92 && "hide-ctl", // "소요 n분" 줄부터 접는다
-    height < 60 && "is-short", // 주소 줄까지
-    height <= 34 && "is-tiny", // 한 줄 축약
-  ]
-    .filter(Boolean)
-    .join(" ");
-  const isThisResizing =
-    resizingState?.id === id ? resizingState.direction : null;
-
-  const handleEdgeClick = (e, direction) => {
-    if (!resizingState) {
-      e.stopPropagation();
-      e.preventDefault();
-      onResizeStart(id, direction, e.clientY, item.dur, startMins, boundTop);
-    }
-  };
-
-  // 위치·높이는 시간 계산 결과라 인라인으로 남기고, 색·모양은 CSS(.slot/.card)가 쥔다.
-  const topPx = (startMins - timelineStart) * PX;
-  const slotStyle = {
-    "--dc": catStyle.hex,
-    "--cb": catStyle.bg,
-    top: `${topPx}px`,
-    height: `${height}px`,
-  };
-
-  return (
-    <div
-      className={`slot ${sizeClass} ${isDragging ? "is-dragging" : ""} ${isThisResizing ? "is-resizing" : ""}`}
-      style={slotStyle}
-    >
-      <span className="tlab">{fmtTime(startMins)}</span>
-      <span className="dot" />
-      {/* 카드(.card)는 overflow:hidden 이라 모서리 배지는 slot 레벨에 둔다 */}
-      <BlockEditorBadge editor={editor} />
-      <div
-        ref={setNodeRef}
-        className={`card ${item?.auto ? "auto-block" : ""}`}
-        {...(!isThisResizing ? attributes : {})}
-        {...(!isThisResizing ? listeners : {})}
-        // 💡 박스 전체 영역에 클릭 이벤트 연결 (드래그나 리사이즈 중이 아닐 때만 동작)
-        onClick={() => {
-          if (!isThisResizing && onEditBlock) {
-            onEditBlock(id);
-          }
-        }}
-      >
-        <CardBody
-          id={id}
-          item={item}
-          mode="timeline"
-          startMins={startMins}
-          endMins={endMins}
-          isThisResizing={isThisResizing}
-          // 자동 생성 교통 블록은 소요(door-to-door)가 길찾기 계산값이라 손으로
-          // 리사이즈 못 하게 막는다 — 손잡이를 아예 안 그린다
-          onEdge={
-            item?.auto && item?.cat === "trans" ? undefined : handleEdgeClick
-          }
-          onEditBlock={onEditBlock}
-          lockedBy={lockedBy}
-        />
-        {!isThisResizing && (
-          <>
-            <BlockEditBadge onEdit={onEditBlock && (() => onEditBlock(id))} />
-            <BlockCopyBadge
-              onCopy={onCopy && item?.cat !== "trans" && (() => onCopy(id))}
-            />
-            <BlockLinkBadge item={item} />
-          </>
-        )}
-      </div>
-    </div>
-  );
-}
-
 export function DashboardPage() {
   const { groupId } = useParams();
   // 라우트 파라미터는 문자열 — 서버의 숫자 ID와 맞추려면 변환이 필요하다 (GroupPage 와 동일)
@@ -507,7 +341,7 @@ export function DashboardPage() {
   const [editProjectOpen, setEditProjectOpen] = useState(false); // 프로젝트 수정 모달
   // 활성 Day 는 이제 탭 클릭이 아니라 **스크롤 위치**가 정한다 — 축이 여행 전체
   // 한 줄이고 모든 Day 의 카드가 동시에 살아 있으므로, "보고 있는 Day"는 뷰포트를
-  // 가장 많이 차지하는 Day 다(아래 dominantDayOf). 이름은 activeDay 그대로 둔다:
+  // 가장 많이 차지하는 Day 다(useDayNav 의 dominantDayOf). 이름은 activeDay 그대로 둔다:
   // 값의 출처만 바뀌었고 소비처(탭 하이라이트·presence·커서 dayNo·지도)는 그대로
   // 이 값을 읽는다. 탭 클릭은 값을 바꾸는 대신 그 Day 로 스크롤한다(jumpToDay).
   const [scrolledDay, setScrolledDay] = useState("d1");
@@ -2546,109 +2380,19 @@ export function DashboardPage() {
   const timeSlots = [];
   for (let t = windowStart; t <= tickEnd; t += 30) timeSlots.push(t);
 
-  // ── 활성 Day 파생 = 뷰포트를 가장 많이 차지하는 Day ─────────
-  /**
-   * 뷰포트가 덮는 분 구간을 각 Day 의 [i*1440, (i+1)*1440) 과 교차시켜, 겹침이
-   * 가장 넓은 Day 키를 준다. 경계에 걸쳐 있으면 화면을 더 많이 차지한 쪽이 이긴다.
-   * 분 → px 환산은 보드 어디서나 (분 - timelineStart) * PX + TL_PAD_TOP 이다
-   * (computeDropTarget 의 역산과 같은 식이라 여백 항까지 맞춰 둔다).
-   */
-  const dominantDayOf = (scrollTop, viewportH) => {
-    const from = (scrollTop - TL_PAD_TOP) / PX + timelineStart;
-    const to = (scrollTop + viewportH - TL_PAD_TOP) / PX + timelineStart;
-    // 겹치는 Day 가 하나도 없을 수 있다 — 마지막 자정 너머로 크게 밀린 블록 때문에
-    // 컨테이너가 축보다 길어지면, 그 꼬리에서는 모든 겹침이 음수다. 그때 Day 1 로
-    // 떨어지면 활성 Day 가 튀면서 창이 좁아져 보고 있던 꼬리가 통째로 언마운트된다.
-    // 뷰포트가 축 뒤쪽에 있으면 마지막 Day 를, 앞쪽이면 첫 Day 를 고른다.
-    let best = from >= timelineEnd ? dayKeys[dayKeys.length - 1] : dayKeys[0];
-    let bestOverlap = -Infinity;
-    dayKeys.forEach((day, i) => {
-      const dayFrom = i * blockApi.MINUTES_PER_DAY;
-      const overlap =
-        Math.min(to, dayFrom + blockApi.MINUTES_PER_DAY) -
-        Math.max(from, dayFrom);
-      if (overlap > bestOverlap) {
-        bestOverlap = overlap;
-        best = day;
-      }
-    });
-    return best;
-  };
-
-  // 탭 점프가 도는 동안엔 클릭이 이긴다 — 부드러운 스크롤이 지나가는 중간 Day 들이
-  // 하이라이트를 흔들고 presence 를 헛되이 쏘는 것을 막는다. 목표 Day 에 닿으면
-  // (=스크롤이 거기 도착했다) 그 자리에서 풀고, 사용자가 도중에 직접 스크롤을
-  // 가로채 목표에 영영 안 닿는 경우는 타이머가 풀어 준다.
-  const jumpLockRef = useRef(null); // 점프 목표 dayKey
-  const jumpTimerRef = useRef(0);
-  const dominantRafRef = useRef(0);
-  const releaseJumpLock = () => {
-    jumpLockRef.current = null;
-    clearTimeout(jumpTimerRef.current);
-  };
-  const syncDominantDay = () => {
-    const el = timelineDOMRef.current;
-    if (!el) return;
-    const next = dominantDayOf(el.scrollTop, el.clientHeight);
-    if (jumpLockRef.current) {
-      if (next !== jumpLockRef.current) return;
-      releaseJumpLock();
-    }
-    setScrolledDay((prev) => (prev === next ? prev : next));
-  };
-  // 스크롤 이벤트마다 재지 않는다 — 같은 핸들러가 드래그 중 computeDropTarget 까지
-  // 부르므로, Day 계산은 프레임당 한 번으로 묶는다.
-  const scheduleDominantDay = () => {
-    if (dominantRafRef.current) return;
-    dominantRafRef.current = requestAnimationFrame(() => {
-      dominantRafRef.current = 0;
-      syncDominantDay();
-    });
-  };
-
-  /**
-   * 그 Day 의 첫 블록으로 스크롤한다. 배치된 블록이 없으면 그 Day 의 00:00 으로.
-   * Day 별 스크롤 위치 기억은 없앴다 — 스크롤 컨테이너가 하나라 위치도 하나다.
-   * behavior 를 주지 않으면 **거리가 정한다**(아래).
-   */
-  const jumpToDay = (dayKey, behavior) => {
-    const el = timelineDOMRef.current;
-    if (!el) return;
-    const base = (dayNoOf(dayKey) - 1) * blockApi.MINUTES_PER_DAY;
-    const target = firstStartOf(board, items, dayKey) ?? base;
-    // 15분(=30px)만 앞에서 멈춘다 — 목표가 sticky Day 머리글에 가리지 않게
-    const top = Math.max(0, (target - timelineStart - 15) * PX);
-    // 부드럽게 흘릴지 즉시 뛸지는 거리가 정한다. 기준은 렌더 창의 정의와 같은
-    // ±1 Day 다 — 창 안이면 지나갈 Day 가 이미 마운트돼 있어 부드럽게 가도
-    // 중간이 비지 않는다. 창 밖이면 지나가는 Day 들에 눈금도 카드도 없어
-    // 빈 복도를 흘려보내게 되고, 애초에 Day 1 → Day 30 은 86,520px 라
-    // 부드럽게 볼 거리가 아니다. 그래서 창 밖은 즉시 뛴다 — 복도가 생길 수
-    // 있는 경우 자체가 없어진다.
-    const withinWindow = Math.abs(dayNoOf(dayKey) - dayNoOf(activeDay)) <= 1;
-    const how = behavior ?? (withinWindow ? "smooth" : "auto");
-    setScrolledDay(dayKey);
-    // 이미 그 자리면 스크롤 이벤트가 안 난다 — 잠그지 않고, 앞선 점프의 락이
-    // 남아 있으면 여기서 푼다(위치가 이미 목표라 방금 넣은 값이 곧 정답이다)
-    if (Math.abs(el.scrollTop - top) < 1) {
-      releaseJumpLock();
-      return;
-    }
-    clearTimeout(jumpTimerRef.current);
-    jumpLockRef.current = dayKey;
-    // 시한이 다하면 락을 풀고 **그 자리에서 다시 잰다.** 풀기만 하면 안 된다 —
-    // 락이 걸린 동안의 스크롤 이벤트는 syncDominantDay 의 조기 반환에 전부
-    // 삼켜지므로, 사용자가 휠로 점프를 가로채고 멈춰 서면(스무스 스크롤은
-    // 취소된다) 락이 풀린 뒤에도 이벤트가 더는 오지 않는다. 그러면 하이라이트가
-    // 목표 Day 에 얼어붙고 presence·커서 dayNo·지도까지 그 Day 를 계속 방송해
-    // 팀원에게 내가 있지도 않은 Day 를 보고 있다고 거짓말한다. 최대 스크롤
-    // 위치라 scrollTo 가 조용한 no-op 이 되는 경우도 같은 길로 구제된다.
-    jumpTimerRef.current = setTimeout(() => {
-      if (jumpLockRef.current !== dayKey) return;
-      jumpLockRef.current = null;
-      syncDominantDay();
-    }, 1200);
-    el.scrollTo({ top, behavior: how });
-  };
+  // Day 네비게이션(스크롤→활성 Day 파생 + 탭 클릭→점프)은 useDayNav 가 소유한다.
+  // scrolledDay/activeDay state 는 여기 남는다 — activeDay 가 timelineDOMRef 가
+  // 만들어지기 전 렌더 초반에 이미 파생·소비되기 때문(훅은 그 뒤에서 호출된다).
+  const { jumpToDay, scheduleDominantDay } = useDayNav({
+    setScrolledDay,
+    activeDay,
+    dayKeys,
+    board,
+    items,
+    timelineStart,
+    timelineEnd,
+    timelineDOMRef,
+  });
 
   // 보드를 열면 첫 Day 의 첫 블록이 보이게 한 번만 맞춘다(부드럽게 갈 이유가 없어
   // 즉시). 그 뒤로 스크롤 위치를 건드리는 것은 탭 점프뿐이다 — board/items 가
