@@ -30,8 +30,9 @@ import {
   dayKeysOf,
   dayDate,
   boardOf,
-  blocksOfDay,
+  realBlocksOfDay,
   catKeyOf,
+  omitKey,
   PX,
   TL_PAD_TOP,
   firstStartOf,
@@ -583,21 +584,14 @@ export function DashboardPage() {
       }
       case "BLOCK_DELETED": {
         // 사라진 블록의 수정자 기록도 걷는다 (own 여부 무관)
-        setLastEditors((prev) => {
-          if (!(payload.blockId in prev)) return prev;
-          const next = { ...prev };
-          delete next[payload.blockId];
-          return next;
-        });
+        setLastEditors((prev) =>
+          payload.blockId in prev ? omitKey(prev, payload.blockId) : prev,
+        );
         // 자기 삭제는 이미 로컬에서 제거됐다 — 재적용하면 아래 "다른 멤버가
         // 삭제했어요" 토스트가 자기 삭제에 뜬다.
         if (own) break;
         const id = payload.blockId;
-        setItems((prev) => {
-          const n = { ...prev };
-          delete n[id];
-          return n;
-        });
+        setItems((prev) => omitKey(prev, id));
         setPool((prev) => prev.filter((x) => x !== id));
         if (editingBlockId === id) {
           setEditingBlockId(null);
@@ -1664,9 +1658,7 @@ export function DashboardPage() {
                         onClick={() => regenerateAutoTransport(activeDay)}
                         disabled={
                           isGeneratingTransport ||
-                          blocksOfDay(board, items, activeDay).filter(
-                            (id) => !items[id]?.auto && isServerBlock(id),
-                          ).length < 2
+                          realBlocksOfDay(board, items, activeDay).length < 2
                         }
                       >
                         {isGeneratingTransport

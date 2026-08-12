@@ -12,7 +12,7 @@ import {
   safeKeyBetween,
   neighborKeysAround,
 } from "../boardOrdering";
-import { isServerBlock, blocksOfDay } from "../dashboardHelpers";
+import { isServerBlock, blocksOfDay, realBlocksOfDay } from "../dashboardHelpers";
 
 export function useTransitPicker({
   items,
@@ -34,11 +34,8 @@ export function useTransitPicker({
   const regenerateAutoTransport = useCallback(
     async (dayKey) => {
       if (isGeneratingTransport || bulkTransitPicker) return;
-      const dayIds = blocksOfDay(board, items, dayKey);
       // 서버 계산 대상 = 그 Day 의 실블록(서버 id 보유)만. 저장 중(임시 id)·자동 생성분 제외
-      const realIds = dayIds.filter(
-        (id) => !items[id]?.auto && isServerBlock(id),
-      );
+      const realIds = realBlocksOfDay(board, items, dayKey);
       if (realIds.length < 2) return;
 
       setIsGeneratingTransport(true);
@@ -134,9 +131,7 @@ export function useTransitPicker({
       // 모달이 열린 사이 보드가 바뀌었을 수 있다(협업) — 지금 보드를 기준으로
       // 다시 훑고, 더 이상 인접하지 않은 구간의 선택은 자연히 버려진다(pair 키 불일치)
       const dayIds = blocksOfDay(board, items, dayKey);
-      const realIds = dayIds.filter(
-        (id) => !items[id]?.auto && isServerBlock(id),
-      );
+      const realIds = realBlocksOfDay(board, items, dayKey);
       const oldAutoIds = dayIds.filter((id) => items[id]?.auto);
       if (realIds.length < 2) {
         setBulkTransitPicker(null);

@@ -5,7 +5,7 @@ import {
   resolveOverlaps,
   persistMovedOffsets,
 } from "../boardOrdering";
-import { isTempId, isServerBlock } from "../dashboardHelpers";
+import { isTempId, isServerBlock, omitKey } from "../dashboardHelpers";
 
 export function useBlockCrud({
   items,
@@ -266,11 +266,7 @@ export function useBlockCrud({
     }
 
     setPool((prev) => prev.filter((x) => x !== id));
-    setItems((prev) => {
-      const next = { ...prev };
-      delete next[id];
-      return next;
-    });
+    setItems((prev) => omitKey(prev, id));
     showToast("블록을 삭제했어요 🗑");
   };
 
@@ -278,11 +274,7 @@ export function useBlockCrud({
   const handleCancelEdit = () => {
     if (isTempId(editingBlockId)) {
       const tempId = editingBlockId;
-      setItems((prev) => {
-        const next = { ...prev };
-        delete next[tempId];
-        return next;
-      });
+      setItems((prev) => omitKey(prev, tempId));
       setPool((prev) => prev.filter((id) => id !== tempId));
     }
     setEditingBlockId(null);

@@ -10,6 +10,8 @@ import {
   dayKeysOf,
   effectiveCostOf,
   boardOf,
+  realBlocksOfDay,
+  omitKey,
 } from "../dashboardHelpers";
 
 describe("fmtTime", () => {
@@ -95,5 +97,28 @@ describe("boardOf", () => {
       c: { id: "c" },
     };
     expect(boardOf(map)).toEqual(["b", "a"]);
+  });
+});
+
+describe("realBlocksOfDay", () => {
+  it("그 Day 의 서버 블록(non-auto)만 남기고 auto/임시 id 는 뺀다", () => {
+    const items = {
+      "10": { id: "10", startMins: 60 }, // d1 서버 블록
+      "11": { id: "11", startMins: 120 }, // d1 서버 블록
+      "auto-1": { id: "auto-1", startMins: 90, auto: true }, // d1 자동 교통
+      "custom-9": { id: "custom-9", startMins: 100 }, // d1 저장 중 임시
+      "20": { id: "20", startMins: 1500 }, // d2 (제외)
+    };
+    const board = boardOf(items);
+    expect(realBlocksOfDay(board, items, "d1")).toEqual(["10", "11"]);
+    expect(realBlocksOfDay(board, items, "d2")).toEqual(["20"]);
+  });
+});
+
+describe("omitKey", () => {
+  it("키 하나만 뺀 새 객체를 돌려주고 원본은 안 건드린다", () => {
+    const src = { a: 1, b: 2 };
+    expect(omitKey(src, "a")).toEqual({ b: 2 });
+    expect(src).toEqual({ a: 1, b: 2 });
   });
 });
