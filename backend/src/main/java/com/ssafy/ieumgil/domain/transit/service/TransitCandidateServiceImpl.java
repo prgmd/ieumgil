@@ -6,7 +6,6 @@ import com.ssafy.ieumgil.domain.place.dto.PlaceResDTO;
 import com.ssafy.ieumgil.domain.place.service.PlaceQueryService;
 import com.ssafy.ieumgil.domain.project.entity.Project;
 import com.ssafy.ieumgil.domain.project.entity.TransportPref;
-import com.ssafy.ieumgil.domain.project.exception.ProjectErrorCode;
 import com.ssafy.ieumgil.domain.project.repository.ProjectRepository;
 import com.ssafy.ieumgil.domain.transit.dto.OdsayRouteResponse;
 import com.ssafy.ieumgil.domain.transit.dto.TransitCandidateResDTO;
@@ -128,8 +127,7 @@ public class TransitCandidateServiceImpl implements TransitCandidateService {
 
     @Override
     public TransitCandidateResDTO.Result calculate(Long projectId, List<Long> blockIds) {
-        Project project = projectRepository.findByIdAndDeletedAtIsNull(projectId)
-                .orElseThrow(() -> new CustomException(ProjectErrorCode.PROJECT_NOT_FOUND));
+        Project project = projectRepository.findAliveByIdOrThrow(projectId);
         List<Pair> pairs = pairsOf(blockIds, loadBlocks(projectId, blockIds));
 
         // 1단: 구간마다 시내 경로·자차·택시를 병렬로 모은다. 시외 여부는 여기서 받은 pathType으로 판정된다.

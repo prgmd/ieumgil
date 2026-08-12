@@ -4,11 +4,9 @@ import com.ssafy.ieumgil.domain.group.converter.GroupConverter;
 import com.ssafy.ieumgil.domain.group.dto.GroupResDTO;
 import com.ssafy.ieumgil.domain.group.entity.GroupMember;
 import com.ssafy.ieumgil.domain.group.entity.TravelGroup;
-import com.ssafy.ieumgil.domain.group.exception.GroupErrorCode;
 import com.ssafy.ieumgil.domain.group.repository.GroupMemberRepository;
 import com.ssafy.ieumgil.domain.group.repository.TravelGroupRepository;
 import com.ssafy.ieumgil.domain.project.repository.ProjectRepository;
-import com.ssafy.ieumgil.global.exception.CustomException;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -68,8 +66,7 @@ public class GroupQueryServiceImpl implements GroupQueryService {
      */
     @Override
     public GroupResDTO.MemberList getMembers(Long groupId) {
-        TravelGroup group = travelGroupRepository.findByIdAndDeletedAtIsNull(groupId)
-                .orElseThrow(() -> new CustomException(GroupErrorCode.GROUP_NOT_FOUND));
+        TravelGroup group = travelGroupRepository.findAliveByIdOrThrow(groupId);
 
         List<GroupMember> members = groupMemberRepository.findAllWithUserByGroupIdIn(List.of(groupId));
 

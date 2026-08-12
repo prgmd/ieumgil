@@ -104,7 +104,7 @@ public class GroupCommandServiceImpl implements GroupCommandService {
     /** 초대 코드 재발급 (GRP-06). 값 교체가 곧 기존 코드 무효화 */
     @Override
     public GroupResDTO.InviteCode reissueInviteCode(Long userId, Long groupId) {
-        TravelGroup group = getGroup(groupId);
+        TravelGroup group = travelGroupRepository.findAliveByIdOrThrow(groupId);
 
         group.reissueInviteCode(
                 issueUniqueInviteCode(),
@@ -153,20 +153,11 @@ public class GroupCommandServiceImpl implements GroupCommandService {
     /** 그룹명 수정 (GRP-05). flat 모델이라 멤버 누구나 가능 */
     @Override
     public GroupResDTO.Updated updateGroupName(Long userId, Long groupId, GroupReqDTO.UpdateName request) {
-        TravelGroup group = getGroup(groupId);
+        TravelGroup group = travelGroupRepository.findAliveByIdOrThrow(groupId);
 
         group.updateName(request.name());   // 변경 감지로 트랜잭션 종료 시 UPDATE
 
         return GroupConverter.toUpdated(group);
-    }
-
-    /**
-     * 그룹 조회. 존재 확인(404)·멤버십(403)은 컨트롤러의 @GroupMember가 이미 끝냈으므로
-     * 여기서는 엔티티만 가져온다. orElseThrow는 그 사이 삭제된 극단적 경우의 방어선이다.
-     */
-    private TravelGroup getGroup(Long groupId) {
-        return travelGroupRepository.findByIdAndDeletedAtIsNull(groupId)
-                .orElseThrow(() -> new CustomException(GroupErrorCode.GROUP_NOT_FOUND));
     }
 
     /** 중복되지 않는 초대 코드를 뽑는다. 재시도 한도를 넘으면 실패로 처리한다 */

@@ -8,9 +8,7 @@ import com.ssafy.ieumgil.domain.group.repository.GroupMemberRepository;
 import com.ssafy.ieumgil.domain.project.converter.ProjectConverter;
 import com.ssafy.ieumgil.domain.project.dto.ProjectResDTO;
 import com.ssafy.ieumgil.domain.project.entity.Project;
-import com.ssafy.ieumgil.domain.project.exception.ProjectErrorCode;
 import com.ssafy.ieumgil.domain.project.repository.ProjectRepository;
-import com.ssafy.ieumgil.global.exception.CustomException;
 import com.ssafy.ieumgil.global.websocket.PresenceRegistry;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -47,8 +45,7 @@ public class ProjectQueryServiceImpl implements ProjectQueryService {
      */
     @Override
     public ProjectResDTO.Snapshot getSnapshot(Long projectId) {
-        Project project = projectRepository.findByIdAndDeletedAtIsNull(projectId)
-                .orElseThrow(() -> new CustomException(ProjectErrorCode.PROJECT_NOT_FOUND));
+        Project project = projectRepository.findAliveByIdOrThrow(projectId);
 
         // groupId는 FK 값이라 LAZY 프록시에서 추가 쿼리 없이 읽힌다
         Long groupId = project.getTravelGroup().getId();
