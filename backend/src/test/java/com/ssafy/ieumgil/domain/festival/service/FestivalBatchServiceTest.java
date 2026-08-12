@@ -180,8 +180,36 @@ class FestivalBatchServiceTest {
     }
 
     @Test
-    @DisplayName("재싱크에서 상세 조회가 실패해도 기존 homepage는 유지된다")
-    void 재싱크_상세_실패해도_기존_홈페이지_유지() {
+    @DisplayName("기존 행에 homepage가 아직 없으면 재싱크에서 상세를 조회해 채운다")
+    void 재싱크_기존행_홈페이지_비어있으면_상세_조회해_채운다() {
+        festivalBatchService = new FestivalBatchService(tourApiClient, festivalRepository);
+        TourApiResponse.Item item = new TourApiResponse.Item(
+                "123", "머드축제", "보령시", "", "126.5", "36.3",
+                "20260701", "20260710", "http://img", "44", "44130", "축제");
+        // 지난번 상세 조회 실패 등으로 homepage가 비어 있는 기존 행
+        Festival existing = Festival.builder()
+                .contentId("123").title("머드축제").category("축제")
+                .lDongRegnCd("44").lDongSignguCd("44130").addr("보령시")
+                .lat(36.3).lng(126.5)
+                .eventStartDate(LocalDate.of(2026, 7, 1)).eventEndDate(LocalDate.of(2026, 7, 10))
+                .build();
+        when(tourApiClient.fetchTotalCount(anyString())).thenReturn(1);
+        when(tourApiClient.searchFestivals(anyString(), eq(1), anyInt())).thenReturn(List.of(item));
+        when(festivalRepository.findByContentId("123")).thenReturn(Optional.of(existing));
+        when(tourApiClient.fetchDetailHomepage("123"))
+                .thenReturn("<a href=\"http://mud.example.com\">머드</a>");
+
+        festivalBatchService.syncFestivals();
+
+        verify(tourApiClient).fetchDetailHomepage("123");
+        ArgumentCaptor<Festival> captor = ArgumentCaptor.forClass(Festival.class);
+        verify(festivalRepository).save(captor.capture());
+        assertThat(captor.getValue().getHomepage()).isEqualTo("http://mud.example.com");
+    }
+
+    @Test
+    @DisplayName("이미 homepage가 저장돼 있으면 재싱크에서 상세를 다시 조회하지 않는다")
+    void 재싱크_저장된_홈페이지_있으면_상세_조회_스킵() {
         festivalBatchService = new FestivalBatchService(tourApiClient, festivalRepository);
         TourApiResponse.Item item = new TourApiResponse.Item(
                 "123", "머드축제", "보령시", "", "126.5", "36.3",
@@ -196,42 +224,14 @@ class FestivalBatchServiceTest {
         when(tourApiClient.fetchTotalCount(anyString())).thenReturn(1);
         when(tourApiClient.searchFestivals(anyString(), eq(1), anyInt())).thenReturn(List.of(item));
         when(festivalRepository.findByContentId("123")).thenReturn(Optional.of(existing));
-        when(tourApiClient.fetchDetailHomepage("123"))
-                .thenThrow(new com.ssafy.ieumgil.domain.festival.exception.FestivalException(
-                        com.ssafy.ieumgil.domain.festival.exception.FestivalErrorCode.TOUR_API_CALL_FAILED));
 
         festivalBatchService.syncFestivals();
 
+        // 저장된 homepage가 있으니 상세 HTTP를 아예 부르지 않는다 — 야간 sync 낭비 제거의 핵심
+        verify(tourApiClient, never()).fetchDetailHomepage(anyString());
         ArgumentCaptor<Festival> captor = ArgumentCaptor.forClass(Festival.class);
         verify(festivalRepository).save(captor.capture());
         assertThat(captor.getValue().getHomepage()).isEqualTo("http://mud.example.com");
-    }
-
-    @Test
-    @DisplayName("재싱크에서 새 homepage가 정상 조회되면 갱신된다")
-    void 재싱크_정상_조회면_홈페이지_갱신() {
-        festivalBatchService = new FestivalBatchService(tourApiClient, festivalRepository);
-        TourApiResponse.Item item = new TourApiResponse.Item(
-                "123", "머드축제", "보령시", "", "126.5", "36.3",
-                "20260701", "20260710", "http://img", "44", "44130", "축제");
-        Festival existing = Festival.builder()
-                .contentId("123").title("머드축제").category("축제")
-                .lDongRegnCd("44").lDongSignguCd("44130").addr("보령시")
-                .lat(36.3).lng(126.5)
-                .eventStartDate(LocalDate.of(2026, 7, 1)).eventEndDate(LocalDate.of(2026, 7, 10))
-                .homepage("http://old.example.com")
-                .build();
-        when(tourApiClient.fetchTotalCount(anyString())).thenReturn(1);
-        when(tourApiClient.searchFestivals(anyString(), eq(1), anyInt())).thenReturn(List.of(item));
-        when(festivalRepository.findByContentId("123")).thenReturn(Optional.of(existing));
-        when(tourApiClient.fetchDetailHomepage("123"))
-                .thenReturn("<a href=\"http://new.example.com\">머드</a>");
-
-        festivalBatchService.syncFestivals();
-
-        ArgumentCaptor<Festival> captor = ArgumentCaptor.forClass(Festival.class);
-        verify(festivalRepository).save(captor.capture());
-        assertThat(captor.getValue().getHomepage()).isEqualTo("http://new.example.com");
     }
 
     @Test
