@@ -180,88 +180,65 @@ public class OdsayClient {
     }
 
     public List<OdsayTrainScheduleResponse.Train> getTrainSchedule(int startStationId, int endStationId) {
-        String cacheKey = TransitCacheKeys.schedule("train", startStationId, endStationId);
-        Optional<List<OdsayTrainScheduleResponse.Train>> cached = cache.read(cacheKey, new TypeReference<List<OdsayTrainScheduleResponse.Train>>() {
-        });
-        if (cached.isPresent()) {
-            return cached.get();
-        }
-        try {
-            URI uri = URI.create(properties.baseUrl() + "/trainServiceTime"
-                    + "?startStationID=" + startStationId
-                    + "&endStationID=" + endStationId
-                    + "&apiKey=" + properties.apiKey());
-            OdsayTrainScheduleResponse response = restClient.get()
-                    .uri(uri)
-                    .retrieve()
-                    .body(OdsayTrainScheduleResponse.class);
-            checkForError(response == null ? null : response.error());
-            List<OdsayTrainScheduleResponse.Train> schedule =
-                    response == null || response.result() == null || response.result().station() == null
-                            ? List.of()
-                            : response.result().station();
-            cache.write(cacheKey, schedule, SCHEDULE_TTL);
-            return schedule;
-        } catch (RestClientException | IllegalArgumentException e) {
-            log.warn("ODsay 기차 시간표 조회 실패: {}", e.getMessage());
-            throw new TransitException(TransitErrorCode.ODSAY_API_CALL_FAILED);
-        }
+        return fetchSchedule("train", "/trainServiceTime", startStationId, endStationId,
+                OdsayTrainScheduleResponse.class,
+                new TypeReference<List<OdsayTrainScheduleResponse.Train>>() {
+                },
+                OdsayTrainScheduleResponse::error,
+                r -> r.result() == null || r.result().station() == null ? List.of() : r.result().station(),
+                "ODsay 기차 시간표 조회 실패");
     }
 
     public List<OdsayBusScheduleResponse.Bus> getIntercityBusSchedule(int startStationId, int endStationId) {
-        String cacheKey = TransitCacheKeys.schedule("bus", startStationId, endStationId);
-        Optional<List<OdsayBusScheduleResponse.Bus>> cached = cache.read(cacheKey, new TypeReference<List<OdsayBusScheduleResponse.Bus>>() {
-        });
-        if (cached.isPresent()) {
-            return cached.get();
-        }
-        try {
-            URI uri = URI.create(properties.baseUrl() + "/searchInterBusSchedule"
-                    + "?startStationID=" + startStationId
-                    + "&endStationID=" + endStationId
-                    + "&apiKey=" + properties.apiKey());
-            OdsayBusScheduleResponse response = restClient.get()
-                    .uri(uri)
-                    .retrieve()
-                    .body(OdsayBusScheduleResponse.class);
-            checkForError(response == null ? null : response.error());
-            List<OdsayBusScheduleResponse.Bus> schedule =
-                    response == null || response.result() == null || response.result().schedule() == null
-                            ? List.of()
-                            : response.result().schedule();
-            cache.write(cacheKey, schedule, SCHEDULE_TTL);
-            return schedule;
-        } catch (RestClientException | IllegalArgumentException e) {
-            log.warn("ODsay 고속/시외버스 시간표 조회 실패: {}", e.getMessage());
-            throw new TransitException(TransitErrorCode.ODSAY_API_CALL_FAILED);
-        }
+        return fetchSchedule("bus", "/searchInterBusSchedule", startStationId, endStationId,
+                OdsayBusScheduleResponse.class,
+                new TypeReference<List<OdsayBusScheduleResponse.Bus>>() {
+                },
+                OdsayBusScheduleResponse::error,
+                r -> r.result() == null || r.result().schedule() == null ? List.of() : r.result().schedule(),
+                "ODsay 고속/시외버스 시간표 조회 실패");
     }
 
     public List<OdsayFlightScheduleResponse.Flight> getFlightSchedule(int startStationId, int endStationId) {
-        String cacheKey = TransitCacheKeys.schedule("air", startStationId, endStationId);
-        Optional<List<OdsayFlightScheduleResponse.Flight>> cached = cache.read(cacheKey, new TypeReference<List<OdsayFlightScheduleResponse.Flight>>() {
-        });
+        return fetchSchedule("air", "/airServiceTime", startStationId, endStationId,
+                OdsayFlightScheduleResponse.class,
+                new TypeReference<List<OdsayFlightScheduleResponse.Flight>>() {
+                },
+                OdsayFlightScheduleResponse::error,
+                r -> r.result() == null || r.result().station() == null ? List.of() : r.result().station(),
+                "ODsay 국내선 항공 시간표 조회 실패");
+    }
+
+    /**
+     * 세 시간표 조회(기차·시외버스·항공)의 공통 뼈대 — 캐시 히트 반환, ODsay 호출,
+     * {@link #checkForError} 판정, 스케줄 추출, 캐시 저장, try/catch를 한곳에 모은다.
+     * 엔드포인트·응답 타입·에러/스케줄 추출자만 수단별로 갈린다.
+     */
+    private <RESP, ITEM> List<ITEM> fetchSchedule(
+            String cacheLabel, String endpoint, int startStationId, int endStationId,
+            Class<RESP> responseType, TypeReference<List<ITEM>> cacheType,
+            Function<RESP, List<OdsayRouteResponse.OdsayError>> errorOf,
+            Function<RESP, List<ITEM>> scheduleOf, String failMessage) {
+        String cacheKey = TransitCacheKeys.schedule(cacheLabel, startStationId, endStationId);
+        Optional<List<ITEM>> cached = cache.read(cacheKey, cacheType);
         if (cached.isPresent()) {
             return cached.get();
         }
         try {
-            URI uri = URI.create(properties.baseUrl() + "/airServiceTime"
+            URI uri = URI.create(properties.baseUrl() + endpoint
                     + "?startStationID=" + startStationId
                     + "&endStationID=" + endStationId
                     + "&apiKey=" + properties.apiKey());
-            OdsayFlightScheduleResponse response = restClient.get()
+            RESP response = restClient.get()
                     .uri(uri)
                     .retrieve()
-                    .body(OdsayFlightScheduleResponse.class);
-            checkForError(response == null ? null : response.error());
-            List<OdsayFlightScheduleResponse.Flight> schedule =
-                    response == null || response.result() == null || response.result().station() == null
-                            ? List.of()
-                            : response.result().station();
+                    .body(responseType);
+            checkForError(response == null ? null : errorOf.apply(response));
+            List<ITEM> schedule = response == null ? List.of() : scheduleOf.apply(response);
             cache.write(cacheKey, schedule, SCHEDULE_TTL);
             return schedule;
         } catch (RestClientException | IllegalArgumentException e) {
-            log.warn("ODsay 국내선 항공 시간표 조회 실패: {}", e.getMessage());
+            log.warn(failMessage + ": {}", e.getMessage());
             throw new TransitException(TransitErrorCode.ODSAY_API_CALL_FAILED);
         }
     }

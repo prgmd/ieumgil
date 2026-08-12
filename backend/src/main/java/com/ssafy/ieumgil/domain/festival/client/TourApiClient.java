@@ -48,54 +48,52 @@ public class TourApiClient {
      * 배치가 축제마다 한 번 부른다(총 209건 규모).
      */
     public String fetchDetailHomepage(String contentId) {
-        try {
-            String query = "serviceKey=" + URLEncoder.encode(properties.serviceKey(), StandardCharsets.UTF_8)
-                    + "&MobileOS=ETC"
-                    + "&MobileApp=ieumgil"
-                    + "&_type=json"
-                    + "&contentId=" + URLEncoder.encode(contentId, StandardCharsets.UTF_8);
-            URI uri = URI.create(properties.baseUrl() + "/detailCommon2?" + query);
-            TourApiDetailResponse response = restClient.get()
-                    .uri(uri)
-                    .retrieve()
-                    .body(TourApiDetailResponse.class);
-            if (response == null || response.response() == null || response.response().body() == null
-                    || response.response().body().items() == null
-                    || response.response().body().items().item() == null
-                    || response.response().body().items().item().isEmpty()) {
-                return null;
-            }
-            return response.response().body().items().item().get(0).homepage();
-        } catch (RestClientException | IllegalArgumentException e) {
-            log.warn("투어API 축제 상세 조회 실패: {}", e.getMessage());
-            throw new FestivalException(FestivalErrorCode.TOUR_API_CALL_FAILED);
+        String extraQuery = "&contentId=" + URLEncoder.encode(contentId, StandardCharsets.UTF_8);
+        TourApiDetailResponse response =
+                fetchTourApi("/detailCommon2", extraQuery, TourApiDetailResponse.class, "투어API 축제 상세 조회 실패");
+        if (response == null || response.response() == null || response.response().body() == null
+                || response.response().body().items() == null
+                || response.response().body().items().item() == null
+                || response.response().body().items().item().isEmpty()) {
+            return null;
         }
+        return response.response().body().items().item().get(0).homepage();
     }
 
     private TourApiResponse.Body fetchBody(String eventStartDate, int pageNo, int numOfRows) {
+        String extraQuery = "&arrange=A"
+                + "&eventStartDate=" + URLEncoder.encode(eventStartDate, StandardCharsets.UTF_8)
+                + "&numOfRows=" + numOfRows
+                + "&pageNo=" + pageNo;
+        TourApiResponse response =
+                fetchTourApi("/searchFestival2", extraQuery, TourApiResponse.class, "투어API 축제 조회 실패");
+        if (response == null || response.response() == null) {
+            return null;
+        }
+        return response.response().body();
+    }
+
+    /**
+     * 투어API 호출의 공통 뼈대 — 공통 쿼리 프리픽스 + 직접 인코딩 우회 + try/catch를 한곳에 모은다.
+     *
+     * <p>RestClient의 기본 UriBuilder는 쿼리 파라미터 값 안의 '/'를 인코딩하지 않는다 —
+     * serviceKey(디코딩된 원본)에 '/'가 섞여 있으면 그대로 나가서 data.go.kr이 401을 낸다.
+     * URLEncoder로 직접 인코딩한 뒤 이미 인코딩된 URI로 넘겨 RestClient의 재인코딩을 우회한다.
+     */
+    private <T> T fetchTourApi(String path, String extraQuery, Class<T> type, String failMessage) {
         try {
-            // RestClient의 기본 UriBuilder는 쿼리 파라미터 값 안의 '/'를 인코딩하지 않는다 —
-            // serviceKey(디코딩된 원본)에 '/'가 섞여 있으면 그대로 나가서 data.go.kr이 401을 낸다.
-            // URLEncoder로 직접 인코딩한 뒤 이미 인코딩된 URI로 넘겨 RestClient의 재인코딩을 우회한다.
             String query = "serviceKey=" + URLEncoder.encode(properties.serviceKey(), StandardCharsets.UTF_8)
                     + "&MobileOS=ETC"
                     + "&MobileApp=ieumgil"
                     + "&_type=json"
-                    + "&arrange=A"
-                    + "&eventStartDate=" + URLEncoder.encode(eventStartDate, StandardCharsets.UTF_8)
-                    + "&numOfRows=" + numOfRows
-                    + "&pageNo=" + pageNo;
-            URI uri = URI.create(properties.baseUrl() + "/searchFestival2?" + query);
-            TourApiResponse response = restClient.get()
+                    + extraQuery;
+            URI uri = URI.create(properties.baseUrl() + path + "?" + query);
+            return restClient.get()
                     .uri(uri)
                     .retrieve()
-                    .body(TourApiResponse.class);
-            if (response == null || response.response() == null) {
-                return null;
-            }
-            return response.response().body();
+                    .body(type);
         } catch (RestClientException | IllegalArgumentException e) {
-            log.warn("투어API 축제 조회 실패: {}", e.getMessage());
+            log.warn(failMessage + ": {}", e.getMessage());
             throw new FestivalException(FestivalErrorCode.TOUR_API_CALL_FAILED);
         }
     }
