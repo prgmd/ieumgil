@@ -1908,8 +1908,8 @@ class TransitCandidateServiceImplTest {
         given(publicTransitQueryService.getCombinedRoutes(LAT_BUSAN, LNG_BUSAN, LAT_JEJU, LNG_JEJU))
                 .willReturn(List.of(pathOf(5, 300, null, null)));
 
-        TransitCandidateServiceImpl.AccessLegs result =
-                service.accessLegsOf(new TransitCandidateServiceImpl.Pair(from, to), legs).orElseThrow();
+        TransitRouteModels.AccessLegs result =
+                service.accessLegsOf(new TransitRouteModels.Pair(from, to), legs).orElseThrow();
 
         assertThat(result.accessMin()).isEqualTo(7);
         assertThat(result.accessFare()).isEqualTo(1550);
@@ -1932,7 +1932,7 @@ class TransitCandidateServiceImplTest {
         given(publicTransitQueryService.getCombinedRoutes(anyDouble(), anyDouble(), anyDouble(), anyDouble()))
                 .willReturn(List.of(pathOf(5, 300, null, null)));
 
-        service.accessLegsOf(new TransitCandidateServiceImpl.Pair(from, to), legs);
+        service.accessLegsOf(new TransitRouteModels.Pair(from, to), legs);
 
         ArgumentCaptor<Double> startLat = ArgumentCaptor.forClass(Double.class);
         ArgumentCaptor<Double> startLng = ArgumentCaptor.forClass(Double.class);
@@ -1963,8 +1963,8 @@ class TransitCandidateServiceImplTest {
         given(publicTransitQueryService.getCombinedRoutes(LAT_A, LNG_A, 37.554522, 126.970681))
                 .willThrow(new TransitException(TransitErrorCode.ROUTE_NOT_FOUND));
 
-        Optional<TransitCandidateServiceImpl.AccessLegs> result =
-                service.accessLegsOf(new TransitCandidateServiceImpl.Pair(from, to), legs);
+        Optional<TransitRouteModels.AccessLegs> result =
+                service.accessLegsOf(new TransitRouteModels.Pair(from, to), legs);
 
         assertThat(result).isEmpty();
         verify(publicTransitQueryService, never())
@@ -1982,8 +1982,8 @@ class TransitCandidateServiceImplTest {
         given(publicTransitQueryService.getCombinedRoutes(LAT_BUSAN, LNG_BUSAN, LAT_JEJU, LNG_JEJU))
                 .willThrow(new TransitException(TransitErrorCode.ROUTE_NOT_FOUND));
 
-        Optional<TransitCandidateServiceImpl.AccessLegs> result =
-                service.accessLegsOf(new TransitCandidateServiceImpl.Pair(from, to), legs);
+        Optional<TransitRouteModels.AccessLegs> result =
+                service.accessLegsOf(new TransitRouteModels.Pair(from, to), legs);
 
         assertThat(result).isEmpty();
     }
