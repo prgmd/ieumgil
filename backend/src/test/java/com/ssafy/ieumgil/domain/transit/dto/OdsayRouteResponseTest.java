@@ -98,4 +98,15 @@ class OdsayRouteResponseTest {
 
         assertThat(r.errorCode()).isEqualTo("500");
     }
+
+    @Test
+    @DisplayName("에러 형태가 드리프트하면(원소가 Map이 아니면) 예외 대신 null로 접는다")
+    void 드리프트한_에러_형태는_null이다() throws IOException {
+        // 배열의 첫 원소가 객체가 아니라 문자열/숫자로 오는 등 스키마가 바뀌어도 ClassCastException으로
+        // 터지지 않고 null을 줘야 한다 — 안 그러면 응답 드리프트가 500으로 새어 나간다.
+        assertThat(mapper.readValue("{\"error\":[\"oops\"]}", OdsayRouteResponse.class).errorCode()).isNull();
+        assertThat(mapper.readValue("{\"error\":[123]}", OdsayRouteResponse.class).errorCode()).isNull();
+        assertThat(mapper.readValue("{\"error\":\"boom\"}", OdsayRouteResponse.class).errorCode()).isNull();
+        assertThat(mapper.readValue("{\"error\":[]}", OdsayRouteResponse.class).errorCode()).isNull();
+    }
 }

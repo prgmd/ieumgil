@@ -94,16 +94,18 @@ public record OdsayRouteResponse(Result result, @JsonProperty("error") Object er
      * 타입을 하나로 못 박으면 한쪽이 Jackson 타입 불일치로 터지고,
      * 그게 "경로 없음"을 "API 장애"로 위장시킨다.
      *
-     * @return 에러 코드. 에러가 없으면 null
+     * @return 에러 코드. 에러가 없거나 예상과 다른 형태(응답 드리프트)면 null
      */
-    @SuppressWarnings("unchecked")
     public String errorCode() {
         if (error == null) return null;
-        Map<String, Object> first = switch (error) {
-            case List<?> list -> list.isEmpty() ? null : (Map<String, Object>) list.get(0);
-            case Map<?, ?> map -> (Map<String, Object>) map;
+        Object first = switch (error) {
+            case List<?> list -> list.isEmpty() ? null : list.get(0);
+            case Map<?, ?> map -> map;
             default -> null;
         };
-        return first == null ? null : String.valueOf(first.get("code"));
+        // 첫 원소가 Map이 아니면(에러 형태가 바뀌면) 캐스트로 터지는 대신 null로 접는다 — 드리프트가 500이 되지 않게.
+        if (!(first instanceof Map<?, ?> map)) return null;
+        Object code = map.get("code");
+        return code == null ? null : String.valueOf(code);
     }
 }
