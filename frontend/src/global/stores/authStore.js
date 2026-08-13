@@ -19,10 +19,6 @@ import { tokenStorage } from "../util/tokenStorage";
  * (새로고침·딥링크·탭 새로 열기) 뿐이고, 그때 App 이 fetchMe() 로 다시 채운다.
  */
 
-// TODO(auth): 백엔드 GET /member/me 연동을 확인한 뒤 이 목업을 지우고 초기값을 null 로 바꾼다.
-//             (목업이 남아 있는 동안은 비로그인 상태에서도 이 사용자로 동작한다.)
-const MOCK_USER = { id: 1, nickname: "dd", provider: "kakao", profileImg: "//" };
-
 /**
  * 진행 중인 fetchMe 요청.
  *
@@ -34,7 +30,7 @@ const MOCK_USER = { id: 1, nickname: "dd", provider: "kakao", profileImg: "//" }
 let inFlightFetchMe = null;
 
 export const useAuthStore = create((set) => ({
-  currentUser: MOCK_USER,
+  currentUser: null,
   status: "idle", // idle | loading | authenticated | error
   error: null,
 
