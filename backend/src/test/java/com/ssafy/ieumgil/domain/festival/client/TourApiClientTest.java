@@ -112,6 +112,25 @@ class TourApiClientTest {
     }
 
     @Test
+    void errorResultCodeThrowsFestivalExceptionInsteadOfSilentlyReturningEmpty() {
+        // JSON 에러 봉투는 body 없이 header.resultCode만 온다. 이걸 "축제 0건"으로 삼키면 수집이 조용히 건너뛴다.
+        String errorEnvelope = """
+                {
+                  "response": {
+                    "header": { "resultCode": "22", "resultMsg": "LIMITED_NUMBER_OF_SERVICE_REQUESTS_EXCEEDS_ERROR" }
+                  }
+                }
+                """;
+        server.expect(requestToUriTemplate(
+                        "http://apis.data.go.kr/B551011/KorService2/searchFestival2?serviceKey={key}&MobileOS=ETC&MobileApp=ieumgil&_type=json&arrange=A&eventStartDate={date}&numOfRows={rows}&pageNo={page}",
+                        "test-key", "20260801", 100, 1))
+                .andRespond(withSuccess(errorEnvelope, MediaType.APPLICATION_JSON));
+
+        assertThatThrownBy(() -> tourApiClient.searchFestivals("20260801", 1, 100))
+                .isInstanceOf(FestivalException.class);
+    }
+
+    @Test
     void serviceKeyWithSlashPlusEqualsIsFullyPercentEncoded() {
         // data.go.kr "Decoding" 키는 '/', '+', '=' 같은 문자를 그대로 포함한다.
         // Spring의 기본 UriBuilder는 쿼리 값 안의 '/'를 인코딩하지 않아 401이 났던 회귀 방지 테스트.
