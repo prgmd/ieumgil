@@ -21,7 +21,6 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.Instant;
 import java.util.LinkedHashMap;
 import java.util.Map;
-import java.util.Set;
 
 import static com.ssafy.ieumgil.global.realtime.OpPayloads.payloadWithNullable;
 
@@ -29,11 +28,6 @@ import static com.ssafy.ieumgil.global.realtime.OpPayloads.payloadWithNullable;
 @RequiredArgsConstructor
 @Transactional
 public class BlockCommandServiceImpl implements BlockCommandService {
-
-    /** LWW 갱신을 허용하는 필드 화이트리스트 — Block.applyField의 switch와 1:1 */
-    private static final Set<String> LWW_FIELDS = Set.of(
-            "name", "budget", "durationMin", "detail",
-            "isTimeFixed", "vehicleFlag", "transportMeta");
 
     /** 소요시간 상한(분). BlockReqDTO.Create의 @Max와 같은 값을 유지해야 한다 */
     private static final int MAX_DURATION_MIN = 1440;
@@ -96,10 +90,8 @@ public class BlockCommandServiceImpl implements BlockCommandService {
 
         for (BlockReqDTO.FieldChange change : request.fields()) {
             String field = change.field();
-            if (!LWW_FIELDS.contains(field)) {
-                throw new CustomException(BlockErrorCode.UNSUPPORTED_FIELD);
-            }
-
+            // 지원 필드 화이트리스트는 parseFieldValue의 switch default가 단일 게이트로
+            // 검증한다(미지원 필드는 항상 fresh라 그 경로에 도달해 UNSUPPORTED_FIELD를 던진다).
             String prev = block.getFieldUpdatedAt().get(field);
             boolean isFresh = prev == null || Instant.parse(prev).isBefore(receivedAt);
 
