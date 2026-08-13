@@ -133,7 +133,7 @@ class OdsayFieldContractLiveTest {
 
 		assertThat(paths).isNotEmpty();
 		Set<Integer> intercityPathTypes = Set.of(11, 12, 13, 14, 20);
-		// TransitCandidateServiceImpl.RoadResult.intercityPath()와 같은 규칙 — 시외 판정 목록에서
+		// TransitRouteModels.RoadResult.intercityPath()와 같은 규칙 — 시외 판정 목록에서
 		// 처음 매칭되는 경로 하나를 그대로 쓴다.
 		OdsayRouteResponse.Path firstIntercity = paths.stream()
 				.filter(p -> intercityPathTypes.contains(p.pathType()))

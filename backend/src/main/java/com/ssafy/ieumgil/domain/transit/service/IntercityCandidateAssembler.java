@@ -10,10 +10,10 @@ import com.ssafy.ieumgil.domain.transit.dto.TransitCandidateResDTO.TransitMode;
 import com.ssafy.ieumgil.domain.transit.dto.TransitLegResDTO;
 import com.ssafy.ieumgil.domain.transit.dto.TransitResDTO;
 import com.ssafy.ieumgil.domain.transit.dto.TransitScheduleResDTO;
-import com.ssafy.ieumgil.domain.transit.service.TransitCandidateServiceImpl.AccessLegs;
-import com.ssafy.ieumgil.domain.transit.service.TransitCandidateServiceImpl.Leg;
-import com.ssafy.ieumgil.domain.transit.service.TransitCandidateServiceImpl.Pair;
-import com.ssafy.ieumgil.domain.transit.service.TransitCandidateServiceImpl.RoadResult;
+import com.ssafy.ieumgil.domain.transit.service.TransitRouteModels.AccessLegs;
+import com.ssafy.ieumgil.domain.transit.service.TransitRouteModels.Leg;
+import com.ssafy.ieumgil.domain.transit.service.TransitRouteModels.Pair;
+import com.ssafy.ieumgil.domain.transit.service.TransitRouteModels.RoadResult;
 import com.ssafy.ieumgil.domain.transit.util.BoardingMargin;
 import com.ssafy.ieumgil.domain.transit.util.ConnectionPlanner;
 import com.ssafy.ieumgil.domain.transit.util.IntercityLabel;
@@ -44,10 +44,10 @@ import java.util.concurrent.Callable;
  * 1418줄 god class로 커진 주범이라 별도 클래스로 분리했다 — 서비스는 이제 오케스트레이션과
  * 시내·도로 후보만 맡고, 시외 조립은 여기로 위임한다.
  *
- * <p>값 타입({@link Pair}·{@link AccessLegs}·{@link Leg}·{@link RoadResult})은 여전히
- * {@code TransitCandidateServiceImpl}의 중첩 타입이다 — 그 서비스의 단위 테스트가
- * {@code TransitCandidateServiceImpl.Pair}·{@code .AccessLegs}를 직접 참조하므로 옮기지 못한다.
- * 이 조립기는 {@code @InjectMocks} 시그니처를 지키기 위해 서비스가 직접 조립한다(Spring 빈이 아니다).
+ * <p>값 타입({@link Pair}·{@link AccessLegs}·{@link Leg}·{@link RoadResult})과 기본 수단 선택
+ * 규칙({@link TransitRouteModels#defaultModeOf})은 중립 홀더 {@link TransitRouteModels}에 있다 —
+ * 이 조립기가 서비스를 참조하지 않게 해 컴파일 순환을 끊는다. 이 조립기는 {@code @InjectMocks}
+ * 시그니처를 지키기 위해 서비스가 직접 조립한다(Spring 빈이 아니다).
  */
 @Slf4j
 @RequiredArgsConstructor
@@ -90,7 +90,7 @@ public class IntercityCandidateAssembler {
                 .toBlockId(pair.to().getId())
                 .intercity(true)
                 .timetableApplied(true)
-                .defaultMode(multiPref ? null : TransitCandidateServiceImpl.defaultModeOf(candidates))
+                .defaultMode(multiPref ? null : TransitRouteModels.defaultModeOf(candidates))
                 .candidates(candidates)
                 .build();
     }
@@ -131,7 +131,7 @@ public class IntercityCandidateAssembler {
                 .intercity(true)
                 .timetableApplied(false)
                 .timetableSkipReason(reason)
-                .defaultMode(multiPref ? null : TransitCandidateServiceImpl.defaultModeOf(candidates))
+                .defaultMode(multiPref ? null : TransitRouteModels.defaultModeOf(candidates))
                 .candidates(candidates)
                 .build();
     }
