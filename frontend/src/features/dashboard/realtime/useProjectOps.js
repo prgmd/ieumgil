@@ -126,17 +126,21 @@ export function useProjectOps(
         client.subscribe(`/topic/project/${projectId}`, (message) => {
           const op = JSON.parse(message.body);
           const own = op.clientId === getClientId();
-          console.debug(
-            `[realtime] seq=${op.seq} ${op.type}${own ? " (own)" : ""}`,
-            op.payload,
-          );
+          if (import.meta.env.DEV) {
+            console.debug(
+              `[realtime] seq=${op.seq} ${op.type}${own ? " (own)" : ""}`,
+              op.payload,
+            );
+          }
           onOpRef.current?.(op, { own });
         });
         // presence 는 메인 토픽을 구독한 세션만 "보는 중"으로 세므로(서버 판정 기준)
         // 반드시 메인 구독과 같은 연결에서 함께 구독한다
         client.subscribe(`/topic/project/${projectId}/presence`, (message) => {
           const msg = JSON.parse(message.body);
-          console.debug(`[realtime] presence ${msg.type}`, msg);
+          if (import.meta.env.DEV) {
+            console.debug(`[realtime] presence ${msg.type}`, msg);
+          }
           onPresenceRef.current?.(msg);
         });
         // 라이브 커서 — 초당 수십 건이라 로그를 남기지 않는다
