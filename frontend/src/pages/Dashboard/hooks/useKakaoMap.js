@@ -50,7 +50,7 @@ function blockOverlayInner(item) {
       <b class="map-ov-name">${escapeHtml(item.name)}</b>
     </div>
     ${item.detail ? `<p class="map-ov-desc">${escapeHtml(item.detail)}</p>` : ""}
-    ${url ? `<a class="map-ov-link" href="${url}" target="_blank" rel="noreferrer noopener">카카오맵에서 보기 ↗</a>` : ""}
+    ${url ? `<a class="map-ov-link" href="${escapeHtml(url)}" target="_blank" rel="noreferrer noopener">카카오맵에서 보기 ↗</a>` : ""}
     <span class="map-ov-tail" aria-hidden="true"></span>`;
 }
 

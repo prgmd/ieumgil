@@ -7,7 +7,7 @@ import { fetchFestivalHomepage } from "./dashboardApi";
 
 /** 카카오 장소 상세 딥링크. source=KAKAO 블록의 placeId로 만든다. */
 export function buildKakaoPlaceUrl(placeId) {
-  return `https://place.map.kakao.com/${placeId}`;
+  return `https://place.map.kakao.com/${encodeURIComponent(placeId)}`;
 }
 
 /** 카카오맵 검색. 축제 홈페이지가 없을 때 축제명으로 폴백한다. */
