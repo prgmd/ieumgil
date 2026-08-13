@@ -18,6 +18,9 @@ import java.util.List;
 @Component
 public class TourApiClient {
 
+    /** data.go.kr 공통 응답 헤더의 성공 코드. 그 외 코드는 에러 봉투(body 빔)라 실패로 처리한다. */
+    private static final String SUCCESS_RESULT_CODE = "0000";
+
     private final RestClient restClient;
     private final TourApiProperties properties;
 
@@ -70,6 +73,14 @@ public class TourApiClient {
         if (response == null || response.response() == null) {
             return null;
         }
+        // JSON 에러 봉투는 body가 null이라 "축제 0건"으로 위장된다 — resultCode로 에러를 먼저 걸러낸다.
+        TourApiResponse.Header header = response.response().header();
+        if (header != null && header.resultCode() != null
+                && !SUCCESS_RESULT_CODE.equals(header.resultCode())) {
+            log.warn("투어API 축제 조회 에러 응답: resultCode={}, resultMsg={}",
+                    header.resultCode(), header.resultMsg());
+            throw new FestivalException(FestivalErrorCode.TOUR_API_CALL_FAILED);
+        }
         return response.response().body();
     }
 
@@ -93,7 +104,8 @@ public class TourApiClient {
                     .retrieve()
                     .body(type);
         } catch (RestClientException | IllegalArgumentException e) {
-            log.warn(failMessage + ": {}", e.getMessage());
+            // URL에 serviceKey가 쿼리로 붙으므로 예외 메시지(URL 포함) 대신 타입만 남긴다.
+            log.warn("{}: {}", failMessage, e.getClass().getSimpleName());
             throw new FestivalException(FestivalErrorCode.TOUR_API_CALL_FAILED);
         }
     }

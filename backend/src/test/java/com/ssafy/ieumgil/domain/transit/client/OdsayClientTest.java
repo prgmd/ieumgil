@@ -16,6 +16,7 @@ import org.springframework.boot.test.autoconfigure.web.client.RestClientTest;
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.client.MockRestServiceServer;
 
@@ -28,6 +29,7 @@ import static org.springframework.http.HttpMethod.GET;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.method;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.requestTo;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withServerError;
+import static org.springframework.test.web.client.response.MockRestResponseCreators.withStatus;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
 
 @RestClientTest(OdsayClient.class)
@@ -259,6 +261,21 @@ class OdsayClientTest {
         assertThatThrownBy(() ->
                 odsayClient.searchPublicTransitRoute(37.4979, 127.0276, 37.5665, 127.1054, "BUS"))
                 .isInstanceOf(TransitException.class);
+    }
+
+    @Test
+    @DisplayName("429는 백오프 후 재시도한다 — 다음 시도가 성공하면 경로를 준다")
+    void tooManyRequestsIsRetriedThenSucceeds() {
+        String uri = "https://api.odsay.com/v1/api/searchPubTransPathT?SX=127.0276&SY=37.4979&EX=127.1054&EY=37.5665&apiKey=test-key&SearchPathType=2";
+        server.expect(requestTo(uri)).andRespond(withStatus(HttpStatus.TOO_MANY_REQUESTS));
+        server.expect(requestTo(uri))
+                .andRespond(withSuccess(ROUTE_RESPONSE, MediaType.APPLICATION_JSON));
+
+        List<OdsayRouteResponse.Path> result =
+                odsayClient.searchPublicTransitRoute(37.4979, 127.0276, 37.5665, 127.1054, "BUS");
+
+        assertThat(result).isNotEmpty();
+        server.verify();
     }
 
     @Test

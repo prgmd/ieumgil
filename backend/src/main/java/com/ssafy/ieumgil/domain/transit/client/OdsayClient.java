@@ -13,6 +13,7 @@ import com.ssafy.ieumgil.domain.transit.exception.TransitException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
+import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
 
@@ -25,6 +26,7 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.function.Function;
 import java.util.function.Predicate;
+import java.util.function.Supplier;
 
 @Slf4j
 @Component
@@ -54,6 +56,14 @@ public class OdsayClient {
      * 답이 바뀌고, 그걸 하루 내내 모르고 있을 이유가 없다.
      */
     private static final Duration NEGATIVE_TTL = Duration.ofMinutes(10);
+
+    /**
+     * 레이트 리밋(429) 백오프. 캐시가 1차 방어지만, 시외 한 구간이 경로 조회 7회를 쓰므로
+     * 캐시 미스가 몰리면 429가 난다({@link #searchPublicTransitRoute} 주석). 최대 3회 시도,
+     * 지수 증가 대기(500ms → 1000ms). <b>429만</b> 재시도하고 다른 상태코드는 즉시 던진다.
+     */
+    private static final int MAX_429_ATTEMPTS = 3;
+    private static final long RETRY_BASE_DELAY_MS = 500L;
 
     private final RestClient restClient;
     private final OdsayProperties properties;
@@ -91,10 +101,10 @@ public class OdsayClient {
                     + "&EX=" + endLng + "&EY=" + endLat
                     + "&apiKey=" + properties.apiKey()
                     + "&SearchPathType=" + searchPathType);
-            OdsayRouteResponse response = restClient.get()
+            OdsayRouteResponse response = executeWith429Retry(() -> restClient.get()
                     .uri(uri)
                     .retrieve()
-                    .body(OdsayRouteResponse.class);
+                    .body(OdsayRouteResponse.class));
             checkRouteError(response);
             List<OdsayRouteResponse.Path> paths =
                     response == null || response.result() == null || response.result().path() == null
@@ -109,7 +119,8 @@ public class OdsayClient {
             cache.write(cacheKey, CachedRoute.tooClose(), NEGATIVE_TTL);
             throw e;
         } catch (RestClientException | IllegalArgumentException e) {
-            log.warn("ODsay 대중교통 길찾기 실패: {}", e.getMessage());
+            // URL에 apiKey가 쿼리로 붙으므로 e.getMessage()(요청 URL 포함)를 로그에 남기지 않는다 — 예외 타입만 남긴다.
+            log.warn("ODsay 대중교통 길찾기 실패: {}", e.getClass().getSimpleName());
             throw new TransitException(TransitErrorCode.ODSAY_API_CALL_FAILED);
         }
     }
@@ -119,10 +130,10 @@ public class OdsayClient {
             URI uri = URI.create(properties.baseUrl() + "/trainTerminals"
                     + "?terminalName=" + URLEncoder.encode(terminalName, StandardCharsets.UTF_8)
                     + "&apiKey=" + properties.apiKey());
-            OdsayTrainTerminalResponse response = restClient.get()
+            OdsayTrainTerminalResponse response = executeWith429Retry(() -> restClient.get()
                     .uri(uri)
                     .retrieve()
-                    .body(OdsayTrainTerminalResponse.class);
+                    .body(OdsayTrainTerminalResponse.class));
             checkForError(response == null ? null : response.error());
             if (response == null || response.result() == null || response.result().isEmpty()) {
                 return Optional.empty();
@@ -131,7 +142,8 @@ public class OdsayClient {
                     OdsayTrainTerminalResponse.Terminal::stationName,
                     OdsayTrainTerminalResponse.Terminal::haveDestinationTerminals);
         } catch (RestClientException | IllegalArgumentException e) {
-            log.warn("ODsay 기차역 검색 실패: {}", e.getMessage());
+            // URL에 apiKey가 붙으므로 예외 메시지(URL 포함) 대신 타입만 남긴다.
+            log.warn("ODsay 기차역 검색 실패: {}", e.getClass().getSimpleName());
             throw new TransitException(TransitErrorCode.ODSAY_API_CALL_FAILED);
         }
     }
@@ -149,10 +161,10 @@ public class OdsayClient {
             URI uri = URI.create(properties.baseUrl() + "/" + path
                     + "?terminalName=" + URLEncoder.encode(terminalName, StandardCharsets.UTF_8)
                     + "&apiKey=" + properties.apiKey());
-            OdsayBusTerminalResponse response = restClient.get()
+            OdsayBusTerminalResponse response = executeWith429Retry(() -> restClient.get()
                     .uri(uri)
                     .retrieve()
-                    .body(OdsayBusTerminalResponse.class);
+                    .body(OdsayBusTerminalResponse.class));
             checkForError(response == null ? null : response.error());
             if (response == null || response.result() == null || response.result().isEmpty()) {
                 return Optional.empty();
@@ -161,7 +173,8 @@ public class OdsayClient {
                     OdsayBusTerminalResponse.Terminal::stationName,
                     OdsayBusTerminalResponse.Terminal::haveDestinationTerminals);
         } catch (RestClientException | IllegalArgumentException e) {
-            log.warn("ODsay 버스터미널 검색 실패: {}", e.getMessage());
+            // URL에 apiKey가 붙으므로 예외 메시지(URL 포함) 대신 타입만 남긴다.
+            log.warn("ODsay 버스터미널 검색 실패: {}", e.getClass().getSimpleName());
             throw new TransitException(TransitErrorCode.ODSAY_API_CALL_FAILED);
         }
     }
@@ -229,17 +242,43 @@ public class OdsayClient {
                     + "?startStationID=" + startStationId
                     + "&endStationID=" + endStationId
                     + "&apiKey=" + properties.apiKey());
-            RESP response = restClient.get()
+            RESP response = executeWith429Retry(() -> restClient.get()
                     .uri(uri)
                     .retrieve()
-                    .body(responseType);
+                    .body(responseType));
             checkForError(response == null ? null : errorOf.apply(response));
             List<ITEM> schedule = response == null ? List.of() : scheduleOf.apply(response);
             cache.write(cacheKey, schedule, SCHEDULE_TTL);
             return schedule;
         } catch (RestClientException | IllegalArgumentException e) {
-            log.warn(failMessage + ": {}", e.getMessage());
+            // URL에 apiKey가 붙으므로 예외 메시지(URL 포함) 대신 타입만 남긴다.
+            log.warn("{}: {}", failMessage, e.getClass().getSimpleName());
             throw new TransitException(TransitErrorCode.ODSAY_API_CALL_FAILED);
+        }
+    }
+
+    /**
+     * ODsay 호출을 429(Too Many Requests)에 한해 지수 백오프로 재시도한다. 재시도 대상은 429뿐이며
+     * 그 외 상태코드·예외는 그대로 전파해 호출부의 기존 처리에 맡긴다. 시도를 소진하면 마지막 429를 던진다.
+     */
+    private <T> T executeWith429Retry(Supplier<T> call) {
+        int attempt = 0;
+        while (true) {
+            try {
+                return call.get();
+            } catch (HttpClientErrorException.TooManyRequests e) {
+                attempt++;
+                if (attempt >= MAX_429_ATTEMPTS) {
+                    throw e;
+                }
+                log.warn("ODsay 429 — {}회차 재시도 대기", attempt);
+                try {
+                    Thread.sleep(RETRY_BASE_DELAY_MS * (1L << (attempt - 1)));
+                } catch (InterruptedException ie) {
+                    Thread.currentThread().interrupt();
+                    throw e;
+                }
+            }
         }
     }
 

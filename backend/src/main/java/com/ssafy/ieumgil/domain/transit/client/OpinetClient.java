@@ -82,7 +82,8 @@ public class OpinetClient {
                     .retrieve()
                     .body(String.class);
         } catch (RestClientException | IllegalArgumentException e) {
-            log.warn("오피넷 유가 조회 실패: {}", e.getMessage());
+            // URL에 apiKey(code 파라미터)가 붙으므로 예외 메시지(URL 포함) 대신 타입만 남긴다.
+            log.warn("오피넷 유가 조회 실패: {}", e.getClass().getSimpleName());
             throw new TransitException(TransitErrorCode.OPINET_API_CALL_FAILED);
         }
     }
