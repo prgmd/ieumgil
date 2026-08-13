@@ -6,33 +6,33 @@ import React, {
   useMemo,
 } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { BlockEditForm } from "./components/BlockEditForm";
+import { BlockEditModal } from "./components/BlockEditModal";
 import { ChatbotWidget } from "./components/ChatbotWidget";
 import { RemoteCursorLayer } from "./components/RemoteCursorLayer";
 import { TransitPickerModals } from "./components/TransitPickerModals";
 import { VoiceBar } from "./components/VoiceBar";
 import { DayTab } from "./components/DayTab";
-import { CardBody } from "./components/CardBody";
 import { HintIcon } from "./components/HintIcon";
 import { TimelineCard } from "./components/TimelineCard";
-import { PoolCard } from "./components/PoolCard";
+import { PoolPanel } from "./components/PoolPanel";
 import { BudgetPanel } from "./components/BudgetPanel";
 import { MapPanel } from "./components/MapPanel";
 import { SearchPanel } from "./components/SearchPanel";
 import { ReadModeView } from "./components/ReadModeView";
+import { DragOverlayPreview } from "./components/DragOverlayPreview";
 import {
   fmtTime,
   fmtTimeLong,
   catOf,
-  isTempId,
   isServerBlock,
   catFromKakaoGroup,
   dayNoOf,
   dayKeysOf,
   dayDate,
   boardOf,
-  blocksOfDay,
+  realBlocksOfDay,
   catKeyOf,
+  omitKey,
   PX,
   TL_PAD_TOP,
   firstStartOf,
@@ -41,10 +41,11 @@ import { useKakaoMap } from "./hooks/useKakaoMap";
 import { useDayNav } from "./hooks/useDayNav";
 import { useBudget } from "./hooks/useBudget";
 import { useBlockCrud } from "./hooks/useBlockCrud";
+import { usePresence } from "./hooks/usePresence";
 import { useTransitPicker } from "./hooks/useTransitPicker";
+import { useBoardStore } from "./stores/useBoardStore";
 import {
   DndContext,
-  DragOverlay,
   KeyboardSensor,
   PointerSensor,
   useSensor,
@@ -52,9 +53,7 @@ import {
   useDroppable,
 } from "@dnd-kit/core";
 import {
-  SortableContext,
   sortableKeyboardCoordinates,
-  rectSortingStrategy,
 } from "@dnd-kit/sortable";
 import {
   safeKeyBetween,
@@ -64,7 +63,6 @@ import {
   persistMovedOffsets,
 } from "./boardOrdering";
 import { AppBar } from "../My/shared/ui/AppBar";
-import Modal from "../My/shared/ui/Modal";
 import EditProjectModal from "../Group/components/EditProjectModal";
 import { useDashboard } from "../../features/dashboard/hooks/useDashboard";
 import { useProjectOps } from "../../features/dashboard/realtime/useProjectOps";
@@ -72,7 +70,6 @@ import { useVoiceChat } from "../../features/dashboard/voice/useVoiceChat";
 import { createOpSequencer } from "../../features/dashboard/realtime/opSequencer";
 import * as blockApi from "../../features/dashboard/api/dashboardApi";
 import { getClientId } from "../../global/api/clientId";
-import { Select } from "../../global/components/Select";
 import { EmptyState } from "../../global/components/EmptyState";
 import notFoundImg from "../../assets/img/notfound.png";
 import "../Error/error.css";
@@ -123,17 +120,8 @@ export function DashboardPage() {
   const applyPresenceRef = useRef(() => {});
   const pendingRemoteOpsRef = useRef([]);
   const interactingRef = useRef(false);
-  // 커서 위치 수신은 대시보드 상태를 거치지 않고 RemoteCursorLayer(타임라인·페이지
-  // 두 장)로 직행한다 — 초당 수십 건이 보드 전체를 리렌더하지 않도록 성능을 격리.
-  // 어느 레이어 소관인지는 각 레이어가 메시지의 area 로 스스로 판단한다.
-  const tlCursorHandlerRef = useRef(() => {});
-  const pageCursorHandlerRef = useRef(() => {});
-  const registerTlCursorHandler = useCallback((fn) => {
-    tlCursorHandlerRef.current = fn;
-  }, []);
-  const registerPageCursorHandler = useCallback((fn) => {
-    pageCursorHandlerRef.current = fn;
-  }, []);
+  // 커서 위치 수신(applyCursorRef)은 usePresence 가 반환하는 applyCursorMessage 로
+  // 아래에서 꽂는다 — 레이어 라우팅·성능 격리는 훅 안에서 처리한다.
   const applyCursorRef = useRef(() => {});
   // 보이스 시그널도 ref 우회 — 훅(useVoiceChat)이 아래에서 핸들러를 등록한다
   const voiceSignalRef = useRef(() => {});
@@ -193,7 +181,7 @@ export function DashboardPage() {
   // 축은 여행 전체다 — 첫 Day 의 00:00 부터 마지막 Day 의 24:00 까지 한 줄로 잇는다.
   // 렌더 식은 전부 (값 - timelineStart) * PX 꼴 그대로 두고 기준선만 0 으로 내렸다.
   // dayKeysOf 는 항상 Day 를 하나 이상 주므로 activeDay 는 언제나 "dN" 이다.
-  const activeDayIndex = Math.max(0, dayKeys.indexOf(activeDay));
+  const activeDayIndex = dayNoOf(activeDay) - 1;
   const timelineStart = 0;
   const timelineEnd = dayKeys.length * blockApi.MINUTES_PER_DAY;
 
@@ -222,8 +210,11 @@ export function DashboardPage() {
       : (dayNoOf(activeDay) + 1) * blockApi.MINUTES_PER_DAY;
 
   // 보드 편집 상태 — 초기값은 비워 두고, 스냅샷이 도착하면 아래 시드 effect 가 채운다.
-  const [items, setItems] = useState({});
-  const [pool, setPool] = useState([]);
+  const items = useBoardStore((s) => s.items);
+  const setItems = useBoardStore((s) => s.setItems);
+  const pool = useBoardStore((s) => s.pool);
+  const setPool = useBoardStore((s) => s.setPool);
+  const resetBoard = useBoardStore((s) => s.resetBoard);
   // 후보 목록 필터 — 대분류(cat) + 제목 검색. 렌더만 거른다(원본 pool 은 그대로).
   const [poolCat, setPoolCat] = useState("ALL");
   const [poolQuery, setPoolQuery] = useState("");
@@ -246,74 +237,59 @@ export function DashboardPage() {
   // Day 별로 필요한 곳은 blocksOfDay 선택자로 얻는다.
   const board = useMemo(() => boardOf(items), [items]);
 
-  // ── 함께 있는 느낌 (6단계) ───────────────────────────
-  // members: 스냅샷이 시드하고 MEMBER_JOINED/LEFT op 가 갱신한다 (상단바 아바타).
-  // onlineIds: 시드는 members[].online, 이후는 PRESENCE 메시지 — 초록 점의 진실.
-  // detailLocks: blockId → 락 소유 memberId. DETAIL_LOCK 메시지로만 갱신되는 휘발
-  //   정보라 새로고침하면 기존 락은 다음 획득/해제 전까지 안 보인다(advisory 라 감수).
-  const [boardMembers, setBoardMembers] = useState([]);
-  const [onlineIds, setOnlineIds] = useState(() => new Set());
-  const [detailLocks, setDetailLocks] = useState({});
-  // "누가 어느 Day 를 보는 중인가" (Day 탭 점 표시, 7단계) — 커서 메시지의 dayNo 로
-  // 유지된다. Day 가 바뀔 때만 setState 하므로 초당 수십 건의 커서 트래픽이 보드
-  // 리렌더로 이어지지 않는다 — 커서 위치는 레이어 소관, 여기는 Day 만.
-  const [viewingDays, setViewingDays] = useState({}); // actorId → dayNo
-  const cursorLastSeenRef = useRef({}); // actorId → ts (하트비트 만료 판정)
-  // 블록별 "가장 최근 수정자"의 세션 오버레이 — 블록 op(생성·필드수정·이동)의
-  // actorId 로 기록한다. 영속 값은 서버의 block.lastEditedById 이고(PRS-04), 이 맵은
-  // op 가 도착한 순간 재조회 없이 배지를 갱신하려는 용도 + 아직 서버 id 를 못 받은
-  // 낙관적 생성 블록을 덮는 용도다. 시드마다 비운다 — 스냅샷이 더 최신이다
-  // (우선순위는 editorBadgeOf 참조).
-  const [lastEditors, setLastEditors] = useState({}); // blockId → memberId
-
-  const recordBlockEditor = (blockId, memberId) => {
-    if (blockId == null || memberId == null) return;
-    setLastEditors((prev) =>
-      prev[blockId] === memberId ? prev : { ...prev, [blockId]: memberId },
-    );
-  };
-
-  const applyPresenceMessage = (msg) => {
-    if (msg?.type === "PRESENCE") {
-      setOnlineIds((prev) => {
-        if (prev.has(msg.memberId) === !!msg.online) return prev; // 변화 없음
-        const next = new Set(prev);
-        if (msg.online) next.add(msg.memberId);
-        else next.delete(msg.memberId);
-        return next;
-      });
-      // 락 만료(TTL)는 브로드캐스트가 없다 — 편집자가 해제 없이 사라지면(브라우저
-      // 강제 종료 등) 배지가 남는다. 이탈 신호를 만료의 근사로 삼아 그의 배지를
-      // 걷는다. 실제 락도 하트비트가 끊겨 30초 내 만료된다.
-      if (!msg.online) {
-        setDetailLocks((prev) => {
-          const entries = Object.entries(prev).filter(
-            ([, holder]) => holder !== msg.memberId,
-          );
-          return entries.length === Object.keys(prev).length
-            ? prev
-            : Object.fromEntries(entries);
-        });
-        // Day 탭의 "보는 중" 점도 함께 걷는다 — 하트비트 만료(12초)보다 빠르다
-        setViewingDays((prev) => {
-          if (!(msg.memberId in prev)) return prev;
-          const next = { ...prev };
-          delete next[msg.memberId];
-          return next;
-        });
-      }
-    } else if (msg?.type === "DETAIL_LOCK") {
-      setDetailLocks((prev) => {
-        if (msg.locked) return { ...prev, [msg.blockId]: msg.memberId };
-        // 해제는 소유자 것만 지운다 — 늦게 도착한 옛 소유자의 해제가
-        // 새 소유자의 배지를 지우면 안 된다
-        if (prev[msg.blockId] !== msg.memberId) return prev;
-        const next = { ...prev };
-        delete next[msg.blockId];
-        return next;
-      });
+  // Day 키 → 그 Day 의 블록 id 목록. Day 탭 개수 배지는 매 렌더 Day 마다
+  // blocksOfDay 를 부르면 O(days × board) 라 드래그 중엔 부담이 된다 — 한 번의
+  // O(board) 순회로 미리 갈라 둔다. board 순서를 그대로 물려받아 blocksOfDay 와
+  // 같은 결과를 준다(같은 소속 판정·같은 정렬).
+  const blocksByDay = useMemo(() => {
+    const map = {};
+    for (const id of board) {
+      const dayNo = blockApi.dayNoOfOffset(items[id]?.startMins);
+      if (dayNo == null) continue;
+      (map[`d${dayNo}`] ??= []).push(id);
     }
-  };
+    return map;
+  }, [board, items]);
+
+  // ── 타임라인 DOM 참조 + 편집 대상 — usePresence 의 입력이라 그 호출보다 위에 둔다 ──
+  // (원래 아래에 있던 선언을 최소 이동으로 끌어올린 것뿐이다: 순수 store 선택자와
+  //  useRef 라 위치를 바꿔도 부작용이 없다.)
+  const timelineDOMRef = useRef(null);
+  const editingBlockId = useBoardStore((s) => s.editingBlockId);
+  const setEditingBlockId = useBoardStore((s) => s.setEditingBlockId);
+
+  // ── 함께 있는 느낌 (6·7단계) — presence/커서/락 클러스터는 usePresence 로 분리 ──
+  // 송신 채널 sendCursor 는 입력으로 넣고, 적용 함수(applyPresenceMessage/
+  // applyCursorMessage)는 반환받아 아래 ref 에 꽂는다 — useProjectOps 와의 순환 회피.
+  const {
+    boardMembers,
+    setBoardMembers,
+    onlineIds,
+    setOnlineIds,
+    detailLocks,
+    setLastEditors,
+    recordBlockEditor,
+    nicknameOf,
+    lockBadgeOf,
+    editorBadgeOf,
+    dayViewersOf,
+    handlePageCursorMove,
+    registerTlCursorHandler,
+    registerPageCursorHandler,
+    applyPresenceMessage,
+    applyCursorMessage,
+    pageDOMRef,
+  } = usePresence({
+    activeDay,
+    timelineDOMRef,
+    sendCursor,
+    currentUser,
+    items,
+    editingBlockId,
+    timelineStart,
+    TL_PAD_LEFT,
+  });
+
   useEffect(() => {
     applyPresenceRef.current = applyPresenceMessage;
   });
@@ -339,50 +315,10 @@ export function DashboardPage() {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [voiceOpen]);
 
-  // ── 커서 메시지 라우팅 — 위치는 두 레이어로, dayNo 는 viewingDays 로 ──
-  // 모든 커서 메시지에 발신자가 보는 dayNo 가 실려 온다(마우스가 멈춰 있어도
-  // 5초 주기 view 하트비트가 유지).
-  const applyCursorMessage = (msg) => {
-    if (msg?.actorId == null) return;
-    tlCursorHandlerRef.current(msg);
-    pageCursorHandlerRef.current(msg);
-    // 내 Day 는 표시하지 않는다 — 내가 보는 탭이 곧 내 위치다
-    if (msg.actorId === currentUser?.id) return;
-    if (msg.dayNo == null) return;
-    cursorLastSeenRef.current[msg.actorId] = Date.now();
-    setViewingDays((prev) =>
-      prev[msg.actorId] === msg.dayNo
-        ? prev
-        : { ...prev, [msg.actorId]: msg.dayNo },
-    );
-  };
+  // 커서 적용 함수도 usePresence 반환값이다 — 이 ref 로 useProjectOps 에 물린다.
   useEffect(() => {
     applyCursorRef.current = applyCursorMessage;
   });
-
-  // 하트비트(5초)가 두 번 유실되면 떠난 것으로 본다 — 잔점 방지
-  useEffect(() => {
-    const timer = setInterval(() => {
-      const now = Date.now();
-      setViewingDays((prev) => {
-        const alive = Object.keys(prev).filter(
-          (id) => now - (cursorLastSeenRef.current[id] ?? 0) < 12_000,
-        );
-        return alive.length === Object.keys(prev).length
-          ? prev
-          : Object.fromEntries(alive.map((id) => [id, prev[id]]));
-      });
-    }, 5000);
-    return () => clearInterval(timer);
-  }, []);
-
-  // 내가 보는 Day 를 알린다 — Day 전환 즉시 + 5초 주기(마우스가 안 움직여도 유지)
-  useEffect(() => {
-    const dayNo = dayNoOf(activeDay);
-    sendCursor({ area: "view", dayNo });
-    const timer = setInterval(() => sendCursor({ area: "view", dayNo }), 5000);
-    return () => clearInterval(timer);
-  }, [activeDay, sendCursor]);
 
   // (기간이 줄어 범위를 벗어난 블록을 후보 목록으로 되돌리는 일은 서버가 한다 —
   //  PATCH /projects 가 그 블록들을 POOL 로 옮기고 movedToPool 로 알려준다. 기간이
@@ -390,7 +326,6 @@ export function DashboardPage() {
   //  것이 없다. 예전의 로컬 감사는 "여행 기간 밖 오프셋"을 전부 잡아내서, 겹침
   //  해소로 마지막 자정 너머까지 밀린 블록까지 후보로 끌어내리고 있었다.)
 
-  const [editingBlockId, setEditingBlockId] = useState(null);
   const [activeId, setActiveId] = useState(null);
   const [resizingState, setResizingState] = useState(null);
   const [dragPreview, setDragPreview] = useState(null);
@@ -442,7 +377,7 @@ export function DashboardPage() {
       setEditingBlockId(id);
       focusPlace(items[id]);
     },
-    [focusPlace, items],
+    [focusPlace, items, setEditingBlockId],
   );
 
   // 저장 실패 시 롤백 — "어디서 왔는지"를 복원하는 대신 서버 진실로 보드를
@@ -474,6 +409,15 @@ export function DashboardPage() {
     remainingBudget,
     budgetSegments,
   } = useBudget({ projectId, project, board, items, rollbackToServer });
+
+  // ── 프로젝트 전환 시 보드 스토어 리셋 (모듈 싱글턴 stale 방지) ──
+  // 스토어는 모듈 싱글턴이라 언마운트/재마운트·프로젝트 이동 시 이전 보드가 남는다.
+  // projectId 가 바뀌는 동안 useDashboard 는 isStale 로 status="loading" 을 강제하므로
+  // 아래 시드(status==="loaded" 조건)는 fetch 완료 이후 렌더에서만 실행된다 — 즉 이
+  // effect(projectId 변경 시에만 발화)보다 항상 뒤 렌더라 시드를 덮지 않는다.
+  useEffect(() => {
+    resetBoard();
+  }, [projectId, resetBoard]);
 
   // ── 스냅샷 → 로컬 보드 시드 ──────────────────────────
   // effect 가 아니라 "렌더 중 조건부 setState"(React 공식 파생 상태 리셋 패턴)를 쓴다.
@@ -523,7 +467,7 @@ export function DashboardPage() {
       return next;
     });
     setPool((prev) => prev.map((id) => (id === tempId ? blockId : id)));
-  }, []);
+  }, [setItems, setPool]);
 
   // ── 교통 피커 (후보 생성·단일 추가·선택 확정·재선택·자동 재생성) ──
   const {
@@ -554,19 +498,9 @@ export function DashboardPage() {
     showToast,
   });
 
-  const timelineDOMRef = useRef(null);
   const poolDOMRef = useRef(null);
-  const pageDOMRef = useRef(null); // 페이지 좌표 커서(area:"page")의 기준 박스
   const activeDragRef = useRef(null);
   const dragRegionRef = useRef(null);
-
-  // 최신 items 를 읽기 위한 latest-ref — 리사이즈 종료 시점과 원격 op 적용이 쓴다.
-  // 원격 적용은 한 tick 에 여러 op 를 연달아 처리할 수 있어(시퀀서 drain), 커밋 전에도
-  // 서로의 결과를 보도록 적용 함수가 이 ref 를 직접 갱신하며 진행한다.
-  const itemsRef = useRef(items);
-  useEffect(() => {
-    itemsRef.current = items;
-  });
 
   // ── 원격 op 적용 ─────────────────────────────────────
   // 원격 블록을 startMins(절대 오프셋)가 가리키는 자리로 놓는다(생성·이동 공용).
@@ -577,7 +511,7 @@ export function DashboardPage() {
     setPool((prev) => {
       const without = prev.filter((id) => id !== block.id);
       return block.startMins == null
-        ? insertByOrderKey(without, itemsRef.current, block)
+        ? insertByOrderKey(without, useBoardStore.getState().items, block)
         : without;
     });
   };
@@ -607,7 +541,6 @@ export function DashboardPage() {
         // (adoptServerId) 사이에 echo 가 끼어들면 같은 블록이 두 벌 들어간다.
         if (own) break;
         const block = blockApi.toUiBlock(payload.block);
-        itemsRef.current = { ...itemsRef.current, [block.id]: block };
         setItems((prev) => ({ ...prev, [block.id]: block }));
         placeRemoteBlock(block);
         break;
@@ -619,11 +552,10 @@ export function DashboardPage() {
         // 블록의 화면상 y 위치는 startMins 라서, 이게 빠지면 이동을 재확정해도
         // 시각은 남의 값 그대로 남는다.
         const id = payload.blockId;
-        const base = itemsRef.current[id];
+        const base = useBoardStore.getState().items[id];
         if (!base) break; // 모르는 블록(이미 삭제 등) — 무시
         const patch = blockApi.serverFieldsToUiPatch(payload.fields);
         const updated = { ...base, ...patch };
-        itemsRef.current = { ...itemsRef.current, [id]: updated };
         setItems((prev) => (prev[id] ? { ...prev, [id]: updated } : prev));
         break;
       }
@@ -631,7 +563,7 @@ export function DashboardPage() {
         recordBlockEditor(payload.blockId, op.actorId);
         // 자기 op 도 적용한다 — 이동은 마지막 쓰기가 이긴다. 남이 먼저 옮긴 op 에
         // 덮인 자리를 자기 echo 가 제 위치로 되돌려 놓는 것이 이 재적용의 목적이다.
-        const base = itemsRef.current[payload.blockId];
+        const base = useBoardStore.getState().items[payload.blockId];
         if (!base) {
           if (own) break; // 내가 옮긴 뒤 지운 블록 — 재시드할 이유가 없다
           reload(); // 모르는 블록의 이동 — 로컬이 어긋난 상태라 재시드가 정직하다
@@ -646,31 +578,20 @@ export function DashboardPage() {
           startMins: offset,
           orderKey: payload.orderKey,
         };
-        itemsRef.current = { ...itemsRef.current, [moved.id]: moved };
         setItems((prev) => (prev[moved.id] ? { ...prev, [moved.id]: moved } : prev));
         placeRemoteBlock(moved);
         break;
       }
       case "BLOCK_DELETED": {
         // 사라진 블록의 수정자 기록도 걷는다 (own 여부 무관)
-        setLastEditors((prev) => {
-          if (!(payload.blockId in prev)) return prev;
-          const next = { ...prev };
-          delete next[payload.blockId];
-          return next;
-        });
+        setLastEditors((prev) =>
+          payload.blockId in prev ? omitKey(prev, payload.blockId) : prev,
+        );
         // 자기 삭제는 이미 로컬에서 제거됐다 — 재적용하면 아래 "다른 멤버가
         // 삭제했어요" 토스트가 자기 삭제에 뜬다.
         if (own) break;
         const id = payload.blockId;
-        const next = { ...itemsRef.current };
-        delete next[id];
-        itemsRef.current = next;
-        setItems((prev) => {
-          const n = { ...prev };
-          delete n[id];
-          return n;
-        });
+        setItems((prev) => omitKey(prev, id));
         setPool((prev) => prev.filter((x) => x !== id));
         if (editingBlockId === id) {
           setEditingBlockId(null);
@@ -790,74 +711,6 @@ export function DashboardPage() {
     showToast,
   });
 
-  // ── 편집 락 수명 = 편집 모달 수명 (6단계) ──
-  // 모달을 열면 획득 → 10초 주기 하트비트(TTL 30초) → 닫으면 해제.
-  // 남이 잡고 있으면 비고(detail) 입력이 잠긴다(BlockEditForm 의 detailLocked).
-  // 이때 4초 주기로 재획득을 시도한다 — 소유자가 놓으면(모달 닫기·크래시 TTL 만료)
-  // 재오픈 없이 내가 이어받아 편집할 수 있다.
-  useEffect(() => {
-    if (!editingBlockId || !isServerBlock(editingBlockId)) return undefined;
-    const blockId = editingBlockId;
-    let heartbeatTimer = null;
-    let retryTimer = null;
-    let acquired = false;
-    let cancelled = false;
-
-    const promote = () => {
-      acquired = true;
-      if (retryTimer) {
-        clearInterval(retryTimer);
-        retryTimer = null;
-      }
-      // 내가 잡았으니 남의 배지 흔적을 걷는다(재획득이 TTL 만료로 성사된 경우
-      // 해제 메시지가 없어 옛 소유자 배지가 남아 있을 수 있다)
-      setDetailLocks((prev) => {
-        if (!(blockId in prev)) return prev;
-        const next = { ...prev };
-        delete next[blockId];
-        return next;
-      });
-      heartbeatTimer = setInterval(() => {
-        blockApi.heartbeatDetailLock(blockId).catch(() => {});
-      }, 10_000);
-    };
-
-    const attempt = () =>
-      blockApi
-        .acquireDetailLock(blockId)
-        .then((r) => {
-          if (cancelled) {
-            // 응답 전에 모달이 닫혔다 — 방금 얻은 락을 바로 되돌려 준다
-            if (r?.acquired) blockApi.releaseDetailLock(blockId).catch(() => {});
-            return;
-          }
-          // 이미 락을 쥐었다 — 겹치거나 역순으로 도착한 재시도 응답이 promote 를
-          // 두 번 태워 heartbeat 를 누수하거나, stale holder 로 배지를 되세우지 않게 한다
-          if (acquired) return;
-          if (r?.acquired) {
-            promote();
-          } else if (r?.holder != null) {
-            // 남이 잡고 있다 — 배지에 반영하고(구독 이전부터 있던 락이면 이 경로가
-            // 유일한 단서다) 놓일 때까지 재획득을 재시도한다
-            setDetailLocks((prev) => ({ ...prev, [blockId]: r.holder }));
-            if (!retryTimer) {
-              retryTimer = setInterval(() => {
-                attempt().catch(() => {});
-              }, 4_000);
-            }
-          }
-        });
-
-    attempt().catch(() => {});
-
-    return () => {
-      cancelled = true;
-      if (heartbeatTimer) clearInterval(heartbeatTimer);
-      if (retryTimer) clearInterval(retryTimer);
-      if (acquired) blockApi.releaseDetailLock(blockId).catch(() => {});
-    };
-  }, [editingBlockId]);
-
   useEffect(() => {
     dragRegionRef.current = dragPreview?.region;
   }, [dragPreview]);
@@ -919,7 +772,7 @@ export function DashboardPage() {
   // 값이 바뀐 체인 내 서버 블록이 저장 대상이다.
   const persistResize = useCallback(
     async (rs) => {
-      const current = itemsRef.current;
+      const current = useBoardStore.getState().items;
       const original = rs.originalItems;
       // 저장 대상은 보드 전체다 — 밀림이 Day 경계에서 멈추지 않으므로 Day 로
       // 좁히면 자정 너머로 밀린 이웃의 위치가 저장되지 않는다. 실제로 값이
@@ -1079,7 +932,7 @@ export function DashboardPage() {
       window.removeEventListener("mousemove", handleMouseMove);
       window.removeEventListener("click", handleGlobalClick);
     };
-  }, [resizingState, persistResize]);
+  }, [resizingState, persistResize, setItems]);
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
@@ -1118,15 +971,15 @@ export function DashboardPage() {
         centerY <= tlRect.bottom;
 
       if (isOverPool) {
-        let insertIndex = pool.filter((id) => id !== activeIdLocal).length;
+        const poolIds = pool.filter((id) => id !== activeIdLocal);
+        let insertIndex = poolIds.length;
         if (poolDOMRef.current) {
           const cardEls = Array.from(
             poolDOMRef.current.querySelectorAll("[data-pool-id]"),
           ).filter((el) => el.getAttribute("data-pool-id") !== activeIdLocal);
           let closestDist = Infinity,
             closestId = null,
-            closestIsAfter = true,
-            closestRect = null;
+            closestIsAfter = true;
 
           cardEls.forEach((el) => {
             const r = el.getBoundingClientRect();
@@ -1138,19 +991,13 @@ export function DashboardPage() {
               closestId = el.getAttribute("data-pool-id");
               closestIsAfter =
                 centerY > cy || (centerY >= r.top && centerX > cx);
-              closestRect = r;
             }
           });
           if (closestId)
             insertIndex = closestIsAfter
-              ? pool.filter((id) => id !== activeIdLocal).indexOf(closestId) + 1
-              : pool.filter((id) => id !== activeIdLocal).indexOf(closestId);
-          return {
-            region: "pool",
-            insertIndex,
-            caretRect: closestRect,
-            caretAfter: closestId ? undefined : undefined,
-          };
+              ? poolIds.indexOf(closestId) + 1
+              : poolIds.indexOf(closestId);
+          return { region: "pool", insertIndex };
         }
         return { region: "pool", insertIndex };
       }
@@ -1227,22 +1074,41 @@ export function DashboardPage() {
   // ref(activeDragRef)는 스크롤 핸들러용이고 렌더 중에 읽으면 안 된다(react-hooks/refs).
   const [activeDragMeta, setActiveDragMeta] = useState(null);
 
+  // 드롭 타깃의 "뜻있는" 필드가 그대로면 같은 것으로 본다(rect 는 매 프레임 바뀌지만
+  // 화면에 안 쓴다). 드래그 이동·스크롤은 프레임마다 도는데, 매번 새 객체를 넣으면
+  // 값이 같아도 리렌더가 돈다 — 같으면 이전 참조를 유지해 React 가 바로 빠지게 한다.
+  const sameTarget = (a, b) => {
+    if (a === b) return true;
+    if (!a || !b) return false;
+    return (
+      a.region === b.region &&
+      a.dropMins === b.dropMins &&
+      a.dur === b.dur &&
+      a.insertIndex === b.insertIndex
+    );
+  };
+  const applyDragPreview = (next) =>
+    setDragPreview((prev) => (sameTarget(prev, next) ? prev : next));
+
   const handleDragStart = (event) => {
     if (resizingState) return;
     setActiveId(event.active.id);
     setActiveDragMeta(event.active.data?.current ?? null);
     activeDragRef.current = event.active;
-    setDragPreview(computeDropTarget(event.active));
+    applyDragPreview(computeDropTarget(event.active));
   };
   const handleDragMove = (event) => {
     activeDragRef.current = event.active;
-    setDragPreview(computeDropTarget(event.active));
+    applyDragPreview(computeDropTarget(event.active));
   };
-  const handleDragCancel = () => {
+  const clearDragState = () => {
     setActiveId(null);
     setActiveDragMeta(null);
     activeDragRef.current = null;
     setDragPreview(null);
+  };
+  const handleDragCancel = () => {
+    clearDragState();
   };
 
   const handleDragEnd = (event) => {
@@ -1253,10 +1119,7 @@ export function DashboardPage() {
     const isFromChatbot = active.data.current?.from === "chatbot";
     const target = computeDropTarget(active);
 
-    setActiveId(null);
-    setActiveDragMeta(null);
-    activeDragRef.current = null;
-    setDragPreview(null);
+    clearDragState();
 
     if (!target || !target.region) return;
 
@@ -1338,17 +1201,11 @@ export function DashboardPage() {
         try {
           const [before, after] = neighborKeysAround(nextPool, insertAt, items);
           const orderKey = safeKeyBetween(before, after);
-          const created = await blockApi.createBlock(projectId, {
+          const created = await blockApi.createBlockWithDetail(projectId, {
             ...newBlock,
             startMins: null, // 후보(POOL)로 생성된다
             orderKey,
           });
-          // 전화번호(detail)는 생성 바디에 없다(명세) — 생성 직후 별도 저장
-          if (newBlock.detail) {
-            await blockApi.updateBlockFields(created.blockId, {
-              detail: newBlock.detail,
-            });
-          }
           adoptServerId(newId, created.blockId, { orderKey });
         } catch (e) {
           rollbackToServer(e);
@@ -1536,48 +1393,6 @@ export function DashboardPage() {
     el.scrollTop = Math.max(0, (target - timelineStart - 15) * PX);
   }, [status, viewMode, activeDay, board, items, timelineStart]);
 
-  // ── 라이브 커서 송신 (7단계) — 명세의 50ms 스로틀, 대시보드 전역 ──
-  // 타임라인 위에서는 "가로 비율 + 절대 분 오프셋"(area:"tl") — 상대와 내 스크롤·시작
-  // 시각이 달라도 같은 시간 위치에 그려진다(축 기준선 timelineStart 를 더해 절대 분으로 만든다). 그 밖(후보·사이드 등)에서는 페이지
-  // 비율 좌표(area:"page") — 창 크기가 달라도 대략 같은 자리를 가리킨다.
-  const lastCursorSendRef = useRef(0);
-  const handlePageCursorMove = (e) => {
-    const now = Date.now();
-    if (now - lastCursorSendRef.current < 50) return;
-    lastCursorSendRef.current = now;
-    const dayNo = dayNoOf(activeDay);
-
-    const tlEl = timelineDOMRef.current;
-    const tlRect = tlEl?.getBoundingClientRect();
-    const inTimeline =
-      !!tlRect &&
-      e.clientX >= tlRect.left &&
-      e.clientX <= tlRect.right &&
-      e.clientY >= tlRect.top &&
-      e.clientY <= tlRect.bottom;
-
-    if (inTimeline) {
-      sendCursor({
-        area: "tl",
-        x: (e.clientX - tlRect.left - TL_PAD_LEFT) / (tlRect.width - TL_PAD_LEFT),
-        y:
-          timelineStart +
-          (e.clientY - tlRect.top + tlEl.scrollTop - TL_PAD_TOP) / PX,
-        dayNo,
-      });
-      return;
-    }
-
-    const pageRect = pageDOMRef.current?.getBoundingClientRect();
-    if (!pageRect) return;
-    sendCursor({
-      area: "page",
-      x: (e.clientX - pageRect.left) / pageRect.width,
-      y: (e.clientY - pageRect.top) / pageRect.height,
-      dayNo,
-    });
-  };
-
   // 💡 드래그 중인 임시 아이템 정의 (검색 패널에서 드래그할 경우 임시 객체를 만들어 보여줌)
   let draggedItem = null;
   if (activeId) {
@@ -1643,7 +1458,10 @@ export function DashboardPage() {
   // 미리보기와 확정이 갈라지지 않는다.
   // 정렬이 곧 이 목록의 순서다 — "다음 항목"이 이동 버튼(🚗) 위치·간격과
   // boundTop 의 기준이라 시간이 곧 순서여야 한다.
-  const boardItems = boardOf(displayItems)
+  // 드래그 중이 아니면(displayItems === items) 이미 계산해 둔 board 메모를 그대로
+  // 쓴다 — board 는 useMemo(() => boardOf(items)) 라 결과가 정확히 같다.
+  const boardIds = displayItems === items ? board : boardOf(displayItems);
+  const boardItems = boardIds
     .filter((id) => id !== activeId)
     .map((id) => {
       const item = displayItems[id];
@@ -1657,54 +1475,6 @@ export function DashboardPage() {
     })
     .filter(Boolean)
     .sort((a, b) => a.startMins - b.startMins);
-
-  // 편집 배지에 쓸 이름 — 락 소유자가 멤버 목록에 없으면(탈퇴 직후 등) 뭉뚱그린다
-  const nicknameOf = (memberId) =>
-    boardMembers.find((m) => m.memberId === memberId)?.nickname ?? "다른 멤버";
-  // 남이 잡은 락만 배지가 된다 — 내 락(내 다른 탭 포함, memberId 기준)은 표시하지 않는다
-  const lockBadgeOf = (blockId) => {
-    const holder = detailLocks[blockId];
-    return holder != null && holder !== currentUser?.id
-      ? nicknameOf(holder)
-      : null;
-  };
-
-  // 블록 좌상단의 "가장 최근 수정자" 아바타. 우선순위는
-  //   ① 시드 이후 도착한 op(lastEditors) → ② 서버 영속값(lastEditedById, PRS-04)
-  //   → ③ 작성자(authorId, 005 마이그레이션 이전 행의 폴백)
-  // ①이 ②보다 앞서는 건 op 가 스냅샷보다 뒤의 사실이기 때문이다(시드 때 ①은 비워진다).
-  // 멤버 정보가 없으면(탈퇴 등) 감춘다.
-  const editorBadgeOf = (blockId) => {
-    const memberId =
-      lastEditors[blockId] ??
-      items[blockId]?.lastEditedById ??
-      items[blockId]?.authorId;
-    if (memberId == null) return null;
-    const member = boardMembers.find((m) => m.memberId === memberId);
-    if (!member) return null;
-    return {
-      id: memberId,
-      name: member.nickname,
-      profileImg: member.profileImg ?? null,
-    };
-  };
-
-  // Day 탭에 찍을 "이 Day 를 보는 중" 멤버들 (커서 하트비트 기반).
-  // 프로필 이미지까지 실어 탭에 아바타로 띄운다 — 테두리는 커서와 같은 멤버 색.
-  const dayViewersOf = (dayKey) => {
-    const dayNo = dayNoOf(dayKey);
-    return Object.entries(viewingDays)
-      .filter(([, d]) => d === dayNo)
-      .map(([id]) => {
-        const memberId = Number(id);
-        const member = boardMembers.find((m) => m.memberId === memberId);
-        return {
-          id: memberId,
-          name: member?.nickname ?? "다른 멤버",
-          profileImg: member?.profileImg ?? null,
-        };
-      });
-  };
 
   // 없는 프로젝트·비멤버·잘못된 URL 이면 자동 이동 대신 같은 화면에서 안내한다.
   // (반드시 아래 "!loaded → null" 보다 앞에 둔다 — 안 그러면 에러가 null 로
@@ -1854,8 +1624,8 @@ export function DashboardPage() {
                       ref={activeDay === day ? activeTabRef : null}
                       label={`Day ${i + 1}`}
                       date={dayDate(project, i, "short")}
-                      // Day 별 목록은 상태가 아니라 보드에서 뽑는다(blocksOfDay).
-                      count={blocksOfDay(board, items, day).length}
+                      // Day 별 목록은 상태가 아니라 보드에서 뽑는다(blocksByDay 메모).
+                      count={(blocksByDay[day] ?? []).length}
                       // 탭은 이제 화면을 갈아끼우지 않는다 — 그 Day 로 스크롤할 뿐이고,
                       // 하이라이트도 스크롤이 정한 Day(activeDay)를 따라간다.
                       isActive={activeDay === day}
@@ -1888,9 +1658,7 @@ export function DashboardPage() {
                         onClick={() => regenerateAutoTransport(activeDay)}
                         disabled={
                           isGeneratingTransport ||
-                          blocksOfDay(board, items, activeDay).filter(
-                            (id) => !items[id]?.auto && isServerBlock(id),
-                          ).length < 2
+                          realBlocksOfDay(board, items, activeDay).length < 2
                         }
                       >
                         {isGeneratingTransport
@@ -1905,7 +1673,7 @@ export function DashboardPage() {
                     ref={setTimelineRefs}
                     onScroll={() => {
                       if (activeDragRef.current)
-                        setDragPreview(computeDropTarget(activeDragRef.current));
+                        applyDragPreview(computeDropTarget(activeDragRef.current));
                       // 활성 Day 는 여기서 나온다(프레임당 1회로 묶여 있다)
                       scheduleDominantDay();
                     }}
@@ -2115,118 +1883,22 @@ export function DashboardPage() {
                   </div>
                 </div>
 
-                <div
-                  className={`pool-sec ${dragPreview?.region === "pool" ? "dropover" : ""}`}
-                  ref={setPoolRef}
-                >
-                  <div className="pool-head">
-                    <div className="pool-head-title">
-                      <b>후보 목록</b>{" "}
-                      <span className="n">
-                        {poolFilterActive
-                          ? `${visiblePool.length}/${pool.length}`
-                          : pool.length}
-                      </span>
-                      {/* 사용 안내는 ⓘ 커스텀 툴팁으로 (QA 배치2) — 호버 즉시,
-                          앱 디자인에 맞는 말풍선. 위 공간 부족하면 아래로 뒤집힘 */}
-                      <HintIcon
-                        label="후보 목록 사용 안내"
-                        tip="블록을 끌어다 놓아 보관하는 공간이에요. 타임라인·후보 목록 밖에 놓으면 삭제됩니다."
-                      />
-                    </div>
-                    {/* 대분류 필터 + 제목 검색 — 헤더에 함께 둔다. 렌더만 거른다 */}
-                    <div className="pool-tools">
-                      <div className="pool-filter-cat">
-                        <Select
-                          value={poolCat}
-                          onChange={setPoolCat}
-                          options={[
-                            { value: "ALL", label: "전체" },
-                            { value: "spot", label: "명소/활동" },
-                            { value: "food", label: "식당" },
-                            { value: "stay", label: "숙소" },
-                            { value: "trans", label: "교통" },
-                            { value: "etc", label: "기타" },
-                          ]}
-                        />
-                      </div>
-                      <input
-                        className="pool-search"
-                        type="text"
-                        placeholder="제목 검색"
-                        value={poolQuery}
-                        onChange={(e) => setPoolQuery(e.target.value)}
-                      />
-                      {poolFilterActive && (
-                        <button
-                          type="button"
-                          className="pool-filter-clear"
-                          onClick={() => {
-                            setPoolCat("ALL");
-                            setPoolQuery("");
-                          }}
-                          aria-label="필터 초기화"
-                        >
-                          ✕
-                        </button>
-                      )}
-                    </div>
-                    <button
-                      className="pool-add-btn"
-                      onClick={handleCreateCustomBlock}
-                    >
-                      + 커스텀 블록 만들기
-                    </button>
-                  </div>
-                  <div className="pool">
-                    <SortableContext
-                      items={visiblePool}
-                      strategy={rectSortingStrategy}
-                    >
-                      {visiblePool.map((id) => (
-                        <PoolCard
-                          key={id}
-                          id={id}
-                          item={items[id]}
-                          onEditBlock={openBlockDetail}
-                          onCopy={handleCopyBlock}
-                          lockedBy={lockBadgeOf(id)}
-                          editor={editorBadgeOf(id)}
-                        />
-                      ))}
-                    </SortableContext>
-                    {dragPreview?.region === "pool" && !isDraggingFromPool && (
-                      <div className="pool-dropzone" />
-                    )}
-                    {/* 빈 상태 — 어디서 채우는지(챗봇·지도 검색)를 함께 안내한다.
-                        드래그로 놓으려는 중에는 드롭존이 대신 보이므로 숨긴다 */}
-                    {pool.length === 0 && dragPreview?.region !== "pool" && (
-                      <div className="pool-empty">
-                        <EmptyState
-                          title="아직 보관한 블록이 없어요"
-                          desc={
-                            <>
-                              오른쪽 <b>지도 검색</b>이나 <b>챗봇 이음이</b>의
-                              추천을 끌어다 여기에 보관하고, <b>+ 커스텀 블록</b>
-                              으로 직접 만들 수도 있어요.
-                            </>
-                          }
-                        />
-                      </div>
-                    )}
-                    {/* 블록은 있는데 필터·검색에 걸리는 게 없을 때 */}
-                    {pool.length > 0 &&
-                      visiblePool.length === 0 &&
-                      dragPreview?.region !== "pool" && (
-                        <div className="pool-noresult">
-                          <EmptyState
-                            title="조건에 맞는 블록이 없어요"
-                            desc="대분류나 검색어를 바꾸거나, 필터를 초기화해 다시 찾아보세요."
-                          />
-                        </div>
-                      )}
-                  </div>
-                </div>
+                <PoolPanel
+                  dragPreview={dragPreview}
+                  poolFilterActive={poolFilterActive}
+                  visiblePool={visiblePool}
+                  poolCat={poolCat}
+                  setPoolCat={setPoolCat}
+                  poolQuery={poolQuery}
+                  setPoolQuery={setPoolQuery}
+                  handleCreateCustomBlock={handleCreateCustomBlock}
+                  openBlockDetail={openBlockDetail}
+                  handleCopyBlock={handleCopyBlock}
+                  lockBadgeOf={lockBadgeOf}
+                  editorBadgeOf={editorBadgeOf}
+                  isDraggingFromPool={isDraggingFromPool}
+                  setPoolRef={setPoolRef}
+                />
               </div>
 
               <div className="side">
@@ -2280,44 +1952,12 @@ export function DashboardPage() {
               )}
 
               {/* 💡 끌려다니는 마우스 오버레이 부분 업데이트 */}
-              <DragOverlay>
-                {activeId && draggedItem ? (
-                  isDraggingFromPool || isDraggingFromSearch ? (
-                    <div
-                      className="pcard is-overlay"
-                      style={{
-                        "--dc": catOf(draggedItem).hex,
-                        "--cb": catOf(draggedItem).bg,
-                      }}
-                    >
-                      <CardBody
-                        id={draggedItem.id}
-                        item={draggedItem}
-                        mode="pool"
-                      />
-                    </div>
-                  ) : (
-                    <div
-                      className="card is-overlay"
-                      style={{
-                        "--dc": catOf(draggedItem).hex,
-                        "--cb": catOf(draggedItem).bg,
-                      }}
-                    >
-                      <CardBody
-                        id={draggedItem.id}
-                        item={draggedItem}
-                        mode="timeline"
-                        startMins={items[activeId]?.startMins || 0}
-                        endMins={
-                          (items[activeId]?.startMins || 0) +
-                          (draggedItem.dur || 0)
-                        }
-                      />
-                    </div>
-                  )
-                ) : null}
-              </DragOverlay>
+              <DragOverlayPreview
+                activeId={activeId}
+                draggedItem={draggedItem}
+                isDraggingFromPool={isDraggingFromPool}
+                isDraggingFromSearch={isDraggingFromSearch}
+              />
 
               {/* 타임라인 밖(후보·사이드 등)의 라이브 커서 — 페이지 비율 좌표.
                   후보 목록·사이드는 Day 와 무관하게 모두가 같은 것을 보는 영역이라
@@ -2351,76 +1991,15 @@ export function DashboardPage() {
         )}
       </div>
 
-      {editingBlockId && items[editingBlockId] && (
-        // 공유 Modal 로 열기·Esc·백드롭 정책을 통일하되, 겉모습은 기존 blk-modal-ov
-        // 를 그대로 쓴다(bodyless — .md 박스 안 두름). 지도에서 위치를 찍는 동안엔
-        // hidden 으로 감추기만 한다(언마운트 아님) — 언마운트하면 폼 state 가 통째로
-        // 날아가 지정하러 가기 전 입력이 사라진다. 그 동안엔 Esc 도 끈다.
-        // 큰 폼이라 백드롭 클릭으론 닫지 않는다(closeOnBackdrop 기본 false).
-        <Modal
-          open
-          onClose={handleCancelEdit}
-          overlayClassName="blk-modal-ov"
-          hidden={pinPickMode}
-          bodyless
-          closeOnEsc={!pinPickMode}
-        >
-          {(() => {
-            const item = items[editingBlockId];
-            const sMins = item.startMins;
-            const eMins = sMins + item.dur;
-            // Day 는 블록 자신의 오프셋에서 뽑는다 — 보고 있는 탭이 아니다.
-            // 소속 규칙은 어디서나 시작 시각 기준(floor(offset/1440)+1)이다:
-            // 서버 Block.dayNo(), 체인 소속, 챗봇 요약이 전부 그렇다.
-            const dayNum = blockApi.dayNoOfOffset(sMins);
-            // 자정을 넘는 블록은 "23:30 - 05:00" 이 하루 안에서 거꾸로 간 것처럼
-            // 읽힌다 — 끝이 며칠 뒤인지 붙여 준다.
-            const overDays =
-              sMins == null ? 0 : blockApi.dayNoOfOffset(eMins) - dayNum;
-            // 후보(POOL) 블록은 시각이 없다(느슨한 블록) — 폼이 "시간 정보 없음"을 띄운다
-            const timeStr =
-              sMins == null
-                ? ""
-                : `Day ${dayNum} · ${fmtTime(sMins)} - ${fmtTime(eMins)}${
-                    overDays > 0 ? ` (+${overDays}일)` : ""
-                  }`;
-
-            const lockedByName = lockBadgeOf(editingBlockId);
-            return (
-              <BlockEditForm
-                // 블록이 바뀌면 폼을 새로 만든다. formData 는 마운트 때 한 번만
-                // initialData 로 씨를 뿌리므로, 같은 인스턴스를 재사용하면 A 의
-                // 입력값을 든 채 저장 대상만 B 로 바뀌어 A 의 이름·비용·비고가
-                // B 에 덮여 쓰인다. 지정 모드에선 모달을 감추기만 해서(언마운트
-                // 아님) 그 동안 보드가 클릭 가능해졌고, 그래서 A→B 전환이 실제로
-                // 닿을 수 있는 경로가 됐다. key 는 pinPickMode 로는 안 바뀌므로
-                // "지정 중에도 폼을 살려 둔다"는 성질은 그대로다.
-                key={editingBlockId}
-                initialData={item}
-                timeString={timeStr}
-                // 서버가 category 필드 갱신을 지원하지 않는다(BLOCK400_2) —
-                // 카테고리는 생성 시에만 정할 수 있다
-                categoryLocked={!isTempId(editingBlockId)}
-                // 상세락 — 남이 잡고 있으면 비고(detail) 입력을 잠근다.
-                // 다른 필드는 필드 단위 LWW라 그대로 편집 가능(막지 않는다).
-                lockNotice={
-                  lockedByName
-                    ? `✎ ${lockedByName} 님이 이 블록을 편집하고 있어요`
-                    : ""
-                }
-                detailLocked={Boolean(lockedByName)}
-                // 락이 풀려 내가 이어받을 때 맞출 서버 최신 비고(라이브)
-                serverDetail={items[editingBlockId]?.detail ?? ""}
-                pinnedLocation={pinnedLocation}
-                onRequestPinPick={handleRequestPinPick}
-                onSave={handleSaveBlock}
-                onCancel={handleCancelEdit}
-                onReselectTransport={handleReselectTransport}
-              />
-            );
-          })()}
-        </Modal>
-      )}
+      <BlockEditModal
+        pinPickMode={pinPickMode}
+        handleCancelEdit={handleCancelEdit}
+        lockBadgeOf={lockBadgeOf}
+        pinnedLocation={pinnedLocation}
+        handleRequestPinPick={handleRequestPinPick}
+        handleSaveBlock={handleSaveBlock}
+        handleReselectTransport={handleReselectTransport}
+      />
 
       <TransitPickerModals
         items={items}

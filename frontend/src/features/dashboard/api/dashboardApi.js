@@ -379,6 +379,21 @@ export async function createBlock(projectId, block) {
 }
 
 /**
+ * 블록 생성 + (필요 시) 세부 내용 저장을 한 번에.
+ * 생성 바디에는 detail 이 없어(명세) 긴 세부 내용은 생성 직후 PATCH /fields 로만
+ * 저장된다 — 모달 저장·복사·검색/챗봇 드롭 세 곳이 같은 시퀀스를 쓴다.
+ * 서버 blockId 채택(adoptServerId)은 호출부마다 뒷처리가 달라 그대로 각자 둔다.
+ * @returns {Promise<{blockId: number, seq: number}>} 생성된 서버 블록
+ */
+export async function createBlockWithDetail(projectId, block) {
+  const created = await createBlock(projectId, block);
+  if (block.detail) {
+    await updateBlockFields(created.blockId, { detail: block.detail });
+  }
+  return created;
+}
+
+/**
  * 필드 단위 LWW 배치 갱신.
  * @param fields 서버 필드명 기준의 평면 객체 — 예: { budget: 15000, detail: "..." }
  *        (화면 필드명 → 서버 필드명 매핑은 호출부 책임. 어느 화면 필드가 어느 서버

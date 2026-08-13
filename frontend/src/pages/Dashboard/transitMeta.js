@@ -36,6 +36,18 @@ export const buildTransportMeta = (segment, chosenCandidate, chosenDeparture) =>
   candidates: segment?.candidates ?? [],
 });
 
+// 구간 초기 선택 후보 — 서버 추천(defaultMode) → 첫 이용 가능 후보 → 없음(null).
+// defaultMode 가 null 이면(교통수단 선호 둘 다 선택) 자동 선택하지 않는다(null 반환).
+export const initialCandidateOf = (segment) => {
+  if (segment?.defaultMode == null) return null;
+  const candidates = segment.candidates ?? [];
+  return (
+    candidates.find((c) => c.mode === segment.defaultMode && c.status === "OK") ??
+    candidates.find((c) => c.status === "OK") ??
+    null
+  );
+};
+
 /** 구간 하나(leg)를 한 조각 문자열로. 도보는 노선명이 없다. */
 const legText = (leg) => {
   if (leg?.type === "WALK") return `도보 ${leg.durationMin}분`;
