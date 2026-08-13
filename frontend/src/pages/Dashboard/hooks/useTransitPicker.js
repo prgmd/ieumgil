@@ -1,13 +1,18 @@
 import { useState, useCallback } from "react";
 import * as blockApi from "../../../features/dashboard/api/dashboardApi";
-import { buildTransportMeta, transitDurOf, transitCostOf } from "../transitMeta";
+import {
+  buildTransportMeta,
+  transitDurOf,
+  transitCostOf,
+  initialCandidateOf,
+} from "../transitMeta";
 import {
   resolveOverlaps,
   persistMovedOffsets,
   safeKeyBetween,
   neighborKeysAround,
 } from "../boardOrdering";
-import { isServerBlock, blocksOfDay } from "../dashboardHelpers";
+import { isServerBlock, blocksOfDay, realBlocksOfDay } from "../dashboardHelpers";
 
 export function useTransitPicker({
   items,
@@ -29,11 +34,8 @@ export function useTransitPicker({
   const regenerateAutoTransport = useCallback(
     async (dayKey) => {
       if (isGeneratingTransport || bulkTransitPicker) return;
-      const dayIds = blocksOfDay(board, items, dayKey);
       // 서버 계산 대상 = 그 Day 의 실블록(서버 id 보유)만. 저장 중(임시 id)·자동 생성분 제외
-      const realIds = dayIds.filter(
-        (id) => !items[id]?.auto && isServerBlock(id),
-      );
+      const realIds = realBlocksOfDay(board, items, dayKey);
       if (realIds.length < 2) return;
 
       setIsGeneratingTransport(true);
@@ -58,12 +60,7 @@ export function useTransitPicker({
         const choices = {};
         segments.forEach((s) => {
           if (s.defaultMode == null) return;
-          const initial =
-            s.candidates?.find(
-              (c) => c.mode === s.defaultMode && c.status === "OK",
-            ) ??
-            s.candidates?.find((c) => c.status === "OK") ??
-            null;
+          const initial = initialCandidateOf(s);
           choices[`${s.fromBlockId}-${s.toBlockId}`] = initial
             ? { candidate: initial, departure: initial.departures?.[0] ?? null }
             : null;
@@ -94,6 +91,32 @@ export function useTransitPicker({
     );
   };
 
+  // 낙관 생성한 교통 블록 하나를 서버에 반영 — 양옆 실블록 사이 orderKey 를 잡아
+  // createBlock 한 뒤 로컬 임시 id 를 서버 blockId 로 교체한다. bulk 는 반복 호출,
+  // single 은 한 번 호출한다. (에러 처리는 각 호출부의 try/rollbackToServer 가 감싼다.)
+  const persistTransitBlock = useCallback(
+    async (localId, newChain, resolvedItems) => {
+      const b = resolvedItems[localId];
+      if (!b) return;
+      const [before, after] = neighborKeysAround(
+        newChain,
+        newChain.indexOf(localId),
+        resolvedItems,
+      );
+      const orderKey = safeKeyBetween(before, after);
+      // transportMeta 는 이미 buildTransportMeta 로 만들어 b 에 실려 있다(...b).
+      // adoptServerId 가 extra 로도 받도록 그 값을 그대로 넘긴다.
+      const transportMeta = b.transportMeta;
+      const created = await blockApi.createBlock(projectId, {
+        ...b,
+        orderKey,
+        transportMeta,
+      });
+      adoptServerId(localId, created.blockId, { orderKey, transportMeta });
+    },
+    [projectId, adoptServerId],
+  );
+
   // "적용" — 구간별 선택대로 이 Day 의 교통 블록을 일괄 재생성한다.
   // 재생성 = 기존 자동 생성분을 지우고 새로 만든다. 삭제 대상은 체인 소속으로
   // 한정한다 — 팀원이 직접 만든 교통 블록(auto 아님)은 건드리지 않는다.
@@ -108,9 +131,7 @@ export function useTransitPicker({
       // 모달이 열린 사이 보드가 바뀌었을 수 있다(협업) — 지금 보드를 기준으로
       // 다시 훑고, 더 이상 인접하지 않은 구간의 선택은 자연히 버려진다(pair 키 불일치)
       const dayIds = blocksOfDay(board, items, dayKey);
-      const realIds = dayIds.filter(
-        (id) => !items[id]?.auto && isServerBlock(id),
-      );
+      const realIds = realBlocksOfDay(board, items, dayKey);
       const oldAutoIds = dayIds.filter((id) => items[id]?.auto);
       if (realIds.length < 2) {
         setBulkTransitPicker(null);
@@ -190,29 +211,10 @@ export function useTransitPicker({
           // 필터가 로컬 임시 id 를 이미 걸러 준다
           await persistMovedOffsets(newChain, items, resolvedItems, null);
 
+          // 각 교통 블록의 경계는 양옆 실블록 — 아직 로컬인 다른 교통 블록은
+          // neighborKeysAround 가 건너뛴다
           for (const localId of createdLocalIds) {
-            const b = resolvedItems[localId];
-            if (!b) continue;
-            // 각 교통 블록의 경계는 양옆 실블록 — 아직 로컬인 다른 교통 블록은
-            // neighborKeysAround 가 건너뛴다
-            const [before, after] = neighborKeysAround(
-              newChain,
-              newChain.indexOf(localId),
-              resolvedItems,
-            );
-            const orderKey = safeKeyBetween(before, after);
-            // transportMeta 는 이미 buildTransportMeta 로 만들어 b 에 실려 있다(...b).
-            // adoptServerId 가 extra 로도 받도록 그 값을 그대로 넘긴다.
-            const transportMeta = b.transportMeta;
-            const created = await blockApi.createBlock(projectId, {
-              ...b,
-              orderKey,
-              transportMeta,
-            });
-            adoptServerId(localId, created.blockId, {
-              orderKey,
-              transportMeta,
-            });
+            await persistTransitBlock(localId, newChain, resolvedItems);
           }
         } catch (e) {
           rollbackToServer(e);
@@ -225,10 +227,9 @@ export function useTransitPicker({
       bulkTransitPicker,
       board,
       items,
-      projectId,
-      adoptServerId,
       rollbackToServer,
       setItems,
+      persistTransitBlock,
     ],
   );
 
@@ -264,14 +265,7 @@ export function useTransitPicker({
         }
         // defaultMode 가 null 이면(교통수단 선호 둘 다 선택) 자동 선택하지 않는다 —
         // 사용자가 카드에서 직접 골라야 한다.
-        const initialCandidate =
-          segment.defaultMode == null
-            ? null
-            : candidates.find(
-                (c) => c.mode === segment.defaultMode && c.status === "OK",
-              ) ??
-              candidates.find((c) => c.status === "OK") ??
-              null;
+        const initialCandidate = initialCandidateOf(segment);
         // 생성하지 않고 선택 모달을 연다 — 생성은 confirmTransitChoice 가 한다
         setTransitPicker({
           dayKey,
@@ -294,14 +288,16 @@ export function useTransitPicker({
     [isGeneratingTransport, transitPicker, items, projectId, showToast],
   );
 
-  // 피커에서 다른 후보/편을 고른다 (아직 생성하지 않는다 — confirmTransitChoice 가 한다)
-  const setTransitPickerCandidate = (c) => {
-    setTransitPicker((prev) =>
+  // 피커 상태에서 고른 후보/편만 바꾸는 updater 팩토리 — 생성/재선택 피커가 공유한다.
+  const chooseCandidateOn = (setter) => (c) =>
+    setter((prev) =>
       prev
         ? { ...prev, chosenCandidate: c, chosenDeparture: c.departures?.[0] ?? null }
         : prev,
     );
-  };
+
+  // 피커에서 다른 후보/편을 고른다 (아직 생성하지 않는다 — confirmTransitChoice 가 한다)
+  const setTransitPickerCandidate = chooseCandidateOn(setTransitPicker);
 
   // 선택 모달에서 "확인"을 누르면 그 구간에 교통 블록을 만든다 (기존 5.5단계 경로)
   const confirmTransitChoice = useCallback(
@@ -368,25 +364,7 @@ export function useTransitPicker({
           // 필터가 로컬 임시 id 를 이미 걸러 준다
           await persistMovedOffsets(newChain, items, resolvedItems, null);
 
-          const b = resolvedItems[newId];
-          const [before, after] = neighborKeysAround(
-            newChain,
-            newChain.indexOf(newId),
-            resolvedItems,
-          );
-          const orderKey = safeKeyBetween(before, after);
-          // transportMeta 는 이미 buildTransportMeta 로 만들어 b 에 실려 있다(...b).
-          // adoptServerId 가 extra 로도 받도록 그 값을 그대로 넘긴다.
-          const transportMeta = b.transportMeta;
-          const created = await blockApi.createBlock(projectId, {
-            ...b,
-            orderKey,
-            transportMeta,
-          });
-          adoptServerId(newId, created.blockId, {
-            orderKey,
-            transportMeta,
-          });
+          await persistTransitBlock(newId, newChain, resolvedItems);
         } catch (e) {
           rollbackToServer(e);
         }
@@ -398,11 +376,10 @@ export function useTransitPicker({
       transitPicker,
       items,
       board,
-      projectId,
-      adoptServerId,
       rollbackToServer,
       showToast,
       setItems,
+      persistTransitBlock,
     ],
   );
 
@@ -428,13 +405,7 @@ export function useTransitPicker({
     });
   };
 
-  const setReselectCandidate = (c) => {
-    setTransportReselectPicker((prev) =>
-      prev
-        ? { ...prev, chosenCandidate: c, chosenDeparture: c.departures?.[0] ?? null }
-        : prev,
-    );
-  };
+  const setReselectCandidate = chooseCandidateOn(setTransportReselectPicker);
 
   // "저장" — 같은 블록에서 선택만 바꾼다(재생성 없음).
   // transportMeta 뿐 아니라 소요(durationMin)·종료시각·비용(budget)까지 PATCH 해야

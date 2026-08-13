@@ -30,8 +30,9 @@ import {
   dayKeysOf,
   dayDate,
   boardOf,
-  blocksOfDay,
+  realBlocksOfDay,
   catKeyOf,
+  omitKey,
   PX,
   TL_PAD_TOP,
   firstStartOf,
@@ -180,7 +181,7 @@ export function DashboardPage() {
   // 축은 여행 전체다 — 첫 Day 의 00:00 부터 마지막 Day 의 24:00 까지 한 줄로 잇는다.
   // 렌더 식은 전부 (값 - timelineStart) * PX 꼴 그대로 두고 기준선만 0 으로 내렸다.
   // dayKeysOf 는 항상 Day 를 하나 이상 주므로 activeDay 는 언제나 "dN" 이다.
-  const activeDayIndex = Math.max(0, dayKeys.indexOf(activeDay));
+  const activeDayIndex = dayNoOf(activeDay) - 1;
   const timelineStart = 0;
   const timelineEnd = dayKeys.length * blockApi.MINUTES_PER_DAY;
 
@@ -235,6 +236,20 @@ export function DashboardPage() {
   // 자정 너머로 밀린 블록이 조용히 사라지거나 저장되지 않는 상태가 생긴다.
   // Day 별로 필요한 곳은 blocksOfDay 선택자로 얻는다.
   const board = useMemo(() => boardOf(items), [items]);
+
+  // Day 키 → 그 Day 의 블록 id 목록. Day 탭 개수 배지는 매 렌더 Day 마다
+  // blocksOfDay 를 부르면 O(days × board) 라 드래그 중엔 부담이 된다 — 한 번의
+  // O(board) 순회로 미리 갈라 둔다. board 순서를 그대로 물려받아 blocksOfDay 와
+  // 같은 결과를 준다(같은 소속 판정·같은 정렬).
+  const blocksByDay = useMemo(() => {
+    const map = {};
+    for (const id of board) {
+      const dayNo = blockApi.dayNoOfOffset(items[id]?.startMins);
+      if (dayNo == null) continue;
+      (map[`d${dayNo}`] ??= []).push(id);
+    }
+    return map;
+  }, [board, items]);
 
   // ── 타임라인 DOM 참조 + 편집 대상 — usePresence 의 입력이라 그 호출보다 위에 둔다 ──
   // (원래 아래에 있던 선언을 최소 이동으로 끌어올린 것뿐이다: 순수 store 선택자와
@@ -569,21 +584,14 @@ export function DashboardPage() {
       }
       case "BLOCK_DELETED": {
         // 사라진 블록의 수정자 기록도 걷는다 (own 여부 무관)
-        setLastEditors((prev) => {
-          if (!(payload.blockId in prev)) return prev;
-          const next = { ...prev };
-          delete next[payload.blockId];
-          return next;
-        });
+        setLastEditors((prev) =>
+          payload.blockId in prev ? omitKey(prev, payload.blockId) : prev,
+        );
         // 자기 삭제는 이미 로컬에서 제거됐다 — 재적용하면 아래 "다른 멤버가
         // 삭제했어요" 토스트가 자기 삭제에 뜬다.
         if (own) break;
         const id = payload.blockId;
-        setItems((prev) => {
-          const n = { ...prev };
-          delete n[id];
-          return n;
-        });
+        setItems((prev) => omitKey(prev, id));
         setPool((prev) => prev.filter((x) => x !== id));
         if (editingBlockId === id) {
           setEditingBlockId(null);
@@ -963,15 +971,15 @@ export function DashboardPage() {
         centerY <= tlRect.bottom;
 
       if (isOverPool) {
-        let insertIndex = pool.filter((id) => id !== activeIdLocal).length;
+        const poolIds = pool.filter((id) => id !== activeIdLocal);
+        let insertIndex = poolIds.length;
         if (poolDOMRef.current) {
           const cardEls = Array.from(
             poolDOMRef.current.querySelectorAll("[data-pool-id]"),
           ).filter((el) => el.getAttribute("data-pool-id") !== activeIdLocal);
           let closestDist = Infinity,
             closestId = null,
-            closestIsAfter = true,
-            closestRect = null;
+            closestIsAfter = true;
 
           cardEls.forEach((el) => {
             const r = el.getBoundingClientRect();
@@ -983,19 +991,13 @@ export function DashboardPage() {
               closestId = el.getAttribute("data-pool-id");
               closestIsAfter =
                 centerY > cy || (centerY >= r.top && centerX > cx);
-              closestRect = r;
             }
           });
           if (closestId)
             insertIndex = closestIsAfter
-              ? pool.filter((id) => id !== activeIdLocal).indexOf(closestId) + 1
-              : pool.filter((id) => id !== activeIdLocal).indexOf(closestId);
-          return {
-            region: "pool",
-            insertIndex,
-            caretRect: closestRect,
-            caretAfter: closestId ? undefined : undefined,
-          };
+              ? poolIds.indexOf(closestId) + 1
+              : poolIds.indexOf(closestId);
+          return { region: "pool", insertIndex };
         }
         return { region: "pool", insertIndex };
       }
@@ -1072,22 +1074,41 @@ export function DashboardPage() {
   // ref(activeDragRef)는 스크롤 핸들러용이고 렌더 중에 읽으면 안 된다(react-hooks/refs).
   const [activeDragMeta, setActiveDragMeta] = useState(null);
 
+  // 드롭 타깃의 "뜻있는" 필드가 그대로면 같은 것으로 본다(rect 는 매 프레임 바뀌지만
+  // 화면에 안 쓴다). 드래그 이동·스크롤은 프레임마다 도는데, 매번 새 객체를 넣으면
+  // 값이 같아도 리렌더가 돈다 — 같으면 이전 참조를 유지해 React 가 바로 빠지게 한다.
+  const sameTarget = (a, b) => {
+    if (a === b) return true;
+    if (!a || !b) return false;
+    return (
+      a.region === b.region &&
+      a.dropMins === b.dropMins &&
+      a.dur === b.dur &&
+      a.insertIndex === b.insertIndex
+    );
+  };
+  const applyDragPreview = (next) =>
+    setDragPreview((prev) => (sameTarget(prev, next) ? prev : next));
+
   const handleDragStart = (event) => {
     if (resizingState) return;
     setActiveId(event.active.id);
     setActiveDragMeta(event.active.data?.current ?? null);
     activeDragRef.current = event.active;
-    setDragPreview(computeDropTarget(event.active));
+    applyDragPreview(computeDropTarget(event.active));
   };
   const handleDragMove = (event) => {
     activeDragRef.current = event.active;
-    setDragPreview(computeDropTarget(event.active));
+    applyDragPreview(computeDropTarget(event.active));
   };
-  const handleDragCancel = () => {
+  const clearDragState = () => {
     setActiveId(null);
     setActiveDragMeta(null);
     activeDragRef.current = null;
     setDragPreview(null);
+  };
+  const handleDragCancel = () => {
+    clearDragState();
   };
 
   const handleDragEnd = (event) => {
@@ -1098,10 +1119,7 @@ export function DashboardPage() {
     const isFromChatbot = active.data.current?.from === "chatbot";
     const target = computeDropTarget(active);
 
-    setActiveId(null);
-    setActiveDragMeta(null);
-    activeDragRef.current = null;
-    setDragPreview(null);
+    clearDragState();
 
     if (!target || !target.region) return;
 
@@ -1183,17 +1201,11 @@ export function DashboardPage() {
         try {
           const [before, after] = neighborKeysAround(nextPool, insertAt, items);
           const orderKey = safeKeyBetween(before, after);
-          const created = await blockApi.createBlock(projectId, {
+          const created = await blockApi.createBlockWithDetail(projectId, {
             ...newBlock,
             startMins: null, // 후보(POOL)로 생성된다
             orderKey,
           });
-          // 전화번호(detail)는 생성 바디에 없다(명세) — 생성 직후 별도 저장
-          if (newBlock.detail) {
-            await blockApi.updateBlockFields(created.blockId, {
-              detail: newBlock.detail,
-            });
-          }
           adoptServerId(newId, created.blockId, { orderKey });
         } catch (e) {
           rollbackToServer(e);
@@ -1446,7 +1458,10 @@ export function DashboardPage() {
   // 미리보기와 확정이 갈라지지 않는다.
   // 정렬이 곧 이 목록의 순서다 — "다음 항목"이 이동 버튼(🚗) 위치·간격과
   // boundTop 의 기준이라 시간이 곧 순서여야 한다.
-  const boardItems = boardOf(displayItems)
+  // 드래그 중이 아니면(displayItems === items) 이미 계산해 둔 board 메모를 그대로
+  // 쓴다 — board 는 useMemo(() => boardOf(items)) 라 결과가 정확히 같다.
+  const boardIds = displayItems === items ? board : boardOf(displayItems);
+  const boardItems = boardIds
     .filter((id) => id !== activeId)
     .map((id) => {
       const item = displayItems[id];
@@ -1609,8 +1624,8 @@ export function DashboardPage() {
                       ref={activeDay === day ? activeTabRef : null}
                       label={`Day ${i + 1}`}
                       date={dayDate(project, i, "short")}
-                      // Day 별 목록은 상태가 아니라 보드에서 뽑는다(blocksOfDay).
-                      count={blocksOfDay(board, items, day).length}
+                      // Day 별 목록은 상태가 아니라 보드에서 뽑는다(blocksByDay 메모).
+                      count={(blocksByDay[day] ?? []).length}
                       // 탭은 이제 화면을 갈아끼우지 않는다 — 그 Day 로 스크롤할 뿐이고,
                       // 하이라이트도 스크롤이 정한 Day(activeDay)를 따라간다.
                       isActive={activeDay === day}
@@ -1643,9 +1658,7 @@ export function DashboardPage() {
                         onClick={() => regenerateAutoTransport(activeDay)}
                         disabled={
                           isGeneratingTransport ||
-                          blocksOfDay(board, items, activeDay).filter(
-                            (id) => !items[id]?.auto && isServerBlock(id),
-                          ).length < 2
+                          realBlocksOfDay(board, items, activeDay).length < 2
                         }
                       >
                         {isGeneratingTransport
@@ -1660,7 +1673,7 @@ export function DashboardPage() {
                     ref={setTimelineRefs}
                     onScroll={() => {
                       if (activeDragRef.current)
-                        setDragPreview(computeDropTarget(activeDragRef.current));
+                        applyDragPreview(computeDropTarget(activeDragRef.current));
                       // 활성 Day 는 여기서 나온다(프레임당 1회로 묶여 있다)
                       scheduleDominantDay();
                     }}

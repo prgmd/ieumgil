@@ -212,6 +212,16 @@ export const blocksOfDay = (board, itemsMap, dayKey) => {
 };
 
 /**
+ * 그 Day 의 "실블록"만 — 서버에 실재하고(auto- 아님) 저장 중(임시 id)도 아닌 것.
+ * 교통 후보 계산 대상 판정에 쓴다. 교통 버튼의 활성 조건과 훅의 realIds 판정이
+ * 반드시 같은 기준을 봐야 해서 헬퍼로 묶었다.
+ */
+export const realBlocksOfDay = (board, itemsMap, dayKey) =>
+  blocksOfDay(board, itemsMap, dayKey).filter(
+    (id) => !itemsMap?.[id]?.auto && isServerBlock(id),
+  );
+
+/**
  * 그 Day 의 가장 이른 시작 오프셋(절대 분). 배치된 블록이 없으면 null.
  * "그 Day 로 스크롤한다"가 어디로 가야 하는지를 정하는 값이다 — Day 00:00 은
  * 텅 빈 새벽이라 첫 블록이 있으면 그쪽이 먼저다.
@@ -220,4 +230,11 @@ export const blocksOfDay = (board, itemsMap, dayKey) => {
 export const firstStartOf = (board, items, dayKey) => {
   const first = blocksOfDay(board, items, dayKey)[0];
   return first == null ? null : items[first].startMins;
+};
+
+/** 키 하나만 뺀 얕은 복사본을 돌려준다 — `{...obj}; delete n[k]` 관용구의 대체. */
+export const omitKey = (obj, key) => {
+  const next = { ...obj };
+  delete next[key];
+  return next;
 };
