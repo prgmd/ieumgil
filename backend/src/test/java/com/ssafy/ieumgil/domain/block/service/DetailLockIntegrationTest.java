@@ -1,5 +1,6 @@
 package com.ssafy.ieumgil.domain.block.service;
 
+import com.ssafy.ieumgil.domain.block.dto.BlockReqDTO;
 import com.ssafy.ieumgil.domain.block.dto.BlockResDTO;
 import com.ssafy.ieumgil.domain.block.entity.Block;
 import com.ssafy.ieumgil.domain.block.entity.BlockCategory;
@@ -15,6 +16,8 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.redis.core.StringRedisTemplate;
+
+import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
@@ -33,6 +36,8 @@ class DetailLockIntegrationTest extends IntegrationTestSupport {
 
     @Autowired
     DetailLockService detailLockService;
+    @Autowired
+    BlockCommandService blockCommandService;
     @Autowired
     BlockRepository blockRepository;
     @Autowired
@@ -138,5 +143,47 @@ class DetailLockIntegrationTest extends IntegrationTestSupport {
 
         Long ttl = redisTemplate.getExpire(KEY_PREFIX + blockId);
         assertThat(ttl).isBetween(1L, 30L);   // 걸려는 있되 30초 이하
+    }
+
+    // ----- detail 쓰기 강제 (BLK-08 서버 측) — 락을 클라이언트 예의에만 맡기지 않는다 -----
+
+    @Test
+    @DisplayName("남이 락을 쥔 블록의 detail 쓰기는 409로 거부된다")
+    void detailWriteRejectedWhileLockedByOther() {
+        detailLockService.acquire(userA.getId(), blockId);
+
+        assertThatThrownBy(() -> patchField(userB.getId(), "detail", "B가 덮어쓰기 시도"))
+                .isInstanceOf(CustomException.class)
+                .extracting("code").isEqualTo(BlockErrorCode.DETAIL_LOCKED_BY_OTHER);
+    }
+
+    @Test
+    @DisplayName("락 소유자 본인의 detail 쓰기는 통과한다")
+    void detailWriteAllowedForLockHolder() {
+        detailLockService.acquire(userA.getId(), blockId);
+
+        assertThatCode(() -> patchField(userA.getId(), "detail", "소유자의 편집"))
+                .doesNotThrowAnyException();
+    }
+
+    @Test
+    @DisplayName("남이 락을 쥐어도 detail 아닌 필드는 통과한다 — 락의 보호 대상은 detail뿐")
+    void nonDetailFieldsUnaffectedByLock() {
+        detailLockService.acquire(userA.getId(), blockId);
+
+        assertThatCode(() -> patchField(userB.getId(), "name", "이름은 LWW 영역"))
+                .doesNotThrowAnyException();
+    }
+
+    @Test
+    @DisplayName("락이 없으면 detail 쓰기는 통과한다 — 획득은 편집 UX 절차일 뿐 쓰기 전제조건이 아니다")
+    void detailWriteAllowedWithoutLock() {
+        assertThatCode(() -> patchField(userB.getId(), "detail", "락 없는 편집"))
+                .doesNotThrowAnyException();
+    }
+
+    private void patchField(Long userId, String field, Object value) {
+        blockCommandService.updateFields(userId, blockId, null,
+                new BlockReqDTO.UpdateFields(List.of(new BlockReqDTO.FieldChange(field, value))));
     }
 }
