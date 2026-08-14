@@ -37,6 +37,7 @@ public class BlockCommandServiceImpl implements BlockCommandService {
     private final UserRepository userRepository;
     private final OpPublisher opPublisher;
     private final ObjectMapper objectMapper;
+    private final DetailLockService detailLockService;
 
     /**
      * 블록 생성 (MAP-03/04, BLK-04). 저장과 op 기록이 한 트랜잭션 —
@@ -83,6 +84,16 @@ public class BlockCommandServiceImpl implements BlockCommandService {
     public BlockResDTO.FieldsApplied updateFields(Long userId, Long blockId, String clientId,
                                                   BlockReqDTO.UpdateFields request) {
         Block block = getAliveBlock(blockId);
+
+        // detail은 락 규약(BLK-08)의 보호 대상 — 남이 락을 쥔 동안의 쓰기를 서버가 거부한다.
+        // 클라이언트 예의(honor-system)에만 맡기면 락의 의미가 없다. 락이 아예 없으면
+        // 통과시킨다: 획득은 편집 UX 절차일 뿐, 여기서 강제할 것은 "남의 편집을 덮지 않기"다.
+        boolean touchesDetail = request.fields().stream()
+                .anyMatch(change -> "detail".equals(change.field()));
+        if (touchesDetail && detailLockService.isLockedByOther(userId, blockId)) {
+            throw new CustomException(BlockErrorCode.DETAIL_LOCKED_BY_OTHER);
+        }
+
         Instant receivedAt = Instant.now();
 
         Map<String, Boolean> applied = new LinkedHashMap<>();
