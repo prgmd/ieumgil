@@ -55,6 +55,10 @@ class BlockCommandServiceLwwTest {
     UserRepository userRepository;
     @Mock
     OpPublisher opPublisher;
+    // 기본 스텁(isLockedByOther=false)으로 락 비보유 상태를 재현 — 락 강제 자체는
+    // DetailLockIntegrationTest가 실제 Redis로 검증한다
+    @Mock
+    DetailLockService detailLockService;
 
     BlockCommandServiceImpl service;
 
@@ -63,7 +67,8 @@ class BlockCommandServiceLwwTest {
     @BeforeEach
     void setUp() {
         service = new BlockCommandServiceImpl(
-                blockRepository, projectRepository, userRepository, opPublisher, new ObjectMapper());
+                blockRepository, projectRepository, userRepository, opPublisher, new ObjectMapper(),
+                detailLockService);
         block = Block.builder()
                 .id(10L)
                 .name("성산일출봉")
