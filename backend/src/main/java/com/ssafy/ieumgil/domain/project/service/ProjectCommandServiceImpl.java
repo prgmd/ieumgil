@@ -171,7 +171,9 @@ public class ProjectCommandServiceImpl implements ProjectCommandService {
         if (outOfRange.isEmpty()) {
             return List.of();
         }
-        blockRepository.moveOutOfRangeToPool(project.getId(), tripMinutes);
+        // SELECT한 id만 이동 — 범위 조건으로 다시 걸면 그 사이 끼어든 블록까지 옮기면서
+        // 응답·op에는 빠지는 불일치(TOCTOU)가 생긴다
+        blockRepository.moveToPoolByIds(outOfRange);
         return outOfRange;
     }
 
