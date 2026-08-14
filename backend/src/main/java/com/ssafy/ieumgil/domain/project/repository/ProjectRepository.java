@@ -3,7 +3,9 @@ package com.ssafy.ieumgil.domain.project.repository;
 import com.ssafy.ieumgil.domain.project.entity.Project;
 import com.ssafy.ieumgil.domain.project.exception.ProjectErrorCode;
 import com.ssafy.ieumgil.global.exception.CustomException;
+import jakarta.persistence.LockModeType;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -32,6 +34,24 @@ public interface ProjectRepository extends JpaRepository<Project, Long> {
     /** 살아 있는 프로젝트를 가져오거나 404(PROJECT_NOT_FOUND)를 던진다. 서비스·AOP에 흩어진 관용구를 한곳으로 모은다. */
     default Project findAliveByIdOrThrow(Long id) {
         return findByIdAndDeletedAtIsNull(id)
+                .orElseThrow(() -> new CustomException(ProjectErrorCode.PROJECT_NOT_FOUND));
+    }
+
+    /**
+     * 프로젝트 변경용 조회 — 행 잠금(SELECT ... FOR UPDATE).
+     *
+     * Block과 같은 이유: Hibernate가 전체 컬럼 UPDATE를 쓰는 탓에 동시 변경 시
+     * 마지막 커밋이 앞선 커밋의 다른 필드까지 행 단위로 덮는다(lost update).
+     * 프로젝트는 op가 이미 저널에 남은 뒤라 저널↔DB까지 어긋난다.
+     * 살아 있는 행만 잠근다 — 삭제된 프로젝트는 404. 읽기 경로는 잠그지 않는다.
+     */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT p FROM Project p WHERE p.id = :projectId AND p.deletedAt IS NULL")
+    Optional<Project> findByIdForUpdate(@Param("projectId") Long projectId);
+
+    /** 잠금 조회 + 404 관용구 — findAliveByIdOrThrow의 잠금 버전. 변경 서비스 전용 */
+    default Project findAliveByIdForUpdateOrThrow(Long id) {
+        return findByIdForUpdate(id)
                 .orElseThrow(() -> new CustomException(ProjectErrorCode.PROJECT_NOT_FOUND));
     }
 
