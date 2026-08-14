@@ -34,8 +34,8 @@ import static org.mockito.Mockito.when;
 @ExtendWith(MockitoExtension.class)
 class ProjectCommandServiceImplTest {
 
-    // 리포지토리의 default 메서드(findAliveByIdOrThrow)를 목이 실제로 실행하도록 한다.
-    // 런타임 Spring Data 프록시와 동일하게, 내부에서 findByIdAndDeletedAtIsNull 스텁을 그대로 탄다.
+    // 리포지토리의 default 메서드(findAliveByIdForUpdateOrThrow)를 목이 실제로 실행하도록 한다.
+    // 런타임 Spring Data 프록시와 동일하게, 내부에서 findByIdForUpdate 스텁을 그대로 탄다.
     @Mock(answer = Answers.CALLS_REAL_METHODS)
     ProjectRepository projectRepository;
     @Mock
@@ -63,7 +63,7 @@ class ProjectCommandServiceImplTest {
     @Test
     @DisplayName("교통수단 선호 수정이 저장되고 PROJECT_UPDATED op에 실린다")
     void updateTransportPrefs_persistsAndPublishesOp() {
-        when(projectRepository.findByIdAndDeletedAtIsNull(1L)).thenReturn(Optional.of(project));
+        when(projectRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(project));
 
         service.updateProject(1L, 1L, "client-1",
                 new ProjectReqDTO.Update(null, null, null, null,
