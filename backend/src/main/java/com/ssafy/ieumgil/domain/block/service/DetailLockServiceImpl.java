@@ -82,6 +82,12 @@ public class DetailLockServiceImpl implements DetailLockService {
     }
 
     @Override
+    public boolean isLockedByOther(Long userId, Long blockId) {
+        String holder = redisTemplate.opsForValue().get(KEY_PREFIX + blockId);
+        return holder != null && !holder.equals(String.valueOf(userId));
+    }
+
+    @Override
     public void release(Long userId, Long blockId) {
         Long deleted = redisTemplate.execute(RELEASE_IF_OWNER,
                 List.of(KEY_PREFIX + blockId), String.valueOf(userId));
