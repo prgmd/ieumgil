@@ -6,6 +6,8 @@ import org.springframework.web.socket.CloseStatus;
 import org.springframework.web.socket.WebSocketSession;
 
 import java.io.IOException;
+import java.util.Collection;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
@@ -71,6 +73,14 @@ public class WsSessionRegistry {
 
     public Long memberOf(String sessionId) {
         return memberBySession.get(sessionId);
+    }
+
+    /**
+     * 전송 세션 전체 스냅샷 — 만료 세션 스윕(ExpiredWsSessionSweeper)용.
+     * close() 콜백이 이 맵을 건드리므로 복사본을 준다(disconnect와 같은 이유).
+     */
+    public Collection<WebSocketSession> transportSessions() {
+        return List.copyOf(transportBySession.values());
     }
 
     /**
