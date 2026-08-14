@@ -175,9 +175,13 @@ public class ProjectCommandServiceImpl implements ProjectCommandService {
         return outOfRange;
     }
 
-    /** 존재 확인·멤버십은 컨트롤러의 @GroupMember가 끝냈다. 여기서는 엔티티만 가져온다 */
+    /**
+     * 존재 확인·멤버십은 컨트롤러의 @GroupMember가 끝냈다. 여기서는 변경 대상 행을
+     * 잠그고 가져온다(FOR UPDATE) — 동시 변경이 서로의 필드를 덮는 lost update와
+     * 그로 인한 op 저널↔DB 불일치를 막는다. Block의 findByIdForUpdate와 같은 방어다.
+     */
     private Project getProject(Long projectId) {
-        return projectRepository.findAliveByIdOrThrow(projectId);
+        return projectRepository.findAliveByIdForUpdateOrThrow(projectId);
     }
 
     private void validateDateRange(LocalDate startDate, LocalDate endDate) {
