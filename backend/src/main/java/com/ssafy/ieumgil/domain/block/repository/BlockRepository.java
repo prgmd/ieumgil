@@ -84,16 +84,20 @@ public interface BlockRepository extends JpaRepository<Block, Long> {
     List<Long> findIdsOutOfRange(@Param("projectId") Long projectId, @Param("tripMinutes") int tripMinutes);
 
     /**
-     * 범위 밖 블록을 후보(POOL)로 일괄 이동 — 오프셋만 비우고 orderKey는 유지한다.
+     * 지정한 블록들을 후보(POOL)로 일괄 이동 — 오프셋만 비우고 orderKey는 유지한다.
+     *
+     * 범위 조건이 아니라 id 목록으로 제한하는 이유: findIdsOutOfRange의 SELECT와 이
+     * UPDATE 사이에 범위 밖으로 이동/생성된 블록이 있으면, 범위 조건 UPDATE는 그것까지
+     * POOL로 보내면서 응답·op의 movedToPool에는 빠뜨린다 — 클라이언트가 모르는 변경이
+     * 생겨 화면이 어긋난다. id로 제한하면 "응답에 실은 것만 변경"이 항상 성립한다.
+     *
      * clearAutomatically로 영속성 컨텍스트가 비워지므로 다른 엔티티 변경이 끝난 뒤 마지막에 부른다.
      */
     @Modifying(clearAutomatically = true, flushAutomatically = true)
     @Query("""
             UPDATE Block b
             SET b.startOffsetMinutes = null
-            WHERE b.project.id = :projectId
-              AND b.startOffsetMinutes >= :tripMinutes
-              AND b.deletedAt IS NULL
+            WHERE b.id IN :ids
             """)
-    int moveOutOfRangeToPool(@Param("projectId") Long projectId, @Param("tripMinutes") int tripMinutes);
+    int moveToPoolByIds(@Param("ids") List<Long> ids);
 }

@@ -87,11 +87,13 @@ public class ProjectCommandServiceImpl implements ProjectCommandService {
     public void softDeleteProject(Long userId, Long projectId, String clientId) {
         Project project = getProject(projectId);
 
-        // 저널·브로드캐스트는 커밋 이후에만 나가므로, 여기서 발행해도 롤백되면 op도 함께 사라진다
+        // 변경을 publish보다 먼저 — publish가 락 획득 전에 flush하므로 락 순서가
+        // "DB 행 락 → 프로젝트 락" 한 방향으로 유지된다(OpPublisher 규약: publish 뒤 엔티티 변경 금지).
+        // 브로드캐스트는 커밋 이후에만 나가므로 롤백되면 op도 함께 사라진다는 성질은 그대로다.
+        project.softDelete();
+
         opPublisher.publish(projectId, userId, clientId, "PROJECT_DELETED",
                 Map.of("projectId", projectId));
-
-        project.softDelete();
     }
 
     /** 상태 전환 (GRP-10). PLANNING↔DONE 양방향, DONE이어도 쓰기 거부 없음(NFR-05) */
@@ -169,13 +171,19 @@ public class ProjectCommandServiceImpl implements ProjectCommandService {
         if (outOfRange.isEmpty()) {
             return List.of();
         }
-        blockRepository.moveOutOfRangeToPool(project.getId(), tripMinutes);
+        // SELECT한 id만 이동 — 범위 조건으로 다시 걸면 그 사이 끼어든 블록까지 옮기면서
+        // 응답·op에는 빠지는 불일치(TOCTOU)가 생긴다
+        blockRepository.moveToPoolByIds(outOfRange);
         return outOfRange;
     }
 
-    /** 존재 확인·멤버십은 컨트롤러의 @GroupMember가 끝냈다. 여기서는 엔티티만 가져온다 */
+    /**
+     * 존재 확인·멤버십은 컨트롤러의 @GroupMember가 끝냈다. 여기서는 변경 대상 행을
+     * 잠그고 가져온다(FOR UPDATE) — 동시 변경이 서로의 필드를 덮는 lost update와
+     * 그로 인한 op 저널↔DB 불일치를 막는다. Block의 findByIdForUpdate와 같은 방어다.
+     */
     private Project getProject(Long projectId) {
-        return projectRepository.findAliveByIdOrThrow(projectId);
+        return projectRepository.findAliveByIdForUpdateOrThrow(projectId);
     }
 
     private void validateDateRange(LocalDate startDate, LocalDate endDate) {
