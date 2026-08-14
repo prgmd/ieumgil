@@ -3,7 +3,9 @@ package com.ssafy.ieumgil.domain.group.repository;
 import com.ssafy.ieumgil.domain.group.entity.TravelGroup;
 import com.ssafy.ieumgil.domain.group.exception.GroupErrorCode;
 import com.ssafy.ieumgil.global.exception.CustomException;
+import jakarta.persistence.LockModeType;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -26,6 +28,25 @@ public interface TravelGroupRepository extends JpaRepository<TravelGroup, Long> 
 
     /** GroupMemberAspect의 존재 확인용. 엔티티가 필요 없으니 exists로 가볍게 */
     boolean existsByIdAndDeletedAtIsNull(Long id);
+
+    /**
+     * 탈퇴 처리용 조회 — 행 잠금(SELECT ... FOR UPDATE).
+     *
+     * leaveGroup의 "마지막 1인이면 하드 삭제" 판정은 count 조회 → 삭제의 check-then-act라,
+     * 2인 그룹에서 동시 탈퇴하면 둘 다 count=2를 읽어 아무도 그룹을 지우지 않는다 —
+     * 멤버 0명인 좀비 그룹이 영구 잔존한다(READ COMMITTED에선 삭제 후 재확인도
+     * 서로의 미커밋 삭제를 못 봐서 같은 결말). 그룹 행을 잠가 같은 그룹의 탈퇴를
+     * 직렬화하면 두 번째 탈퇴자가 반드시 count=1을 보고 그룹을 지운다.
+     */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT g FROM TravelGroup g WHERE g.id = :groupId AND g.deletedAt IS NULL")
+    Optional<TravelGroup> findByIdForUpdate(@Param("groupId") Long groupId);
+
+    /** 잠금 조회 + 404 관용구 — findAliveByIdOrThrow의 잠금 버전 */
+    default TravelGroup findAliveByIdForUpdateOrThrow(Long id) {
+        return findByIdForUpdate(id)
+                .orElseThrow(() -> new CustomException(GroupErrorCode.GROUP_NOT_FOUND));
+    }
 
     /**
      * 초대 코드로 그룹 조회 (입장용).
