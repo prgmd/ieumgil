@@ -87,11 +87,13 @@ public class ProjectCommandServiceImpl implements ProjectCommandService {
     public void softDeleteProject(Long userId, Long projectId, String clientId) {
         Project project = getProject(projectId);
 
-        // 저널·브로드캐스트는 커밋 이후에만 나가므로, 여기서 발행해도 롤백되면 op도 함께 사라진다
+        // 변경을 publish보다 먼저 — publish가 락 획득 전에 flush하므로 락 순서가
+        // "DB 행 락 → 프로젝트 락" 한 방향으로 유지된다(OpPublisher 규약: publish 뒤 엔티티 변경 금지).
+        // 브로드캐스트는 커밋 이후에만 나가므로 롤백되면 op도 함께 사라진다는 성질은 그대로다.
+        project.softDelete();
+
         opPublisher.publish(projectId, userId, clientId, "PROJECT_DELETED",
                 Map.of("projectId", projectId));
-
-        project.softDelete();
     }
 
     /** 상태 전환 (GRP-10). PLANNING↔DONE 양방향, DONE이어도 쓰기 거부 없음(NFR-05) */
