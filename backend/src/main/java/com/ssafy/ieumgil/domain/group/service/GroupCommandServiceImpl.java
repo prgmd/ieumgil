@@ -120,6 +120,10 @@ public class GroupCommandServiceImpl implements GroupCommandService {
      */
     @Override
     public GroupResDTO.Left leaveGroup(Long userId, Long groupId) {
+        // 그룹 행 잠금으로 같은 그룹의 탈퇴를 직렬화한다 — 잠그지 않으면 2인 그룹의
+        // 동시 탈퇴가 둘 다 count=2를 읽어 아무도 그룹을 지우지 않는다(0명 좀비 그룹).
+        travelGroupRepository.findAliveByIdForUpdateOrThrow(groupId);
+
         boolean lastMember = groupMemberRepository.countMembers(groupId) <= 1;
 
         // 마지막 1인이면 그룹이 통째로 사라진다 — 들을 사람도, op를 남길 프로젝트도 없다
