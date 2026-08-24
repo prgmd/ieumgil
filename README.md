@@ -386,7 +386,7 @@ ieumgil/
 
 <table>
 <thead>
-<tr><th width="90"></th><th>이름</th><th>역할</th><th>담당</th><th>이메일</th><th>링크</th></tr>
+<tr><th width="80"></th><th width="90">이름</th><th width="100">역할</th><th>담당</th><th width="70">링크</th></tr>
 </thead>
 <tbody>
 <tr>
@@ -394,7 +394,6 @@ ieumgil/
   <td align="center"><b>이세영</b><br/>[팀장]</td>
   <td align="center">Frontend<br/>Infra</td>
   <td>일정 체인 드래그 앤 드롭 UI, 프론트엔드 총괄<br/>EC2 운영 스택 구성 (docker-compose)</td>
-  <td>ocdee39@gmail.com</td>
   <td align="center"><a href="https://github.com/LSe-Yeong">GitHub</a></td>
 </tr>
 <tr>
@@ -402,7 +401,6 @@ ieumgil/
   <td align="center"><b>김광민</b></td>
   <td align="center">Frontend</td>
   <td>카카오맵 연동, 장소 검색과 경로 시각화</td>
-  <td>rhkd3als9@naver.com</td>
   <td align="center"><a href="https://github.com/GwangMinKim26">GitHub</a></td>
 </tr>
 <tr>
@@ -410,7 +408,6 @@ ieumgil/
   <td align="center"><b>이연호</b></td>
   <td align="center">Frontend</td>
   <td>마이페이지와 그룹페이지 UI, 예산 시각화 차트</td>
-  <td>alyssa8155@naver.com</td>
   <td align="center">—</td>
 </tr>
 <tr>
@@ -418,7 +415,6 @@ ieumgil/
   <td align="center"><b>서동혁</b></td>
   <td align="center">Backend</td>
   <td>백엔드 전반</td>
-  <td>ehdgurdusdn@gmail.com</td>
   <td align="center"><a href="https://github.com/weeast1521">GitHub</a></td>
 </tr>
 <tr>
@@ -426,7 +422,6 @@ ieumgil/
   <td align="center"><b>장준환</b></td>
   <td align="center">Backend<br/>Infra</td>
   <td>백엔드 전반<br/>Docker 컨테이너화, EC2 배포 환경</td>
-  <td>neon9008@gmail.com</td>
   <td align="center"><a href="https://github.com/prgmd">GitHub</a></td>
 </tr>
 <tr>
@@ -434,7 +429,6 @@ ieumgil/
   <td align="center"><b>천기오</b></td>
   <td align="center">AI<br/>FullStack</td>
   <td>LLM 기반 추천 챗봇 API 연동, WebRTC 보이스 채팅, PostgreSQL과 Redis 컨테이너 이미지</td>
-  <td>heelun8525@naver.com</td>
   <td align="center"><a href="https://github.com/CheonKiO">GitHub</a></td>
 </tr>
 </tbody>
