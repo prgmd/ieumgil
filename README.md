@@ -363,22 +363,24 @@ ieumgil/
 
 <table>
 <thead>
-<tr><th width="90"></th><th>이름</th><th>역할</th><th>담당</th><th>이메일</th></tr>
+<tr><th width="90"></th><th>이름</th><th>역할</th><th>담당</th><th>이메일</th><th>링크</th></tr>
 </thead>
 <tbody>
 <tr>
-  <td align="center"><a href="https://github.com/LSe-Yeong"><img src="https://avatars.githubusercontent.com/u/15099062?s=100" width="64" alt="이세영"></a></td>
+  <td align="center"><a href="https://github.com/LSe-Yeong"><img src="https://avatars.githubusercontent.com/u/150990620?s=100" width="64" alt="이세영"></a></td>
   <td align="center"><b>이세영</b></td>
   <td align="center">Frontend<br/>Infra</td>
   <td>일정 체인 드래그 앤 드롭 UI, 프론트엔드 총괄<br/>EC2 운영 스택 구성 (docker-compose)</td>
   <td>ocdee39@gmail.com</td>
+  <td align="center"><a href="https://github.com/LSe-Yeong">GitHub</a></td>
 </tr>
 <tr>
-  <td align="center"><img src="https://ui-avatars.com/api/?name=%EA%B9%80%EA%B4%91%EB%AF%BC&size=100&background=E8EAED&color=5F6368" width="64" alt="김광민"></td>
+  <td align="center"><a href="https://github.com/GwangMinKim26"><img src="https://avatars.githubusercontent.com/u/256008325?s=100" width="64" alt="김광민"></a></td>
   <td align="center"><b>김광민</b></td>
   <td align="center">Frontend</td>
   <td>카카오맵 연동, 장소 검색과 경로 시각화</td>
   <td>rhkd3als9@naver.com</td>
+  <td align="center"><a href="https://github.com/GwangMinKim26">GitHub</a></td>
 </tr>
 <tr>
   <td align="center"><img src="https://ui-avatars.com/api/?name=%EC%9D%B4%EC%97%B0%ED%98%B8&size=100&background=E8EAED&color=5F6368" width="64" alt="이연호"></td>
@@ -386,20 +388,23 @@ ieumgil/
   <td align="center">Frontend</td>
   <td>마이페이지와 그룹페이지 UI, 예산 시각화 차트</td>
   <td>alyssa8155@naver.com</td>
+  <td align="center">—</td>
 </tr>
 <tr>
-  <td align="center"><img src="https://ui-avatars.com/api/?name=%EC%84%9C%EB%8F%99%ED%98%81&size=100&background=E8EAED&color=5F6368" width="64" alt="서동혁"></td>
+  <td align="center"><a href="https://github.com/weeast1521"><img src="https://avatars.githubusercontent.com/u/101035453?s=100" width="64" alt="서동혁"></a></td>
   <td align="center"><b>서동혁</b></td>
   <td align="center">Backend</td>
   <td>백엔드 전반</td>
   <td>ehdgurdusdn@gmail.com</td>
+  <td align="center"><a href="https://github.com/weeast1521">GitHub</a></td>
 </tr>
 <tr>
-  <td align="center"><a href="https://github.com/prgmd"><img src="https://avatars.githubusercontent.com/u/21582988?s=100" width="64" alt="장준환"></a></td>
+  <td align="center"><a href="https://github.com/prgmd"><img src="https://avatars.githubusercontent.com/u/215829882?s=100" width="64" alt="장준환"></a></td>
   <td align="center"><b>장준환</b></td>
   <td align="center">Backend<br/>Infra</td>
   <td>백엔드 전반<br/>Docker 컨테이너화, EC2 배포 환경</td>
   <td>neon9008@gmail.com</td>
+  <td align="center"><a href="https://github.com/prgmd">GitHub</a></td>
 </tr>
 <tr>
   <td align="center"><a href="https://github.com/CheonKiO"><img src="https://avatars.githubusercontent.com/u/63864983?s=100" width="64" alt="천기오"></a></td>
@@ -407,6 +412,7 @@ ieumgil/
   <td align="center">AI<br/>FullStack</td>
   <td>LLM 기반 추천 챗봇 API 연동, WebRTC 보이스 채팅, PostgreSQL과 Redis 컨테이너 이미지</td>
   <td>heelun8525@naver.com</td>
+  <td align="center"><a href="https://github.com/CheonKiO">GitHub</a></td>
 </tr>
 </tbody>
 </table>
