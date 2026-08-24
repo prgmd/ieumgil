@@ -368,7 +368,7 @@ ieumgil/
 <tbody>
 <tr>
   <td align="center"><a href="https://github.com/LSe-Yeong"><img src="https://avatars.githubusercontent.com/u/150990620?s=100" width="64" alt="이세영"></a></td>
-  <td align="center"><b>이세영</b></td>
+  <td align="center"><b>이세영</b><br/>[팀장]</td>
   <td align="center">Frontend<br/>Infra</td>
   <td>일정 체인 드래그 앤 드롭 UI, 프론트엔드 총괄<br/>EC2 운영 스택 구성 (docker-compose)</td>
   <td>ocdee39@gmail.com</td>
@@ -383,7 +383,7 @@ ieumgil/
   <td align="center"><a href="https://github.com/GwangMinKim26">GitHub</a></td>
 </tr>
 <tr>
-  <td align="center"><img src="https://ui-avatars.com/api/?name=%EC%9D%B4%EC%97%B0%ED%98%B8&size=100&background=E8EAED&color=5F6368" width="64" alt="이연호"></td>
+  <td align="center"><img src="./readmeAsset/avatar.png" width="64" alt="이연호"></td>
   <td align="center"><b>이연호</b></td>
   <td align="center">Frontend</td>
   <td>마이페이지와 그룹페이지 UI, 예산 시각화 차트</td>
