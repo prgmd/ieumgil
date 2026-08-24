@@ -39,31 +39,43 @@
 
 ## 화면으로 보는 흐름
 
-### 1. 카카오 로그인, 그리고 초대코드로 입장
+사용자가 실제로 겪는 순서대로 담았습니다. 챗봇 답변(3~7)은 Spring AI의 Tool Calling으로 실제 API를 호출하기 때문에, 모델이 지어낸 장소가 아니라 **조회된 데이터로 답합니다.**
+
+<details>
+<summary><b>1. 카카오 로그인, 그리고 초대코드로 입장</b></summary>
+
+<br/>
 
 <img src="./readmeAsset/01-login-invite.gif" width="820" alt="로그인과 초대코드 입장">
 
 자체 회원가입을 만들지 않았습니다. 카카오 소셜 로그인만 두고, 그룹 참여는 초대코드 한 줄로 끝냅니다. 여행 계획은 보통 급하게 시작되기 때문에, 첫 화면에서 이탈할 이유를 최대한 없앴습니다.
 
-### 2. 그룹을 만들고 프로젝트를 엽니다
+</details>
+
+<details>
+<summary><b>2. 그룹을 만들고 프로젝트를 엽니다</b></summary>
+
+<br/>
 
 <img src="./readmeAsset/02-group-project.gif" width="820" alt="그룹 만들기와 프로젝트 생성">
 
 **그룹**은 함께 다니는 사람들의 묶음이고, **프로젝트**는 그 사람들이 떠나는 한 번의 여행입니다. 같은 멤버로 여행을 여러 번 가는 경우가 많아서 두 층을 나눴습니다. 멤버를 매번 다시 초대하지 않아도 됩니다.
 
-### 3. 챗봇에게 물어서 일정을 채웁니다
+</details>
 
-대시보드 안에 챗봇이 붙어 있습니다. Spring AI의 Tool Calling으로 실제 API를 호출하기 때문에, 모델이 지어낸 장소가 아니라 **조회된 데이터로 답합니다.**
+<details>
+<summary><b>3. 챗봇에게 물어보기 — 요즘 뭐가 유행인지</b></summary>
 
-<details open>
-<summary><b>요즘 뭐가 유행인지 물어보기</b></summary>
+<br/>
 
 <img src="./readmeAsset/03-chatbot-trend.gif" width="820" alt="챗봇 트렌드 추천">
 
 </details>
 
 <details>
-<summary><b>지금까지 짠 일정을 읽고 이어서 추천받기</b></summary>
+<summary><b>4. 챗봇에게 물어보기 — 지금까지 짠 일정을 읽고 이어서 추천</b></summary>
+
+<br/>
 
 <img src="./readmeAsset/04-chatbot-schedule.gif" width="820" alt="챗봇이 현재 일정을 읽고 답변">
 
@@ -72,7 +84,9 @@
 </details>
 
 <details>
-<summary><b>그 지역 축제 찾기</b></summary>
+<summary><b>5. 챗봇에게 물어보기 — 그 지역 축제 찾기</b></summary>
+
+<br/>
 
 <img src="./readmeAsset/05-chatbot-festival.gif" width="820" alt="챗봇 축제 검색">
 
@@ -81,24 +95,33 @@ TourAPI에서 수집한 지역 축제 데이터를 배치로 쌓아 두고 조�
 </details>
 
 <details>
-<summary><b>지도를 기준으로 검색하기</b></summary>
+<summary><b>6. 챗봇에게 물어보기 — 지도를 기준으로 검색</b></summary>
+
+<br/>
 
 <img src="./readmeAsset/06-chatbot-map.gif" width="820" alt="챗봇 지도 기반 검색">
 
 </details>
 
 <details>
-<summary><b>지도와 후기를 함께 보고 고르기</b></summary>
+<summary><b>7. 챗봇에게 물어보기 — 지도와 후기를 함께 보고 고르기</b></summary>
+
+<br/>
 
 <img src="./readmeAsset/09-chatbot-map-review.gif" width="820" alt="챗봇 지도와 후기 검색">
 
 </details>
 
-### 4. 완성된 일정은 읽기 모드로
+<details>
+<summary><b>8. 완성된 일정은 읽기 모드로</b></summary>
+
+<br/>
 
 <img src="./readmeAsset/07-read-mode.gif" width="820" alt="읽기 모드">
 
 여행 당일에 필요한 건 편집이 아니라 조회입니다. 편집 UI를 걷어내고 순서, 이동 시간, 예산만 남긴 화면을 따로 뒀습니다.
+
+</details>
 
 ---
 
